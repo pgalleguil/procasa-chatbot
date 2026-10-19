@@ -176,17 +176,18 @@ def test_cold_assignment_is_shadow_digest_only_and_never_sla_alert():
     assert sla["shadow_yellow"] == sla["shadow_red"] == 0
 
 
-def test_reassignment_closes_old_cycle_and_preserves_delivery_and_actor_history():
+def test_hot_delivery_cannot_transfer_an_existing_cycle_to_another_executive():
     db, lead = setup_db()
     first = assign_and_enqueue_hot(db, lead=lead, recipient_user_id="u1", recipient_phone="+56911111111", payload={}, assigned_at=local(20, 9))
     _run_with_hot(process_one_hot(db, sender=fake_sender, worker_id="w1", now=local(20, 10), enabled=True))
     db["crm_assignment_cycles"].docs[0]["first_valid_management_actor"] = "u1"
-    second = assign_and_enqueue_hot(db, lead=lead, recipient_user_id="u2", recipient_phone="+56922222222", payload={}, assigned_at=local(20, 11))
-    assert len(db["crm_assignment_cycles"].docs) == 2
-    assert db["crm_assignment_cycles"].docs[0]["cycle_status"] == "closed"
+    blocked = assign_and_enqueue_hot(db, lead=lead, recipient_user_id="u2", recipient_phone="+56922222222", payload={}, assigned_at=local(20, 11))
+    assert blocked["cycle"]["assignment_cycle_id"] == first["cycle"]["assignment_cycle_id"]
+    assert blocked.get("blocked") == "canonical_owner_unavailable"
+    assert len(db["crm_assignment_cycles"].docs) == 1
     assert db["crm_assignment_cycles"].docs[0]["first_valid_management_actor"] == "u1"
-    assert first["notification"]["individual_identity"] != second["notification"]["individual_identity"]
-    assert db[COLLECTION].docs[0]["state"] == "sent"
+    assert db["crm_assignment_cycles"].docs[0]["unassigned_at"] is None
+    assert len(db[COLLECTION].docs) == 1
 
 
 def test_crash_after_cycle_before_notification_is_found_without_duplicate_cycle():

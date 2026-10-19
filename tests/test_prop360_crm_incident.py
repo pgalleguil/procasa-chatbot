@@ -12,97 +12,82 @@ from chatbot.ingest_service import IngestResult, LeadEvent
 from scraping_convecta import extractor_prop360
 
 
-def test_new_prop360_event_creates_fresh_cycle_for_same_executive():
+def test_prop360_repeat_for_same_property_reuses_whatsapp_owner_and_management():
     db = mongomock.MongoClient().incident
-    lead = {"_id": "lead-1", "lead_temperature_effective": "COLD"}
+    lead = {"_id": "lead-wa-first", "lead_temperature_effective": "COLD"}
     db["leads"].insert_one(lead.copy())
-
-    old = crm_metrics.create_assignment_cycle(
-        db, lead=lead, assigned_to_user_id="agent-1", assigned_by="test",
-        reason="lead_created", assigned_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+    first = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id="hernan", assigned_by="commercial_intake",
+        reason="inbound_message", assigned_at=datetime(2026, 10, 19, 13, 56, tzinfo=timezone.utc),
+        property_code="6732", source_system="whatsapp", source_event_id="wa-89602740",
     )
+    managed_at = datetime(2026, 10, 19, 13, 59, tzinfo=timezone.utc)
     db["crm_assignment_cycles"].update_one(
-        {"assignment_cycle_id": old["assignment_cycle_id"]},
-        {"$set": {"first_valid_management_at": datetime(2026, 6, 2, tzinfo=timezone.utc)}},
+        {"assignment_cycle_id": first["assignment_cycle_id"]},
+        {"$set": {"first_valid_management_at": managed_at}},
     )
-    new = crm_metrics.create_assignment_cycle(
-        db, lead=lead, assigned_to_user_id="agent-1", assigned_by="prop360_extractor",
-        reason="lead_created", assigned_at=datetime(2026, 10, 2, tzinfo=timezone.utc),
-        property_code="6636", force_new=True, source_system="prop360", source_event_id="11290",
-    )
-    assert new["assignment_cycle_id"] != old["assignment_cycle_id"]
-    assert new.get("first_valid_management_at") is None
-    prior_assigned_at = db["crm_assignment_cycles"].find_one(
-        {"assignment_cycle_id": old["assignment_cycle_id"]}
-    )["assigned_at"]
-    assert crm_metrics.coerce_utc_datetime(new["assigned_at"]) > crm_metrics.coerce_utc_datetime(prior_assigned_at)
-    assert db["crm_assignment_cycles"].find_one(
-        {"assignment_cycle_id": old["assignment_cycle_id"]}
-    )["cycle_status"] == "closed"
-    assert new["sla_started_at"] == crm_metrics.commercial_sla_start_at(new["assigned_at"])
-    assert new["source_event_id"] == "11290"
 
-    retry = crm_metrics.create_assignment_cycle(
-        db, lead=lead, assigned_to_user_id="agent-1", assigned_by="prop360_extractor",
-        reason="lead_created", assigned_at=datetime(2026, 10, 2, tzinfo=timezone.utc),
-        property_code="6636", force_new=True, source_system="prop360", source_event_id="11290",
+    repeated = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id="maria-paz", assigned_by="prop360_extractor",
+        reason="lead_created", assigned_at=datetime(2026, 10, 19, 14, 0, tzinfo=timezone.utc),
+        property_code="6732", force_new=True, source_system="prop360", source_event_id="12272",
     )
-    assert retry["assignment_cycle_id"] == new["assignment_cycle_id"]
-    assert db["crm_assignment_cycles"].count_documents({"lead_id": "lead-1"}) == 2
+    stored = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": first["assignment_cycle_id"]})
+    assert repeated["assignment_cycle_id"] == first["assignment_cycle_id"]
+    assert repeated["assigned_to_user_id"] == "hernan"
+    assert crm_metrics.coerce_utc_datetime(stored["first_valid_management_at"]) == managed_at
+    assert stored["cycle_status"] == "active"
+    assert db["crm_assignment_cycles"].count_documents({"lead_id": lead["_id"]}) == 1
 
 
-def test_new_prop360_event_routes_new_cycle_to_changed_executive():
+def test_prop360_first_then_whatsapp_reuses_the_same_cycle():
     db = mongomock.MongoClient().incident
-    lead = {"_id": "lead-2", "lead_temperature_effective": "COLD"}
+    lead = {"_id": "lead-prop-first", "lead_temperature_effective": "COLD"}
     db["leads"].insert_one(lead.copy())
-    previous = crm_metrics.create_assignment_cycle(
-        db, lead=lead, assigned_to_user_id="agent-1", assigned_by="test",
-        reason="lead_created", assigned_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    first = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id="hernan", assigned_by="prop360_extractor",
+        reason="lead_created", assigned_at=datetime(2026, 10, 19, 13, 56, tzinfo=timezone.utc),
+        property_code="6732", source_system="prop360", source_event_id="12272",
     )
-    current = crm_metrics.create_assignment_cycle(
-        db, lead=lead, assigned_to_user_id="agent-2", assigned_by="prop360_extractor",
-        reason="lead_created", assigned_at=datetime(2026, 10, 2, tzinfo=timezone.utc),
-        property_code="17258", force_new=True, source_system="prop360", source_event_id="11104",
+    repeated = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id="maria-paz", assigned_by="commercial_intake",
+        reason="inbound_message", assigned_at=datetime(2026, 10, 19, 14, 0, tzinfo=timezone.utc),
+        property_code="6732", source_system="whatsapp", source_event_id="wa-89602740",
     )
-    assert current["assigned_to_user_id"] == "agent-2"
-    assert current["assignment_cycle_id"] != previous["assignment_cycle_id"]
-    assert db["crm_assignment_cycles"].find_one({"assignment_cycle_id": previous["assignment_cycle_id"]})["cycle_status"] == "closed"
+    assert repeated["assignment_cycle_id"] == first["assignment_cycle_id"]
+    assert repeated["assigned_to_user_id"] == "hernan"
+    assert db["crm_assignment_cycles"].count_documents({"lead_id": lead["_id"]}) == 1
 
 
-def test_canonical_crm_recent_filter_selects_new_prop360_cycle():
+def test_closed_prior_cycle_stays_immutable_when_new_opportunity_starts():
     db = mongomock.MongoClient().incident
-    lead = {"_id": "virna", "lead_temperature_effective": "COLD"}
+    lead = {"_id": "lead-closed-prior", "lead_temperature_effective": "COLD"}
     db["leads"].insert_one(lead.copy())
-    prior = crm_metrics.create_assignment_cycle(
-        db, lead=lead, assigned_to_user_id="rocio", assigned_by="migration",
-        reason="historical_reconciliation", assigned_at=datetime(2026, 6, 10, tzinfo=timezone.utc),
+    old = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id="hernan", assigned_by="commercial_intake",
+        reason="inbound_message", assigned_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
         property_code="OLD-PROPERTY",
     )
-    crm_filter = {
-        "lead_id": lead["_id"], "unassigned_at": None, "notification_eligible": True,
-        "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
-        "cycle_origin": {"$in": ["inbound_message", "manual_lead"]},
-    }
-    assert db["crm_assignment_cycles"].count_documents(crm_filter) == 0
-
-    event_at = datetime(2026, 10, 2, 13, 51, tzinfo=timezone.utc)
-    current = crm_metrics.create_assignment_cycle(
-        db, lead=lead, assigned_to_user_id="rocio", assigned_by="prop360_extractor",
-        reason="lead_created", assigned_at=event_at, property_code="6636", force_new=True,
-        source_system="prop360", source_event_id="11290",
+    managed_at = datetime(2026, 6, 2, tzinfo=timezone.utc)
+    db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": old["assignment_cycle_id"]},
+        {"$set": {"first_valid_management_at": managed_at, "cycle_status": "closed",
+                  "unassigned_at": managed_at, "closed_at": managed_at}},
     )
-    visible = list(db["crm_assignment_cycles"].find(crm_filter).sort("assigned_at", -1))
-    assert current["schema_version"] == "crm_assignment_cycle_v1"
-    assert current["reason"] == "lead_created"
-    assert current["cycle_origin"] == "inbound_message"
-    assert current["notification_eligible"] is True
-    assert current["property_code"] == "6636"
-    assert current["assignment_cycle_id"] != prior["assignment_cycle_id"]
-    assert len(visible) == 1 and visible[0]["assignment_cycle_id"] == current["assignment_cycle_id"]
-    assert crm_metrics.coerce_utc_datetime(visible[0]["assigned_at"]) == event_at
+    current = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id="hernan", assigned_by="commercial_intake",
+        reason="inbound_message", assigned_at=datetime(2026, 10, 19, 14, 0, tzinfo=timezone.utc),
+        property_code="6732", source_system="prop360", source_event_id="12272",
+    )
+    prior = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": old["assignment_cycle_id"]})
+    assert current["assignment_cycle_id"] != old["assignment_cycle_id"]
+    assert current["property_code"] == "6732"
+    assert crm_metrics.coerce_utc_datetime(prior["first_valid_management_at"]) == managed_at
+    assert prior["cycle_status"] == "closed"
+    assert "previous_assignment_cycle_id" not in current
 
 
-def test_virna_fixture_new_opportunity_cycle_and_notification_are_idempotent(monkeypatch):
+def test_virna_fixture_second_property_is_held_for_review(monkeypatch):
     db = mongomock.MongoClient().incident
     db["lead_ingest_events"].create_index([("source_system", 1), ("source_event_id", 1)], unique=True)
     lead_id = ObjectId()
@@ -114,10 +99,10 @@ def test_virna_fixture_new_opportunity_cycle_and_notification_are_idempotent(mon
         "messages": [], "source_events": [],
     }
     db["leads"].insert_one(lead.copy())
-    db["usuarios"].insert_one({"_id": ObjectId(), "nombre": "Rocío Aliaga"})
+    db["usuarios"].insert_one({"_id": ObjectId(), "nombre": "Rocío Aliaga", "telefono": "+56911111111"})
     old_cycle = crm_metrics.create_assignment_cycle(
         db, lead=lead, assigned_to_user_id=str(db["usuarios"].find_one({})["_id"]),
-        assigned_by="previous_event", reason="lead_created",
+        assigned_by="previous_event", reason="lead_created", assigned_to_display_name="Rocío Aliaga",
         assigned_at=datetime(2026, 6, 10, 16, 23, tzinfo=timezone.utc), property_code="ANTERIOR",
         source_system="prop360", source_event_id="older-event",
     )
@@ -125,6 +110,12 @@ def test_virna_fixture_new_opportunity_cycle_and_notification_are_idempotent(mon
         {"assignment_cycle_id": old_cycle["assignment_cycle_id"]},
         {"$set": {"first_valid_management_at": datetime(2026, 6, 10, 16, 23, tzinfo=timezone.utc)}},
     )
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "lifecycle.current_assignment_cycle_id": old_cycle["assignment_cycle_id"],
+        "lifecycle.assignment_cycle_id": old_cycle["assignment_cycle_id"],
+        "lifecycle.assigned_to_user_id": old_cycle["assigned_to_user_id"],
+        "lifecycle.assigned_to_display_name": "Rocío Aliaga",
+    }})
     monkeypatch.setattr(ingest_service, "get_db", lambda: db)
     monkeypatch.setattr(extractor_prop360, "get_db", lambda: db)
     monkeypatch.setattr(ingest_service, "_enrich_from_cartera", lambda _db, code: {
@@ -138,50 +129,17 @@ def test_virna_fixture_new_opportunity_cycle_and_notification_are_idempotent(mon
     event = LeadEvent("prop360", "11290", phone="+56988061610", name="Virna", message="Interesada", property_code="6636")
     result = ingest_service.ingest_lead_event(event)
     assert result.status == "updated" and result.lead_id == str(lead_id)
-    assert db["leads"].count_documents({}) == 1
     persisted = db["leads"].find_one({"_id": lead_id})
-    assert sum(str(item.get("source_event_id")) == "11290" for item in persisted["source_events"]) == 1
-
-    def enqueue_digest(_db, *, lead, cycle):
-        notification = {"assignment_cycle_ids": [cycle["assignment_cycle_id"]], "state": "pending"}
-        _db["crm_notifications_v1"].insert_one(notification)
-        return notification
-
-    extractor = extractor_prop360.Prop360Extractor("", "", dry_run=False)
-    extractor.normalize_lead = lambda raw: raw
-    enqueue = extractor._enqueue_notification
-    raw = {
-        "idContacto": "11290", "contNombre": "Virna", "contFono": "+56988061610",
-        "contMsg": "Interesada", "codigo": "6636", "medio": "Yapo",
-    }
-
-    def fail_before_cycle(*args, **kwargs):
-        raise RuntimeError("simulated failure before cycle creation")
-
-    monkeypatch.setattr(extractor, "_enqueue_notification", fail_before_cycle)
-    with pytest.raises(RuntimeError, match="before cycle creation"):
-        extractor.process_lead(raw)
-    assert db["crm_assignment_cycles"].count_documents({"source_system": "prop360", "source_event_id": "11290"}) == 0
-
-    monkeypatch.setattr("chatbot.crm_non_hot_digest.accumulate_non_hot_lead", enqueue_digest)
-    monkeypatch.setattr(extractor, "_enqueue_notification", enqueue)
-    extractor.process_lead(raw)
-
-    cycle = db["crm_assignment_cycles"].find_one({"source_system": "prop360", "source_event_id": "11290"})
-    assert db["crm_assignment_cycles"].count_documents({}) == 2
-    assert db["crm_notifications_v1"].count_documents({}) == 1
-    assert cycle["property_code"] == "6636"
-    assert cycle.get("first_valid_management_at") is None
-    assert cycle["assigned_to_user_id"] == old_cycle["assigned_to_user_id"]
-    assert crm_metrics.coerce_utc_datetime(cycle["assigned_at"]) == event_at
-
-    cycle_assigned_at = cycle["assigned_at"]
-    extractor.process_lead(raw)
-    assert extractor.metrics["duplicates_skipped"] == 1
-    assert db["crm_assignment_cycles"].count_documents({}) == 2
-    assert db["crm_notifications_v1"].count_documents({}) == 1
-    after = db["crm_assignment_cycles"].find_one({"source_system": "prop360", "source_event_id": "11290"})
-    assert after["assigned_at"] == cycle_assigned_at
+    assert persisted["prospecto"]["codigo"] == "ANTERIOR"
+    assert persisted["ejecutivo_asignado"] == "Rocío Aliaga"
+    assert db["crm_assignment_cycles"].count_documents({}) == 1
+    assert db["crm_assignment_cycles"].find_one({"assignment_cycle_id": old_cycle["assignment_cycle_id"]})[
+        "first_valid_management_at"
+    ] == datetime(2026, 6, 10, 16, 23)
+    assert db["crm_commercial_property_inquiries"].find_one({
+        "lead_id": lead_id, "property_code": "6636", "source_system": "prop360",
+    })["status"] == "review_required"
+    assert db["crm_notifications_v1"].count_documents({}) == 0
 
 
 def test_poll_loop_runs_on_consecutive_hourly_slots(monkeypatch):
@@ -407,12 +365,16 @@ def test_notification_enqueue_retry_reuses_event_cycle_and_notification(monkeypa
         "lifecycle": {"assigned_at": datetime(2026, 10, 2, 13, tzinfo=timezone.utc)},
     }
     db["leads"].insert_one(lead.copy())
-    db["usuarios"].insert_one({"_id": ObjectId(), "nombre": "Rocío"})
-    db["lead_ingest_events"].insert_one({"source_system": "prop360", "source_event_id": "11290", "status": "lead_persisted", "lead_id": lead_id})
+    db["usuarios"].insert_one({"_id": ObjectId(), "nombre": "Rocío", "telefono": "+56911111111"})
+    db["lead_ingest_events"].insert_one({"source_system": "prop360", "source_event_id": "11290", "status": "lead_persisted", "lead_id": lead_id, "action": "created"})
     monkeypatch.setattr(extractor_prop360, "get_db", lambda: db)
 
     def enqueue_digest(_db, *, lead, cycle):
-        notification = {"assignment_cycle_ids": [cycle["assignment_cycle_id"]], "state": "pending"}
+        notification = {
+            "assignment_cycle_ids": [cycle["assignment_cycle_id"]],
+            "digest_type": "non_hot_digest_v1",
+            "state": "pending",
+        }
         _db["crm_notifications_v1"].insert_one(notification)
         return notification
 
@@ -437,8 +399,8 @@ def test_hot_notification_retry_is_cycle_idempotent(monkeypatch):
         "lifecycle": {"assigned_at": datetime(2026, 10, 2, 13, tzinfo=timezone.utc)},
     }
     db["leads"].insert_one(lead.copy())
-    db["usuarios"].insert_one({"_id": ObjectId(), "nombre": "Rocío"})
-    db["lead_ingest_events"].insert_one({"source_system": "prop360", "source_event_id": "11290", "status": "lead_persisted", "lead_id": lead_id})
+    db["usuarios"].insert_one({"_id": ObjectId(), "nombre": "Rocío", "telefono": "+56911111111"})
+    db["lead_ingest_events"].insert_one({"source_system": "prop360", "source_event_id": "11290", "status": "lead_persisted", "lead_id": lead_id, "action": "created"})
     monkeypatch.setattr(extractor_prop360, "get_db", lambda: db)
     monkeypatch.setattr("chatbot.lead_router.get_executive_phone", lambda _name: "+56911111111")
     calls = []
@@ -446,7 +408,11 @@ def test_hot_notification_retry_is_cycle_idempotent(monkeypatch):
     def enqueue_hot(_db, **kwargs):
         calls.append(kwargs)
         cycle = _db["crm_assignment_cycles"].find_one({"source_system": "prop360", "source_event_id": "11290"})
-        notification = {"assignment_cycle_id": cycle["assignment_cycle_id"], "state": "pending"}
+        notification = {
+            "assignment_cycle_id": cycle["assignment_cycle_id"],
+            "notification_type": "lead_assignment_hot",
+            "state": "pending",
+        }
         _db["crm_notifications_v1"].insert_one(notification)
         return {"notification": notification}
 
@@ -471,8 +437,8 @@ def test_notification_retry_after_cycle_persisted_completes_missing_digest(monke
         "lifecycle": {"assigned_at": datetime(2026, 10, 2, 13, tzinfo=timezone.utc)},
     }
     db["leads"].insert_one(lead.copy())
-    db["usuarios"].insert_one({"_id": ObjectId(), "nombre": "Rocío"})
-    db["lead_ingest_events"].insert_one({"source_system": "prop360", "source_event_id": "11290", "status": "lead_persisted", "lead_id": lead_id})
+    db["usuarios"].insert_one({"_id": ObjectId(), "nombre": "Rocío", "telefono": "+56911111111"})
+    db["lead_ingest_events"].insert_one({"source_system": "prop360", "source_event_id": "11290", "status": "lead_persisted", "lead_id": lead_id, "action": "created"})
     monkeypatch.setattr(extractor_prop360, "get_db", lambda: db)
     instance = extractor_prop360.Prop360Extractor("", "", dry_run=False)
     event = LeadEvent("prop360", "11290", name="Virna", property_code="6636", message="Interesada")

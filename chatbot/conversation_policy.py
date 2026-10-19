@@ -165,10 +165,30 @@ _SPECIFIC_PROPERTY_FIELD_RE = re.compile(
 )
 
 
+_COMMERCIAL_REACTIVATION_RE = re.compile(
+    r"\b(?:quiero|quisiera|me\s+interesa|me\s+gustaria|estoy\s+interesad[oa])"
+    r".{0,90}\b(?:comprar|arrendar|alquilar|visitar|verla|verlo|coordinar|agendar|"
+    r"avanzar|retomar|seguir|continuar|reservar)\b|"
+    r"\b(?:retomemos|sigamos|continuemos|avancemos)\b|"
+    r"\b(?:sigue|aun|todavia)\s+(?:esta\s+)?disponible\b",
+    re.IGNORECASE,
+)
+
+
 def _normalize_text(text: str) -> str:
     value = unicodedata.normalize("NFKD", str(text or ""))
     value = "".join(char for char in value if not unicodedata.combining(char))
     return re.sub(r"\s+", " ", value.casefold()).strip()
+
+
+def is_explicit_commercial_reactivation(message: str) -> bool:
+    """Require a clear renewed purchase, rental, availability, or visit signal."""
+    normalized = _normalize_text(message)
+    if not normalized:
+        return False
+    if re.search(r"\b(?:no|nunca|ya\s+no)\b.{0,55}\b(?:interesa|comprar|arrendar|visitar|coordinar|agendar)\b", normalized):
+        return False
+    return is_explicit_visit_intent(message) or bool(_COMMERCIAL_REACTIVATION_RE.search(normalized))
 
 
 def is_specific_property_question(message: str) -> bool:

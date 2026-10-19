@@ -60,7 +60,21 @@ def ensure_canonical_lead_assignment(db, *, lead_id, cycle, recipient_name=None,
         {"_id": lead_id},
         {"ejecutivo_asignado": 1, "prospecto.ejecutivo": 1, "lifecycle": 1},
     ) or {}
+    live_cycle = db["crm_assignment_cycles"].find_one({
+        "assignment_cycle_id": cycle_id,
+        "lead_id": cycle.get("lead_id"),
+        "cycle_status": "active",
+        "unassigned_at": None,
+    })
+    if not live_cycle:
+        return {"status": "stale_cycle"}
     lifecycle = current.get("lifecycle") or {}
+    pointer = str(lifecycle.get("current_assignment_cycle_id") or "").strip()
+    alias = str(lifecycle.get("assignment_cycle_id") or "").strip()
+    if pointer and pointer != str(cycle_id):
+        return {"status": "different_current_cycle", "current_cycle_id": pointer}
+    if alias and alias != str(cycle_id):
+        return {"status": "different_assignment_cycle", "current_cycle_id": alias}
     updates = {}
     if current.get("ejecutivo_asignado") != display_name:
         updates["ejecutivo_asignado"] = display_name
@@ -76,7 +90,37 @@ def ensure_canonical_lead_assignment(db, *, lead_id, cycle, recipient_name=None,
     if lifecycle.get("assigned_to_display_name") != display_name:
         updates["lifecycle.assigned_to_display_name"] = display_name
     if updates:
-        db["leads"].update_one({"_id": lead_id}, {"$set": updates})
+        current_exec = current.get("ejecutivo_asignado")
+        current_prospect_exec = (current.get("prospecto") or {}).get("ejecutivo")
+        filter_ = {
+            "_id": lead_id,
+            "$and": [
+                {"$or": [
+                    {"lifecycle.current_assignment_cycle_id": {"$exists": False}},
+                    {"lifecycle.current_assignment_cycle_id": None},
+                    {"lifecycle.current_assignment_cycle_id": str(cycle_id)},
+                ]},
+                {"$or": [
+                    {"lifecycle.assignment_cycle_id": {"$exists": False}},
+                    {"lifecycle.assignment_cycle_id": None},
+                    {"lifecycle.assignment_cycle_id": str(cycle_id)},
+                ]},
+                {"$or": [
+                    {"ejecutivo_asignado": current_exec},
+                    {"ejecutivo_asignado": {"$exists": False}},
+                    {"ejecutivo_asignado": None},
+                ]},
+                {"$or": [
+                    {"prospecto.ejecutivo": current_prospect_exec},
+                    {"prospecto.ejecutivo": {"$exists": False}},
+                    {"prospecto.ejecutivo": None},
+                ]},
+            ],
+        }
+        updated = db["leads"].update_one(filter_, {"$set": updates})
+        matched_count = getattr(updated, "matched_count", getattr(updated, "modified_count", 0))
+        if matched_count != 1:
+            return {"status": "assignment_mirror_cas_lost"}
     return updates
 
 
@@ -95,6 +139,31 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
         assigned_to_display_name=recipient_name or str(recipient_user_id),
         property_code=payload.get("property_code") or payload.get("codigo"),
     )
+    canonical_owner_id = str(cycle.get("assigned_to_user_id") or "")
+    canonical_owner_name = str(cycle.get("assigned_to_display_name") or "").strip()
+    if canonical_owner_id != str(recipient_user_id or ""):
+        try:
+            from bson import ObjectId
+            canonical_user = db["usuarios"].find_one({"_id": ObjectId(canonical_owner_id), "is_active": {"$ne": False}})
+        except Exception:
+            canonical_user = db["usuarios"].find_one({"nombre": canonical_owner_name, "is_active": {"$ne": False}})
+        canonical_phone = (
+            (canonical_user or {}).get("telefono") or (canonical_user or {}).get("tel")
+            or (canonical_user or {}).get("movil")
+        )
+        if not canonical_user or not canonical_phone:
+            from .crm_assignment_integrity import record_assignment_integrity_alert
+            record_assignment_integrity_alert(
+                db, lead_id=lead["_id"], issue_code="hot_delivery_blocked_by_canonical_owner_conflict",
+                evidence={"cycle_id": cycle.get("assignment_cycle_id"),
+                          "cycle_owner_user_id": canonical_owner_id,
+                          "requested_owner_user_id": str(recipient_user_id or ""),
+                          "signature": str(cycle.get("assignment_cycle_id"))},
+            )
+            return {"cycle": cycle, "notification": None, "blocked": "canonical_owner_unavailable"}
+        recipient_user_id = canonical_owner_id
+        recipient_name = canonical_owner_name
+        recipient_phone = str(canonical_phone)
     # A lead can become HOT after its normal assignment.  Reuse that same
     # assignment cycle and update its temperature; never create a second
     # commercial opportunity just because the temperature changed.
@@ -124,10 +193,19 @@ def assign_and_enqueue_hot(db, *, lead, recipient_user_id, recipient_phone, payl
         }) or cycle
     # Reconcile owner mirrors before checking notification deduplication.  The
     # same helper is also used on the new-cycle path below.
-    ensure_canonical_lead_assignment(
+    mirror_result = ensure_canonical_lead_assignment(
         db, lead_id=lead["_id"], cycle=cycle, recipient_name=recipient_name,
         assigned_at=assigned if str((previous_cycle or {}).get("assignment_cycle_id") or "") != str(cycle["assignment_cycle_id"]) else None,
     )
+    if isinstance(mirror_result, dict) and mirror_result.get("status"):
+        from .crm_assignment_integrity import record_assignment_integrity_alert
+        record_assignment_integrity_alert(
+            db, lead_id=lead["_id"], issue_code="hot_delivery_blocked_by_assignment_conflict",
+            evidence={"cycle_id": cycle.get("assignment_cycle_id"),
+                      "reason": mirror_result.get("status"),
+                      "signature": f"{cycle.get('assignment_cycle_id')}:{mirror_result.get('status')}"},
+        )
+        return {"cycle": cycle, "notification": None, "blocked": mirror_result.get("status")}
     # Check for existing non-terminal notification before updating the lead.
     # If a notification already exists for this identity, return it instead
     # of creating a duplicate.  A new assignment cycle (different cycle_id)

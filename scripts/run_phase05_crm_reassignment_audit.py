@@ -409,6 +409,7 @@ def record_base(cycle: dict[str, Any], data: dict[str, Any], idx: dict[str, Any]
         "excluded_origin": (
             norm(cycle.get("reason")) in EXCLUDED_ORIGINS
             or norm(cycle.get("cycle_origin")) in EXCLUDED_ORIGINS
+            or cycle.get("sla_performance_excluded") is True
             or _is_test_lead(lead or {})
         ),
         "canonical": (

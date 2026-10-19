@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import mongomock
 from jinja2 import Environment, FileSystemLoader
 
 from chatbot.crm_filters import build_crm_card_urls, build_crm_filter_urls
@@ -250,13 +251,15 @@ class _FakeCollection:
 
 
 def test_admin_reassignment_service_targets_the_resolved_lead_and_audits_actor(monkeypatch):
-    collection = _FakeCollection()
+    db = mongomock.MongoClient().incident
+    lead = {"_id": "lead-1", "phone": "56911111111", "prospecto": {}}
+    db[COLLECTION_CONVERSATIONS].insert_one(lead.copy())
     events = []
-    monkeypatch.setattr(crm_service_module, "get_db", lambda: {COLLECTION_CONVERSATIONS: collection})
+    monkeypatch.setattr(crm_service_module, "get_db", lambda: db)
     monkeypatch.setattr(
         CrmService,
         "get_lead",
-        staticmethod(lambda _phone: {"_id": "lead-1", "prospecto": {}}),
+        staticmethod(lambda _phone: lead.copy()),
     )
     monkeypatch.setattr(
         "chatbot.lead_router.get_next_business_slot",
@@ -268,16 +271,20 @@ def test_admin_reassignment_service_targets_the_resolved_lead_and_audits_actor(m
         lambda *args, **kwargs: events.append((args, kwargs)),
     )
 
-    assert CrmService.assign_executive(
+    # This adapter has no transaction implementation, so the administrative
+    # owner change must fail closed without writing either cycle or mirrors.
+    assert not CrmService.assign_executive(
         "56911111111",
         "Erika Garrido",
         method="crm_list_admin",
         actor="Supervisora",
     )
-    assert collection.query == {"_id": "lead-1"}
-    assert collection.update["$set"]["ejecutivo_asignado"] == "Erika Garrido"
-    assert events[0][0][2] == "Supervisora"
-    assert events[0][0][3]["method"] == "crm_list_admin"
+    assert db["crm_assignment_cycles"].count_documents({}) == 0
+    assert db[COLLECTION_CONVERSATIONS].find_one({"_id": "lead-1"}).get("ejecutivo_asignado") is None
+    assert db["crm_assignment_integrity_alerts"].count_documents({
+        "issue_code": "administrative_transfer_transaction_failed"
+    }) == 1
+    assert events == []
 
 
 def test_admin_archive_service_is_non_destructive_and_keeps_audit_history(monkeypatch):

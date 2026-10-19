@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+import mongomock
+
 from chatbot.crm_metrics import (
     build_snapshot_document, calculate_sla, coerce_utc_datetime,
     commercial_sla_start_at, create_assignment_cycle, event_evidence, normalize_result, pipeline_activity_in_period,
@@ -72,18 +74,35 @@ def test_ambiguous_duplicate_phone_is_not_resolved_or_credited():
 
 
 def test_reassignment_closes_cycle_without_retroactive_attribution():
-    db = FakeDB(crm_assignment_cycles=FakeCollection())
+    db = mongomock.MongoClient().incident
     lead = {"_id": "lead-1"}
+    db["leads"].insert_one(lead.copy())
     first = create_assignment_cycle(db, lead=lead, assigned_to_user_id="u1",
                                     assigned_by="admin", reason="initial",
                                     assigned_at="2026-07-13T09:00:00-04:00")
-    second = create_assignment_cycle(db, lead=lead, assigned_to_user_id="u2",
-                                     assigned_by="admin", reason="reassign",
+    blocked = create_assignment_cycle(db, lead=lead, assigned_to_user_id="u2",
+                                     assigned_by="system", reason="reassign",
                                      assigned_at="2026-07-14T09:00:00-04:00")
-    assert first["assignment_cycle_id"] != second["assignment_cycle_id"]
+    assert blocked["assignment_cycle_id"] == first["assignment_cycle_id"]
     assert first["assigned_to_user_id"] == "u1"
-    assert first["unassigned_at"] is not None
+    assert db["crm_assignment_cycles"].find_one({
+        "assignment_cycle_id": first["assignment_cycle_id"]
+    })["unassigned_at"] is None
+
+    second = create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id="u2", assigned_by="manager",
+        reason="crm_list_admin", authorized_transfer=True,
+        transfer_authorization={"kind": "administrative", "actor": "manager"},
+        assigned_at="2026-07-14T09:00:00-04:00",
+    )
+    assert first["assignment_cycle_id"] != second["assignment_cycle_id"]
+    persisted_first = db["crm_assignment_cycles"].find_one({
+        "assignment_cycle_id": first["assignment_cycle_id"]
+    })
+    assert persisted_first["unassigned_at"] is not None
+    assert persisted_first["closed_reason"] == "administrative_transfer"
     assert second["assigned_to_user_id"] == "u2"
+    assert second["previous_assignment_cycle_id"] == first["assignment_cycle_id"]
 
 
 def test_bson_and_iso_timestamps_are_compatible_and_new_values_are_utc():
@@ -135,7 +154,7 @@ def test_snapshot_separates_cohort_pipeline_and_current_priority():
     assert snapshot["immutable"] is True
 
 
-def test_historical_lead_new_inbound_cycle_has_its_own_assignment_and_sla_timestamps():
+def test_incomplete_legacy_active_cycle_blocks_automatic_reassignment():
     db = FakeDB(crm_assignment_cycles=FakeCollection([
         {"_id": "old", "lead_id": "lead-1", "assignment_cycle_id": "old-cycle",
          "assigned_at": datetime(2026, 7, 1, 13, tzinfo=timezone.utc),
@@ -147,17 +166,7 @@ def test_historical_lead_new_inbound_cycle_has_its_own_assignment_and_sla_timest
         reason="inbound_message", assigned_at="2026-07-27T10:30:00-04:00",
         assigned_to_display_name="Susana",
     )
-    assert cycle["assignment_cycle_id"] != "old-cycle"
-    assert cycle["assigned_at"] == datetime(2026, 7, 27, 14, 30, tzinfo=timezone.utc)
-    assert cycle["cycle_started_at"] == cycle["assigned_at"]
-    assert cycle["sla_started_at"] == cycle["assigned_at"]
-    assert cycle["temperature_at_assignment"] == "HOT"
-    assert cycle["temperature_on_assignment"] == "HOT"
-    assert cycle["hot_started_at"] == cycle["sla_started_at"]
-    assert cycle["sla_segments"] == [{
-        "policy": "HOT", "segment_start": cycle["sla_started_at"],
-        "segment_end": None, "end_reason": None,
-    }]
+    assert cycle["assignment_cycle_id"] == "old-cycle"
 
 
 def test_new_cycle_does_not_inherit_pre_activation_policy():

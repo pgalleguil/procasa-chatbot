@@ -314,10 +314,32 @@ def _assignment_cycle_selector(cycle: Mapping[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def ensure_assignment_cycle_indexes(db) -> dict[str, Any]:
+    """Create the active-cycle uniqueness barrier only after a safe preflight."""
+    collection = db["crm_assignment_cycles"]
+    list_indexes = getattr(collection, "list_indexes", None)
+    if not callable(list_indexes):
+        # Lightweight repositories used by pure unit tests do not expose index
+        # management. Production PyMongo collections always do.
+        return {"safe_to_create": True, "created": [], "already_present": True,
+                "index_support": "unavailable"}
+    existing = {row.get("name") for row in list_indexes()}
+    required = {"uq_crm_active_cycle_v1", "uq_crm_cycle_identity_v1"}
+    if required.issubset(existing):
+        return {"safe_to_create": True, "created": [], "already_present": True}
+    result = audit_and_ensure_assignment_cycle_indexes(db, create=True)
+    if not result.get("safe_to_create"):
+        raise RuntimeError("active assignment cycle duplicates block safe assignment")
+    return result
+
+
 def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
                             reason, assigned_at=None, assigned_to_display_name=None,
                             property_code=None, force_new=False,
-                            source_system=None, source_event_id=None) -> dict[str, Any]:
+                            source_system=None, source_event_id=None,
+                            authorized_transfer=False,
+                            transfer_authorization=None,
+                            session=None, indexes_preflighted=False) -> dict[str, Any]:
     if not isinstance(lead, Mapping) or lead.get("_id") is None:
         raise ValueError("canonical lead document is required for assignment cycle")
     lead_id = lead["_id"]
@@ -330,42 +352,147 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
     except (KeyError, TypeError):
         leads_collection = None
     if leads_collection is not None:
-        persisted_lead = leads_collection.find_one({"_id": lead_id}, {"_id": 1})
+        persisted_lead = leads_collection.find_one(
+            {"_id": lead_id}, {"_id": 1}, **({"session": session} if session is not None else {})
+        )
         if not persisted_lead or persisted_lead.get("_id") != lead_id:
             raise ValueError("canonical lead document not found for assignment cycle")
+
+    authorization = dict(transfer_authorization or {})
+    authorized_actor = str(authorization.get("actor") or "").strip()
+    system_actors = {"", "system", "bot", "sistema", "assistant", "commercial_intake"}
+    if authorized_transfer and (
+        not authorized_actor
+        or authorized_actor.lower() in system_actors
+        or authorization.get("kind") != "administrative"
+        or str(reason or "").strip().lower() != "crm_list_admin"
+        or str(assigned_by or "").strip() != authorized_actor
+    ):
+        raise PermissionError("administrative transfer authorization is incomplete")
+
+    # The partial unique index is the final concurrency barrier.  Perform a
+    # read-only duplicate preflight before creating it; never clean or merge
+    # legacy cycles automatically.
+    try:
+        if not indexes_preflighted:
+            ensure_assignment_cycle_indexes(db)
+    except RuntimeError as exc:
+        try:
+            from .crm_assignment_integrity import record_assignment_integrity_alert
+            record_assignment_integrity_alert(
+                db,
+                lead_id=lead_id,
+                issue_code="active_cycle_uniqueness_preflight_failed",
+                evidence={"error": str(exc), "signature": str(lead_id)},
+            )
+        except Exception:
+            pass
+        raise
 
     assigned_at = coerce_utc_datetime(assigned_at) or utc_now()
     if source_system and source_event_id:
         prior_event_cycle = db["crm_assignment_cycles"].find_one({
             "source_system": source_system, "source_event_id": str(source_event_id),
-        })
+        }, **({"session": session} if session is not None else {}))
         if prior_event_cycle:
             return prior_event_cycle
     # Resolve canonical ObjectId cycles first, with a bounded legacy string
     # fallback, so a historical row cannot create a second active cycle.
-    active = active_assignment_cycle(db, lead["_id"])
-    if (not force_new and active and active.get("schema_version") == "crm_assignment_cycle_v1"
-            and active.get("cycle_status") == "active"
-            and str(active.get("assigned_to_user_id")) == str(assigned_to_user_id)):
-        if property_code:
-            prop_code = str(property_code).strip()
-            if str(active.get("property_code") or "").strip() != prop_code:
-                cycle_selector = _assignment_cycle_selector(active)
-                if cycle_selector:
-                    db["crm_assignment_cycles"].update_one(
-                        cycle_selector,
-                        {"$set": {"property_code": prop_code}},
-                    )
-                active["property_code"] = prop_code
-        return active
-    if active:
-        cycle_selector = _assignment_cycle_selector(active)
-        if cycle_selector:
-            cycle_selector["unassigned_at"] = None
+    active = active_assignment_cycle(db, lead["_id"], session=session)
+    if active and str(active.get("assigned_to_user_id")) == str(assigned_to_user_id):
+        existing_property = str(active.get("property_code") or "").strip()
+        requested_property = str(property_code or "").strip()
+        if requested_property and not existing_property:
+            selector = _assignment_cycle_selector(active)
+            selector.update({
+                "cycle_status": active.get("cycle_status", {"$exists": False}),
+                "unassigned_at": None,
+                "$or": [{"property_code": {"$exists": False}}, {"property_code": None}, {"property_code": ""}],
+            })
             db["crm_assignment_cycles"].update_one(
-                cycle_selector,
-                {"$set": {"unassigned_at": assigned_at, "cycle_status": "closed"}},
+                selector, {"$set": {"property_code": requested_property}},
+                **({"session": session} if session is not None else {}),
             )
+            active["property_code"] = requested_property
+        return active
+    elif active and not authorized_transfer:
+        # Ingestion, HOT promotion and retry paths cannot transfer ownership.
+        # A different requested recipient loses to the already active cycle.
+        return active
+
+    if not active:
+        lifecycle = lead.get("lifecycle") or {}
+        existing_pointer = str(
+            lifecycle.get("current_assignment_cycle_id")
+            or lifecycle.get("assignment_cycle_id") or ""
+        ).strip()
+        requested_owner_name = str(assigned_to_display_name or assigned_to_user_id or "").strip().casefold()
+        unassigned_labels = {"", "no asignado", "sin asignar", "unassigned", "none", "null"}
+        mirrored_owner_names = {
+            str(value).strip().casefold()
+            for value in (
+                lead.get("ejecutivo_asignado"),
+                (lead.get("prospecto") or {}).get("ejecutivo"),
+            )
+            if str(value or "").strip().casefold() not in unassigned_labels
+        }
+        mirrored_owner_id = str(lifecycle.get("assigned_to_user_id") or "").strip()
+        mismatch = (
+            bool(existing_pointer)
+            or len(mirrored_owner_names) > 1
+            or bool(mirrored_owner_names and mirrored_owner_names != {requested_owner_name})
+            or bool(mirrored_owner_id and mirrored_owner_id != str(assigned_to_user_id))
+        )
+        if mismatch:
+            try:
+                from .crm_assignment_integrity import record_assignment_integrity_alert
+                record_assignment_integrity_alert(
+                    db, lead_id=lead_id,
+                    issue_code="assignment_cycle_creation_blocked_by_existing_mirrors",
+                    evidence={
+                        "cycle_pointer": existing_pointer or None,
+                        "mirrored_owner_names": sorted(mirrored_owner_names),
+                        "mirrored_owner_user_id": mirrored_owner_id or None,
+                        "requested_owner_user_id": str(assigned_to_user_id),
+                        "signature": f"{lead_id}:{existing_pointer}:{':'.join(sorted(mirrored_owner_names))}:{mirrored_owner_id}",
+                    },
+                )
+            except Exception:
+                pass
+            raise RuntimeError("assignment cycle creation conflicts with existing owner mirrors")
+
+    previous_cycle_id = None
+    if active:
+        previous_cycle_id = str(active.get("assignment_cycle_id") or "") or None
+        cycle_selector = _assignment_cycle_selector(active)
+        if not cycle_selector:
+            raise RuntimeError("active assignment cycle has no stable identity")
+        cycle_selector.update({
+            "unassigned_at": None,
+            "cycle_status": active.get("cycle_status", {"$exists": False}),
+        })
+        if active.get("cycle_version") is not None:
+            cycle_selector["cycle_version"] = active["cycle_version"]
+        else:
+            cycle_selector["$or"] = [
+                {"cycle_version": {"$exists": False}}, {"cycle_version": None},
+            ]
+        closed = db["crm_assignment_cycles"].update_one(
+            cycle_selector,
+            {"$set": {
+                "unassigned_at": assigned_at,
+                "cycle_status": "closed",
+                "closed_at": assigned_at,
+                "closed_reason": "administrative_transfer" if authorized_transfer else "cycle_replaced",
+                "cycle_version": int(active.get("cycle_version") or 0) + 1,
+            }},
+            **({"session": session} if session is not None else {}),
+        )
+        if getattr(closed, "modified_count", 0) != 1:
+            winner = active_assignment_cycle(db, lead["_id"], session=session)
+            if winner:
+                return winner
+            raise RuntimeError("assignment cycle changed before transfer could commit")
     # Determine SLA policy version for this cycle
     sla_policy = "sla_visual_v1_20260723" if not is_pre_visual_cutover(assigned_at) else "legacy"
     # Only leads created by real commercial events are notification-eligible
@@ -396,6 +523,7 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
         "unassigned_at": None, "assigned_by": assigned_by, "reason": reason,
         "metric_version": METRIC_VERSION, "schema_version": "crm_assignment_cycle_v1",
         "cycle_status": "active",
+        "cycle_version": 1,
         "applied_transition_ids": [],
         "sla_policy_version": sla_policy,
         "notification_eligible": notification_eligible,
@@ -408,6 +536,11 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
             "end_reason": None,
         }],
     }
+    if previous_cycle_id:
+        cycle["previous_assignment_cycle_id"] = previous_cycle_id
+    if authorized_transfer:
+        cycle["transfer_authorization"] = authorization
+        cycle["transfer_authorized_at"] = assigned_at
     if temperature_on_assignment == "HOT":
         # A lead already Hot when assigned starts the Hot segment with its
         # commercial SLA, never with a potentially stale lead-level hot_since.
@@ -416,21 +549,23 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
     if source_system and source_event_id:
         cycle.update({"source_system": source_system, "source_event_id": str(source_event_id)})
     try:
-        db["crm_assignment_cycles"].insert_one(cycle)
+        db["crm_assignment_cycles"].insert_one(
+            cycle, **({"session": session} if session is not None else {})
+        )
     except DuplicateKeyError:
         # The partial unique active-cycle index resolves concurrent retries.
         if source_system and source_event_id:
             event_winner = db["crm_assignment_cycles"].find_one({
                 "source_system": source_system, "source_event_id": str(source_event_id),
-            })
+            }, **({"session": session} if session is not None else {}))
             if event_winner:
                 return event_winner
             # A different event owns the concurrent active-cycle slot. Do not
             # mislabel/reuse its opportunity; the source event can retry.
             if force_new:
                 raise
-        winner = active_assignment_cycle(db, lead["_id"])
-        if winner and str(winner.get("assigned_to_user_id")) == str(assigned_to_user_id):
+        winner = active_assignment_cycle(db, lead["_id"], session=session)
+        if winner and (not authorized_transfer or str(winner.get("assigned_to_user_id")) == str(assigned_to_user_id)):
             return winner
         raise
     return cycle
@@ -518,19 +653,34 @@ def sync_active_cycle_temperature(db, lead_id, *, temperature, transition_at=Non
 
 
 def audit_and_ensure_assignment_cycle_indexes(db, *, create=False) -> dict[str, Any]:
-    """Dry-run by default; legacy cycles are outside the partial indexes."""
+    """Dry-run active-cycle uniqueness across legacy ID spellings by default."""
     collection = db["crm_assignment_cycles"]
     canonical_filter = {
         "schema_version": "crm_assignment_cycle_v1", "cycle_status": "active",
         "lead_id": {"$exists": True}, "assigned_to_user_id": {"$exists": True},
         "assignment_cycle_id": {"$exists": True},
     }
+    active_rows = list(collection.find({
+        "lead_id": {"$exists": True}, "unassigned_at": None,
+        "$or": [
+            {"cycle_status": "active"},
+            {"cycle_status": {"$exists": False}},
+        ],
+    }).limit(100000))
+    by_lead: dict[str, list[dict[str, Any]]] = {}
+    for row in active_rows:
+        lead_id = row.get("lead_id")
+        if lead_id is not None:
+            by_lead.setdefault(str(lead_id), []).append(row)
+    duplicates = []
+    for normalized_id, rows in by_lead.items():
+        if len(rows) > 1:
+            duplicates.append({
+                "_id": normalized_id,
+                "count": len(rows),
+                "assignment_cycle_ids": [str(row.get("assignment_cycle_id") or row.get("_id") or "") for row in rows],
+            })
     eligible = collection.count_documents(canonical_filter)
-    duplicates = list(collection.aggregate([
-        {"$match": canonical_filter},
-        {"$group": {"_id": "$lead_id", "count": {"$sum": 1}}},
-        {"$match": {"count": {"$gt": 1}}},
-    ]))
     created = []
     if create and not duplicates:
         created.append(collection.create_index(
@@ -545,12 +695,28 @@ def audit_and_ensure_assignment_cycle_indexes(db, *, create=False) -> dict[str, 
             "safe_to_create": not duplicates, "created": created}
 
 
-def active_assignment_cycle(db, lead_id):
+def active_assignment_cycle(db, lead_id, *, session=None):
     for lead_key in mongo_id_variants(lead_id):
+        cycle_query = {
+            "lead_id": lead_key,
+            "unassigned_at": None,
+            "$or": [
+                {"cycle_status": "active"},
+                {"cycle_status": {"$exists": False}},
+            ],
+        }
+        session_options = {"session": session} if session is not None else {}
         cycle = db["crm_assignment_cycles"].find_one(
-            {"lead_id": lead_key, "unassigned_at": None},
-            sort=[("assigned_at", -1)],
+            cycle_query, sort=[("assigned_at", -1)], **session_options,
         )
+        if not cycle:
+            # Compatibility for lightweight adapters with exact-match-only
+            # query support; still reject explicitly closed rows.
+            legacy = db["crm_assignment_cycles"].find_one(
+                {"lead_id": lead_key, "unassigned_at": None}, **session_options,
+            )
+            if legacy and legacy.get("cycle_status") in (None, "active"):
+                cycle = legacy
         if cycle:
             return cycle
     return None

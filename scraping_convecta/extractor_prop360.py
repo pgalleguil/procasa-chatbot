@@ -302,7 +302,9 @@ class Prop360Extractor:
         ledger = get_db()["lead_ingest_events"].find_one({
             "source_system": "prop360", "source_event_id": source_event_id,
         })
-        return bool(ledger and ledger.get("status") in {"completed", "created", "updated"})
+        return bool(ledger and ledger.get("status") in {
+            "completed", "created", "updated", "opportunity_review_required",
+        })
 
     def _enqueue_notification(
         self,
@@ -326,6 +328,11 @@ class Prop360Extractor:
         """
         from bson.objectid import ObjectId
         from chatbot.crm_metrics import create_assignment_cycle, coerce_utc_datetime
+        from chatbot.crm_assignment_integrity import (
+            active_assignment_cycles,
+            assignment_context,
+            record_assignment_integrity_alert,
+        )
 
         db = get_db()
         try:
@@ -338,53 +345,230 @@ class Prop360Extractor:
             )
             return
 
-        exec_user = None
-        if exec_name:
-            exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
-        assigned_to_user_id = str(exec_user["_id"]) if exec_user else exec_name or ""
-        if not assigned_to_user_id:
-            logger.warning(
-                "[NOTIF] Ejecutivo no resuelto, sin notificación: lead_id=%s exec=%s",
-                lead_id, exec_name,
+        source_event_id = str(prop360_lead.get("idContacto") or event.source_event_id)
+        lifecycle = fresh_lead.get("lifecycle") or {}
+        active_cycles = active_assignment_cycles(db, fresh_lead["_id"])
+        assignment_state = assignment_context(db, fresh_lead)
+        stale_pointer = bool(
+            lifecycle.get("current_assignment_cycle_id") or lifecycle.get("assignment_cycle_id")
+        ) and not active_cycles
+        if len(active_cycles) > 1 or (active_cycles and assignment_state.get("status") == "conflict") or stale_pointer:
+            issues = assignment_state.get("issues") or (["stale_cycle_pointer"] if stale_pointer else [])
+            record_assignment_integrity_alert(
+                db,
+                lead_id=fresh_lead["_id"],
+                issue_code="prop360_notification_blocked_by_assignment_conflict",
+                evidence={
+                    "issues": issues,
+                    "source_event_id": source_event_id,
+                    "signature": f"{fresh_lead['_id']}:{':'.join(issues)}",
+                },
+            )
+            db["lead_ingest_events"].update_one(
+                {"source_system": "prop360", "source_event_id": source_event_id},
+                {"$set": {"status": "assignment_review_required", "lead_id": fresh_lead["_id"]}},
             )
             return
 
+        if not active_cycles and assignment_state.get("status") == "conflict":
+            ingest_ledger = db["lead_ingest_events"].find_one({
+                "source_system": "prop360", "source_event_id": source_event_id,
+            }) or {}
+            if ingest_ledger.get("action") != "created":
+                record_assignment_integrity_alert(
+                    db,
+                    lead_id=fresh_lead["_id"],
+                    issue_code="prop360_legacy_assignment_requires_review",
+                    evidence={"source_event_id": source_event_id,
+                              "issues": assignment_state.get("issues"),
+                              "signature": f"{fresh_lead['_id']}:{source_event_id}:legacy-assignment"},
+                )
+                db["lead_ingest_events"].update_one(
+                    {"source_system": "prop360", "source_event_id": source_event_id},
+                    {"$set": {"status": "assignment_review_required", "lead_id": fresh_lead["_id"]}},
+                )
+                return
+
         assigned_at = coerce_utc_datetime(
-            (fresh_lead.get("lifecycle") or {}).get("assigned_at")
+            lifecycle.get("assigned_at")
         ) or coerce_utc_datetime(fresh_lead.get("created_at"))
-        source_event_id = str(prop360_lead.get("idContacto") or event.source_event_id)
-        cycle = db["crm_assignment_cycles"].find_one({
+        source_event_cycle = db["crm_assignment_cycles"].find_one({
             "source_system": "prop360", "source_event_id": source_event_id,
         })
+        if source_event_cycle and source_event_cycle.get("unassigned_at") is not None:
+            # An already-consumed source event cannot reopen a closed cycle.
+            db["lead_ingest_events"].update_one(
+                {"source_system": "prop360", "source_event_id": source_event_id},
+                {"$set": {"status": "completed", "lead_id": fresh_lead["_id"],
+                          "assignment_cycle_id": source_event_cycle.get("assignment_cycle_id")}},
+            )
+            return
+
+        cycle = active_cycles[0] if active_cycles else source_event_cycle
         if cycle is None:
+            exec_user = db["usuarios"].find_one(
+                {"nombre": exec_name, "is_active": {"$ne": False}},
+                {"_id": 1, "nombre": 1},
+            ) if exec_name else None
+            assigned_to_user_id = str((exec_user or {}).get("_id") or "")
+            if not assigned_to_user_id:
+                record_assignment_integrity_alert(
+                    db,
+                    lead_id=fresh_lead["_id"],
+                    issue_code="prop360_initial_owner_unresolved",
+                    evidence={"source_event_id": source_event_id,
+                              "signature": f"{fresh_lead['_id']}:{source_event_id}"},
+                )
+                db["lead_ingest_events"].update_one(
+                    {"source_system": "prop360", "source_event_id": source_event_id},
+                    {"$set": {"status": "assignment_review_required", "lead_id": fresh_lead["_id"]}},
+                )
+                return
             cycle = create_assignment_cycle(
                 db, lead=fresh_lead, assigned_to_user_id=assigned_to_user_id,
                 assigned_by="prop360_extractor", reason="lead_created",
-                assigned_at=assigned_at, assigned_to_display_name=exec_name,
-                property_code=event.property_code, force_new=True,
+                assigned_at=assigned_at, assigned_to_display_name=(exec_user or {}).get("nombre") or exec_name,
+                property_code=event.property_code,
                 source_system="prop360", source_event_id=source_event_id,
             )
+
+        if (str(cycle.get("source_system") or "").lower() == "prop360"
+                and str(cycle.get("source_event_id") or "") == source_event_id):
             db["crm_assignment_cycles"].update_one(
                 {"assignment_cycle_id": cycle["assignment_cycle_id"]},
                 {"$set": {"source_event_verified": True, "source_event_type": "PROP360_LEAD"}},
             )
         cycle_id = cycle.get("assignment_cycle_id")
+        cycle_property = str(cycle.get("property_code") or "").strip()
+        incoming_property = str(event.property_code or "").strip()
+        if cycle_property and incoming_property and cycle_property != incoming_property:
+            inquiry_id = f"prop360-property:{fresh_lead['_id']}:{incoming_property}:{source_event_id}"
+            db["crm_commercial_property_inquiries"].update_one(
+                {"_id": inquiry_id},
+                {"$setOnInsert": {
+                    "lead_id": fresh_lead["_id"], "property_code": incoming_property,
+                    "source_system": "prop360", "source_event_id": source_event_id,
+                    "received_at": datetime.now(timezone.utc), "status": "review_required",
+                    "active_assignment_cycle_id": cycle_id,
+                    "active_property_code": cycle_property,
+                }},
+                upsert=True,
+            )
+            record_assignment_integrity_alert(
+                db,
+                lead_id=fresh_lead["_id"],
+                issue_code="new_property_interest_requires_opportunity_review",
+                evidence={"property_code": incoming_property, "active_property_code": cycle_property,
+                          "active_cycle_id": cycle_id, "source_system": "prop360",
+                          "source_event_id": source_event_id,
+                          "signature": f"{cycle_id}:{incoming_property}"},
+            )
+            db["lead_ingest_events"].update_one(
+                {"source_system": "prop360", "source_event_id": source_event_id},
+                {"$set": {"status": "opportunity_review_required", "lead_id": fresh_lead["_id"],
+                          "assignment_cycle_id": cycle_id}},
+            )
+            return
+
+        cycle_owner_id = str(cycle.get("assigned_to_user_id") or "")
+        cycle_owner_name = str(cycle.get("assigned_to_display_name") or exec_name or "")
+        exec_name = cycle_owner_name
+        try:
+            exec_user = db["usuarios"].find_one({"_id": ObjectId(cycle_owner_id), "is_active": {"$ne": False}})
+        except Exception:
+            exec_user = db["usuarios"].find_one({"nombre": cycle_owner_name, "is_active": {"$ne": False}})
+        if not exec_user:
+            record_assignment_integrity_alert(
+                db,
+                lead_id=fresh_lead["_id"],
+                issue_code="active_assignment_owner_unavailable",
+                evidence={"cycle_id": cycle_id, "owner_user_id": cycle_owner_id,
+                          "signature": str(cycle_id)},
+            )
+            db["lead_ingest_events"].update_one(
+                {"source_system": "prop360", "source_event_id": source_event_id},
+                {"$set": {"status": "assignment_review_required", "lead_id": fresh_lead["_id"],
+                          "assignment_cycle_id": cycle_id}},
+            )
+            return
+        assigned_to_user_id = cycle_owner_id
+        exec_name = cycle_owner_name
+        exec_phone = exec_user.get("telefono") or exec_user.get("tel") or exec_user.get("movil")
+        if not exec_phone:
+            record_assignment_integrity_alert(
+                db,
+                lead_id=fresh_lead["_id"],
+                issue_code="active_assignment_owner_unavailable",
+                evidence={"cycle_id": cycle_id, "owner_user_id": cycle_owner_id,
+                          "reason": "missing_phone", "signature": str(cycle_id)},
+            )
+            db["lead_ingest_events"].update_one(
+                {"source_system": "prop360", "source_event_id": source_event_id},
+                {"$set": {"status": "assignment_review_required", "lead_id": fresh_lead["_id"],
+                          "assignment_cycle_id": cycle_id}},
+            )
+            return
         db["lead_ingest_events"].update_one(
             {"source_system": "prop360", "source_event_id": source_event_id},
             {"$set": {"status": "commercial_cycle_created", "lead_id": fresh_lead["_id"],
                       "assignment_cycle_id": cycle_id}},
         )
-        db[COLLECTION_CONVERSATIONS].update_one(
-            {"_id": fresh_lead["_id"]},
-            {"$set": {"lifecycle.current_assignment_cycle_id": cycle_id}},
+        mirror_result = db[COLLECTION_CONVERSATIONS].update_one(
+            {"_id": fresh_lead["_id"], "$and": [
+                {"$or": [
+                    {"lifecycle.current_assignment_cycle_id": {"$exists": False}},
+                    {"lifecycle.current_assignment_cycle_id": None},
+                    {"lifecycle.current_assignment_cycle_id": cycle_id},
+                ]},
+                {"$or": [
+                    {"ejecutivo_asignado": cycle_owner_name},
+                    {"ejecutivo_asignado": {"$exists": False}},
+                    {"ejecutivo_asignado": None},
+                ]},
+                {"$or": [
+                    {"lifecycle.assigned_to_user_id": cycle_owner_id},
+                    {"lifecycle.assigned_to_user_id": {"$exists": False}},
+                    {"lifecycle.assigned_to_user_id": None},
+                ]},
+            ]},
+            {"$set": {
+                "ejecutivo_asignado": cycle_owner_name,
+                "prospecto.ejecutivo": cycle_owner_name,
+                "lifecycle.current_assignment_cycle_id": cycle_id,
+                "lifecycle.assignment_cycle_id": cycle_id,
+                "lifecycle.assigned_to_user_id": cycle_owner_id,
+                "lifecycle.assigned_to_display_name": cycle_owner_name,
+                "lifecycle.assigned_at": cycle.get("assigned_at"),
+                "lifecycle.cycle_started_at": cycle.get("cycle_started_at") or cycle.get("assigned_at"),
+                "lifecycle.sla_started_at": cycle.get("sla_started_at"),
+            }},
         )
+        if getattr(mirror_result, "matched_count", 0) != 1:
+            mirror_lead = db[COLLECTION_CONVERSATIONS].find_one({"_id": fresh_lead["_id"]}) or fresh_lead
+            mirror_state = assignment_context(db, mirror_lead)
+            if mirror_state.get("status") != "consistent" or str((mirror_state.get("cycle") or {}).get("assignment_cycle_id")) != str(cycle_id):
+                record_assignment_integrity_alert(
+                    db,
+                    lead_id=fresh_lead["_id"],
+                    issue_code="prop360_owner_mirror_compare_and_set_failed",
+                    evidence={"cycle_id": cycle_id, "issues": mirror_state.get("issues"),
+                              "signature": str(cycle_id)},
+                )
+                db["lead_ingest_events"].update_one(
+                    {"source_system": "prop360", "source_event_id": source_event_id},
+                    {"$set": {"status": "assignment_review_required", "lead_id": fresh_lead["_id"],
+                              "assignment_cycle_id": cycle_id}},
+                )
+                return
+            fresh_lead = mirror_lead
 
         temperature = str(fresh_lead.get("lead_temperature_effective") or "").upper()
         existing_notification = db["crm_notifications_v1"].find_one({
             "$or": [
-                {"assignment_cycle_id": cycle_id},
-                {"assignment_cycle_ids": cycle_id},
-            ]
+                {"assignment_cycle_id": cycle_id, "notification_type": "lead_assignment_hot"},
+                {"assignment_cycle_ids": cycle_id, "digest_type": "non_hot_digest_v1"},
+            ],
+            "state": {"$in": ["pending", "sending", "sent", "failed_retryable"]},
         })
         if existing_notification:
             self.metrics["notifications_enqueued"] += 1
@@ -395,9 +579,7 @@ class Prop360Extractor:
             return
         if temperature == "HOT":
             from chatbot.crm_hot_delivery import assign_and_enqueue_hot
-            from chatbot.lead_router import get_executive_phone
             prospect = fresh_lead.get("prospecto", {}) or {}
-            exec_phone = get_executive_phone(exec_name) or ""
             payload = {
                 "phone": fresh_lead.get("phone"),
                 "lead_phone": fresh_lead.get("phone"),

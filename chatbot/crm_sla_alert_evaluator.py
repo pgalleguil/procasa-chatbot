@@ -284,7 +284,10 @@ async def evaluate_sla_alerts(
         "assigned_at": {"$gte": mongo_cutover},
         "assignment_cycle_id": {"$exists": True},
     })
-    cycles = await cycles_cursor.to_list(length=limit_cycles)
+    cycles = [
+        cycle for cycle in await cycles_cursor.to_list(length=limit_cycles)
+        if cycle.get("sla_performance_excluded") is not True
+    ]
     if not cycles:
         return {
             "as_of": now_utc.isoformat(), "total_cycles_evaluated": 0,

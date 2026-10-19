@@ -36,6 +36,7 @@ PROP360_EVENT_ID = "12276"
 VALID_MANAGEMENT_ID = "crm_management:c7ad4a4b-9968-446e-a594-22162137a4ad"
 DUPLICATE_MANAGEMENT_ID = "crm_management:f68cdb05-0639-4a41-adcc-bf2feef230c6"
 DUPLICATE_MANAGEMENT_AT = datetime(2026, 10, 19, 18, 33, 44, 656_000, tzinfo=timezone.utc)
+DUPLICATE_SLA_ALERT_ID = f"{DUPLICATE_CYCLE_ID}|warning|{MARIELA_USER_ID}"
 VISIT_DAY_EVENT_ID = "6ad658265969a1a4f3907ed2"
 VISIT_HOURS_EVENT_ID = "6ad6582c5969a1a4f3907ed3"
 HOT_INTENT_EVENT_ID = "6ad6584d5969a1a4f3907eda"
@@ -294,6 +295,35 @@ def _validated_management_history(
     return source, follow_up
 
 
+def _is_target_duplicate_sla_alert(row: Mapping[str, Any]) -> bool:
+    """Accept only the already-sent warning for the accidental cycle.
+
+    Keep its provider delivery record intact. The repair annotates it as
+    historical and excluded from performance; it never cancels or resends it.
+    """
+    return bool(
+        str(row.get("_id")) == DUPLICATE_SLA_ALERT_ID
+        and row.get("assignment_cycle_id") == DUPLICATE_CYCLE_ID
+        and row.get("recipient_user_id") == MARIELA_USER_ID
+        and row.get("message_domain") == "crm_sla_alert"
+        and row.get("state") == "sent"
+        and row.get("delivery_outcome") == "confirmed"
+        and row.get("outreach_state") == "whatsapp_opened"
+        and int(row.get("attempt_count") or 0) == 1
+        and bool(str(row.get("provider_message_id") or "").strip())
+        and _utc(row.get("created_at")) is not None
+        and _utc(row.get("sent_at")) is not None
+    )
+
+
+def _validated_duplicate_sla_alerts(rows: list[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    if len(rows) != 1 or not _is_target_duplicate_sla_alert(rows[0]):
+        raise RepairSafetyError(
+            "the SLA alert history differs from the one confirmed warning on the duplicate cycle"
+        )
+    return list(rows)
+
+
 def _is_target_pointer_alert(row: Mapping[str, Any]) -> bool:
     evidence = row.get("evidence") or {}
     issues = evidence.get("issues") or []
@@ -391,10 +421,11 @@ def validate_scenario(backup: Mapping[str, Any], snapshot: Mapping[str, list[dic
             or not management_at or management_at < provider_acceptance["accepted_at"]
             or not duplicate_management_at or duplicate_management_at < HOT_SINCE_AT):
         raise RepairSafetyError("provider acceptance does not bound the original management evidence")
-    if (snapshot["sla_alerts"] or snapshot["pending_notifications"] or snapshot["active_jobs"]
+    duplicate_sla_alerts = _validated_duplicate_sla_alerts(snapshot["sla_alerts"])
+    if (snapshot["pending_notifications"] or snapshot["active_jobs"]
             or snapshot["visitas"] or snapshot["ordenes_visitas"]):
-        raise RepairSafetyError("an SLA alert, outbound notification, active inbound job, or visit record needs review first")
-    return lead, original, duplicate, result, provider_acceptance
+        raise RepairSafetyError("an outbound notification, active inbound job, or visit record needs review first")
+    return lead, original, duplicate, result, provider_acceptance, duplicate_sla_alerts
 
 
 def _manifest_digest(manifest: Mapping[str, Any]) -> str:
@@ -470,6 +501,9 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
         {"assignment_cycle_id": ORIGINAL_CYCLE_ID},
         {"assignment_cycle_ids": ORIGINAL_CYCLE_ID},
     ]}, session=session)
+    duplicate_sla_alerts = _find(
+        db, "crm_sla_alerts_v1", {"_id": DUPLICATE_SLA_ALERT_ID}, session=session,
+    )
     try:
         provider_acceptance = _provider_acceptance_evidence(notifications)
     except RepairSafetyError:
@@ -532,6 +566,12 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
             or _utc(lifecycle.get("hot_since")) != HOT_SINCE_AT
             or _utc(lifecycle.get("temperature_transitioned_at")) != HOT_SINCE_AT
             or lead.get("sla_status") != "fulfilled"
+            or len(duplicate_sla_alerts) != 1
+            or not _is_target_duplicate_sla_alert(duplicate_sla_alerts[0])
+            or duplicate_sla_alerts[0].get("administratively_corrected") is not True
+            or duplicate_sla_alerts[0].get("correction_incident_id") != INCIDENT_ID
+            or duplicate_sla_alerts[0].get("corrects_assignment_cycle_id") != ORIGINAL_CYCLE_ID
+            or duplicate_sla_alerts[0].get("sla_performance_excluded") is not True
             or _id_set(management) != {VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID}
             or _id_set([original_management, duplicate_management]) != {VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID}
             or _utc(duplicate_management.get("occurred_at")) != DUPLICATE_MANAGEMENT_AT
@@ -594,6 +634,9 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
         "original_effective_contact_at": _utc(original_management.get("occurred_at")).isoformat(),
         "duplicate_cycle_effective_contact_preserved_at": _utc(duplicate_management.get("occurred_at")).isoformat(),
         "duplicate_contact_excluded_from_first_sla": duplicate.get("sla_performance_excluded") is True,
+        "duplicate_sla_alert_state": duplicate_sla_alerts[0].get("state"),
+        "duplicate_sla_alert_delivery_preserved": duplicate_sla_alerts[0].get("delivery_outcome") == "confirmed",
+        "duplicate_sla_alert_corrected_and_excluded": duplicate_sla_alerts[0].get("sla_performance_excluded") is True,
         "visit_follow_up_status": visit_follow_up.get("status"),
         "visit_preference": visit_follow_up.get("availability"),
         "resolved_cycle_pointer_alerts": len(resolved_alerts),
@@ -634,7 +677,7 @@ def _apply(client: MongoClient, db: Any, backup: Mapping[str, Any], manifest: Ma
         snapshot = collect_snapshot(db, backup, session=session)
         if _snapshot_manifest(snapshot) != manifest.get("snapshot"):
             raise RepairSafetyError("live state changed after preflight; rerun --dry-run and review")
-        lead, original, duplicate, result, provider_acceptance = validate_scenario(backup, snapshot)
+        lead, original, duplicate, result, provider_acceptance, duplicate_sla_alerts = validate_scenario(backup, snapshot)
         expected_acceptance = {
             **provider_acceptance,
             "accepted_at": provider_acceptance["accepted_at"].isoformat(),
@@ -782,6 +825,35 @@ def _apply(client: MongoClient, db: Any, backup: Mapping[str, Any], manifest: Ma
         )
         _require_one(lead_update, "lead pointers, visit follow-up, and owner mirrors")
 
+        duplicate_sla_alert = duplicate_sla_alerts[0]
+        sla_alert_update = db["crm_sla_alerts_v1"].update_one(
+            {
+                "_id": DUPLICATE_SLA_ALERT_ID,
+                "assignment_cycle_id": DUPLICATE_CYCLE_ID,
+                "recipient_user_id": MARIELA_USER_ID,
+                "state": "sent",
+                "delivery_outcome": "confirmed",
+                "outreach_state": "whatsapp_opened",
+                "attempt_count": 1,
+                "provider_message_id": duplicate_sla_alert.get("provider_message_id"),
+                "sent_at": duplicate_sla_alert.get("sent_at"),
+                "administratively_corrected": {"$ne": True},
+            },
+            {"$set": {
+                "administratively_corrected": True,
+                "correction_incident_id": INCIDENT_ID,
+                "corrects_assignment_cycle_id": ORIGINAL_CYCLE_ID,
+                "correction_reason": "warning was generated by the accidental duplicate Prop360 cycle; original first-contact SLA was already fulfilled",
+                "corrected_by": actor,
+                "corrected_at": now,
+                "sla_performance_excluded": True,
+                "sla_performance_exclusion_reason": "duplicate Prop360 cycle; original first-contact SLA is preserved as fulfilled",
+                "updated_at": now,
+            }},
+            session=session,
+        )
+        _require_one(sla_alert_update, "historical duplicate-cycle SLA alert annotation")
+
         db["crm_events"].insert_one({
             "_id": AUDIT_EVENT_ID,
             "lead_id": lead_id,
@@ -815,6 +887,9 @@ def _apply(client: MongoClient, db: Any, backup: Mapping[str, Any], manifest: Ma
                     str(alert.get("_id")) for alert in snapshot["integrity_alerts"]
                     if alert.get("status") == "open"
                 ),
+                "corrected_duplicate_sla_alert_ids": [DUPLICATE_SLA_ALERT_ID],
+                "historical_sla_alert_delivery_state_preserved": True,
+                "new_outbound_messages_sent": False,
             },
         }, session=session)
 
@@ -915,7 +990,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("PRODUCTION_VERIFICATION: " + json.dumps(already, ensure_ascii=False, sort_keys=True))
                 return 0
             snapshot = collect_snapshot(db, backup)
-            _, _, _, _, provider_acceptance = validate_scenario(backup, snapshot)
+            _, _, _, _, provider_acceptance, _ = validate_scenario(backup, snapshot)
             output = args.preflight_out or backup_path.with_name("procasa-p0-17252-live-preflight.json")
             manifest = {
                 "format": "procasa-p0-17252-live-preflight-v1",
@@ -940,6 +1015,7 @@ def main(argv: list[str] | None = None) -> int:
             print("CYCLES: 2 retained; duplicate excluded from SLA performance")
             print("SLA: provider acceptance used as start; original EFFECTIVE_CONTACT and its timestamp preserved")
             print("VISIT: pending internal coordination recorded; no appointment created")
+            print("DUPLICATE_SLA_ALERT: prior sent warning will be preserved as history and excluded from performance")
             print("CUSTOMER_MESSAGES: none")
             return 0
 

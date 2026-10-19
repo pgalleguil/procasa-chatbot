@@ -27,7 +27,7 @@ from pymongo.write_concern import WriteConcern
 INCIDENT_ID = "PROC-2026-10-P0-6732"
 CONFIRMATION = "P0-6732-RESTORE-HERNAN"
 DATABASE = "URLS"
-BACKUP_FORMAT = "procasa-p0-6732-pre-repair-v2"
+BACKUP_FORMAT = "procasa-p0-6732-pre-repair-v3"
 LEAD_OID = "6ad613470035d45d0f87595b"
 PRODUCTION_CLUSTER_PREFIX = "ac-8f1k7c3-shard-"
 PRODUCTION_CLUSTER_SUFFIX = ".mzve39k.mongodb.net"
@@ -35,6 +35,11 @@ HERNAN_CYCLE_ID = "0e966571-4e5d-495f-9330-4a8aecf232c0"
 MARIA_CYCLE_ID = "36ad5606-91f8-40a7-8609-4bb6794c3def"
 HERNAN_USER_ID = "6a681413140190dde11f26d1"
 MARIA_USER_ID = "69c19b98fbbbf113235ba844"
+MARIA_BREACH_ALERT_ID = f"{MARIA_CYCLE_ID}|breached|{MARIA_USER_ID}"
+MARIA_BREACH_ALERT_PROVIDER_ID = "89720542"
+MARIA_BREACH_ALERT_CREATED_AT = datetime(2026, 10, 19, 18, 29, 52, 875_000, tzinfo=timezone.utc)
+MARIA_BREACH_ALERT_STARTED_AT = datetime(2026, 10, 19, 18, 30, 15, 290_000, tzinfo=timezone.utc)
+MARIA_BREACH_ALERT_COMPLETED_AT = datetime(2026, 10, 19, 18, 30, 26, 193_000, tzinfo=timezone.utc)
 HERNAN_NAME = "Hernán Castro"
 MARIA_NAME = "María Paz Galleguillos"
 VISIT_ACCEPTANCE_EVENT_ID = "6ad613bce66c461dd69d69aa"
@@ -62,8 +67,9 @@ BACKUP_COLLECTIONS = {
     "ingest_events": "lead_ingest_events",
     "integrity_alerts": "crm_assignment_integrity_alerts",
     "sla_reassignment_audit": "crm_sla_reassignment_audit_v1",
+    "sla_alerts": "crm_sla_alerts_v1",
 }
-CORE_COLLECTIONS = ("lead", "cycles", "management_results", "events", "notifications", "ingest_events")
+CORE_COLLECTIONS = ("lead", "cycles", "management_results", "events", "notifications", "ingest_events", "sla_alerts")
 
 
 class RepairSafetyError(RuntimeError):
@@ -163,6 +169,7 @@ def _build_backup(db: Any, session: Any = None) -> dict[str, Any]:
         {"new_cycle_id": {"$in": cycle_ids}},
         {"lead_id": {"$in": lead_ids}, "property_code": "6732"},
     ]}, session=session)
+    sla_alerts = _find_many(db, "crm_sla_alerts_v1", {"assignment_cycle_id": {"$in": cycle_ids}}, session=session)
     pending = _find_many(db, "pending_notifications", {"$or": [
         {"lead_id": {"$in": lead_ids}}, {"phone": phone}, {"telefono": phone}, {"lead_phone": phone},
     ]}, session=session)
@@ -177,6 +184,7 @@ def _build_backup(db: Any, session: Any = None) -> dict[str, Any]:
         "ingest_events": ingest_events,
         "integrity_alerts": integrity_alerts,
         "sla_reassignment_audit": sla_audit,
+        "sla_alerts": sla_alerts,
     }
     return {
         "format": BACKUP_FORMAT,
@@ -261,6 +269,78 @@ def collect_snapshot(db: Any, backup: Mapping[str, Any], session: Any = None) ->
     return snapshot
 
 
+def _validate_reviewed_sla_alerts(alerts: list[Mapping[str, Any]]) -> dict[str, Any]:
+    """Require the one known false breach alert and its exact provider evidence."""
+    if len(alerts) != 1:
+        raise RepairSafetyError("the 6732 cycles must have exactly one individually reviewed SLA alert")
+    alert = dict(alerts[0])
+    expected = {
+        "_id": MARIA_BREACH_ALERT_ID,
+        "assignment_cycle_id": MARIA_CYCLE_ID,
+        "recipient_user_id": MARIA_USER_ID,
+        "notification_type": "SLA_BREACH_WARNING",
+        "state": "sent",
+        "delivery_outcome": "confirmed",
+        "provider_message_id": MARIA_BREACH_ALERT_PROVIDER_ID,
+        "attempt_count": 1,
+        "last_error": None,
+    }
+    if any(alert.get(key) != value for key, value in expected.items()):
+        raise RepairSafetyError("the SLA alert identity or provider-accepted state differs from reviewed evidence")
+    timestamps = {
+        "created_at": MARIA_BREACH_ALERT_CREATED_AT,
+        "delivery_started_at": MARIA_BREACH_ALERT_STARTED_AT,
+        "delivery_completed_at": MARIA_BREACH_ALERT_COMPLETED_AT,
+        "sent_at": MARIA_BREACH_ALERT_COMPLETED_AT,
+    }
+    if any(_utc(alert.get(key)) != value for key, value in timestamps.items()):
+        raise RepairSafetyError("the SLA alert timestamps changed; refresh provider evidence before repair")
+    if alert.get("delivered_at") is not None or alert.get("delivered_timestamp") is not None:
+        raise RepairSafetyError("a provider delivery receipt appeared; review it before administrative correction")
+    if alert.get("administrative_correction") is not None:
+        raise RepairSafetyError("an SLA alert correction marker already exists; verify before continuing")
+    return alert
+
+
+def _sla_alert_concurrency_filter(alert: Mapping[str, Any]) -> dict[str, Any]:
+    fields = (
+        "_id", "assignment_cycle_id", "recipient_user_id", "notification_type", "state",
+        "delivery_started_at", "delivery_completed_at", "delivery_outcome", "provider_message_id",
+        "attempt_count", "last_error", "created_at", "sent_at", "updated_at",
+    )
+    selector = {key: alert[key] for key in fields if key in alert}
+    for key in fields:
+        if key not in alert:
+            selector[key] = {"$exists": False}
+    selector["administrative_correction"] = {"$exists": False}
+    return selector
+
+
+def _sla_alert_correction_fields(alert: Mapping[str, Any], *, actor: str, now: datetime) -> dict[str, Any]:
+    _validate_reviewed_sla_alerts([alert])
+    return {
+        "administratively_corrected": True,
+        "sla_performance_excluded": True,
+        "correction_incident_id": INCIDENT_ID,
+        "administrative_correction": {
+            "status": "corrected_false_sla_breach",
+            "incident_id": INCIDENT_ID,
+            "incorrect_assignment_cycle_id": MARIA_CYCLE_ID,
+            "correction_cycle_id": CORRECTION_CYCLE_ID,
+            "corrected_by": actor,
+            "corrected_at": now,
+            "reason": "the Prop360-created assignment duplicated a lead whose original first-management SLA was already fulfilled",
+            "provider_state_preserved": alert.get("state"),
+            "provider_outcome_preserved": alert.get("delivery_outcome"),
+            "provider_message_id_preserved": alert.get("provider_message_id"),
+            "provider_acceptance_confirmed": True,
+            "provider_delivery_receipt_confirmed": False,
+            "penalty_excluded": True,
+            "resend": False,
+        },
+    }
+
+
 def _snapshot_manifest(snapshot: Mapping[str, list[Mapping[str, Any]]]) -> dict[str, Any]:
     return {
         key: {"count": len(rows), "sha256": _fingerprint(list(rows))}
@@ -318,6 +398,12 @@ def _validate_backup_scenario(backup: Mapping[str, Any], snapshot: Mapping[str, 
                 or current.get("actor_user_id") != HERNAN_USER_ID
                 or _utc(current.get("occurred_at")) != occurred_at or current.get("status") != "completed"):
             raise RepairSafetyError("one of Hernán's two completed EFFECTIVE_CONTACT records changed")
+
+    backup_sla_alerts = _backup_docs(backup, "sla_alerts")
+    reviewed_alert = _validate_reviewed_sla_alerts(snapshot["sla_alerts"])
+    if (_fingerprint(backup_sla_alerts) != _fingerprint(snapshot["sla_alerts"])
+            or str(reviewed_alert.get("_id")) != MARIA_BREACH_ALERT_ID):
+        raise RepairSafetyError("the individually reviewed false SLA alert changed after the backup")
 
     expected_event_ids = {str(row.get("_id")) for row in backup_events}
     live_event_ids = {str(row.get("_id")) for row in snapshot["events"]}
@@ -383,9 +469,41 @@ def _verify_already_applied(db: Any, backup: Mapping[str, Any], session: Any = N
     maria = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": MARIA_CYCLE_ID}, **options)
     hernan = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": HERNAN_CYCLE_ID}, **options)
     event = db["crm_events"].find_one({"_id": CORRECTION_EVENT_ID}, **options)
+    corrected_alert = db["crm_sla_alerts_v1"].find_one({"_id": MARIA_BREACH_ALERT_ID}, **options)
     results = list(db["crm_management_results"].find({"lead_id": ObjectId(LEAD_OID)}, **options))
-    if not lead or not maria or not hernan or not event:
+    if not lead or not maria or not hernan or not event or not corrected_alert:
         raise RepairSafetyError("a partial correction marker exists; transaction state needs manual review")
+    alert_correction = corrected_alert.get("administrative_correction") or {}
+    if (corrected_alert.get("state") != "sent"
+            or corrected_alert.get("provider_message_id") != MARIA_BREACH_ALERT_PROVIDER_ID
+            or corrected_alert.get("delivery_outcome") != "confirmed"
+            or corrected_alert.get("sla_performance_excluded") is not True
+            or corrected_alert.get("administratively_corrected") is not True
+            or corrected_alert.get("correction_incident_id") != INCIDENT_ID
+            or alert_correction.get("status") != "corrected_false_sla_breach"
+            or alert_correction.get("correction_cycle_id") != CORRECTION_CYCLE_ID
+            or alert_correction.get("provider_delivery_receipt_confirmed") is not False
+            or alert_correction.get("resend") is not False):
+        raise RepairSafetyError("the false SLA alert does not retain its provider evidence and correction audit")
+    event_meta = event.get("meta") or {}
+    if (event_meta.get("corrected_false_sla_alert_id") != MARIA_BREACH_ALERT_ID
+            or event_meta.get("corrected_false_sla_alert_provider_message_id") != MARIA_BREACH_ALERT_PROVIDER_ID
+            or event_meta.get("provider_acceptance_confirmed") is not True
+            or event_meta.get("provider_delivery_receipt_confirmed") is not False
+            or event_meta.get("false_sla_alert_resent") is not False):
+        raise RepairSafetyError("the incident audit does not document the corrected false SLA alert")
+    _validate_reviewed_sla_alerts([{
+        **corrected_alert,
+        "administrative_correction": None,
+        "administratively_corrected": None,
+        "sla_performance_excluded": None,
+        "correction_incident_id": None,
+    }])
+    related_alerts = _find_many(db, "crm_sla_alerts_v1", {
+        "assignment_cycle_id": {"$in": [HERNAN_CYCLE_ID, MARIA_CYCLE_ID, CORRECTION_CYCLE_ID]},
+    }, session=session)
+    if len(related_alerts) != 1 or str(related_alerts[0].get("_id")) != MARIA_BREACH_ALERT_ID:
+        raise RepairSafetyError("an unexpected SLA alert appeared on the reviewed or administrative cycles")
     cycles = _find_many(db, "crm_assignment_cycles", {"lead_id": ObjectId(LEAD_OID)}, session=session)
     active = [row for row in cycles if _is_active(row)]
     if (len(active) != 1 or active[0].get("assignment_cycle_id") != CORRECTION_CYCLE_ID
@@ -544,6 +662,12 @@ def _audit_event(lead: Mapping[str, Any], hernan: Mapping[str, Any], maria: Mapp
             "preserved_management_record_ids": sorted(MANAGEMENT_RECORDS),
             "visit_preference_evidence_event_id": VISIT_ACCEPTANCE_EVENT_ID,
             "visit_preference_only_no_appointment_confirmed": True,
+            "corrected_false_sla_alert_id": MARIA_BREACH_ALERT_ID,
+            "corrected_false_sla_alert_provider_message_id": MARIA_BREACH_ALERT_PROVIDER_ID,
+            "provider_acceptance_confirmed": True,
+            "provider_delivery_receipt_confirmed": False,
+            "false_sla_penalty_excluded": True,
+            "false_sla_alert_resent": False,
             "customer_message_sent": False,
         },
     }
@@ -560,9 +684,7 @@ def apply_transaction(client: MongoClient, db: Any, backup: Mapping[str, Any], m
         if current_manifest != manifest.get("snapshot"):
             raise RepairSafetyError("live state changed after dry-run; refresh the preflight and review again")
         lead, hernan, maria = _validate_backup_scenario(backup, snapshot)
-        if any(row.get("delivery_started_at") is not None or row.get("state") in {"sending", "sent", "delivery_unknown"}
-               for row in snapshot["sla_alerts"]):
-            raise RepairSafetyError("an SLA alert delivery for María's cycle has started; manual reconciliation is required")
+        _validate_reviewed_sla_alerts(snapshot["sla_alerts"])
 
         correction = _build_correction_cycle(lead, hernan, maria, actor=actor, now=now)
         segments = _corrected_sla_segments(hernan)
@@ -619,6 +741,14 @@ def apply_transaction(client: MongoClient, db: Any, backup: Mapping[str, Any], m
                 session=session,
             )
             _require_one(alert_result, "pending SLA alert")
+
+        sent_false_breach_alert = _validate_reviewed_sla_alerts(snapshot["sla_alerts"])
+        correction_result = db["crm_sla_alerts_v1"].update_one(
+            _sla_alert_concurrency_filter(sent_false_breach_alert),
+            {"$set": _sla_alert_correction_fields(sent_false_breach_alert, actor=actor, now=now)},
+            session=session,
+        )
+        _require_one(correction_result, "provider-accepted false SLA alert correction marker")
 
         lead_selector = {
             "_id": lead["_id"],
@@ -702,6 +832,7 @@ def verify_postcommit(db: Any, backup: Mapping[str, Any]) -> dict[str, Any]:
     cycles = list(db["crm_assignment_cycles"].find({"lead_id": ObjectId(LEAD_OID)}))
     results = list(db["crm_management_results"].find({"lead_id": ObjectId(LEAD_OID)}))
     event = db["crm_events"].find_one({"_id": CORRECTION_EVENT_ID})
+    false_alert = db["crm_sla_alerts_v1"].find_one({"_id": MARIA_BREACH_ALERT_ID})
     active = [row for row in cycles if _is_active(row)]
     maria = next(row for row in cycles if row.get("assignment_cycle_id") == MARIA_CYCLE_ID)
     corrected = next(row for row in cycles if row.get("assignment_cycle_id") == CORRECTION_CYCLE_ID)
@@ -729,6 +860,11 @@ def verify_postcommit(db: Any, backup: Mapping[str, Any]) -> dict[str, Any]:
         "sla_status": lead.get("sla_status"),
         "sla_started_at": _utc(active[0].get("sla_started_at")).isoformat() if _utc(active[0].get("sla_started_at")) else None,
         "correction_cycle_excluded_from_performance": corrected.get("sla_performance_excluded") is True,
+        "maria_false_sla_alert_state_preserved": false_alert.get("state") if false_alert else None,
+        "maria_false_sla_alert_provider_message_id": false_alert.get("provider_message_id") if false_alert else None,
+        "maria_false_sla_alert_performance_excluded": bool(false_alert and false_alert.get("sla_performance_excluded") is True),
+        "maria_false_sla_alert_delivery_receipt_confirmed": ((false_alert.get("administrative_correction") or {}).get("provider_delivery_receipt_confirmed") if false_alert else None),
+        "maria_false_sla_alert_resent": ((false_alert.get("administrative_correction") or {}).get("resend") if false_alert else None),
         "visit_appointment_created": False,
         "customer_message_sent": False,
     }
@@ -809,9 +945,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             snapshot = collect_snapshot(db, backup)
             _validate_backup_scenario(backup, snapshot)
-            if any(row.get("delivery_started_at") is not None or row.get("state") in {"sending", "sent", "delivery_unknown"}
-                   for row in snapshot["sla_alerts"]):
-                raise RepairSafetyError("an SLA alert delivery has started; manual reconciliation is required")
+            _validate_reviewed_sla_alerts(snapshot["sla_alerts"])
             output = args.preflight_out or backup_path.with_name("procasa-p0-6732-live-preflight.json")
             manifest = {
                 "format": "procasa-p0-6732-live-preflight-v1",
@@ -831,7 +965,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"PREFLIGHT: {output}")
             print(f"BACKUP_SHA256: {backup_sha256}")
             print(f"PRESERVED_EFFECTIVE_CONTACTS: {len(MANAGEMENT_RECORDS)}")
-            print("SLA_ACTION: retain original start and completed status; no new SLA breach")
+            print("SLA_ACTION: retain original start and completed status; exclude the reviewed false Maria-cycle breach")
+            print("SLA_ALERT: provider acceptance is confirmed; no delivery receipt is recorded; preserve history and do not resend")
             print("CUSTOMER_MESSAGES: none will be sent")
             return 0
 

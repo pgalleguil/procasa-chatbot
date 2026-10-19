@@ -13,6 +13,7 @@ from chatbot.crm_assignment_integrity import (
     assignment_context,
     prepare_pending_assignment_notification,
     reconcile_assignment_integrity,
+    reconcile_assignment_integrity_with_retries,
 )
 from chatbot.crm_service import CrmService
 from chatbot.processing_service import LeadProcessingService
@@ -151,6 +152,101 @@ def test_exact_giselle_6732_incident_replay_preserves_hernan_after_prop360_event
         "assignment_cycle_id": first["assignment_cycle_id"],
         "result_type": "EFFECTIVE_CONTACT", "status": "completed",
     }) == 2
+
+
+def test_same_phone_property_executive_managed_then_prop360_preserves_cycle_and_sla():
+    db = mongomock.MongoClient().incident
+    lead_id = ObjectId("6ad6066de66c461dd69d696d")
+    assigned_at = datetime(2026, 10, 19, 12, 0, 43, 396000, tzinfo=timezone.utc)
+    managed_at = datetime(2026, 10, 19, 12, 20, 26, 254000, tzinfo=timezone.utc)
+    lead = {
+        "_id": lead_id,
+        "phone": "+56973707048",
+        "ejecutivo_asignado": "Mariela Arriagada",
+        "prospecto": {"codigo": "17252", "ejecutivo": "Mariela Arriagada", "link_detectado": True},
+        "lifecycle": {},
+    }
+    db["leads"].insert_one(lead.copy())
+    original = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id="6989c6309dd2ba54e478196c",
+        assigned_to_display_name="Mariela Arriagada", assigned_by="prop360_extractor",
+        reason="lead_created", property_code="17252", assigned_at=assigned_at,
+        source_system="prop360", source_event_id="12244",
+    )
+    db["crm_management_results"].insert_one({
+        "_id": "crm_management:17252-valid-effective-contact",
+        "lead_id": lead_id,
+        "assignment_cycle_id": original["assignment_cycle_id"],
+        "actor_user_id": "6989c6309dd2ba54e478196c",
+        "result_type": "EFFECTIVE_CONTACT",
+        "status": "completed",
+        "occurred_at": managed_at,
+    })
+    db["crm_assignment_cycles"].update_one(
+        {"assignment_cycle_id": original["assignment_cycle_id"]},
+        {"$set": {
+            "first_valid_management_at": managed_at,
+            "first_effective_contact_at": managed_at,
+            "sla_first_management_status": "completed",
+            "last_management_result": "EFFECTIVE_CONTACT",
+        }},
+    )
+    db["leads"].update_one(
+        {"_id": lead_id},
+        {"$set": {
+            "lifecycle.current_assignment_cycle_id": original["assignment_cycle_id"],
+            "lifecycle.assignment_cycle_id": original["assignment_cycle_id"],
+            "lifecycle.assigned_to_user_id": "6989c6309dd2ba54e478196c",
+            "lifecycle.sla_started_at": original["sla_started_at"],
+            "lifecycle.first_valid_management_at": managed_at,
+            "sla_status": "fulfilled",
+        }},
+    )
+
+    repeated = crm_metrics.create_assignment_cycle(
+        db, lead=lead, assigned_to_user_id="6989c6309dd2ba54e478196c",
+        assigned_to_display_name="Mariela Arriagada", assigned_by="prop360_extractor",
+        reason="lead_created", property_code="17252",
+        assigned_at=datetime(2026, 10, 19, 16, 0, 4, 891000, tzinfo=timezone.utc),
+        source_system="prop360", source_event_id="12276", force_new=True,
+    )
+
+    persisted = db["crm_assignment_cycles"].find_one({"assignment_cycle_id": original["assignment_cycle_id"]})
+    assert repeated["assignment_cycle_id"] == original["assignment_cycle_id"]
+    assert db["crm_assignment_cycles"].count_documents({"lead_id": lead_id}) == 1
+    assert persisted["cycle_status"] == "active" and persisted["unassigned_at"] is None
+    assert persisted["assigned_to_user_id"] == "6989c6309dd2ba54e478196c"
+    assert crm_metrics.coerce_utc_datetime(persisted["sla_started_at"]) == crm_metrics.coerce_utc_datetime(original["sla_started_at"])
+    assert crm_metrics.coerce_utc_datetime(persisted["first_valid_management_at"]) == managed_at
+    assert persisted["sla_first_management_status"] == "completed"
+    assert db["crm_management_results"].count_documents({
+        "assignment_cycle_id": original["assignment_cycle_id"],
+        "result_type": "EFFECTIVE_CONTACT", "status": "completed",
+    }) == 1
+
+
+def test_assignment_integrity_reconciler_retries_transient_network_timeout(monkeypatch):
+    from pymongo.errors import NetworkTimeout
+    import chatbot.crm_assignment_integrity as integrity
+
+    calls = []
+    sleeps = []
+
+    def fail_once(_db, **kwargs):
+        calls.append(kwargs.get("detection_run_id"))
+        if len(calls) == 1:
+            raise NetworkTimeout("temporary socket timeout")
+        return {"status": "completed", "findings": 0}
+
+    monkeypatch.setattr(integrity, "reconcile_assignment_integrity", fail_once)
+    report = reconcile_assignment_integrity_with_retries(
+        object(), max_attempts=3, base_delay_seconds=1, max_delay_seconds=5,
+        sleep=sleeps.append,
+    )
+    assert report["status"] == "completed"
+    assert report["attempts"] == 2
+    assert len(calls) == 2 and calls[0] == calls[1]
+    assert sleeps == [1]
 
 
 def test_new_cycle_cannot_replace_an_existing_owner_mirror_without_transfer():

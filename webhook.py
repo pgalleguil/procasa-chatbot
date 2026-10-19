@@ -1343,26 +1343,35 @@ async def lifespan(app: FastAPI):
 
     async def _assignment_integrity_reconciliation_runner():
         entry = background_tasks_status["crm_assignment_integrity_reconciliation"]
+        consecutive_failures = 0
         while True:
             entry["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            delay_seconds = 900
             try:
                 from chatbot.storage import get_db
-                from chatbot.crm_assignment_integrity import reconcile_assignment_integrity
+                from chatbot.crm_assignment_integrity import reconcile_assignment_integrity_with_retries
                 report = await asyncio.to_thread(
-                    lambda: reconcile_assignment_integrity(
+                    lambda: reconcile_assignment_integrity_with_retries(
                         get_db(), lookback_days=30, limit=10000, persist_alerts=True,
+                        max_attempts=3, base_delay_seconds=1, max_delay_seconds=5,
                     )
                 )
+                consecutive_failures = 0
                 entry.update({"status": "running", "last_report": {
                     "cycles_scanned": report.get("cycles_scanned"),
                     "leads_checked": report.get("leads_checked"),
                     "findings": report.get("findings"),
                     "alerts_upserted": report.get("alerts_upserted"),
+                    "attempts": report.get("attempts", 1),
                 }})
             except Exception as exc:
-                entry.update({"status": f"error: {type(exc).__name__}", "last_error": str(exc)})
+                consecutive_failures += 1
+                delay_seconds = min(30 * (2 ** min(consecutive_failures - 1, 4)), 300)
+                entry.update({"status": f"error: {type(exc).__name__}", "last_error": str(exc),
+                              "consecutive_failures": consecutive_failures,
+                              "retry_in_seconds": delay_seconds})
                 logger.exception("[CRM_ASSIGNMENT_INTEGRITY] reconciliation failed")
-            await asyncio.sleep(900)
+            await asyncio.sleep(delay_seconds)
 
     assignment_integrity_task = asyncio.create_task(_assignment_integrity_reconciliation_runner())
 

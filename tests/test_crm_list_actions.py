@@ -18,7 +18,7 @@ from chatbot.crm_service import CrmService
 from chatbot.storage import COLLECTION_CONVERSATIONS
 
 
-def _render_list(*, administrative: bool) -> str:
+def _render_list(*, administrative: bool, gestionado=False, visit_follow_up_status=None, visit_follow_up_preference=None) -> str:
     request = SimpleNamespace(query_params={"temperatura": "HOT"})
     kpis = SimpleNamespace(
         total=1,
@@ -59,12 +59,15 @@ def _render_list(*, administrative: bool) -> str:
         whatsapp_display="+56 9 1111 1111",
         codigo_propiedad="1234",
         url_propiedad="https://www.procasa.cl/1234",
-        estado_badge="Sin Atender",
+        estado_badge="En gestión" if gestionado else "Sin Atender",
         ultima_accion_titulo="Sin gestión registrada",
         tiempo_relativo="Ahora",
         ultima_accion_nota="",
         ejecutivo_nombre="Mariela Arriagada",
         fecha_asignacion_relativa="Hoy",
+        gestionado=gestionado,
+        visit_follow_up_status=visit_follow_up_status,
+        visit_follow_up_preference=visit_follow_up_preference,
     )
     return Environment(loader=FileSystemLoader("templates"), autoescape=True).get_template(
         "crm_leads_list.html"
@@ -125,6 +128,55 @@ def test_regular_executive_has_no_three_dot_menu_or_list_mutations():
     assert "Cambiar estado" not in rendered
     assert 'tabindex="0" role="link"' in rendered
     assert 'href="tel:56911111111"' in rendered
+
+
+def test_visit_request_follow_up_is_visible_separately_from_first_management():
+    rendered = _render_list(
+        administrative=False,
+        gestionado=True,
+        visit_follow_up_status="pending",
+        visit_follow_up_preference="Lunes a viernes, 14:00–16:00",
+    )
+    assert "Primera gestión: Cumplida" in rendered
+    assert "Solicitud de visita: Pendiente de coordinación" in rendered
+    assert 'class="management-main">En gestión</div>' in rendered
+    assert "Lunes a viernes, 14:00–16:00" in rendered
+
+
+def test_crm_list_accepts_only_a_well_formed_administrative_compensation_cycle():
+    from api_crm import _is_valid_administrative_cycle
+    from bson import ObjectId
+
+    lead_id = ObjectId("6ad613470035d45d0f87595b")
+    correction_id = f"PROC_2026_10_P0_6732:{lead_id}"
+    cycle_id = f"admin-correction:{correction_id}:v1"
+    lead = {
+        "_id": lead_id,
+        "ejecutivo_asignado": "Hernán Castro",
+        "prospecto": {"ejecutivo": "Hernán Castro"},
+        "lifecycle": {
+            "current_assignment_cycle_id": cycle_id,
+            "assignment_cycle_id": cycle_id,
+            "assigned_to_user_id": "6a681413140190dde11f26d1",
+        },
+    }
+    cycle = {
+        "lead_id": lead_id,
+        "assignment_cycle_id": cycle_id,
+        "administrative_correction_id": correction_id,
+        "assigned_to_user_id": "6a681413140190dde11f26d1",
+        "assigned_to_display_name": "Hernán Castro",
+        "cycle_status": "active",
+        "unassigned_at": None,
+        "schema_version": "crm_assignment_cycle_v1",
+        "reason": "crm_list_admin",
+        "cycle_origin": "administrative_correction",
+    }
+
+    assert _is_valid_administrative_cycle(cycle, lead)
+    assert not _is_valid_administrative_cycle(
+        {**cycle, "administrative_correction_id": "untrusted"}, lead
+    )
 
 
 def test_administrator_menu_is_absent_until_a_complete_action_set_is_available():
@@ -191,7 +243,11 @@ def test_crm_route_and_lead_list_signature_stay_compatible():
         arg.arg for arg in (*api_function.args.posonlyargs, *api_function.args.args,
                             *api_function.args.kwonlyargs)
     }
-    assert "user_id" not in api_parameters
+    # The route passes the authenticated user id so the list can include
+    # administrative cycles assigned by/for that exact account. Keep the
+    # runtime contract explicit: every keyword supplied by the route must be
+    # accepted by the API function.
+    assert "user_id" in api_parameters
 
     render_function = next(
         node for node in webhook_tree.body
@@ -207,7 +263,7 @@ def test_crm_route_and_lead_list_signature_stay_compatible():
     assert len(list_calls) == 1
     call_keywords = {keyword.arg for keyword in list_calls[0].keywords if keyword.arg}
     assert call_keywords <= api_parameters
-    assert {"user_role", "user_name", "ejecutivo_filter", "temperatura_filter"} <= call_keywords
+    assert {"user_role", "user_name", "user_id", "ejecutivo_filter", "temperatura_filter"} <= call_keywords
 
     # Keep this assertion tied to the runtime function, not only duplicated
     # source text, so a signature drift is caught before /crm is deployed.

@@ -372,9 +372,12 @@ def _is_valid_administrative_cycle(cycle, lead, *, expected_owner_user_id=None):
         return False
     if cycle.get("schema_version") != "crm_assignment_cycle_v1":
         return False
-    if cycle.get("reason") not in {"inbound_message", "lead_created", "manual_lead_created"}:
+    # Legacy administrative corrections preserve their original creation
+    # reason/origin. The explicit correction ID and canonical cycle ID below
+    # distinguish them from ordinary assignment cycles.
+    if cycle.get("reason") not in {"inbound_message", "lead_created", "manual_lead_created", "crm_list_admin"}:
         return False
-    if cycle.get("cycle_origin") not in {"inbound_message", "manual_lead"}:
+    if cycle.get("cycle_origin") not in {"inbound_message", "manual_lead", "administrative_correction"}:
         return False
     lead_id = str(lead.get("_id") or "")
     if not lead_id or str(cycle.get("lead_id") or "") != lead_id:
@@ -462,8 +465,8 @@ def _canonical_active_cycle_lookup_stage():
                         "cycle_status": "active",
                         "unassigned_at": None,
                         "schema_version": "crm_assignment_cycle_v1",
-                        "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
-                        "cycle_origin": {"$in": ["inbound_message", "manual_lead"]},
+                        "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created", "crm_list_admin"]},
+                        "cycle_origin": {"$in": ["inbound_message", "manual_lead", "administrative_correction"]},
                     },
                     {"$or": [
                         {"notification_eligible": True},
@@ -561,8 +564,8 @@ async def _get_administrative_cycle_lead_ids(
             "$regex": r"^[A-Z0-9_]+:[0-9a-fA-F]{24}$",
         },
         "assignment_cycle_id": {"$regex": r"^admin-correction:.+:v[1-9][0-9]*$"},
-        "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
-        "cycle_origin": {"$in": ["inbound_message", "manual_lead"]},
+        "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created", "crm_list_admin"]},
+        "cycle_origin": {"$in": ["inbound_message", "manual_lead", "administrative_correction"]},
     }
     cycle_query.update(owner_query)
     cycles = await db["crm_assignment_cycles"].find(cycle_query, {
@@ -1026,6 +1029,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         "prospecto.codigo": 1,
         "prospecto.codigo_yapo": 1,
         "prospecto.codigo_mercadolibre": 1,
+        "prospecto.visit_preference": 1,
+        "prospecto.visit_follow_up": 1,
+        "visit_follow_up_status": 1,
         "prospecto.ultimo_mensaje": 1,
         "pipeline_stage": 1,
         "stage": 1,
@@ -1907,6 +1913,12 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             else:
                 age_label = f"Asignado {assigned_age}"
 
+        prospect = lead.get("prospecto") or {}
+        visit_follow_up = prospect.get("visit_follow_up") or {}
+        visit_preference = prospect.get("visit_preference") or {}
+        visit_follow_up_status = lead.get("visit_follow_up_status") or visit_follow_up.get("status")
+        visit_follow_up_preference = visit_follow_up.get("availability") or visit_preference.get("text")
+
         leads_procesados.append({
             "phone": raw_phone,
             "lead_id": str(lead.get("_id") or ""),
@@ -1944,6 +1956,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "ultima_accion_titulo": last_action_text,
             "ultima_accion_note": last_action_note,
             "ultima_accion_nota": last_action_note,
+            "visit_follow_up_status": visit_follow_up_status,
+            "visit_follow_up_preference": visit_follow_up_preference,
             "ejecutivo_nombre": ejecutivo or UNASSIGNED_LABEL,
             "fecha_asignacion_relativa": _after_hours_label(
                 lifecycle_ts or lead.get("fecha_asignacion"),

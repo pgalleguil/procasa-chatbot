@@ -93,6 +93,51 @@ def test_17252_preserves_later_effective_contact_without_recounting_first_sla():
         repair._validated_management_history([source], {"first_valid_management_at": source["occurred_at"]}, duplicate_cycle)
 
 
+def _duplicate_sla_alert(**overrides):
+    row = {
+        "_id": repair.DUPLICATE_SLA_ALERT_ID,
+        "assignment_cycle_id": repair.DUPLICATE_CYCLE_ID,
+        "recipient_user_id": repair.MARIELA_USER_ID,
+        "message_domain": "crm_sla_alert",
+        "state": "sent",
+        "delivery_outcome": "confirmed",
+        "outreach_state": "whatsapp_opened",
+        "attempt_count": 1,
+        "provider_message_id": "provider-alert-1",
+        "created_at": datetime(2026, 10, 19, 18, 29, 53, tzinfo=timezone.utc),
+        "sent_at": datetime(2026, 10, 19, 18, 30, 57, tzinfo=timezone.utc),
+    }
+    row.update(overrides)
+    return row
+
+
+def test_17252_preserves_but_excludes_the_confirmed_duplicate_cycle_sla_warning():
+    row = _duplicate_sla_alert()
+
+    assert repair._validated_duplicate_sla_alerts([row]) == [row]
+    assert row["state"] == "sent"
+    assert row["delivery_outcome"] == "confirmed"
+
+
+@pytest.mark.parametrize("overrides", [
+    {"state": "pending"},
+    {"delivery_outcome": "unknown"},
+    {"outreach_state": "none"},
+    {"assignment_cycle_id": repair.ORIGINAL_CYCLE_ID},
+    {"recipient_user_id": "someone-else"},
+])
+def test_17252_aborts_on_any_unreviewed_or_unsent_sla_alert(overrides):
+    with pytest.raises(repair.RepairSafetyError, match="SLA alert history differs"):
+        repair._validated_duplicate_sla_alerts([_duplicate_sla_alert(**overrides)])
+
+
+def test_17252_aborts_if_an_extra_sla_alert_exists():
+    with pytest.raises(repair.RepairSafetyError, match="SLA alert history differs"):
+        repair._validated_duplicate_sla_alerts([
+            _duplicate_sla_alert(), _duplicate_sla_alert(_id="unreviewed-alert"),
+        ])
+
+
 @pytest.mark.parametrize("issue_code", [
     "chatbot_customer_message_assignment_conflict",
     "commercial_intake_blocked_by_assignment_conflict",

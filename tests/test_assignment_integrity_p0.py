@@ -22,6 +22,7 @@ from chatbot.conversation_policy import (
 )
 from chatbot.ingest_service import LeadEvent
 from scraping_convecta.extractor_prop360 import Prop360Extractor
+from scripts.run_phase05_crm_reassignment_audit import current_policy_active, enrich_records
 
 
 def _lead(db, lead_id="lead-p0", **extra):
@@ -412,3 +413,34 @@ def test_pending_notice_assigns_unowned_lead_before_it_can_be_sent(monkeypatch):
     assert db["crm_assignment_cycles"].count_documents({
         "lead_id": lead["_id"], "cycle_status": "active",
     }) == 1
+
+
+def test_system_misassignment_cycle_is_excluded_from_sla_performance():
+    from datetime import timedelta
+
+    now = datetime(2026, 10, 19, 14, tzinfo=timezone.utc)
+    lead = {
+        "_id": "lead-p0", "phone": "56911112222", "stage": "OPEN",
+        "ejecutivo_asignado": "María Paz Galleguillos",
+        "prospecto": {"codigo": "6732", "ejecutivo": "María Paz Galleguillos"},
+        "lifecycle": {"current_assignment_cycle_id": "cycle-maria"},
+    }
+    cycle = {
+        "lead_id": lead["_id"], "assignment_cycle_id": "cycle-maria",
+        "assigned_to_user_id": "maria", "assigned_to_display_name": "María Paz Galleguillos",
+        "assigned_at": now - timedelta(hours=2), "sla_started_at": now - timedelta(hours=2),
+        "temperature_at_assignment": "NORMAL", "cycle_status": "active", "unassigned_at": None,
+        "schema_version": "crm_assignment_cycle_v1", "reason": "lead_created",
+        "cycle_origin": "inbound_message", "sla_performance_excluded": True,
+    }
+    data = {
+        "as_of": now, "leads": [lead], "cycles": [cycle], "events": [],
+        "management_results": [], "notifications": [], "properties": {},
+        "users": [{"_id": "maria", "nombre": "María Paz Galleguillos", "rol": "agente", "is_active": True}],
+    }
+
+    records = enrich_records(data)
+
+    assert records[0]["excluded_origin"] is True
+    assert records[0]["is_current_policy_active"] is False
+    assert current_policy_active(records) == []

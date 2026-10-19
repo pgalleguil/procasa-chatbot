@@ -381,7 +381,7 @@ async def build_historical_performance_snapshot(
         "temperature_at_assignment": 1, "temperature_on_assignment": 1,
         "hot_started_at": 1, "temperature_transitioned_at": 1, "cycle_status": 1,
         "unassigned_at": 1, "schema_version": 1, "reason": 1, "cycle_origin": 1,
-        "reassignment_state": 1,
+        "reassignment_state": 1, "sla_performance_excluded": 1,
         "first_valid_management_at": 1, "updated_at": 1,
     }
     cycles = await _find_many(
@@ -389,6 +389,7 @@ async def build_historical_performance_snapshot(
         {"assigned_at": {"$gte": window_start, "$lte": as_of}, "assignment_cycle_id": {"$exists": True, "$ne": None}, "lead_id": {"$exists": True, "$ne": None}, "reassignment_state": {"$nin": ["AWAITING_OWNER_NOTIFICATION", "awaiting_owner_notification"]}},
         cycle_projection, instrumentation=instrumentation, query_name="historical.cycles",
     )
+    cycles = [cycle for cycle in cycles if cycle.get("sla_performance_excluded") is not True]
     lead_ids = []
     for row in cycles:
         for lead_key in mongo_id_variants(row.get("lead_id")):
@@ -534,6 +535,7 @@ async def build_live_capacity_snapshot(
         ],
     }
     cycles = await _find_many(db["crm_assignment_cycles"], query, cycle_projection, instrumentation=instrumentation, query_name="live.cycles")
+    cycles = [cycle for cycle in cycles if cycle.get("sla_performance_excluded") is not True]
     # current_policy_active() retains only the latest active cycle per lead.
     # Do the same in memory after the single set read; this is not an extra DB
     # call and prevents duplicate active cycles from inflating capacity.

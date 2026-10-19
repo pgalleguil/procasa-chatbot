@@ -84,6 +84,14 @@ def _utc(value: Any) -> datetime | None:
     return None
 
 
+def _bson_millisecond_datetime(value: Any) -> datetime | None:
+    """Normalize a timestamp to BSON Date's millisecond storage precision."""
+    parsed = _utc(value)
+    if parsed is None:
+        return None
+    return parsed.replace(microsecond=(parsed.microsecond // 1000) * 1000)
+
+
 def _canonical(value: Any) -> str:
     return json_util.dumps(
         value, json_options=json_util.CANONICAL_JSON_OPTIONS,
@@ -581,7 +589,8 @@ def _verify_applied(
         ),
         "hot_transition_preserved": bool(
             _utc(lifecycle.get("hot_since")) == HOT_SINCE_AT
-            and _utc(lifecycle.get("temperature_transitioned_at")) == HOT_SINCE_AT
+            and _utc(lifecycle.get("temperature_transitioned_at"))
+            == _bson_millisecond_datetime(HOT_SINCE_AT)
         ),
         "lead_sla_fulfilled": bool(lead.get("sla_status") == "fulfilled"),
         "duplicate_sla_warning_preserved_and_excluded": bool(
@@ -638,10 +647,10 @@ def _verify_applied(
     if (len(sla_segments) != 2
             or sla_segments[0].get("policy") != "NON_HOT"
             or _utc(sla_segments[0].get("segment_start")) != _utc(original.get("sla_started_at"))
-            or _utc(sla_segments[0].get("segment_end")) != HOT_SINCE_AT
+            or _utc(sla_segments[0].get("segment_end")) != _bson_millisecond_datetime(HOT_SINCE_AT)
             or sla_segments[0].get("end_reason") != "intent_hot"
             or sla_segments[1].get("policy") != "HOT"
-            or _utc(sla_segments[1].get("segment_start")) != HOT_SINCE_AT
+            or _utc(sla_segments[1].get("segment_start")) != _bson_millisecond_datetime(HOT_SINCE_AT)
             or sla_segments[1].get("segment_end") is not None):
         if diagnostic:
             raise RepairSafetyError(
@@ -855,7 +864,10 @@ def _apply(client: MongoClient, db: Any, backup: Mapping[str, Any], manifest: Ma
                 "lifecycle.first_valid_management_at": original.get("first_valid_management_at"),
                 "lifecycle.first_valid_management_actor": original.get("first_valid_management_actor"),
                 "lifecycle.sla_first_management_status": "completed",
-                "lifecycle.hot_since": hot_at,
+                # Keep the original string timestamp at microsecond precision.
+                # BSON Date truncates to milliseconds, so only the newly set
+                # transition/SLA segment fields use Mongo's stored precision.
+                "lifecycle.hot_since": lead["lifecycle"]["hot_since"],
                 "lifecycle.temperature_transitioned_at": hot_at,
                 "ejecutivo_asignado": MARIELA_NAME,
                 "prospecto.ejecutivo": MARIELA_NAME,

@@ -34,6 +34,8 @@ MARIELA_USER_ID = "6989c6309dd2ba54e478196c"
 MARIELA_NAME = "Mariela Arriagada"
 PROP360_EVENT_ID = "12276"
 VALID_MANAGEMENT_ID = "crm_management:c7ad4a4b-9968-446e-a594-22162137a4ad"
+DUPLICATE_MANAGEMENT_ID = "crm_management:f68cdb05-0639-4a41-adcc-bf2feef230c6"
+DUPLICATE_MANAGEMENT_AT = datetime(2026, 10, 19, 18, 33, 44, 656_000, tzinfo=timezone.utc)
 VISIT_DAY_EVENT_ID = "6ad658265969a1a4f3907ed2"
 VISIT_HOURS_EVENT_ID = "6ad6582c5969a1a4f3907ed3"
 HOT_INTENT_EVENT_ID = "6ad6584d5969a1a4f3907eda"
@@ -266,8 +268,53 @@ def _id_set(rows: list[Mapping[str, Any]]) -> set[str]:
     return {str(row.get("_id")) for row in rows}
 
 
+def _validated_management_history(
+    rows: list[Mapping[str, Any]], original: Mapping[str, Any], duplicate: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    """Require both real human actions and keep the later one off first-SLA accounting."""
+    by_id = {str(row.get("_id")): row for row in rows}
+    if set(by_id) != {VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID}:
+        raise RepairSafetyError("management history changed; refusing to discard or reclassify a human action")
+    source = by_id[VALID_MANAGEMENT_ID]
+    follow_up = by_id[DUPLICATE_MANAGEMENT_ID]
+    if (source.get("assignment_cycle_id") != ORIGINAL_CYCLE_ID
+            or source.get("result_type") != "EFFECTIVE_CONTACT"
+            or source.get("actor_user_id") != MARIELA_USER_ID
+            or source.get("status") != "completed"
+            or _utc(source.get("occurred_at")) != _utc(original.get("first_valid_management_at"))):
+        raise RepairSafetyError("Mariela's original EFFECTIVE_CONTACT evidence changed")
+    if (follow_up.get("assignment_cycle_id") != DUPLICATE_CYCLE_ID
+            or follow_up.get("result_type") != "EFFECTIVE_CONTACT"
+            or follow_up.get("actor_user_id") != MARIELA_USER_ID
+            or follow_up.get("status") != "completed"
+            or _utc(follow_up.get("occurred_at")) != DUPLICATE_MANAGEMENT_AT
+            or _utc(duplicate.get("first_valid_management_at")) != DUPLICATE_MANAGEMENT_AT
+            or _utc(duplicate.get("first_effective_contact_at")) != DUPLICATE_MANAGEMENT_AT):
+        raise RepairSafetyError("the later human contact on the duplicate cycle changed")
+    return source, follow_up
+
+
+def _is_target_pointer_alert(row: Mapping[str, Any]) -> bool:
+    evidence = row.get("evidence") or {}
+    issues = evidence.get("issues") or []
+    linked_cycle_ids = {str(value) for value in (evidence.get("active_cycle_ids") or [])}
+    if evidence.get("cycle_id"):
+        linked_cycle_ids.add(str(evidence["cycle_id"]))
+    allowed_codes = {
+        "chatbot_customer_message_assignment_conflict",
+        "commercial_intake_blocked_by_assignment_conflict",
+        "canonical_cycle_mirror_inconsistency",
+    }
+    return bool(
+        row.get("issue_code") in allowed_codes
+        and "cycle_pointer_mismatch" in issues
+        and DUPLICATE_CYCLE_ID in linked_cycle_ids
+        and row.get("status") in {"open", "resolved"}
+    )
+
+
 def validate_scenario(backup: Mapping[str, Any], snapshot: Mapping[str, list[dict[str, Any]]]):
-    expected_counts = {"lead": 1, "cycles": 2, "management": 1}
+    expected_counts = {"lead": 1, "cycles": 2, "management": 2}
     for key, count in expected_counts.items():
         if len(_docs(backup, key)) != count or len(snapshot[key]) != count:
             raise RepairSafetyError(f"expected {count} backup/live {key} documents")
@@ -308,20 +355,11 @@ def validate_scenario(backup: Mapping[str, Any], snapshot: Mapping[str, list[dic
     if _utc(lifecycle.get("hot_since")) != HOT_SINCE_AT:
         raise RepairSafetyError("the lead's HOT transition no longer matches captured lifecycle evidence")
 
-    management = snapshot["management"]
-    if _id_set(management) != {VALID_MANAGEMENT_ID}:
-        raise RepairSafetyError("valid management result identity changed")
-    result = management[0]
-    if (result.get("assignment_cycle_id") != ORIGINAL_CYCLE_ID
-            or result.get("result_type") != "EFFECTIVE_CONTACT"
-            or result.get("actor_user_id") != MARIELA_USER_ID
-            or result.get("status") != "completed"
-            or _utc(result.get("occurred_at")) != _utc(original.get("first_valid_management_at"))):
-        raise RepairSafetyError("Mariela's original EFFECTIVE_CONTACT evidence changed")
+    result, duplicate_result = _validated_management_history(snapshot["management"], original, duplicate)
 
     events = snapshot["events"]
     expected_event_ids = _id_set(_docs(backup, "events"))
-    if _id_set(events) != expected_event_ids or len(events) != 18:
+    if _id_set(events) != expected_event_ids:
         raise RepairSafetyError("CRM event history changed after backup")
     by_id = {str(row.get("_id")): row for row in events}
     day_event = by_id.get(VISIT_DAY_EVENT_ID)
@@ -337,12 +375,8 @@ def validate_scenario(backup: Mapping[str, Any], snapshot: Mapping[str, list[dic
         raise RepairSafetyError("visit availability or HOT-intent evidence changed")
 
     alerts = snapshot["integrity_alerts"]
-    alert_ids = {"assignment-integrity:49e4aaa7296dce6ebbd29eb1",
-                 "assignment-integrity:e9b9e1705c57a16604b422f7"}
-    if _id_set(alerts) != alert_ids or any(row.get("status") != "open" for row in alerts):
-        raise RepairSafetyError("cycle-pointer alerts changed or are no longer open")
-    if any("cycle_pointer_mismatch" not in ((row.get("evidence") or {}).get("issues") or []) for row in alerts):
-        raise RepairSafetyError("the alert evidence no longer identifies cycle_pointer_mismatch")
+    if not alerts or any(not _is_target_pointer_alert(row) for row in alerts):
+        raise RepairSafetyError("an alert is outside the reviewed duplicate-cycle pointer conflict")
 
     for key in ("notifications", "pending_notifications", "ingest", "tasks", "visitas", "ordenes_visitas"):
         if _id_set(snapshot[key]) != _id_set(_docs(backup, key)):
@@ -352,8 +386,10 @@ def validate_scenario(backup: Mapping[str, Any], snapshot: Mapping[str, list[dic
     if provider_acceptance != backup_acceptance:
         raise RepairSafetyError("provider acceptance evidence changed after the pre-repair backup")
     management_at = _utc(result.get("occurred_at"))
+    duplicate_management_at = _utc(duplicate_result.get("occurred_at"))
     if (provider_acceptance["accepted_at"] < _utc(original.get("assigned_at"))
-            or not management_at or management_at < provider_acceptance["accepted_at"]):
+            or not management_at or management_at < provider_acceptance["accepted_at"]
+            or not duplicate_management_at or duplicate_management_at < HOT_SINCE_AT):
         raise RepairSafetyError("provider acceptance does not bound the original management evidence")
     if (snapshot["sla_alerts"] or snapshot["pending_notifications"] or snapshot["active_jobs"]
             or snapshot["visitas"] or snapshot["ordenes_visitas"]):
@@ -445,12 +481,17 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
     visit_follow_up = prospect.get("visit_follow_up") or {}
     visit_preference = prospect.get("visit_preference") or {}
     sla_segments = (original or {}).get("sla_segments") or []
-    resolved_alerts = [row for row in alerts if str(row.get("_id")) in {
-        "assignment-integrity:49e4aaa7296dce6ebbd29eb1",
-        "assignment-integrity:e9b9e1705c57a16604b422f7",
-    }]
+    audit_meta = (audit or {}).get("meta") or {}
+    expected_resolved_alert_ids = {str(value) for value in audit_meta.get("resolved_alert_ids") or []}
+    resolved_alerts = [row for row in alerts if str(row.get("_id")) in expected_resolved_alert_ids]
     active_conflicts = [row for row in alerts if row.get("status") == "open"
                         and "cycle_pointer_mismatch" in ((row.get("evidence") or {}).get("issues") or [])]
+    try:
+        original_management, duplicate_management = _validated_management_history(
+            management, original or {}, duplicate or {},
+        )
+    except RepairSafetyError:
+        return None
     restoration_history = (original or {}).get("administrative_state_history") or []
     complete_reversal_recorded = any(
         row.get("incident_id") == INCIDENT_ID
@@ -477,6 +518,7 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
             or duplicate.get("corrects_assignment_cycle_id") != ORIGINAL_CYCLE_ID
             or duplicate.get("sla_performance_excluded") is not True
             or duplicate.get("notification_eligible") is not False
+            or duplicate.get("sla_first_management_status") != "excluded_duplicate_cycle"
             or original.get("sla_first_management_status") != "completed"
             or original.get("temperature_evidence_event_id") != HOT_INTENT_EVENT_ID
             or _utc(lifecycle.get("sla_started_at")) != provider_acceptance["accepted_at"]
@@ -490,11 +532,10 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
             or _utc(lifecycle.get("hot_since")) != HOT_SINCE_AT
             or _utc(lifecycle.get("temperature_transitioned_at")) != HOT_SINCE_AT
             or lead.get("sla_status") != "fulfilled"
-            or _id_set(management) != {VALID_MANAGEMENT_ID}
-            or management[0].get("result_type") != "EFFECTIVE_CONTACT"
-            or management[0].get("actor_user_id") != MARIELA_USER_ID
-            or management[0].get("status") != "completed"
-            or _utc(management[0].get("occurred_at")) != _utc(original.get("first_valid_management_at"))
+            or _id_set(management) != {VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID}
+            or _id_set([original_management, duplicate_management]) != {VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID}
+            or _utc(duplicate_management.get("occurred_at")) != DUPLICATE_MANAGEMENT_AT
+            or _utc(duplicate.get("first_valid_management_at")) != DUPLICATE_MANAGEMENT_AT
             or visit_follow_up.get("status") != "pending"
             or visit_follow_up.get("type") != "VISIT_COORDINATION"
             or visit_follow_up.get("assignment_cycle_id") != ORIGINAL_CYCLE_ID
@@ -507,8 +548,12 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
             or visit_preference.get("text") != VISIT_AVAILABILITY
             or visit_preference.get("evidence_event_ids") != [VISIT_DAY_EVENT_ID, VISIT_HOURS_EVENT_ID]
             or active_conflicts
-            or any(row.get("status") != "resolved" for row in resolved_alerts)
-            or len(resolved_alerts) != 2 or len(cycles) != 2
+            or not expected_resolved_alert_ids
+            or _id_set(resolved_alerts) != expected_resolved_alert_ids
+            or any(row.get("status") != "resolved"
+                   or row.get("correction_incident_id") != INCIDENT_ID
+                   for row in resolved_alerts)
+            or len(cycles) != 2
             or visits or visit_orders or tasks or pending
             or audit.get("meta", {}).get("customer_message_sent") is not False
             or audit.get("meta", {}).get("appointment_created") is not False):
@@ -546,6 +591,9 @@ def _verify_applied(db: Any, session: Any = None) -> dict[str, Any] | None:
         "provider_message_id": provider_acceptance["provider_message_id"],
         "sla_status": lead.get("sla_status"),
         "effective_contact_count": len(management),
+        "original_effective_contact_at": _utc(original_management.get("occurred_at")).isoformat(),
+        "duplicate_cycle_effective_contact_preserved_at": _utc(duplicate_management.get("occurred_at")).isoformat(),
+        "duplicate_contact_excluded_from_first_sla": duplicate.get("sla_performance_excluded") is True,
         "visit_follow_up_status": visit_follow_up.get("status"),
         "visit_preference": visit_follow_up.get("availability"),
         "resolved_cycle_pointer_alerts": len(resolved_alerts),
@@ -622,6 +670,8 @@ def _apply(client: MongoClient, db: Any, backup: Mapping[str, Any], manifest: Ma
                 "corrects_assignment_cycle_id": ORIGINAL_CYCLE_ID,
                 "corrected_by": actor, "corrected_at": now,
                 "correction_reason": "same phone/property/executive; later Prop360 event duplicated an already managed cycle",
+                "preserved_management_result_ids": [VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID],
+                "duplicate_cycle_management_preserved_at": DUPLICATE_MANAGEMENT_AT,
                 "notification_eligible": False,
                 "sla_performance_excluded": True,
                 "sla_performance_exclusion_reason": "duplicate Prop360 cycle; first management belongs to original cycle",
@@ -662,6 +712,11 @@ def _apply(client: MongoClient, db: Any, backup: Mapping[str, Any], manifest: Ma
                     key: value for key, value in provider_acceptance.items() if key != "accepted_at"
                 } | {"accepted_at": original_start},
                 "first_management_preserved": original.get("first_valid_management_at"),
+                "duplicate_cycle_management_preserved": {
+                    "result_id": DUPLICATE_MANAGEMENT_ID,
+                    "occurred_at": DUPLICATE_MANAGEMENT_AT,
+                    "excluded_from_first_management_sla": True,
+                },
             }}, "$unset": {"closed_at": "", "closed_reason": ""}},
             session=session,
         )
@@ -743,7 +798,9 @@ def _apply(client: MongoClient, db: Any, backup: Mapping[str, Any], manifest: Ma
                 "original_cycle_id": ORIGINAL_CYCLE_ID,
                 "duplicate_cycle_id": DUPLICATE_CYCLE_ID,
                 "prop360_event_id": PROP360_EVENT_ID,
-                "preserved_management_result_id": VALID_MANAGEMENT_ID,
+                "preserved_management_result_ids": [VALID_MANAGEMENT_ID, DUPLICATE_MANAGEMENT_ID],
+                "duplicate_cycle_management_preserved_at": DUPLICATE_MANAGEMENT_AT,
+                "duplicate_cycle_management_excluded_from_first_sla": True,
                 "prior_sla_started_at": previous_sla_start,
                 "sla_started_at_corrected_to_provider_acceptance": original_start,
                 "provider_acceptance_evidence": {
@@ -754,10 +811,18 @@ def _apply(client: MongoClient, db: Any, backup: Mapping[str, Any], manifest: Ma
                 "appointment_created": False,
                 "customer_message_sent": False,
                 "automatic_whatsapp_sent": False,
+                "resolved_alert_ids": sorted(
+                    str(alert.get("_id")) for alert in snapshot["integrity_alerts"]
+                    if alert.get("status") == "open"
+                ),
             },
         }, session=session)
 
         for alert in snapshot["integrity_alerts"]:
+            if alert.get("status") != "open":
+                continue
+            if not _is_target_pointer_alert(alert):
+                raise RepairSafetyError("an active alert is outside the reviewed pointer conflict; transaction will abort")
             resolved = db["crm_assignment_integrity_alerts"].update_one(
                 {"_id": alert["_id"], "status": "open",
                  "issue_code": alert.get("issue_code"),

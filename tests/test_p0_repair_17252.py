@@ -53,3 +53,61 @@ def test_17252_sla_origin_uses_provider_acceptance_not_creation_or_delivery():
 def test_17252_provider_sla_origin_fails_closed_without_unique_acceptance(rows):
     with pytest.raises(repair.RepairSafetyError, match="refusing to infer an SLA start"):
         repair._provider_acceptance_evidence(rows)
+
+
+def test_17252_preserves_later_effective_contact_without_recounting_first_sla():
+    source = {
+        "_id": repair.VALID_MANAGEMENT_ID,
+        "assignment_cycle_id": repair.ORIGINAL_CYCLE_ID,
+        "actor_user_id": repair.MARIELA_USER_ID,
+        "result_type": "EFFECTIVE_CONTACT",
+        "status": "completed",
+        "occurred_at": datetime(2026, 10, 19, 12, 20, 26, 254000, tzinfo=timezone.utc),
+    }
+    duplicate_cycle = {
+        "assignment_cycle_id": repair.DUPLICATE_CYCLE_ID,
+        "first_valid_management_at": repair.DUPLICATE_MANAGEMENT_AT,
+        "first_effective_contact_at": repair.DUPLICATE_MANAGEMENT_AT,
+    }
+    duplicate_result = {
+        "_id": repair.DUPLICATE_MANAGEMENT_ID,
+        "assignment_cycle_id": repair.DUPLICATE_CYCLE_ID,
+        "actor_user_id": repair.MARIELA_USER_ID,
+        "result_type": "EFFECTIVE_CONTACT",
+        "status": "completed",
+        "occurred_at": repair.DUPLICATE_MANAGEMENT_AT,
+    }
+
+    original, follow_up = repair._validated_management_history(
+        [source, duplicate_result],
+        {"first_valid_management_at": source["occurred_at"]},
+        duplicate_cycle,
+    )
+
+    assert original["_id"] == repair.VALID_MANAGEMENT_ID
+    assert follow_up["_id"] == repair.DUPLICATE_MANAGEMENT_ID
+    assert original["assignment_cycle_id"] == repair.ORIGINAL_CYCLE_ID
+    assert follow_up["assignment_cycle_id"] == repair.DUPLICATE_CYCLE_ID
+    assert follow_up["occurred_at"] > repair.HOT_SINCE_AT
+    with pytest.raises(repair.RepairSafetyError, match="refusing to discard"):
+        repair._validated_management_history([source], {"first_valid_management_at": source["occurred_at"]}, duplicate_cycle)
+
+
+@pytest.mark.parametrize("issue_code", [
+    "chatbot_customer_message_assignment_conflict",
+    "commercial_intake_blocked_by_assignment_conflict",
+    "canonical_cycle_mirror_inconsistency",
+])
+def test_17252_resolves_only_pointer_alerts_for_the_duplicate_cycle(issue_code):
+    alert = {
+        "issue_code": issue_code,
+        "status": "open",
+        "evidence": {
+            "issues": ["cycle_pointer_mismatch"],
+            "active_cycle_ids": [repair.DUPLICATE_CYCLE_ID],
+        },
+    }
+    assert repair._is_target_pointer_alert(alert)
+    assert not repair._is_target_pointer_alert({
+        **alert, "evidence": {"issues": ["other_issue"], "active_cycle_ids": [repair.DUPLICATE_CYCLE_ID]},
+    })

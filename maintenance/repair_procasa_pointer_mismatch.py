@@ -15,6 +15,14 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping
 
+# A script launched as ``python maintenance/<name>.py`` puts only the
+# maintenance directory on sys.path[0]. The postcondition deliberately imports
+# the shipped owner resolver from ``chatbot``; make that repository package
+# importable without requiring an operator-specific PYTHONPATH setting.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
 from bson import ObjectId, json_util
 from pymongo import MongoClient, ReadPreference
 from pymongo.read_concern import ReadConcern

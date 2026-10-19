@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
+from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -124,3 +128,36 @@ def test_execution_requires_case_specific_confirmation():
             "--confirm-incident", case["confirmation"],
         ])
         assert args.execute is True
+
+
+def test_cli_bootstraps_repository_package_for_postcondition_owner_lookup():
+    script = Path(repair.__file__).resolve()
+    repo_root = script.parents[1]
+    isolated_import = """
+import importlib.util
+import sys
+from pathlib import Path
+
+script = Path(sys.argv[1]).resolve()
+repo_root = script.parents[1]
+sys.path[:] = [entry for entry in sys.path if Path(entry or '.').resolve() != repo_root]
+sys.path.insert(0, str(script.parent))
+spec = importlib.util.spec_from_file_location('repair_cli', script)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+from chatbot.crm_assignment_integrity import assignment_context
+assert callable(assignment_context)
+"""
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", isolated_import, str(script)],
+        cwd=repo_root / "maintenance",
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr

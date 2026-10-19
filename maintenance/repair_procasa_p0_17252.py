@@ -622,8 +622,8 @@ def _verify_applied(
         "two_cycles_retained": bool(len(cycles) == 2),
         "no_visit_or_outbound_side_effect": bool(not visits and not visit_orders and not tasks and not pending),
         "no_customer_message_or_appointment": bool(
-            audit.get("meta", {}).get("customer_message_sent") is False
-            and audit.get("meta", {}).get("appointment_created") is False
+            audit_meta.get("customer_message_sent") is False
+            and audit_meta.get("appointment_created") is False
         ),
     }
     failed_checks = [key for key, passed in checks.items() if not passed]

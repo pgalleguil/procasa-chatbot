@@ -441,6 +441,8 @@ def _cycle_projection() -> dict[str, int]:
         "cycle_status": 1, "unassigned_at": 1,
         "schema_version": 1, "sla_policy_version": 1, "policy_version": 1,
         "reason": 1, "cycle_origin": 1, "cycle_version": 1,
+        "sla_extension_minutes": 1, "sla_extensions": 1,
+        "administrative_assignment_mode": 1, "administrative_hold_until": 1,
         "property_code": 1,
         "first_valid_management_at": 1, "first_contact_attempt_at": 1,
         "reassignment_protection_at": 1,
@@ -2106,6 +2108,13 @@ async def run_sla_reassignment_worker_iteration(
                     result.review_skipped += 1
                     reason = owner_status if owner_status != "OWNER_OK" else "LEAD_CLOSED"
                     evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), "", False, reason, assignment_number=_assignment_number(cycle), decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
+                    continue
+                hold_until = _utc(cycle.get("administrative_hold_until"))
+                supervisor_lock = _text(cycle.get("administrative_assignment_mode")).upper() == "SUPERVISOR_LOCK"
+                if supervisor_lock or (hold_until is not None and hold_until > as_of):
+                    result.protected_skipped += 1
+                    hold_reason = "SUPERVISOR_LOCK" if supervisor_lock else "HOLD_UNTIL"
+                    evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), "", False, hold_reason, assignment_number=_assignment_number(cycle), decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
                     continue
                 if protection.protected:
                     result.protected_skipped += 1

@@ -628,6 +628,10 @@ def _revalidate(
     lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
     if str(lifecycle.get("current_assignment_cycle_id")) != cycle_id:
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_POINTER_MISMATCH, "lead_cycle_pointer_changed")
+    hold_until = coerce_utc_datetime(source.get("administrative_hold_until"))
+    supervisor_lock = str(source.get("administrative_assignment_mode") or "").upper() == "SUPERVISOR_LOCK"
+    if supervisor_lock or (hold_until is not None and hold_until > evaluated_at):
+        raise _KnownAbort(SLAReassignmentErrorCode.ABORT_SLA_NOT_EXPIRED, "supervisor_hold_active")
     source_policy = str(source.get("sla_policy_version") or "")
     if source_policy != "sla_visual_v1_20260723":
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_POLICY_VERSION_CHANGED, "source_policy_changed")

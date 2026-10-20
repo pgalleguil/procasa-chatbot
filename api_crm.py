@@ -1393,9 +1393,10 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                          "$regex": r"^admin-correction:.+:v[1-9][0-9]*$",
                      },
                  },
+                 {"administrative_assignment_id": {"$type": "string", "$ne": ""}},
              ],
-             "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created"]},
-             "cycle_origin": {"$in": ["inbound_message", "manual_lead"]}},
+             "reason": {"$in": ["inbound_message", "lead_created", "manual_lead_created", "admin_manual_reassignment"]},
+             "cycle_origin": {"$in": ["inbound_message", "manual_lead", "admin_reassignment"]}},
         ).sort([("assigned_at", -1)])
         cycle_docs = await cycles_cursor.to_list(length=len(page_lead_ids) + 1)
         page_leads_by_id = {str(row.get("_id")): row for row in leads_list}
@@ -1966,6 +1967,9 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
                 sla_pending=bool(current_cycle and current_cycle.get("sla_start_status") == "pending_notification"),
             ),
             "assignment_cycle_id": current_cycle_id,
+            "sla_extension_minutes": int((current_cycle or {}).get("sla_extension_minutes") or 0),
+            "sla_extension_reason": (current_cycle or {}).get("sla_extension_last_reason"),
+            "administrative_hold_until": (current_cycle or {}).get("administrative_hold_until"),
             "assigned_at": assigned_for_cycle,
             "sla_started_at": assigned_at,
             "sla_started_date": assigned_at.strftime("%d/%m/%Y") if assigned_at else None,

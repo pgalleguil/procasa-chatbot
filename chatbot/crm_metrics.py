@@ -725,14 +725,20 @@ def active_assignment_cycle(db, lead_id, *, session=None):
 def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
                   temperature=None, hot_started_at=None,
                   require_hot_start=True,
-                  first_management_completed=False) -> dict[str, Any]:
-    """Calculate SLA with differentiated thresholds for Lead vs Lead Hot.
+                  first_management_completed=False,
+                  extension_minutes=0) -> dict[str, Any]:
+    """Calculate the commercial SLA using its cycle extension, if any."""
+    try:
+        extension = int(extension_minutes or 0)
+    except (TypeError, ValueError):
+        extension = 0
+    extension = max(0, min(1440, extension))
+    is_hot = str(temperature or "").upper() == "HOT"
+    base_threshold = 60 if is_hot else 180
+    threshold = base_threshold + extension
+    warning_threshold = (30 if is_hot else 120) + extension
+    near_threshold = (45 if is_hot else 150) + extension
 
-    Lead thresholds:   0-119 good, 120-149 warning, 150-179 near_critical, 180+ critical
-    Lead Hot thresholds: 0-29 good, 30-44 warning, 45-59 near_critical, 60+ critical
-
-    When hot_started_at is provided, returns both total minutes and hot_segment minutes.
-    """
     start = coerce_utc_datetime(assigned_at)
     end = coerce_utc_datetime(first_valid_management_at)
     hot_start = coerce_utc_datetime(hot_started_at) if hot_started_at else None
@@ -741,85 +747,63 @@ def calculate_sla(*, assigned_at, first_valid_management_at=None, now=None,
         return {
             "status": "unknown", "canonical_state": "SLA_NOT_STARTED",
             "minutes": None, "hot_minutes": None, "fulfilled": False,
-            "coverage": "insufficient_data",
+            "threshold_minutes": threshold, "base_threshold_minutes": base_threshold,
+            "sla_extension_minutes": extension, "coverage": "insufficient_data",
         }
     if first_management_completed and not end:
-        # The canonical completion marker stops the first SLA even when a
-        # legacy cycle has no auditable timestamp to calculate elapsed time.
         return {
             "status": "fulfilled", "canonical_state": "MANAGED_TIME_UNKNOWN",
             "minutes": None, "hot_minutes": None, "fulfilled": True,
-            "threshold_minutes": 60 if str(temperature or "").upper() == "HOT" else 180,
+            "threshold_minutes": threshold, "base_threshold_minutes": base_threshold,
+            "sla_extension_minutes": extension,
             "coverage": "management_completed_time_unknown",
         }
     boundary = end or current
     total_minutes = max(0, calculate_business_minutes(start.astimezone(CHILE_TZ), boundary.astimezone(CHILE_TZ)))
 
-    # A current HOT cycle always uses the 60-minute policy.  If it was
-    # already HOT at assignment, its SLA segment starts at sla_started_at.
-    is_hot = str(temperature or "").upper() == "HOT"
     hot_minutes = None
     if is_hot:
         if hot_start:
             hot_boundary = end or current
             hot_minutes = max(0, calculate_business_minutes(
                 hot_start.astimezone(CHILE_TZ), hot_boundary.astimezone(CHILE_TZ)))
-        elif require_hot_start:
-            return {
-                "status": "unknown", "canonical_state": "INSUFFICIENT_DATA",
-                "minutes": total_minutes, "hot_minutes": None, "fulfilled": False,
-                "coverage": "insufficient_data",
-            }
         else:
-            # A current HOT badge alone is not evidence that the lead was HOT
-            # when assigned. Fail closed until a transition/assignment start
-            # can be proven.
             return {
                 "status": "unknown", "canonical_state": "INSUFFICIENT_DATA",
                 "minutes": total_minutes, "hot_minutes": None, "fulfilled": False,
-                "coverage": "insufficient_data",
+                "threshold_minutes": threshold, "base_threshold_minutes": base_threshold,
+                "sla_extension_minutes": extension, "coverage": "insufficient_data",
             }
-    use_hot_thresholds = is_hot
 
     if end:
-        measured_minutes = hot_minutes if use_hot_thresholds else total_minutes
-        threshold = 60 if use_hot_thresholds else 180
+        measured_minutes = hot_minutes if is_hot else total_minutes
         status = "fulfilled"
         canonical_state = "MANAGED_WITHIN_SLA" if measured_minutes < threshold else "MANAGED_OUTSIDE_SLA"
-    elif use_hot_thresholds:
-        if hot_minutes >= 60:
-            status = "critical"
-            canonical_state = "BREACHED"
-        elif hot_minutes >= 45:
-            status = "near_critical"
-            canonical_state = "NEAR_BREACH"
-        elif hot_minutes >= 30:
-            status = "warning"
-            canonical_state = "ATTENTION"
+    elif is_hot:
+        if hot_minutes >= threshold:
+            status, canonical_state = "critical", "BREACHED"
+        elif hot_minutes >= near_threshold:
+            status, canonical_state = "near_critical", "NEAR_BREACH"
+        elif hot_minutes >= warning_threshold:
+            status, canonical_state = "warning", "ATTENTION"
         else:
-            status = "good"
-            canonical_state = "ACTIVE_NORMAL"
+            status, canonical_state = "good", "ACTIVE_NORMAL"
     else:
-        if total_minutes >= 180:
-            status = "critical"
-            canonical_state = "BREACHED"
-        elif total_minutes >= 150:
-            status = "near_critical"
-            canonical_state = "NEAR_BREACH"
-        elif total_minutes >= 120:
-            status = "warning"
-            canonical_state = "ATTENTION"
+        if total_minutes >= threshold:
+            status, canonical_state = "critical", "BREACHED"
+        elif total_minutes >= near_threshold:
+            status, canonical_state = "near_critical", "NEAR_BREACH"
+        elif total_minutes >= warning_threshold:
+            status, canonical_state = "warning", "ATTENTION"
         else:
-            status = "good"
-            canonical_state = "ACTIVE_NORMAL"
+            status, canonical_state = "good", "ACTIVE_NORMAL"
     return {
         "status": status, "canonical_state": canonical_state,
         "minutes": total_minutes, "fulfilled": bool(end),
         "age_minutes": total_minutes, "hot_minutes": hot_minutes,
-        "threshold_minutes": 60 if use_hot_thresholds else 180,
-        "coverage": "determined",
+        "threshold_minutes": threshold, "base_threshold_minutes": base_threshold,
+        "sla_extension_minutes": extension, "coverage": "determined",
     }
-
 
 def add_business_minutes(start_dt: datetime, minutes_to_add: float) -> datetime:
     """Add SLA minutes on Chilean business days, excluding public holidays."""
@@ -962,6 +946,7 @@ def calculate_cycle_sla(*, cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
         temperature=temperature,
         hot_started_at=hot_start,
         require_hot_start=True,
+        extension_minutes=cycle.get("sla_extension_minutes", 0),
     )
     result.update({
         "temperature": temperature,

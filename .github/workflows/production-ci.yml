@@ -76,6 +76,7 @@ jobs:
           - suite: CRM phone visibility
             tests: >-
               tests/test_crm_phone_visibility.py
+              tests/test_mongo_client_resilience.py
           - suite: CRM sort order
             tests: >-
               tests/test_crm_sort_order.py

@@ -65,9 +65,10 @@ async def run_sla_alert_cycle(db=None):
                         worker_report.get("processed"),
                         worker_report.get("by_status"))
 
-    except Exception:
+    except Exception as exc:
         logger.error("[SLA_ALERT][ERROR] Cycle failed:\n%s", traceback.format_exc())
         return {"status": "error",
+                "error_type": type(exc).__name__,
                 "persist_report": locals().get("persist_report"),
                 "worker_report": locals().get("worker_report")}
 

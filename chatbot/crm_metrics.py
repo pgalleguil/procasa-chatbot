@@ -150,8 +150,13 @@ def commercial_sla_start_at(assigned_at: Any) -> Optional[datetime]:
 
 
 def resolve_cycle_sla_start(*, cycle: Mapping[str, Any] | None) -> Optional[datetime]:
-    """Resolve persisted cycle SLA start or the established commercial fallback."""
+    """Resolve persisted SLA start without starting an unconfirmed supervisor handoff."""
     cycle = cycle if isinstance(cycle, Mapping) else {}
+    if (
+        str(cycle.get("sla_start_status") or "").lower() == "pending_supervisor_activation"
+        or str(cycle.get("reassignment_state") or "").upper() == "AWAITING_SUPERVISOR_HANDOFF"
+    ):
+        return None
     persisted = coerce_utc_datetime(cycle.get("sla_started_at"))
     if persisted:
         return persisted

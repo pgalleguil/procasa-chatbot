@@ -6,10 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from chatbot.crm_metrics import calculate_sla
+from chatbot.crm_metrics import calculate_sla, resolve_cycle_sla_start
+
+from chatbot.crm_admin_scope import office_access_error
 
 from chatbot.crm_admin_controls import (
     AdminControlError,
+    activate_emergency_handoff,
     admin_reassign_lead,
     extend_active_sla,
     protect_active_assignment,
@@ -291,3 +294,93 @@ def test_sla_hot_extension_shifts_hot_thresholds():
     assert result["threshold_minutes"] == 180
     assert result["base_threshold_minutes"] == 60
     assert result["status"] == "near_critical"
+
+
+def test_emergency_handoff_keeps_sla_pending_and_activates_only_with_supervisor_evidence():
+    db = _db()
+    old_breach = datetime(2026, 10, 20, 13, 59, tzinfo=timezone.utc)
+    db["crm_assignment_cycles"].rows[0]["sla_breached_at"] = old_breach
+    db["crm_management_results"].rows.append({
+        "lead_id": "lead-1", "assignment_cycle_id": "cycle-2",
+        "status": "completed", "result_type": "CONTACTADO",
+    })
+    actor = {"_id": "supervisor-id", "nombre": "Supervisión", "rol": "supervisor", "office_id": 7}
+    args = {
+        "lead_id": "lead-1",
+        "target_user_id": "mariela-id",
+        "actor": actor,
+        "reason": "Emergencia familiar del ejecutivo",
+        "action_id": "emergency-1",
+        "hold_hours": 2,
+        "emergency_handoff": True,
+        "now": datetime(2026, 10, 20, 14, 30, tzinfo=timezone.utc),
+    }
+    result = admin_reassign_lead(db, **args)
+    assert result["status"] == "ok"
+    assert result["sla_start_status"] == "pending_supervisor_activation"
+    assert result["silent"] is True
+
+    old_cycle, new_cycle = db["crm_assignment_cycles"].rows
+    assert old_cycle["cycle_status"] == "closed"
+    assert old_cycle["sla_breached_at"] == old_breach
+    assert new_cycle["cycle_status"] == "active"
+    assert new_cycle["assigned_to_display_name"] == "Mariela Arriagada"
+    assert new_cycle["sla_started_at"] is None
+    assert new_cycle["sla_start_status"] == "pending_supervisor_activation"
+    assert new_cycle["administrative_hold_until"] == datetime(2026, 10, 20, 16, 30, tzinfo=timezone.utc)
+    assert new_cycle["notification_eligible"] is False
+    assert new_cycle["notification_mode"] == "NONE"
+    assert new_cycle["reassignment_state"] == "AWAITING_SUPERVISOR_HANDOFF"
+    assert new_cycle["reason"] == "crm_list_admin"
+    assert new_cycle["transfer_authorization"]["actor"] == "supervisor-id"
+    from chatbot.crm_assignment_integrity import _valid_transfer_transition
+    assert _valid_transfer_transition(old_cycle, new_cycle) is True
+    assert resolve_cycle_sla_start(cycle=new_cycle) is None
+    assert db["crm_management_results"].rows[0]["assignment_cycle_id"] == "cycle-2"
+    assert db["leads"].rows[0]["lifecycle"]["current_assignment_cycle_id"] == new_cycle["assignment_cycle_id"]
+    assert sum(row["cycle_status"] == "active" for row in db["crm_assignment_cycles"].rows) == 1
+    event = db["crm_assignment_admin_events"].rows[0]
+    assert event["action"] == "emergency_reassign"
+    assert event["silent"] is True
+    assert event["notification_mode"] == "NONE"
+    assert admin_reassign_lead(db, **args)["status"] == "already_applied"
+
+    with pytest.raises(AdminControlError, match="handoff_evidence_required"):
+        activate_emergency_handoff(
+            db, lead_id="lead-1", assignment_cycle_id=new_cycle["assignment_cycle_id"],
+            actor=actor, action_id="handoff-1", handoff_evidence="ok",
+        )
+    activation = activate_emergency_handoff(
+        db, lead_id="lead-1", assignment_cycle_id=new_cycle["assignment_cycle_id"],
+        actor=actor, action_id="handoff-1",
+        handoff_evidence="Confirmado por llamada interna con Mariela",
+        now=datetime(2026, 10, 20, 15, 0, tzinfo=timezone.utc),
+    )
+    assert activation["status"] == "ok"
+    assert new_cycle["sla_start_status"] == "started"
+    assert new_cycle["supervisor_handoff_state"] == "confirmed"
+    assert new_cycle["first_valid_management_at"] is None
+    assert db["leads"].rows[0]["lifecycle"]["sla_start_status"] == "started"
+    assert activate_emergency_handoff(
+        db, lead_id="lead-1", assignment_cycle_id=new_cycle["assignment_cycle_id"],
+        actor=actor, action_id="handoff-1",
+        handoff_evidence="Confirmado por llamada interna con Mariela",
+        now=datetime(2026, 10, 20, 15, 0, tzinfo=timezone.utc),
+    )["status"] == "already_applied"
+    assert sum(row["cycle_status"] == "active" for row in db["crm_assignment_cycles"].rows) == 1
+
+
+
+def test_prop360_office_and_exact_property_agent_resolve_target_scope():
+    db = _Db({
+        "universo_cartera_prop360": _Collection([{
+            "codigo": "17252",
+            "oficina_id": 7,
+            "estado": {"ejecutivo": "Mariela Arriagada", "oficina": "Oficina Centro"},
+        }]),
+    })
+    lead = {"_id": "lead-prop360", "codigo_propiedad": "17252"}
+    supervisor = {"_id": "supervisor-id", "rol": "supervisor", "oficina": "Oficina Centro"}
+    target = {"_id": "agent-id", "nombre": "Mariela Arriagada", "rol": "agente"}
+    assert office_access_error(db, supervisor, lead, target=target) is None
+

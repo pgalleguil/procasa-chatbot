@@ -658,9 +658,10 @@ def canonical_expiration_recheck(cycle: Mapping[str, Any], lead: Mapping[str, An
     silently create a false negative.
     """
     assigned_at = _utc(cycle.get("assigned_at"))
-    if _awaiting_owner_notification(cycle):
-        # Never fall back to assigned_at for a reassignment destination.  Its
-        # commercial SLA begins only after the provider confirms delivery.
+    pending_handoff = _awaiting_supervisor_handoff(cycle)
+    if pending_handoff or _awaiting_owner_notification(cycle):
+        # Never fall back to assigned_at for a destination that has not had
+        # either provider delivery or an explicit supervisor handoff activation.
         temperature = _text(
             cycle.get("temperature_at_assignment")
             or (lead or {}).get("lead_temperature_effective")
@@ -677,9 +678,10 @@ def canonical_expiration_recheck(cycle: Mapping[str, Any], lead: Mapping[str, An
             ),
             None,
         )
+        start_status = "supervisor_handoff_pending" if pending_handoff else "awaiting_owner_notification"
         return CanonicalExpiration(
             None, None, None, threshold, None, 0.0, False,
-            temperature, "awaiting_owner_notification", persisted_deadline, False,
+            temperature, start_status, persisted_deadline, False,
         )
     persisted_start = _utc(cycle.get("sla_started_at"))
     started_at = resolve_cycle_sla_start(cycle=cycle)
@@ -856,6 +858,13 @@ def _lead_is_open(lead: Mapping[str, Any] | None) -> bool:
 
 def _assignment_number(cycle: Mapping[str, Any]) -> int:
     return int(_number(cycle.get("automatic_reassignment_number", cycle.get("assignment_number", 0))))
+
+
+def _awaiting_supervisor_handoff(cycle: Mapping[str, Any]) -> bool:
+    return (
+        _text(cycle.get("sla_start_status")).lower() == "pending_supervisor_activation"
+        or _text(cycle.get("reassignment_state")).upper() == "AWAITING_SUPERVISOR_HANDOFF"
+    )
 
 
 def _awaiting_owner_notification(cycle: Mapping[str, Any]) -> bool:
@@ -2085,6 +2094,16 @@ async def run_sla_reassignment_worker_iteration(
                 if owner_status == "DATA_OR_CYCLE_ISSUE_LEAD_NOT_FOUND":
                     result.review_skipped += 1
                     evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), "", False, owner_status, assignment_number=_assignment_number(cycle), decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
+                    continue
+                if _awaiting_supervisor_handoff(cycle):
+                    hold_until = _utc(cycle.get("administrative_hold_until"))
+                    handoff_status = "SUPERVISOR_HANDOFF_PENDING"
+                    if hold_until is None or hold_until <= as_of:
+                        handoff_status = "SUPERVISOR_HANDOFF_REQUIRED"
+                    result.review_skipped += 1
+                    evaluations.append(_shadow_error(
+                        cycle, now=as_of, cutover=cutover, reason=handoff_status,
+                    ).to_dict())
                     continue
                 # A canonical stop before the calculated breach means the
                 # cycle is not actually expired under the current evaluator.

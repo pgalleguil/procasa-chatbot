@@ -17,7 +17,7 @@ _OFFICE_KEYS = frozenset({
 })
 _NESTED_KEYS = ("scope", "permisos", "permissions", "crm", "assignment",
                 "propiedad", "datos_propiedad", "prospecto", "property",
-                "property_data", "oficina_data")
+                "property_data", "oficina_data", "estado")
 _VALUE_KEYS = ("id", "_id", "name", "nombre", "codigo", "office_id",
                "oficina_id", "office_name", "oficina_nombre")
 
@@ -91,7 +91,7 @@ def _property_office_values(db: Any, lead: Mapping[str, Any], session: Any = Non
                 codes.append(value)
     if not codes:
         return set()
-    for collection_name in ("propiedades", "properties"):
+    for collection_name in ("universo_cartera_prop360", "propiedades", "properties"):
         try:
             collection = db[collection_name]
         except Exception:
@@ -113,6 +113,45 @@ def _property_office_values(db: Any, lead: Mapping[str, Any], session: Any = Non
     return set()
 
 
+def _target_property_office_values(
+    db: Any, lead: Mapping[str, Any], target: Mapping[str, Any], session: Any = None,
+) -> set[str]:
+    """Infer one target's office only when the canonical listing names them as its agent."""
+    prospect = lead.get("prospecto") if isinstance(lead.get("prospecto"), Mapping) else {}
+    property_data = lead.get("datos_propiedad") if isinstance(lead.get("datos_propiedad"), Mapping) else {}
+    codes = []
+    for source in (lead, prospect, property_data):
+        for key in ("property_code", "codigo_propiedad", "codigo"):
+            value = str(source.get(key) or "").strip()
+            if value and value not in codes:
+                codes.append(value)
+    target_name = _token(target.get("nombre"))
+    if not codes or not target_name:
+        return set()
+    for collection_name in ("universo_cartera_prop360", "propiedades", "properties"):
+        try:
+            collection = db[collection_name]
+        except Exception:
+            continue
+        for code in codes:
+            for field in ("codigo", "codigo_propiedad", "property_code"):
+                try:
+                    query = {field: code}
+                    prop = collection.find_one(query) if session is None else collection.find_one(query, session=session)
+                except Exception:
+                    prop = None
+                if not prop:
+                    continue
+                estado = prop.get("estado") if isinstance(prop.get("estado"), Mapping) else {}
+                property_agent = _token(
+                    estado.get("ejecutivo") or prop.get("ejecutivo")
+                    or prop.get("assigned_to_display_name")
+                )
+                if property_agent == target_name:
+                    return office_values(prop)
+    return set()
+
+
 def office_access_error(db: Any, supervisor: Mapping[str, Any], lead: Mapping[str, Any],
                         target: Mapping[str, Any] | None = None, session: Any = None) -> str | None:
     """Return a stable denial code unless supervisor, lead and target share office scope."""
@@ -128,6 +167,8 @@ def office_access_error(db: Any, supervisor: Mapping[str, Any], lead: Mapping[st
         return "office_scope_forbidden"
     if target is not None:
         target_offices = office_values(target)
+        if not target_offices:
+            target_offices = _target_property_office_values(db, lead, target, session=session)
         if not target_offices or not target_offices.intersection(lead_offices):
             return "target_office_ineligible"
     return None

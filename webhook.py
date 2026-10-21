@@ -3894,6 +3894,79 @@ async def api_crm_admin_assignment(request: Request):
     return result
 
 
+@app.post("/api/crm/admin/emergency-reassignment")
+async def api_crm_admin_emergency_reassignment(request: Request):
+    data = await request.json()
+    user, lead = await _get_authorized_crm_lead_by_id(request, str(data.get("lead_id") or ""))
+    target_user_id = data.get("target_user_id")
+    action_id = str(data.get("action_id") or "").strip()
+    reason = str(data.get("reason") or "").strip()
+    raw_hold_hours = data.get("hold_hours", 2)
+    if isinstance(raw_hold_hours, bool):
+        raise HTTPException(status_code=400, detail="Duración de protección inválida")
+    try:
+        hold_hours = int(raw_hold_hours)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Duración de protección inválida")
+    if not target_user_id or not action_id or not reason:
+        raise HTTPException(status_code=400, detail="Faltan ejecutivo, motivo o identificador de acción")
+    from chatbot.crm_admin_controls import AdminControlError, admin_reassign_lead
+    from chatbot.storage import get_db as _sync_db
+
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: admin_reassign_lead(
+                _sync_db(), lead_id=lead["_id"], target_user_id=target_user_id,
+                actor=user, reason=reason, action_id=action_id,
+                hold_hours=hold_hours, emergency_handoff=True,
+            ),
+        )
+    except AdminControlError as exc:
+        status_code = 503 if exc.code == "transaction_unavailable" else 409
+        if exc.code in {"reason_required", "invalid_action_id", "target_or_previous_required",
+                        "invalid_hold_hours", "actor_required"}:
+            status_code = 400
+        if exc.code in {"supervisor_only", "lead_office_unresolved",
+                        "supervisor_office_scope_missing", "office_scope_forbidden",
+                        "target_office_ineligible"}:
+            status_code = 403
+        raise HTTPException(status_code=status_code, detail=exc.code)
+    return result
+
+
+@app.post("/api/crm/admin/activate-handoff")
+async def api_crm_admin_activate_handoff(request: Request):
+    data = await request.json()
+    user, lead = await _get_authorized_crm_lead_by_id(request, str(data.get("lead_id") or ""))
+    cycle_id = str(data.get("assignment_cycle_id") or "").strip()
+    action_id = str(data.get("action_id") or "").strip()
+    evidence = str(data.get("handoff_evidence") or "").strip()
+    if not cycle_id or not action_id or len(evidence) < 8:
+        raise HTTPException(status_code=400, detail="Faltan ciclo, identificador de acción o evidencia del traspaso")
+    from chatbot.crm_admin_controls import AdminControlError, activate_emergency_handoff
+    from chatbot.storage import get_db as _sync_db
+
+    try:
+        result = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL,
+            lambda: activate_emergency_handoff(
+                _sync_db(), lead_id=lead["_id"], assignment_cycle_id=cycle_id,
+                actor=user, action_id=action_id, handoff_evidence=evidence,
+            ),
+        )
+    except AdminControlError as exc:
+        status_code = 503 if exc.code == "transaction_unavailable" else 409
+        if exc.code in {"reason_required", "invalid_action_id", "handoff_evidence_required",
+                        "actor_required"}:
+            status_code = 400
+        if exc.code in {"supervisor_only", "lead_office_unresolved",
+                        "supervisor_office_scope_missing", "office_scope_forbidden"}:
+            status_code = 403
+        raise HTTPException(status_code=status_code, detail=exc.code)
+    return result
+
+
 @app.post("/api/crm/admin/sla-extension")
 async def api_crm_admin_sla_extension(request: Request):
     data = await request.json()
@@ -3944,7 +4017,9 @@ async def api_crm_admin_history(request: Request, lead_id: str = Query(...)):
              "target_owner_user_id": 1, "target_display_name": 1, "reason": 1,
              "actor_user_id": 1, "actor_display_name": 1, "actor_role": 1,
              "created_at": 1, "minutes": 1, "new_extension_minutes": 1,
-             "assignment_cycle_id": 1, "source_cycle_id": 1, "new_cycle_id": 1, "hold_until": 1, "silent": 1},
+             "assignment_cycle_id": 1, "source_cycle_id": 1, "new_cycle_id": 1, "hold_until": 1,
+             "emergency_handoff": 1, "notification_mode": 1, "handoff_evidence": 1,
+             "sla_started_at": 1, "silent": 1},
         ).sort([("created_at", -1)]).limit(50))
         for row in rows:
             value = row.get("created_at")
@@ -3952,6 +4027,9 @@ async def api_crm_admin_history(request: Request, lead_id: str = Query(...)):
             hold_until = row.get("hold_until")
             if hold_until is not None:
                 row["hold_until"] = hold_until.isoformat() if hasattr(hold_until, "isoformat") else str(hold_until)
+            sla_started_at = row.get("sla_started_at")
+            if sla_started_at is not None:
+                row["sla_started_at"] = sla_started_at.isoformat() if hasattr(sla_started_at, "isoformat") else str(sla_started_at)
             row["lead_id"] = str(lead["_id"])
         return rows
 

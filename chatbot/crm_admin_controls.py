@@ -37,14 +37,18 @@ def _find_one(collection: Any, filter_: Mapping[str, Any], session: Any) -> Any:
 
 
 def _active_cycles(db: Any, lead_id: Any, session: Any) -> list[dict[str, Any]]:
-    for key in mongo_id_variants(lead_id):
-        rows = list(db["crm_assignment_cycles"].find(
-            {"lead_id": key, "cycle_status": "active", "unassigned_at": None},
-            session=session,
-        ).limit(2))
-        if rows:
-            return rows
-    return []
+    variants = list(mongo_id_variants(lead_id))
+    if not variants:
+        return []
+    rows = list(db["crm_assignment_cycles"].find({
+        "lead_id": {"$in": variants},
+        "unassigned_at": None,
+        "$or": [
+            {"cycle_status": "active"},
+            {"cycle_status": {"$exists": False}},
+        ],
+    }, session=session).limit(20))
+    return rows
 
 
 def _transaction(db: Any, callback):
@@ -143,8 +147,9 @@ def admin_reassign_lead(
     action_id: str,
     hold_hours: int = 0,
     now: Any = None,
+    emergency_handoff: bool = False,
 ) -> dict[str, Any]:
-    """Move exactly one open lead to an eligible agent and keep a cycle audit."""
+    """Move exactly one open lead; emergency handoffs stay outside the SLA until activated."""
     action_id = _valid_action_id(action_id)
     reason = str(reason or "").strip()[:300]
     if not reason:
@@ -157,21 +162,35 @@ def admin_reassign_lead(
         raise AdminControlError("supervisor_only")
     if not actor_id:
         raise AdminControlError("actor_required")
-    if isinstance(hold_hours, bool) or int(hold_hours) != hold_hours or not 0 <= int(hold_hours) <= 168:
+    if isinstance(hold_hours, bool) or int(hold_hours) != hold_hours:
+        raise AdminControlError("invalid_hold_hours")
+    if emergency_handoff:
+        if not 1 <= int(hold_hours) <= 168:
+            raise AdminControlError("invalid_hold_hours")
+    elif not 0 <= int(hold_hours) <= 168:
         raise AdminControlError("invalid_hold_hours")
     hold_hours = int(hold_hours)
     changed_at = _now(now)
     hold_until = changed_at + timedelta(hours=hold_hours) if hold_hours else None
-    event_id = f"assignment:{action_id}"
-    cycle_id = f"admin:{action_id}"
+    event_id = f"emergency-assignment:{action_id}" if emergency_handoff else f"assignment:{action_id}"
+    cycle_id = f"admin-emergency:{action_id}" if emergency_handoff else f"admin:{action_id}"
 
     def apply(session):
         events = db[ADMIN_EVENTS]
         existing = _find_one(events, {"_id": event_id}, session)
         if existing:
-            if str(existing.get("lead_id")) != str(lead_id):
+            if (str(existing.get("lead_id")) != str(lead_id)
+                    or bool(existing.get("emergency_handoff")) != bool(emergency_handoff)
+                    or str(existing.get("reason") or "") != reason
+                    or (target_user_id and str(existing.get("target_owner_user_id") or "") != str(target_user_id))
+                    or (emergency_handoff and (
+                        str(existing.get("actor_user_id") or "") != actor_id
+                        or int(existing.get("hold_hours") or 0) != hold_hours
+                        or existing.get("action") != "emergency_reassign"
+                    ))):
                 raise AdminControlError("idempotency_conflict")
-            return {"status": "already_applied", "executive": existing.get("target_display_name"), "cycle_id": existing.get("new_cycle_id")}
+            return {"status": "already_applied", "executive": existing.get("target_display_name"),
+                    "cycle_id": existing.get("new_cycle_id"), "silent": True}
 
         lead = _find_one(db["leads"], {"_id": lead_id}, session)
         if not lead:
@@ -182,6 +201,8 @@ def admin_reassign_lead(
         cycles = _active_cycles(db, lead_id, session)
         if len(cycles) > 1:
             raise AdminControlError("multiple_active_cycles")
+        if emergency_handoff and len(cycles) != 1:
+            raise AdminControlError("canonical_cycle_required")
         source = cycles[0] if cycles else None
         lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
         if source:
@@ -190,11 +211,21 @@ def admin_reassign_lead(
                 raise AdminControlError("canonical_cycle_required")
             if str(lifecycle.get("current_assignment_cycle_id") or "") != source_cycle_id:
                 raise AdminControlError("cycle_pointer_mismatch")
+            if lifecycle.get("assignment_cycle_id") not in (None, "") and str(lifecycle.get("assignment_cycle_id")) != source_cycle_id:
+                raise AdminControlError("cycle_pointer_mismatch")
+            owner_id = str(source.get("assigned_to_user_id") or "")
+            for mirror_owner_id in (
+                lead.get("owner_user_id"),
+                lead.get("assignment_mirror_owner_user_id"),
+                lifecycle.get("assigned_to_user_id"),
+            ):
+                if mirror_owner_id not in (None, "") and str(mirror_owner_id) != owner_id:
+                    raise AdminControlError("owner_mirror_mismatch")
             owner_display = str(source.get("assigned_to_display_name") or "")
             lead_owner = str(lead.get("ejecutivo_asignado") or (lead.get("prospecto") or {}).get("ejecutivo") or "")
             if owner_display and lead_owner and owner_display.casefold() != lead_owner.casefold():
                 raise AdminControlError("owner_mirror_mismatch")
-            if _management_exists(db, source, session):
+            if not emergency_handoff and _management_exists(db, source, session):
                 raise AdminControlError("management_after_assignment")
         else:
             source_cycle_id = ""
@@ -233,14 +264,18 @@ def admin_reassign_lead(
                 "_id": source.get("_id"),
                 "assignment_cycle_id": source_cycle_id,
                 "lead_id": source.get("lead_id"),
-                "cycle_status": "active",
                 "unassigned_at": None,
             }
+            if source.get("cycle_status") is None:
+                close_query["cycle_status"] = {"$exists": False}
+            else:
+                close_query["cycle_status"] = source.get("cycle_status")
             if source.get("cycle_version") is not None:
                 close_query["cycle_version"] = source.get("cycle_version")
             closed = db["crm_assignment_cycles"].update_one(close_query, {"$set": {
                 "cycle_status": "closed", "unassigned_at": changed_at,
-                "closed_at": changed_at, "closed_reason": "supervisor_reassignment",
+                "closed_at": changed_at,
+                "closed_reason": "supervisor_emergency_handoff" if emergency_handoff else "supervisor_reassignment",
                 "updated_at": changed_at,
             }}, session=session)
             if int(getattr(closed, "matched_count", 0)) != 1:
@@ -260,8 +295,8 @@ def admin_reassign_lead(
             "assigned_to_display_name": target_name,
             "assigned_at": changed_at,
             "cycle_started_at": changed_at,
-            "sla_started_at": commercial_sla_start_at(changed_at),
-            "sla_start_status": "started",
+            "sla_started_at": None if emergency_handoff else commercial_sla_start_at(changed_at),
+            "sla_start_status": "pending_supervisor_activation" if emergency_handoff else "started",
             "notification_sent_at": None,
             "delivered_at": None,
             "read_at": None,
@@ -271,9 +306,9 @@ def admin_reassign_lead(
             "assigned_by": actor_id,
             "assigned_by_role": actor_role,
             "assigned_by_display_name": actor_display,
-            "reason": "admin_manual_reassignment",
+            "reason": "crm_list_admin" if emergency_handoff else "admin_manual_reassignment",
             "reassignment_reason": reason,
-            "cycle_origin": "admin_reassignment",
+            "cycle_origin": "admin_emergency_reassignment" if emergency_handoff else "admin_reassignment",
             "schema_version": "crm_assignment_cycle_v1",
             "metric_version": str((source or {}).get("metric_version") or "crm_metrics_v1"),
             "sla_policy_version": "legacy" if is_pre_visual_cutover(changed_at) else "sla_visual_v1_20260723",
@@ -285,11 +320,27 @@ def admin_reassign_lead(
             "administrative_assignment_id": action_id,
             "administrative_assignment_mode": "HOLD_UNTIL" if hold_until else ("RETURN_PREVIOUS" if return_to_previous else "NORMAL"),
             "administrative_hold_until": hold_until,
+            "administrative_hold_reason": reason if emergency_handoff else None,
+            "administrative_hold_actor_id": actor_id if emergency_handoff else None,
+            "reassignment_state": "AWAITING_SUPERVISOR_HANDOFF" if emergency_handoff else None,
+            "notification_mode": "NONE" if emergency_handoff else None,
             "sla_extension_minutes": 0,
             "first_valid_management_at": None,
             "first_contact_attempt_at": None,
             "sla_first_management_status": "pending",
         }
+        if emergency_handoff:
+            new_cycle["transfer_authorization"] = {
+                "kind": "administrative",
+                "actor": actor_id,
+                "action_id": action_id,
+                "scope": "emergency_handoff",
+            }
+            new_cycle["supervisor_handoff_state"] = "pending"
+            new_cycle["supervisor_handoff_requested_at"] = changed_at
+            new_cycle["supervisor_handoff_requested_by"] = actor_id
+            new_cycle["supervisor_handoff_hold_expires_at"] = hold_until
+            new_cycle["supervisor_handoff_activated_at"] = None
         db["crm_assignment_cycles"].insert_one(new_cycle, session=session)
 
         lead_filter = {"_id": lead.get("_id")}
@@ -305,12 +356,17 @@ def admin_reassign_lead(
                 "assignment_mirror_owner_user_id": target_id,
                 "assignment_mirror_source": "crm_assignment_cycles",
                 "lifecycle.assigned_at": changed_at,
+                "lifecycle.cycle_started_at": changed_at,
+                "lifecycle.assigned_to_user_id": target_id,
+                "lifecycle.assigned_to_display_name": target_name,
+                "lifecycle.assignment_cycle_id": cycle_id,
                 "lifecycle.current_assignment_cycle_id": cycle_id,
                 "lifecycle.notification_sent_at": None,
                 "lifecycle.delivered_at": None,
                 "lifecycle.read_at": None,
                 "lifecycle.sla_started_at": new_cycle["sla_started_at"],
-                "lifecycle.sla_start_status": "started",
+                "lifecycle.sla_start_status": new_cycle["sla_start_status"],
+                "lifecycle.reassignment_state": new_cycle.get("reassignment_state"),
                 "last_crm_update": changed_at,
             }
         }, session=session)
@@ -320,7 +376,8 @@ def admin_reassign_lead(
         events.insert_one({
             "_id": event_id,
             "action_id": action_id,
-            "action": "return_previous" if return_to_previous else "reassign",
+            "action": "emergency_reassign" if emergency_handoff else ("return_previous" if return_to_previous else "reassign"),
+            "emergency_handoff": bool(emergency_handoff),
             "lead_id": lead.get("_id"),
             "source_cycle_id": source_cycle_id or None,
             "new_cycle_id": cycle_id,
@@ -332,9 +389,16 @@ def admin_reassign_lead(
             "actor_role": actor_role,
             "reason": reason,
             "silent": True,
+            "notification_mode": "NONE" if emergency_handoff else None,
+            "hold_hours": hold_hours,
+            "hold_until": hold_until,
             "created_at": changed_at,
         }, session=session)
-        return {"status": "ok", "executive": target_name, "cycle_id": cycle_id, "silent": True}
+        return {
+            "status": "ok", "executive": target_name, "cycle_id": cycle_id,
+            "silent": True, "sla_start_status": new_cycle["sla_start_status"],
+            "hold_until": hold_until.isoformat() if hold_until else None,
+        }
 
     return _transaction(db, apply)
 
@@ -392,7 +456,9 @@ def extend_active_sla(
         lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
         if str(lifecycle.get("current_assignment_cycle_id") or "") != str(assignment_cycle_id):
             raise AdminControlError("cycle_pointer_mismatch")
-        if str(cycle.get("sla_start_status") or "").lower() in {"pending_notification", "not_started"}:
+        if str(cycle.get("sla_start_status") or "").lower() in {
+            "pending_notification", "not_started", "pending_supervisor_activation",
+        }:
             raise AdminControlError("sla_not_started")
         if cycle.get("first_valid_management_at") not in (None, "") or _management_exists(db, cycle, session):
             raise AdminControlError("sla_already_completed")
@@ -538,5 +604,118 @@ def protect_active_assignment(
             "hold_until": hold_until, "silent": True, "created_at": changed_at,
         }, session=session)
         return {"status": "ok", "hold_until": hold_until.isoformat(), "silent": True}
+
+    return _transaction(db, apply)
+
+
+def activate_emergency_handoff(
+    db: Any,
+    *,
+    lead_id: Any,
+    assignment_cycle_id: str,
+    actor: Mapping[str, Any] | str,
+    action_id: str,
+    handoff_evidence: str,
+    now: Any = None,
+) -> dict[str, Any]:
+    """Start SLA only after a supervisor records evidence of the agent handoff."""
+    action_id = _valid_action_id(action_id)
+    evidence = str(handoff_evidence or "").strip()[:1000]
+    if len(evidence) < 8:
+        raise AdminControlError("handoff_evidence_required")
+    actor_id = _actor_value(actor)
+    actor_display, actor_role = _actor_details(actor)
+    if not can_supervise_crm_assignments(actor_role):
+        raise AdminControlError("supervisor_only")
+    if not actor_id:
+        raise AdminControlError("actor_required")
+    changed_at = _now(now)
+    event_id = f"handoff-activation:{action_id}"
+
+    def apply(session):
+        events = db[ADMIN_EVENTS]
+        existing = _find_one(events, {"_id": event_id}, session)
+        if existing:
+            if (str(existing.get("lead_id")) != str(lead_id)
+                    or str(existing.get("assignment_cycle_id")) != str(assignment_cycle_id)
+                    or str(existing.get("handoff_evidence") or "") != evidence):
+                raise AdminControlError("idempotency_conflict")
+            return {"status": "already_applied", "cycle_id": assignment_cycle_id,
+                    "sla_started_at": existing.get("sla_started_at"), "silent": True}
+
+        lead = _find_one(db["leads"], {"_id": lead_id}, session)
+        if not lead:
+            raise AdminControlError("lead_not_found")
+        if not _lead_is_open(lead):
+            raise AdminControlError("lead_closed")
+        scope_error = office_access_error(db, actor, lead, session=session)
+        if scope_error:
+            raise AdminControlError(scope_error)
+        cycles = _active_cycles(db, lead_id, session)
+        if len(cycles) != 1:
+            raise AdminControlError("active_cycle_not_unique")
+        cycle = cycles[0]
+        if str(cycle.get("assignment_cycle_id") or "") != str(assignment_cycle_id or ""):
+            raise AdminControlError("cycle_changed")
+        lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
+        if str(lifecycle.get("current_assignment_cycle_id") or "") != str(assignment_cycle_id):
+            raise AdminControlError("cycle_pointer_mismatch")
+        if (str(cycle.get("sla_start_status") or "").lower() != "pending_supervisor_activation"
+                or str(cycle.get("reassignment_state") or "").upper() != "AWAITING_SUPERVISOR_HANDOFF"):
+            raise AdminControlError("handoff_not_pending")
+
+        sla_started_at = commercial_sla_start_at(changed_at)
+        if not sla_started_at:
+            raise AdminControlError("sla_start_unavailable")
+        changed = db["crm_assignment_cycles"].update_one({
+            "_id": cycle.get("_id"),
+            "assignment_cycle_id": assignment_cycle_id,
+            "cycle_status": cycle.get("cycle_status", "active"),
+            "unassigned_at": None,
+            "sla_start_status": "pending_supervisor_activation",
+        }, {"$set": {
+            "sla_started_at": sla_started_at,
+            "sla_start_status": "started",
+            "reassignment_state": "SUPERVISOR_HANDOFF_COMPLETED",
+            "supervisor_handoff_state": "confirmed",
+            "supervisor_handoff_activated_at": changed_at,
+            "supervisor_handoff_activated_by": actor_id,
+            "supervisor_handoff_activated_by_display_name": actor_display,
+            "supervisor_handoff_evidence": evidence,
+            "administrative_hold_released_at": changed_at,
+            "administrative_assignment_mode": "NORMAL",
+            "updated_at": changed_at,
+        }, "$inc": {"cycle_version": 1}}, session=session)
+        if int(getattr(changed, "matched_count", 0)) != 1:
+            raise AdminControlError("cycle_changed")
+        mirror = db["leads"].update_one({
+            "_id": lead.get("_id"),
+            "lifecycle.current_assignment_cycle_id": assignment_cycle_id,
+        }, {"$set": {
+            "lifecycle.sla_started_at": sla_started_at,
+            "lifecycle.sla_start_status": "started",
+            "lifecycle.reassignment_state": "SUPERVISOR_HANDOFF_COMPLETED",
+            "last_crm_update": changed_at,
+        }}, session=session)
+        if int(getattr(mirror, "matched_count", 0)) != 1:
+            raise AdminControlError("lead_changed")
+
+        events.insert_one({
+            "_id": event_id,
+            "action_id": action_id,
+            "action": "activate_supervisor_handoff",
+            "lead_id": lead.get("_id"),
+            "assignment_cycle_id": assignment_cycle_id,
+            "actor_user_id": actor_id,
+            "actor_display_name": actor_display,
+            "actor_role": actor_role,
+            "handoff_evidence": evidence,
+            "sla_started_at": sla_started_at,
+            "silent": True,
+            "notification_mode": "NONE",
+            "created_at": changed_at,
+        }, session=session)
+        return {"status": "ok", "cycle_id": assignment_cycle_id,
+                "sla_started_at": sla_started_at.isoformat(), "silent": True}
 
     return _transaction(db, apply)

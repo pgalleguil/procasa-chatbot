@@ -3269,6 +3269,8 @@
                     <label for="crm-admin-action">Acción</label>
                     <select id="crm-admin-action">
                         <option value="reassign">Asignar o reasignar</option>
+                        <option value="emergency_reassign">Reasignar por emergencia (2 h de protección)</option>
+                        <option value="activate_handoff">Confirmar traspaso y activar SLA</option>
                         <option value="return_previous">Devolver al ejecutivo anterior</option>
                         <option value="extend_sla">Ampliar plazo SLA en 2 horas</option>
                         <option value="protect">Proteger temporalmente</option>
@@ -4186,10 +4188,19 @@ const adminDialog = document.getElementById('crm-admin-dialog');
 
                 function updateActionFields() {
                     const action = actionSelect.value;
-                    targetWrap.hidden = action !== 'reassign';
-                    holdWrap.hidden = action !== 'protect';
+                    targetWrap.hidden = !['reassign', 'emergency_reassign'].includes(action);
+                    holdWrap.hidden = !['protect', 'emergency_reassign'].includes(action);
+                    if (action === 'emergency_reassign') {
+                        document.getElementById('crm-admin-hold-hours').value = 2;
+                    } else if (action === 'protect') {
+                        document.getElementById('crm-admin-hold-hours').value = 24;
+                    }
                     reasonWrap.hidden = action === 'history';
                     reasonInput.required = action !== 'history';
+                    const reasonLabel = document.querySelector('label[for="crm-admin-reason"]');
+                    reasonLabel.textContent = action === 'activate_handoff'
+                        ? 'Evidencia del traspaso confirmado (obligatoria)'
+                        : 'Motivo obligatorio';
                     document.getElementById('crm-admin-previous-owner').hidden = action !== 'return_previous';
                     historyButton.hidden = action !== 'history';
                     resetPreview();
@@ -4252,14 +4263,14 @@ const adminDialog = document.getElementById('crm-admin-dialog');
                         historyButton.click();
                         return;
                     }
-                    if (!activeLead || (!activeLead.cycleId && action !== 'reassign')) {
+                    if (!activeLead || (!activeLead.cycleId && !['reassign'].includes(action))) {
                         return window.alert('Este lead no tiene un ciclo activo verificable.');
                     }
                     if (!reasonInput.value.trim()) {
                         reasonInput.focus();
                         return window.alert('Escribe el motivo obligatorio.');
                     }
-                    if (action === 'reassign' && !targetSelect.value) {
+                    if (['reassign', 'emergency_reassign'].includes(action) && !targetSelect.value) {
                         targetSelect.focus();
                         return window.alert('Selecciona un ejecutivo de destino.');
                     }
@@ -4268,6 +4279,8 @@ const adminDialog = document.getElementById('crm-admin-dialog');
                     }
                     const actionLabels = {
                         reassign: 'Asignar o reasignar',
+                        emergency_reassign: 'Reasignación de emergencia, sin notificaciones',
+                        activate_handoff: 'Activar SLA tras confirmar el traspaso',
                         return_previous: 'Devolver al ejecutivo anterior',
                         extend_sla: 'Ampliar el SLA en 2 horas',
                         protect: 'Proteger temporalmente'
@@ -4275,7 +4288,13 @@ const adminDialog = document.getElementById('crm-admin-dialog');
                     let details = 'Lead: ' + activeLead.name + '\nResponsable actual: ' + activeLead.owner +
                         '\nCiclo activo: ' + activeLead.cycleId + '\nSLA actual: ' + activeLead.sla +
                         '\nAcción: ' + actionLabels[action];
-                    if (action === 'reassign') details += '\nEjecutivo destino: ' + targetSelect.selectedOptions[0].textContent;
+                    if (['reassign', 'emergency_reassign'].includes(action)) details += '\nEjecutivo destino: ' + targetSelect.selectedOptions[0].textContent;
+                    if (action === 'emergency_reassign') {
+                        const hours = Number(document.getElementById('crm-admin-hold-hours').value);
+                        if (!Number.isInteger(hours) || hours < 1 || hours > 168) return window.alert('La protección debe durar entre 1 y 168 horas.');
+                        details += '\nSLA: pendiente hasta la activación del supervisor; protección: ' + hours + ' horas';
+                    }
+                    if (action === 'activate_handoff') details += '\nEvidencia registrada: ' + reasonInput.value.trim();
                     if (action === 'return_previous') details += '\nEjecutivo destino: ' + previousOwner.name;
                     if (action === 'extend_sla') details += '\nNuevo plazo: +2 horas';
                     if (action === 'protect') {
@@ -4306,7 +4325,10 @@ const adminDialog = document.getElementById('crm-admin-dialog');
                             ? events.map(function(item) {
                                 return [item.created_at || '', item.actor_display_name || 'Supervisión', item.action || '',
                                     item.target_display_name || (item.minutes ? item.minutes + ' min' : ''),
-                                    item.hold_until ? 'Protegido hasta ' + item.hold_until : '', item.reason || ''].filter(Boolean).join(' · ');
+                                    item.hold_until ? 'Protegido hasta ' + item.hold_until : '',
+                                    item.handoff_evidence ? 'Evidencia del traspaso: ' + item.handoff_evidence : '',
+                                    item.sla_started_at ? 'SLA iniciado: ' + item.sla_started_at : '',
+                                    item.reason || ''].filter(Boolean).join(' · ');
                             }).join('\n')
                             : 'No hay intervenciones administrativas registradas para este lead.';
                         historyBox.hidden = false;
@@ -4340,6 +4362,13 @@ const adminDialog = document.getElementById('crm-admin-dialog');
                     } else if (action === 'protect') {
                         endpoint = '/api/crm/admin/protect';
                         payload.hold_hours = Number(document.getElementById('crm-admin-hold-hours').value);
+                    } else if (action === 'emergency_reassign') {
+                        endpoint = '/api/crm/admin/emergency-reassignment';
+                        payload.target_user_id = targetSelect.value;
+                        payload.hold_hours = Number(document.getElementById('crm-admin-hold-hours').value);
+                    } else if (action === 'activate_handoff') {
+                        endpoint = '/api/crm/admin/activate-handoff';
+                        payload.handoff_evidence = reasonInput.value.trim();
                     }
                     confirmButton.disabled = true;
                     try {

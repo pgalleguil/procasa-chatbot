@@ -621,6 +621,14 @@ def _revalidate(
             SLAReassignmentErrorCode.ABORT_SLA_NOT_EXPIRED,
             "owner_notification_not_delivered",
         )
+    if (
+        str(source.get("reassignment_state") or "").upper() == "AWAITING_SUPERVISOR_HANDOFF"
+        or str(source.get("sla_start_status") or "").lower() == "pending_supervisor_activation"
+    ):
+        raise _KnownAbort(
+            SLAReassignmentErrorCode.ABORT_SLA_NOT_EXPIRED,
+            "supervisor_handoff_not_activated",
+        )
     if str(source.get("assigned_to_user_id")) != str(decision.get("previous_owner_user_id")):
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_OWNER_CHANGED, "source_owner_changed")
     if not _open_lead(lead):

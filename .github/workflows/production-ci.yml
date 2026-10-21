@@ -79,6 +79,7 @@ jobs:
           - suite: CRM sort order
             tests: >-
               tests/test_crm_sort_order.py
+              tests/test_crm_indexed_cycle_lookup.py
           - suite: SLA alert and policy
             tests: >-
               tests/test_crm_sla_alert_evaluator.py

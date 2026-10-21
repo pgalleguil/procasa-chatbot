@@ -4364,6 +4364,7 @@ const adminDialog = document.getElementById('crm-admin-dialog');
                         payload.hold_hours = Number(document.getElementById('crm-admin-hold-hours').value);
                     } else if (action === 'emergency_reassign') {
                         endpoint = '/api/crm/admin/emergency-reassignment';
+                        payload.expected_cycle_id = activeLead.cycleId;
                         payload.target_user_id = targetSelect.value;
                         payload.hold_hours = Number(document.getElementById('crm-admin-hold-hours').value);
                     } else if (action === 'activate_handoff') {

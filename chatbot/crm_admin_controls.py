@@ -148,9 +148,13 @@ def admin_reassign_lead(
     hold_hours: int = 0,
     now: Any = None,
     emergency_handoff: bool = False,
+    expected_cycle_id: str | None = None,
 ) -> dict[str, Any]:
     """Move exactly one open lead; emergency handoffs stay outside the SLA until activated."""
     action_id = _valid_action_id(action_id)
+    expected_cycle_id = str(expected_cycle_id or "").strip()
+    if emergency_handoff and not expected_cycle_id:
+        raise AdminControlError("expected_cycle_required")
     reason = str(reason or "").strip()[:300]
     if not reason:
         raise AdminControlError("reason_required")
@@ -207,6 +211,8 @@ def admin_reassign_lead(
         lifecycle = lead.get("lifecycle") if isinstance(lead.get("lifecycle"), Mapping) else {}
         if source:
             source_cycle_id = str(source.get("assignment_cycle_id") or "")
+            if emergency_handoff and source_cycle_id != expected_cycle_id:
+                raise AdminControlError("cycle_changed")
             if not source_cycle_id or source.get("schema_version") != "crm_assignment_cycle_v1":
                 raise AdminControlError("canonical_cycle_required")
             if str(lifecycle.get("current_assignment_cycle_id") or "") != source_cycle_id:

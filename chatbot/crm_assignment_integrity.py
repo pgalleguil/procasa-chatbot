@@ -666,9 +666,18 @@ def reconcile_assignment_integrity(
         "prospecto.ejecutivo": 1, "prospecto.codigo": 1, "codigo": 1,
         "messages.role": 1, "messages.content": 1,
     }
-    lead_rows = list(db["leads"].find(
-        {"_id": {"$in": query_ids}}, lead_projection,
-    ).limit(max(int(limit), 1))) if query_ids else []
+    lead_rows = []
+    if query_ids:
+        # Avoid a multi-MB single network batch when loading CRM mirror and
+        # chatbot message evidence. The Render->Atlas link has intermittent
+        # read timeouts even with an indexed _id $in query. Keep every row and
+        # the original safety limit, but bound each MongoDB response size.
+        lead_cursor = db["leads"].find(
+            {"_id": {"$in": query_ids}}, lead_projection,
+        ).limit(max(int(limit), 1))
+        if hasattr(lead_cursor, "batch_size"):
+            lead_cursor = lead_cursor.batch_size(64)
+        lead_rows = list(lead_cursor)
     leads_by_id = {str(row.get("_id")): row for row in lead_rows if row.get("_id") is not None}
 
     all_cycle_ids = sorted({

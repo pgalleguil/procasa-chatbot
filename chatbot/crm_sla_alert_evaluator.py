@@ -20,7 +20,8 @@ Policy:
 from __future__ import annotations
 
 import logging
-from collections import Counter
+from collections import Counter, defaultdict
+from datetime import datetime
 
 from bson import ObjectId
 
@@ -248,6 +249,89 @@ async def _get_assigned_agent_async(db, user_id: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
+# Bounded batch fetch of CRM events (avoids one MongoDB read per active cycle).
+# ---------------------------------------------------------------------------
+
+async def _load_sla_events_batched(db, cycles, *, limit_events: int, batch_size: int = 64):
+    """Fetch events with the (lead_id, timestamp) index, retaining exact-cycle semantics.
+
+    The old evaluator performed one remote find() per active cycle (roughly 450
+    round trips on the production Atlas M0 cluster). Group by exact BSON lead_id
+    values and fetch at most 64 leads at a time. If a cycle could exceed the
+    historical per-cycle limit, use its original query to preserve truncation
+    and ordering semantics rather than silently discard management evidence.
+    """
+    qualified = []
+    for cycle in cycles:
+        lead_id = cycle.get("lead_id")
+        cycle_id = str(cycle.get("assignment_cycle_id") or "")
+        assigned = coerce_utc_datetime(cycle.get("assigned_at"))
+        if lead_id is not None and cycle_id and assigned:
+            qualified.append((cycle, lead_id, cycle_id, assigned))
+
+    lead_ids = list(dict.fromkeys(item[1] for item in qualified))
+    events_by_cycle = {}
+    bulk_queries = 0
+    fallback_queries = 0
+    cap = 10000
+
+    for offset in range(0, len(lead_ids), batch_size):
+        batch_ids = lead_ids[offset:offset + batch_size]
+        batch_set = set(batch_ids)
+        batch_cycles = [item for item in qualified if item[1] in batch_set]
+        earliest = min(item[3] for item in batch_cycles)
+        rows = await db["crm_events"].find({
+            "lead_id": {"$in": batch_ids},
+            "timestamp": {"$gte": earliest},
+        }).to_list(length=cap + 1)
+        bulk_queries += 1
+
+        # Never silently truncate a large batch: use the original indexed
+        # per-cycle query for that batch, including its safety limit.
+        over_cap = len(rows) > cap
+        by_lead = defaultdict(list)
+        if not over_cap:
+            for event in rows:
+                by_lead[event.get("lead_id")].append(event)
+
+        for cycle, lead_id, cycle_id, assigned in batch_cycles:
+            matched = []
+            if not over_cap:
+                for event in by_lead.get(lead_id, ()):
+                    timestamp = event.get("timestamp")
+                    # MongoDB Date comparisons do not match ISO strings or
+                    # other BSON types. Keep that original query behavior.
+                    if not isinstance(timestamp, datetime):
+                        continue
+                    instant = coerce_utc_datetime(timestamp)
+                    if instant is None or instant < assigned:
+                        continue
+                    if event.get("assignment_cycle_id") not in (None, cycle_id):
+                        continue
+                    matched.append(event)
+
+            if over_cap or len(matched) >= limit_events:
+                cursor = db["crm_events"].find({
+                    "lead_id": lead_id,
+                    "timestamp": {"$gte": assigned},
+                    "$or": [
+                        {"assignment_cycle_id": cycle_id},
+                        {"assignment_cycle_id": {"$exists": False}},
+                        {"assignment_cycle_id": None},
+                    ],
+                })
+                matched = await cursor.to_list(length=limit_events)
+                fallback_queries += 1
+            events_by_cycle[id(cycle)] = matched
+
+    logger.info(
+        "[SLA_ALERT_EVAL] cycles=%s event_bulk_queries=%s event_fallback_queries=%s",
+        len(qualified), bulk_queries, fallback_queries,
+    )
+    return events_by_cycle
+
+
+# ---------------------------------------------------------------------------
 # Main evaluation (async, read-only, fully async MongoDB)
 # ---------------------------------------------------------------------------
 
@@ -330,6 +414,12 @@ async def evaluate_sla_alerts(
         if cid:
             notifications_by_cycle.setdefault(cid, []).append(n)
 
+    # Prefetch indexed event evidence in bounded batches. This is read-only;
+    # failures propagate, so missing evidence can never be treated as no management.
+    events_by_cycle = await _load_sla_events_batched(
+        db, cycles, limit_events=limit_events,
+    )
+
     # 4. Evaluate each cycle
     excluded = Counter()
     alerts: list[dict] = []
@@ -397,15 +487,7 @@ async def evaluate_sla_alerts(
         cycle_mgmts = mgmt_by_cycle.get(cycle_id, [])
 
         # ---- Event evidence (GESTION_LOG / HUMAN_NOTE / MANUAL_ENTRY) ----
-        events_cursor = db["crm_events"].find({
-            "lead_id": lid, "timestamp": {"$gte": assigned_at},
-            "$or": [
-                {"assignment_cycle_id": cycle_id},
-                {"assignment_cycle_id": {"$exists": False}},
-                {"assignment_cycle_id": None},
-            ],
-        })
-        events = await events_cursor.to_list(length=limit_events)
+        events = events_by_cycle.get(id(cycle), [])
         if is_first_sla_management_completed(cycle, cycle_mgmts, events):
             excluded["has_valid_management"] += 1; continue
 

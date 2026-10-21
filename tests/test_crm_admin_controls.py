@@ -313,6 +313,7 @@ def test_emergency_handoff_keeps_sla_pending_and_activates_only_with_supervisor_
         "action_id": "emergency-1",
         "hold_hours": 2,
         "emergency_handoff": True,
+        "expected_cycle_id": "cycle-2",
         "now": datetime(2026, 10, 20, 14, 30, tzinfo=timezone.utc),
     }
     result = admin_reassign_lead(db, **args)
@@ -369,6 +370,38 @@ def test_emergency_handoff_keeps_sla_pending_and_activates_only_with_supervisor_
     )["status"] == "already_applied"
     assert sum(row["cycle_status"] == "active" for row in db["crm_assignment_cycles"].rows) == 1
 
+
+
+def test_emergency_reassignment_requires_expected_cycle_and_rejects_stale_preview():
+    db = _db()
+    actor = {"_id": "supervisor-id", "nombre": "Supervisión", "rol": "supervisor", "office_id": 7}
+    args = {
+        "lead_id": "lead-1",
+        "target_user_id": "mariela-id",
+        "actor": actor,
+        "reason": "Transferencia excepcional auditada",
+        "action_id": "stale-transfer-1",
+        "hold_hours": 2,
+        "emergency_handoff": True,
+        "now": datetime(2026, 10, 20, 14, 30, tzinfo=timezone.utc),
+    }
+    with pytest.raises(AdminControlError, match="expected_cycle_required"):
+        admin_reassign_lead(db, **args)
+    with pytest.raises(AdminControlError, match="cycle_changed"):
+        admin_reassign_lead(db, expected_cycle_id="cycle-from-stale-preview", **args)
+    assert db["leads"].rows[0]["ejecutivo_asignado"] != "Mariela Arriagada"
+    assert len(db["crm_assignment_cycles"].rows) == 1
+    assert not db["crm_assignment_admin_events"].rows
+
+    result = admin_reassign_lead(db, expected_cycle_id="cycle-2", **args)
+    assert result["status"] == "ok"
+    assert result["executive"] == "Mariela Arriagada"
+    assert admin_reassign_lead(db, expected_cycle_id="cycle-2", **args)["status"] == "already_applied"
+    second_args = {**args, "action_id": "stale-transfer-2"}
+    with pytest.raises(AdminControlError, match="cycle_changed"):
+        admin_reassign_lead(db, expected_cycle_id="cycle-2", **second_args)
+    assert len(db["crm_assignment_admin_events"].rows) == 1
+    assert sum(row["cycle_status"] == "active" for row in db["crm_assignment_cycles"].rows) == 1
 
 
 def test_prop360_office_and_exact_property_agent_resolve_target_scope():

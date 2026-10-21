@@ -1312,28 +1312,51 @@ async def lifespan(app: FastAPI):
     # whether the loop is actually running, disabled or failing (previously
     # a disabled/dead loop was completely invisible).
     async def _sla_alert_orchestrator_runner():
+        consecutive_failures = 0
         while True:
             entry = background_tasks_status.setdefault("sla_alert", {})
             entry["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
+            delay_seconds = 60
             try:
                 from chatbot.crm_sla_alert_orchestrator import run_sla_alert_cycle
                 from chatbot.crm_sla_alert_settings import sla_alerts_enabled
                 if not sla_alerts_enabled():
-                    entry.update({"status": "disabled",
+                    consecutive_failures = 0
+                    entry.update({"status": "disabled", "consecutive_failures": 0,
                                   "reason": "CRM_SLA_ALERTS_ENABLED != true"})
                     logger.warning(
                         "[SLA_ALERT] loop deshabilitado: CRM_SLA_ALERTS_ENABLED != true "
                         "(heartbeat=%s)", entry["last_heartbeat"])
                 else:
-                    entry["status"] = "running"
                     report = await run_sla_alert_cycle()
-                    entry.update({"status": "running", "last_report": report})
-                    logger.info("[SLA_ALERT] ciclo ok: %s", report)
+                    if report.get("status") == "completed":
+                        consecutive_failures = 0
+                        entry.update({"status": "running", "last_report": report,
+                                      "consecutive_failures": 0, "last_error": None})
+                        logger.info("[SLA_ALERT] ciclo ok: %s", report)
+                    else:
+                        consecutive_failures += 1
+                        delay_seconds = min(60 * (2 ** min(consecutive_failures, 2)), 240)
+                        failure = report.get("error_type") or report.get("status") or "unknown"
+                        entry.update({"status": "error:cycle_failed", "last_report": report,
+                                      "last_error": str(failure),
+                                      "consecutive_failures": consecutive_failures,
+                                      "retry_in_seconds": delay_seconds})
+                        logger.error(
+                            "[SLA_ALERT] ciclo fallido status=%s error_type=%s "
+                            "consecutive_failures=%s retry_in_seconds=%s",
+                            report.get("status"), report.get("error_type"),
+                            consecutive_failures, delay_seconds,
+                        )
             except Exception as exc:
+                consecutive_failures += 1
+                delay_seconds = min(60 * (2 ** min(consecutive_failures, 2)), 240)
                 logger.exception("[SLA_ALERT] Orchestrator cycle failed")
                 entry.update({"status": f"error: {type(exc).__name__}",
-                              "last_error": str(exc)})
-            await asyncio.sleep(60)
+                              "last_error": str(exc),
+                              "consecutive_failures": consecutive_failures,
+                              "retry_in_seconds": delay_seconds})
+            await asyncio.sleep(delay_seconds)
 
     sla_orch_task = None
     try:

@@ -466,6 +466,7 @@ def _canonical_active_cycle_lookup_stage():
         "pipeline": [
             {"$match": {
                 "$and": [
+                    {"$expr": {"$in": [{"$type": "$lead_id"}, ["objectId", "string"]]}},
                     {
                         "cycle_status": "active",
                         "unassigned_at": None,

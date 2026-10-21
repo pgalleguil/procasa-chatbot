@@ -219,8 +219,8 @@ def test_crm_active_cycle_lookup_has_separate_admin_identity_branch():
     assert lookup["from"] == "crm_assignment_cycles"
     assert lookup["localField"] == "_crm_lead_join_ids"
     assert lookup["foreignField"] == "lead_id"
-    assert match["$and"][0]["cycle_status"] == "active"
-    assert match["$and"][0]["schema_version"] == "crm_assignment_cycle_v1"
+    assert match["$and"][1]["cycle_status"] == "active"
+    assert match["$and"][1]["schema_version"] == "crm_assignment_cycle_v1"
     assert "$lead_current_cycle_id" in repr(match)
     assert "$$lead_owner_user_id" in repr(match)
     assert "$$lead_id" in repr(match)

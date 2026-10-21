@@ -69,6 +69,7 @@ def _transfer(db, target, action_id):
         action_id=action_id,
         hold_hours=2,
         emergency_handoff=True,
+        expected_cycle_id="cycle-initial",
         now=datetime(2026, 10, 20, 14, 30, tzinfo=timezone.utc),
     )
 
@@ -106,9 +107,15 @@ def test_concurrent_emergency_transfers_leave_one_canonical_active_cycle(transac
             pool.submit(_transfer, transaction_db, "agent-a", "race-a-" + suffix),
             pool.submit(_transfer, transaction_db, "agent-b", "race-b-" + suffix),
         ]
-        outcomes = [future.result(timeout=30) for future in futures]
+        outcomes = []
+        for future in futures:
+            try:
+                outcomes.append(future.result(timeout=30))
+            except AdminControlError as exc:
+                outcomes.append(exc.code)
 
-    assert all(item["status"] == "ok" for item in outcomes)
+    assert sum(isinstance(item, dict) and item["status"] == "ok" for item in outcomes) == 1
+    assert sum(item in {"cycle_changed", "transaction_failed"} for item in outcomes if isinstance(item, str)) == 1
     active = list(transaction_db["crm_assignment_cycles"].find({
         "lead_id": "integration-lead", "cycle_status": "active", "unassigned_at": None,
     }))
@@ -119,4 +126,4 @@ def test_concurrent_emergency_transfers_leave_one_canonical_active_cycle(transac
     assert lead["ejecutivo_asignado"] == active[0]["assigned_to_display_name"]
     assert transaction_db["crm_assignment_admin_events"].count_documents({
         "lead_id": "integration-lead", "action": "emergency_reassign",
-    }) == 2
+    }) == 1

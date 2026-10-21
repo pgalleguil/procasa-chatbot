@@ -3900,6 +3900,7 @@ async def api_crm_admin_emergency_reassignment(request: Request):
     user, lead = await _get_authorized_crm_lead_by_id(request, str(data.get("lead_id") or ""))
     target_user_id = data.get("target_user_id")
     action_id = str(data.get("action_id") or "").strip()
+    expected_cycle_id = str(data.get("expected_cycle_id") or "").strip()
     reason = str(data.get("reason") or "").strip()
     raw_hold_hours = data.get("hold_hours", 2)
     if isinstance(raw_hold_hours, bool):
@@ -3908,8 +3909,8 @@ async def api_crm_admin_emergency_reassignment(request: Request):
         hold_hours = int(raw_hold_hours)
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Duración de protección inválida")
-    if not target_user_id or not action_id or not reason:
-        raise HTTPException(status_code=400, detail="Faltan ejecutivo, motivo o identificador de acción")
+    if not target_user_id or not action_id or not reason or not expected_cycle_id:
+        raise HTTPException(status_code=400, detail="Faltan ejecutivo, motivo, ciclo esperado o identificador de acción")
     from chatbot.crm_admin_controls import AdminControlError, admin_reassign_lead
     from chatbot.storage import get_db as _sync_db
 
@@ -3920,12 +3921,13 @@ async def api_crm_admin_emergency_reassignment(request: Request):
                 _sync_db(), lead_id=lead["_id"], target_user_id=target_user_id,
                 actor=user, reason=reason, action_id=action_id,
                 hold_hours=hold_hours, emergency_handoff=True,
+                expected_cycle_id=expected_cycle_id,
             ),
         )
     except AdminControlError as exc:
         status_code = 503 if exc.code == "transaction_unavailable" else 409
         if exc.code in {"reason_required", "invalid_action_id", "target_or_previous_required",
-                        "invalid_hold_hours", "actor_required"}:
+                        "invalid_hold_hours", "actor_required", "expected_cycle_required"}:
             status_code = 400
         if exc.code in {"supervisor_only", "lead_office_unresolved",
                         "supervisor_office_scope_missing", "office_scope_forbidden",

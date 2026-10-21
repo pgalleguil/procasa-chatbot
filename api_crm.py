@@ -436,10 +436,23 @@ def _administrative_cycle_lookup_predicate():
     ]}
 
 
+def _crm_indexed_lead_join_keys_stage():
+    """Join BSON ObjectIds and legacy string IDs using the foreign lead_id index."""
+    return {"$set": {"_crm_lead_join_ids": {
+        "$cond": [
+            {"$in": [{"$type": "$_id"}, ["objectId", "string"]]},
+            ["$_id", {"$toString": "$_id"}],
+            [],
+        ],
+    }}}
+
+
 def _canonical_active_cycle_lookup_stage():
     """Load the canonical active cycle, including identity-valid admin cycles."""
     return {"$lookup": {
         "from": "crm_assignment_cycles",
+        "localField": "_crm_lead_join_ids",
+        "foreignField": "lead_id",
         "let": {
             "lead_id": "$_id",
             "lead_current_cycle_id": {"$ifNull": [
@@ -453,14 +466,6 @@ def _canonical_active_cycle_lookup_stage():
         "pipeline": [
             {"$match": {
                 "$and": [
-                    {"$expr": {"$and": [
-                        {"$in": [{"$type": "$lead_id"}, ["objectId", "string"]]},
-                        {"$in": [{"$type": "$$lead_id"}, ["objectId", "string"]]},
-                        {"$eq": [
-                            {"$toString": "$lead_id"},
-                            {"$toString": "$$lead_id"},
-                        ]},
-                    ]}},
                     {
                         "cycle_status": "active",
                         "unassigned_at": None,
@@ -1072,6 +1077,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
         {"$set": {"_admin_cycle_priority": {"$cond": [
             {"$in": ["$_id", list(current_admin_cycle_lead_ids)]}, 0, 1,
         ]}}},
+        _crm_indexed_lead_join_keys_stage(),
         _canonical_active_cycle_lookup_stage(),
         # $arrayElemAt([], 0) does NOT reliably return null in MongoDB.
         # Use $size to detect empty arrays before accessing elements.

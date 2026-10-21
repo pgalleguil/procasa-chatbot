@@ -288,10 +288,17 @@ def get_db():
         # serverSelectionTimeoutMS: max espera para encontrar un servidor Mongo disponible
         _mongo_client = MongoClient(
             Config.MONGO_URI,
-            socketTimeoutMS=8000,
-            connectTimeoutMS=5000,
-            serverSelectionTimeoutMS=10000,
+            # Render (Oregon) -> Atlas M0 (sa-east-1) crosses regions.
+            # The former 8s socket timeout repeatedly killed even indexed reads.
+            # Keep a bounded deadline, but allow transient network/Atlas jitter.
+            socketTimeoutMS=20000,
+            connectTimeoutMS=10000,
+            serverSelectionTimeoutMS=15000,
             maxIdleTimeMS=45000,
+            # Two separate clients exist (sync + Motor); cap each pool so
+            # concurrent background loops cannot fan out unlimited reads.
+            maxPoolSize=25,
+            waitQueueTimeoutMS=15000,
         )
         _patch_mongo_forensics()
     return _mongo_client[Config.DB_NAME]
@@ -311,10 +318,17 @@ def get_async_db():
         from motor.motor_asyncio import AsyncIOMotorClient
         _async_mongo_client = AsyncIOMotorClient(
             Config.MONGO_URI,
-            socketTimeoutMS=8000,
-            connectTimeoutMS=5000,
-            serverSelectionTimeoutMS=10000,
+            # Render (Oregon) -> Atlas M0 (sa-east-1) crosses regions.
+            # The former 8s socket timeout repeatedly killed even indexed reads.
+            # Keep a bounded deadline, but allow transient network/Atlas jitter.
+            socketTimeoutMS=20000,
+            connectTimeoutMS=10000,
+            serverSelectionTimeoutMS=15000,
             maxIdleTimeMS=45000,
+            # Two separate clients exist (sync + Motor); cap each pool so
+            # concurrent background loops cannot fan out unlimited reads.
+            maxPoolSize=25,
+            waitQueueTimeoutMS=15000,
         )
     return _async_mongo_client[Config.DB_NAME]
 

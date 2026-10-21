@@ -25,12 +25,14 @@ def test_cycle_lookup_uses_foreign_lead_id_index():
     assert lookup["foreignField"] == "lead_id"
     assert lookup["as"] == "_active_cycle"
     match_conditions = lookup["pipeline"][0]["$match"]["$and"]
-    assert all("$expr" not in condition for condition in match_conditions)
-    assert match_conditions[0]["cycle_status"] == "active"
-    assert match_conditions[0]["schema_version"] == "crm_assignment_cycle_v1"
-    assert match_conditions[0]["unassigned_at"] is None
-    assert match_conditions[1]["$or"][0] == {"notification_eligible": True}
-    assert match_conditions[1]["$or"][1] == api_crm._administrative_cycle_lookup_predicate()
+    assert match_conditions[0]["$expr"]["$in"] == [
+        {"$type": "$lead_id"}, ["objectId", "string"],
+    ]
+    assert match_conditions[1]["cycle_status"] == "active"
+    assert match_conditions[1]["schema_version"] == "crm_assignment_cycle_v1"
+    assert match_conditions[1]["unassigned_at"] is None
+    assert match_conditions[2]["$or"][0] == {"notification_eligible": True}
+    assert match_conditions[2]["$or"][1] == api_crm._administrative_cycle_lookup_predicate()
     assert lookup["pipeline"][-1] == {"$limit": 1}
 
 

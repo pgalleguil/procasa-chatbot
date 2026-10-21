@@ -203,6 +203,7 @@ def test_backend_routes_enforce_supervisor_and_ownership_permissions():
     assert "status_code=403" in update_block
     assert "_get_authorized_crm_lead_by_id(request" in reassign_block
     assert "admin_reassign_lead(" in reassign_block
+    assert "CrmService.assign_executive" not in reassign_block
     assert "administrative=True" in duplicate_block
     assert "CrmService.mark_duplicate" in duplicate_block
     assert "administrative=True" in archive_block

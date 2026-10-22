@@ -476,3 +476,141 @@ def test_default_snapshot_distinguishes_verified_zero_from_incomplete_capacity(m
             )
             assert selected["winner"] is None
             assert selected["selection_reason"] == "DYNAMIC_V2_CAPACITY_LIMIT"
+
+
+def test_attributed_orphan_keeps_other_executives_verified_and_unknown_owner_fails_closed(monkeypatch):
+    import asyncio
+    import chatbot.crm_sla_reassignment_worker as worker
+    from chatbot.crm_sla_live_capacity import _capacity_from_rows
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    assigned = as_of - timedelta(minutes=5)
+
+    def cycle(owner, lead_id, *, lead_found=True):
+        row = {
+            "lead_id": lead_id,
+            "assignment_cycle_id": f"cycle-{lead_id}",
+            "assigned_to_user_id": owner,
+            "assigned_at": assigned,
+            "sla_started_at": assigned,
+            "schema_version": "crm_assignment_cycle_v1",
+            "first_valid_management_at": assigned if lead_found else None,
+            "sla_first_management_status": "completed" if lead_found else None,
+            "management_results": [],
+            "lead_found": lead_found,
+        }
+        if lead_found:
+            row["lead"] = {"pipeline_stage": "OPEN", "lead_temperature_effective": "NORMAL"}
+        return row
+
+    metrics, audit = _capacity_from_rows(
+        [
+            cycle("verified-a", "lead-a"),
+            cycle("verified-b", "lead-b"),
+            cycle("orphan-owner", "missing-lead", lead_found=False),
+        ],
+        [],
+        as_of=as_of,
+        policy_since=as_of - timedelta(days=60),
+    )
+    live = {
+        "policy_version": "crm_sla_reassignment_v1",
+        "variant": "A1",
+        "generated_at": as_of.isoformat(),
+        "snapshot_id": "live-test",
+        "capacity_metrics": metrics,
+        "cycle_audit": audit,
+        "docs_examined": 3,
+    }
+    assert audit["lead_missing_or_filtered"] == 1
+    assert audit["lead_missing_or_filtered_owner_attributed"] == 1
+    assert audit["lead_missing_or_filtered_unattributed"] == 0
+    assert worker._live_capacity_snapshot_is_complete(live) is False
+    assert worker._live_capacity_snapshot_is_usable(live) is True
+    assert metrics["verified-a"]["capacity_complete"] is True
+    assert metrics["verified-b"]["capacity_complete"] is True
+    assert metrics["orphan-owner"]["capacity_complete"] is False
+
+    async def historical_builder(*args, **kwargs):
+        return {
+            "candidates": [
+                {"user_id": "verified-a", "open_current_policy": 91, "unmanaged_current_policy": 91, "expired_current_policy": 91},
+                {"user_id": "verified-b", "open_current_policy": 91, "unmanaged_current_policy": 91, "expired_current_policy": 91},
+                {"user_id": "orphan-owner", "open_current_policy": 91, "unmanaged_current_policy": 91, "expired_current_policy": 91},
+                {"user_id": "zero-load", "open_current_policy": 91, "unmanaged_current_policy": 91, "expired_current_policy": 91},
+            ],
+            "team": _team(),
+            "snapshot_id": "historical-test",
+            "docs_examined": 0,
+            "source_watermarks": {},
+        }
+
+    async def live_builder(*args, **kwargs):
+        return live
+
+    monkeypatch.setattr(worker, "build_historical_performance_snapshot", historical_builder)
+    monkeypatch.setattr(worker, "build_live_capacity_variant", live_builder)
+    snapshot = asyncio.run(worker._default_performance_snapshot(
+        as_of,
+        policy_version="crm_sla_reassignment_v2",
+        db=object(),
+        performance_cache=PerformanceSnapshotCache(),
+        policy_since=as_of - timedelta(days=60),
+        shadow_live_capacity=True,
+    ))
+    by_id = {row["user_id"]: row for row in snapshot["candidates"]}
+    assert snapshot["capacity_snapshot_complete"] is False
+    assert snapshot["capacity_snapshot_usable"] is True
+    assert worker._capacity_snapshot_verified_for_policy(
+        snapshot, snapshot["candidates"], "crm_sla_reassignment_v2",
+    ) is True
+    assert worker._capacity_snapshot_verified_for_policy(
+        snapshot, snapshot["candidates"], "crm_sla_reassignment_v1",
+    ) is False
+    globally_unknown = dict(snapshot, capacity_snapshot_usable=False)
+    assert worker._capacity_snapshot_verified_for_policy(
+        globally_unknown, snapshot["candidates"], "crm_sla_reassignment_v2",
+    ) is False
+    assert by_id["verified-a"]["open_current_policy"] == 1
+    assert by_id["verified-b"]["open_current_policy"] == 1
+    assert by_id["orphan-owner"]["open_current_policy"] is None
+    assert by_id["orphan-owner"]["unmanaged_current_policy"] is None
+    assert by_id["zero-load"]["open_current_policy"] == 0
+
+    v1_snapshot = asyncio.run(worker._default_performance_snapshot(
+        as_of,
+        policy_version="crm_sla_reassignment_v1",
+        db=object(),
+        performance_cache=PerformanceSnapshotCache(),
+        policy_since=as_of - timedelta(days=60),
+        shadow_live_capacity=True,
+    ))
+    v1_by_id = {row["user_id"]: row for row in v1_snapshot["candidates"]}
+    assert v1_by_id["orphan-owner"]["open_current_policy"] == 91
+
+    selectable = []
+    for user_id, p50 in (("verified-a", 70), ("orphan-owner", 5)):
+        candidate = _candidate(user_id, p50=p50, p90=p50 * 2)
+        candidate.update(by_id[user_id])
+        for key in ("simulated_open_current", "simulated_unmanaged_current", "simulated_expired_current"):
+            candidate.pop(key, None)
+        selectable.append(candidate)
+    selected = select_v2_winner(
+        {"owner_user_id": "source"}, selectable, team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+    assert selected["winner"]["user_id"] == "verified-a"
+    excluded = {row.get("user_id"): row.get("capacity_exclusion_reason") for row in selected["hard_excluded"]}
+    assert excluded["orphan-owner"] == "capacity_snapshot_incomplete"
+
+    unattributed = {
+        "cycle_audit": {
+            **audit,
+            "lead_missing_or_filtered_unattributed": 1,
+            "lead_missing_or_filtered_owner_attributed": 0,
+        },
+        "capacity_metrics": metrics,
+    }
+    assert worker._live_capacity_snapshot_is_usable(unattributed) is False

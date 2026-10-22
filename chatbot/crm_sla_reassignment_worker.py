@@ -1261,15 +1261,80 @@ def _live_capacity_snapshot_is_complete(snapshot: Mapping[str, Any]) -> bool:
     capacity = snapshot.get("capacity_metrics")
     if not isinstance(audit, Mapping) or not isinstance(capacity, Mapping):
         return False
-    for key in ("lead_missing_or_filtered", "owner_missing"):
-        if _capacity_number(audit.get(key)) != 0:
-            return False
+    if _capacity_number(audit.get("lead_missing_or_filtered")) != 0:
+        return False
+    if _capacity_number(audit.get("owner_missing")) != 0:
+        return False
     for row in capacity.values():
         if not isinstance(row, Mapping):
             return False
         if any(_capacity_number(row.get(key)) is None for key in ("open", "unmanaged", "expired", "hot_unmanaged")):
             return False
+        if row.get("capacity_complete") is False:
+            return False
     return True
+
+
+def _live_capacity_snapshot_is_usable(snapshot: Mapping[str, Any]) -> bool:
+    """Allow verified owners through when incomplete rows are fully attributable.
+
+    Unknown owner capacity still blocks the V2 snapshot globally. A known
+    owner's missing/filtered lead instead marks only that owner incomplete;
+    the selector excludes that candidate because its capacity dimensions are
+    passed as None.
+    """
+    audit = snapshot.get("cycle_audit")
+    capacity = snapshot.get("capacity_metrics")
+    if not isinstance(audit, Mapping) or not isinstance(capacity, Mapping):
+        return False
+    missing = _capacity_number(audit.get("lead_missing_or_filtered"))
+    owner_missing = _capacity_number(audit.get("owner_missing"))
+    attributed = _capacity_number(audit.get("lead_missing_or_filtered_owner_attributed"))
+    unattributed = _capacity_number(audit.get("lead_missing_or_filtered_unattributed"))
+    if missing is None or owner_missing != 0:
+        return False
+    if missing == 0:
+        attributed = 0 if attributed is None else attributed
+        unattributed = 0 if unattributed is None else unattributed
+    elif attributed is None or unattributed is None:
+        return False
+    if missing != attributed + unattributed or unattributed != 0:
+        return False
+    for row in capacity.values():
+        if not isinstance(row, Mapping):
+            return False
+        if any(_capacity_number(row.get(key)) is None for key in ("open", "unmanaged", "expired", "hot_unmanaged")):
+            return False
+        if row.get("capacity_complete") not in (None, True, False):
+            return False
+    return True
+
+
+def _capacity_snapshot_verified_for_policy(
+    snapshot: Mapping[str, Any],
+    candidates: Iterable[Mapping[str, Any]],
+    policy_version: str,
+) -> bool:
+    """Verify the snapshot without treating an unknown owner's load as zero."""
+    if policy_version == DYNAMIC_POLICY_VERSION:
+        if snapshot.get("capacity_snapshot_usable") is not True:
+            return False
+        for row in candidates:
+            if row.get("capacity_snapshot_owner_verified") is False:
+                continue
+            if any(_capacity_number(row.get(key)) is None for key in (
+                "open_current_policy", "unmanaged_current_policy", "expired_current_policy",
+            )):
+                return False
+        return True
+    if snapshot.get("capacity_snapshot_complete") is not True:
+        return False
+    return all(
+        all(_capacity_number(row.get(key)) is not None for key in (
+            "open_current_policy", "unmanaged_current_policy", "expired_current_policy",
+        ))
+        for row in candidates
+    )
 
 
 async def _default_performance_snapshot(
@@ -1327,19 +1392,26 @@ async def _default_performance_snapshot(
     combined = dict(historical)
     capacity = dict(live.get("capacity_metrics") or {})
     capacity_snapshot_complete = _live_capacity_snapshot_is_complete(live)
+    capacity_snapshot_usable = _live_capacity_snapshot_is_usable(live)
     candidates = []
     for raw in combined.get("candidates") or []:
         row = dict(raw)
         live_row = capacity.get(_text(row.get("user_id")), {})
         if policy_version == DYNAMIC_POLICY_VERSION:
-            # An absent owner row means verified zero only after the full
-            # capacity snapshot passed its completeness checks. Otherwise all
-            # V2 capacity dimensions remain unknown and selection fails closed.
-            row["open_current_policy"] = live_row.get("open", 0) if capacity_snapshot_complete else None
-            row["unmanaged_current_policy"] = live_row.get("unmanaged", 0) if capacity_snapshot_complete else None
-            row["expired_current_policy"] = live_row.get("expired", 0) if capacity_snapshot_complete else None
-            row["hot_unmanaged_backlog"] = live_row.get("hot_unmanaged", 0) if capacity_snapshot_complete else None
+            # An absent owner row means verified zero only if the scan is
+            # usable. An attributed anomaly makes just that owner's capacity
+            # unknown, and V2's selector excludes the candidate.
+            owner_capacity_complete = live_row.get("capacity_complete") is not False
+            verified = capacity_snapshot_usable and owner_capacity_complete
+            row["open_current_policy"] = live_row.get("open", 0) if verified else None
+            row["unmanaged_current_policy"] = live_row.get("unmanaged", 0) if verified else None
+            row["expired_current_policy"] = live_row.get("expired", 0) if verified else None
+            row["hot_unmanaged_backlog"] = live_row.get("hot_unmanaged", 0) if verified else None
+            row["capacity_snapshot_owner_verified"] = verified
         else:
+            # Preserve historical V1 fallback if an A1 row is partial.
+            if live_row.get("capacity_complete") is False:
+                live_row = {}
             row["open_current_policy"] = live_row.get("open", row.get("open_current_policy", 0))
             row["unmanaged_current_policy"] = live_row.get("unmanaged", row.get("unmanaged_current_policy", 0))
             row["expired_current_policy"] = live_row.get("expired", row.get("expired_current_policy", 0))
@@ -1348,6 +1420,7 @@ async def _default_performance_snapshot(
     combined["candidates"] = candidates
     combined["backlog"] = capacity
     combined["capacity_snapshot_complete"] = capacity_snapshot_complete
+    combined["capacity_snapshot_usable"] = capacity_snapshot_usable
     combined["live_capacity_snapshot_id"] = live.get("snapshot_id")
     combined["capacity_snapshot_at"] = live.get("generated_at")
     combined["live_capacity_variant"] = live.get("variant") or (A1_NAME if shadow_live_capacity else "CURRENT_REFERENCE")
@@ -2186,15 +2259,9 @@ async def run_sla_reassignment_worker_iteration(
         dynamic_snapshot_verified = bool(
             (snapshot.get("performance_snapshot_version") or snapshot.get("snapshot_id"))
             and (snapshot.get("capacity_snapshot_at") or snapshot.get("live_capacity_snapshot_id"))
-            and snapshot.get("capacity_snapshot_complete") is True
             and isinstance(snapshot.get("team"), Mapping)
             and isinstance(snapshot.get("candidates"), list)
-            and all(
-                all(_capacity_number(row.get(key)) is not None for key in (
-                    "open_current_policy", "unmanaged_current_policy", "expired_current_policy",
-                ))
-                for row in all_candidates
-            )
+            and _capacity_snapshot_verified_for_policy(snapshot, all_candidates, policy_version)
         )
         maria_id = next((_text(row.get("user_id")) for row in all_candidates if _identity(row.get("identity_key") or row.get("executive_key")) == "maria paz galleguillos"), None)
         hernan_id = next((_text(row.get("user_id")) for row in all_candidates if _identity(row.get("identity_key") or row.get("executive_key")) == "hernan castro"), None)

@@ -284,17 +284,19 @@ def _capacity_from_rows(
     *,
     as_of: datetime,
     policy_since: datetime,
-) -> tuple[dict[str, dict[str, int]], dict[str, Any]]:
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     events_by_lead: dict[str, list[dict[str, Any]]] = {}
     for raw in events:
         compact = _compact_event(raw)
         events_by_lead.setdefault(str(compact.get("lead_id") or ""), []).append(compact)
 
-    capacity: dict[str, dict[str, int]] = {}
+    capacity: dict[str, dict[str, Any]] = {}
     audit = {
         "aggregation_rows": len(rows),
         "lead_documents": sum(1 for row in rows if row.get("lead_found")),
         "lead_missing_or_filtered": 0,
+        "lead_missing_or_filtered_owner_attributed": 0,
+        "lead_missing_or_filtered_unattributed": 0,
         "lead_closed": 0,
         "owner_missing": 0,
         "management_stop_cycles": 0,
@@ -308,6 +310,19 @@ def _capacity_from_rows(
         audit["current_policy_cycles"] += 1
         if not cycle.get("lead_found") or not isinstance(cycle.get("lead"), Mapping):
             audit["lead_missing_or_filtered"] += 1
+            # A missing/filtered lead makes only its known owner's capacity
+            # incomplete. Keep that owner explicitly unknown; cycles with no
+            # owner remain globally unassignable and fail closed.
+            owner = str(cycle.get("assigned_to_user_id") or "")
+            if owner:
+                audit["lead_missing_or_filtered_owner_attributed"] += 1
+                row = capacity.setdefault(owner, {
+                    "open": 0, "unmanaged": 0, "expired": 0,
+                    "hot_unmanaged": 0, "capacity_complete": True,
+                })
+                row["capacity_complete"] = False
+            else:
+                audit["lead_missing_or_filtered_unattributed"] += 1
             continue
         lead = cycle["lead"]
         stage = str(lead.get("pipeline_stage") or lead.get("stage") or lead.get("crm_estado") or "").upper()
@@ -318,7 +333,10 @@ def _capacity_from_rows(
         if not owner:
             audit["owner_missing"] += 1
             continue
-        row = capacity.setdefault(owner, {"open": 0, "unmanaged": 0, "expired": 0, "hot_unmanaged": 0})
+        row = capacity.setdefault(owner, {
+            "open": 0, "unmanaged": 0, "expired": 0,
+            "hot_unmanaged": 0, "capacity_complete": True,
+        })
         row["open"] += 1
 
         cycle_events = events_by_lead.get(str(cycle.get("lead_id") or ""), [])

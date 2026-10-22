@@ -2213,10 +2213,18 @@ async def run_sla_reassignment_worker_iteration(
                         and expiration.breach_at
                         and protection.current_stop_at <= expiration.breach_at
                     )
+                    admin_hold_until = _utc(cycle.get("administrative_hold_until"))
+                    admin_supervisor_lock = (
+                        _text(cycle.get("administrative_assignment_mode")).upper() == "SUPERVISOR_LOCK"
+                    )
+                    admin_protected = admin_supervisor_lock or (
+                        admin_hold_until is not None and admin_hold_until > as_of
+                    )
                     if (
                         expiration.started_at and expiration.expired and expiration.breach_at
                         and expiration.breach_at >= cutover
                         and not stop_before_breach and not protection.protected
+                        and not admin_protected
                     ):
                         v2_potentially_processable = True
                 except Exception:

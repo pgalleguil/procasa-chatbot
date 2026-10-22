@@ -1491,7 +1491,7 @@ def _update_v2_state(
         return
     state[target_user_id]["recent_rescues_7d"] = _number(state[target_user_id].get("recent_rescues_7d")) + 1.0
     if temperature == "HOT":
-        target["hot_unmanaged_backlog"] = _number(target.get("hot_unmanaged_backlog")) + 1.0
+        state[target_user_id]["hot_unmanaged_backlog"] = _number(state[target_user_id].get("hot_unmanaged_backlog")) + 1.0
 
 
 _EVENT_TIMESTAMP_FIELDS = ("reassigned_at", "commit_time", "created_at", "timestamp", "at")

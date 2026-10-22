@@ -1489,12 +1489,7 @@ def _update_v2_state(
     target_user_id = _text(winner.get("user_id"))
     if not target_user_id:
         return
-    target = state[target_user_id]
-    for key in ("simulated_open_current", "simulated_unmanaged_current"):
-        current = _capacity_number(target.get(key))
-        if current is not None:
-            target[key] = current + 1.0
-    target["recent_rescues_7d"] = _number(target.get("recent_rescues_7d")) + 1.0
+    state[target_user_id]["recent_rescues_7d"] = _number(state[target_user_id].get("recent_rescues_7d")) + 1.0
     if temperature == "HOT":
         target["hot_unmanaged_backlog"] = _number(target.get("hot_unmanaged_backlog")) + 1.0
 

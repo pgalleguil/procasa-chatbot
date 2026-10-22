@@ -121,8 +121,8 @@ def test_temperature_snapshot_preserves_hot_and_normal_sample_sizes():
     as_of = datetime(2026, 10, 22, tzinfo=timezone.utc)
     assigned = datetime(2026, 10, 20, tzinfo=timezone.utc)
     records = [
-        {"is_post_cutover": True, "canonical": True, "excluded_origin": False, "assigned_at": assigned, "owner_id": "a", "temperature": "HOT", "threshold": 60},
-        {"is_post_cutover": True, "canonical": True, "excluded_origin": False, "assigned_at": assigned, "owner_id": "a", "temperature": "NORMAL", "threshold": 180},
+        {"is_post_cutover": True, "canonical": True, "excluded_origin": False, "assigned_at": assigned, "sla_started_at": assigned, "a_stop_at": assigned + timedelta(minutes=10), "hot_started_at": assigned, "deadline": assigned + timedelta(minutes=60), "owner_id": "a", "temperature": "HOT", "threshold": 60},
+        {"is_post_cutover": True, "canonical": True, "excluded_origin": False, "assigned_at": assigned, "sla_started_at": assigned, "a_stop_at": assigned + timedelta(minutes=10), "deadline": assigned + timedelta(minutes=180), "owner_id": "a", "temperature": "NORMAL", "threshold": 180},
         {"is_post_cutover": True, "canonical": False, "excluded_origin": False, "assigned_at": assigned, "owner_id": "a", "temperature": "HOT", "threshold": 60},
     ]
     owners, team = _dynamic_temperature_metrics(
@@ -194,6 +194,7 @@ def test_temperature_denominators_exclude_unevaluable_episodes_and_future_manage
             "is_post_cutover": True, "canonical": True, "excluded_origin": False,
             "assigned_at": assigned, "owner_id": "a", "temperature": "HOT",
             "sla_started_at": assigned, "a_stop_at": datetime(2026, 10, 21, 12, tzinfo=timezone.utc),
+            "hot_started_at": assigned,
             "deadline": datetime(2026, 10, 21, 13, tzinfo=timezone.utc), "threshold": 100000,
         },
         {

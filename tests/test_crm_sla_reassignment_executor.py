@@ -809,7 +809,6 @@ def test_result_and_logs_contract_has_no_contact_pii(monkeypatch, caplog):
     assert "whatsapp" not in text
 
 
-
 def test_executor_revalidates_selected_recipient_inside_transaction(monkeypatch):
     enable_flags(monkeypatch)
     db, decision = make_fixture()

@@ -26,6 +26,9 @@ jobs:
             webhook.py config.py api_crm.py api_captacion.py \
             captacion_management.py captacion_assignment_eligibility.py \
             chatbot/crm_assignment_integrity.py chatbot/crm_sla_live_capacity.py \
+            chatbot/crm_admin_controls.py chatbot/crm_admin_scope.py chatbot/crm_permissions.py \
+            chatbot/crm_metrics.py chatbot/crm_sla_reassignment_worker.py \
+            chatbot/crm_sla_reassignment_executor.py chatbot/crm_service.py \
             maintenance/repair_procasa_p0_17252.py maintenance/repair_procasa_p0_6732.py \
             maintenance/repair_procasa_prop360_duplicate_cycles.py \
             maintenance/ensure_crm_cycle_reconciliation_index.py \
@@ -34,6 +37,40 @@ jobs:
             campanas/owner_campaign_live_sender.py
       - name: Verify production ancestry
         run: python scripts/verify_production_deploy_base.py --approved-main-ref origin/main --head HEAD
+
+  crm-admin-transaction-tests:
+    name: CRM admin transactions on MongoDB replica set
+    runs-on: ubuntu-latest
+    env:
+      CRM_ADMIN_MONGO_TEST_URI: mongodb://localhost:27017/?replicaSet=rs0
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Start isolated MongoDB replica set
+        run: |
+          docker run --detach --name crm-admin-mongo-test --publish 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 30); do
+            if docker exec crm-admin-mongo-test mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec crm-admin-mongo-test mongosh --quiet --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "localhost:27017"}]})'
+          for attempt in $(seq 1 30); do
+            if docker exec crm-admin-mongo-test mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec crm-admin-mongo-test mongosh --quiet --eval 'assert(db.hello().isWritablePrimary)'
+      - name: Install CRM transaction test dependencies
+        run: python -m pip install -r requirements.txt pytest
+      - name: Run rollback and concurrency tests
+        run: python -m pytest -c pytest-procasa.ini tests/test_crm_admin_controls_transaction_integration.py
 
   critical-tests:
     name: Critical suites
@@ -65,6 +102,7 @@ jobs:
             tests: >-
               tests/test_crm_management_sla.py
               tests/test_crm_admin_cycle_inbox.py
+              tests/test_crm_admin_controls.py
               tests/test_sla_business_minutes.py
           - suite: P0 CRM assignment integrity and lead inbox
             tests: >-

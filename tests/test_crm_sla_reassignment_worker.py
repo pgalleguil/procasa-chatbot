@@ -1114,3 +1114,45 @@ def test_v2_idle_scan_keeps_fast_and_maintenance_checks_without_metric_reads(mon
     assert result["performance_docs_examined"] == 0
     assert not result["evaluations"]
     assert not result["decisions"]
+
+
+
+@pytest.mark.parametrize(
+    ("admin_fields", "expected_reason"),
+    [
+        ({"administrative_assignment_mode": "SUPERVISOR_LOCK"}, "SUPERVISOR_LOCK"),
+        ({"administrative_hold_until": NOW + timedelta(minutes=5)}, "HOLD_UNTIL"),
+    ],
+)
+def test_v2_admin_protection_blocks_transfer_without_snapshot_or_ledger(
+    monkeypatch, admin_fields, expected_reason,
+):
+    import chatbot.crm_sla_reassignment_worker as worker
+
+    monkeypatch.setattr(
+        Config, "CRM_SLA_REASSIGNMENT_POLICY_VERSION",
+        "crm_sla_reassignment_v2", raising=False,
+    )
+    row = cycle(991, assigned_at=NOW - timedelta(days=2))
+    row["sla_started_at"] = row["assigned_at"]
+    row.update(admin_fields)
+    fixture_lead = lead(991)
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("administrative protection must skip V2 metrics and ledger reads")
+
+    monkeypatch.setattr(worker, "_default_performance_snapshot", forbidden)
+    monkeypatch.setattr(worker, "_load_committed_events", forbidden)
+    result = run(
+        db=None, now=NOW, cutover_at=datetime(2026, 9, 1, tzinfo=UTC),
+        scan_result={"cycles": [row], "documents_examined": 1},
+        context=context([row], [fixture_lead]), performance_snapshot=None,
+        committed_events=None,
+    )
+
+    assert result["status"] == "shadow"
+    assert result["performance_snapshot_skipped"] is True
+    assert result["performance_docs_examined"] == 0
+    assert result["iteration"]["protected_skipped"] == 1
+    assert result["evaluations"][0]["exclusion_reason"] == expected_reason
+    assert not result["decisions"]

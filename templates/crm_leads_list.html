@@ -1792,7 +1792,17 @@
                 min-height: 42px;
             }
         }
-    </style>
+    
+        .admin-lead-actions { display: flex; justify-content: center; gap: 6px; }
+        .admin-open-button { border: 1px solid #b9c6d8; border-radius: 7px; background: #fff; color: #19375b; padding: 7px 12px; font-weight: 600; }
+        #crm-admin-dialog { border: 0; border-radius: 12px; width: min(560px, calc(100vw - 24px)); padding: 22px; box-shadow: 0 16px 60px #10243b44; color: #172b43; }
+        #crm-admin-dialog::backdrop { background: #10243b88; }
+        #crm-admin-dialog label { display: block; margin: 12px 0 5px; font-weight: 600; }
+        #crm-admin-dialog input, #crm-admin-dialog select, #crm-admin-dialog textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 7px; padding: 9px; }
+        #crm-admin-dialog textarea { min-height: 76px; resize: vertical; }
+        .crm-admin-preview { background: #f4f7fb; border-radius: 8px; margin: 12px 0; padding: 12px; white-space: pre-line; }
+        .crm-admin-silent-note { color: #425873; font-size: .9rem; }
+</style>
     <style>
         /* --- MODERN & RESPONSIVE IMPROVEMENTS --- */
 
@@ -3098,6 +3108,7 @@
                             <th class="col-management">Gestión</th>
                             <th class="col-code">Código</th>
                             <th class="col-response">Respuesta</th>
+                            {% if can_supervise_crm_assignments and not review_mode %}<th class="col-admin-actions">Supervisión</th>{% endif %}
                         </tr>
                     </thead>
                     <tbody>
@@ -3107,7 +3118,10 @@
                             data-lead-url="{% if review_mode %}/crm-leads-review?view=detail&lead={{ lead.lead_id }}{% elif lead.lead_id %}/crm/lead-id/{{ lead.lead_id }}{% else %}/crm/lead/{{ lead.phone }}{% endif %}"
                             data-lead-id="{{ lead.lead_id }}"
                             data-assignment-cycle-id="{{ lead.assignment_cycle_id or '' }}"
-                            data-management-state="{{ lead.estado }}">
+                            data-management-state="{{ lead.estado }}"
+                            data-current-owner="{{ lead.ejecutivo_nombre or 'Sin asignar' }}"
+                            data-lead-name="{{ lead.nombre }}"
+                            data-sla-summary="{{ lead.sla_label or lead.sla_timing or 'SLA no disponible' }}">
                             <td class="col-sent" data-label="Asignado">
                                 <div class="mobile-cell-value sent-cell" title="{{ lead.effective_sent_source }}">
                                     {% if lead.effective_sent_at %}
@@ -3223,10 +3237,19 @@
                                 {% endif %}
                                 </div>
                             </td>
+                            {% if can_supervise_crm_assignments and not review_mode %}
+                            <td class="col-admin-actions" data-label="Supervisión">
+                                <div class="mobile-cell-value admin-lead-actions">
+                                    <button type="button" class="admin-open-button" data-admin-open
+                                        data-lead-id="{{ lead.lead_id }}"
+                                        aria-label="Administrar lead de {{ lead.nombre }}">Administrar</button>
+                                </div>
+                            </td>
+                            {% endif %}
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center text-secondary py-5">
+                            <td colspan="{{ 9 if can_supervise_crm_assignments and not review_mode else 8 }}" class="text-center text-secondary py-5">
                                 <div class="opacity-50 mb-3">
                                     <i class="fa-solid fa-folder-open fa-3x"></i>
                                 </div>
@@ -3237,6 +3260,48 @@
                     </tbody>
                 </table>
             </div>
+
+            {% if can_supervise_crm_assignments and not review_mode %}
+            <dialog id="crm-admin-dialog" aria-labelledby="crm-admin-title">
+                <form method="dialog">
+                    <h2 id="crm-admin-title">Administrar lead</h2>
+                    <p id="crm-admin-context"></p>
+                    <label for="crm-admin-action">Acción</label>
+                    <select id="crm-admin-action">
+                        <option value="reassign">Asignar o reasignar</option>
+                        <option value="emergency_reassign">Reasignar por emergencia (2 h de protección)</option>
+                        <option value="activate_handoff">Confirmar traspaso y activar SLA</option>
+                        <option value="return_previous">Devolver al ejecutivo anterior</option>
+                        <option value="extend_sla">Ampliar plazo SLA en 2 horas</option>
+                        <option value="protect">Proteger temporalmente</option>
+                        <option value="history">Ver historial</option>
+                    </select>
+                    <div id="crm-admin-target-wrap">
+                        <label for="crm-admin-target">Ejecutivo de destino</label>
+                        <select id="crm-admin-target" required><option value="">Cargando ejecutivos…</option></select>
+                    </div>
+                    <p id="crm-admin-previous-owner" hidden></p>
+                    <div id="crm-admin-hold-wrap" hidden>
+                        <label for="crm-admin-hold-hours">Duración de protección (horas, máximo 168)</label>
+                        <input id="crm-admin-hold-hours" type="number" min="1" max="168" value="24">
+                    </div>
+                    <div id="crm-admin-reason-wrap">
+                        <label for="crm-admin-reason">Motivo obligatorio</label>
+                        <textarea id="crm-admin-reason" maxlength="300" required></textarea>
+                    </div>
+                    <p class="crm-admin-silent-note">Sin notificaciones: esta acción no enviará mensajes ni avisos al ejecutivo.</p>
+                    <div id="crm-admin-preview" class="crm-admin-preview" hidden></div>
+                    <div id="crm-admin-history" class="crm-admin-preview" hidden></div>
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" id="crm-admin-review">Revisar acción</button>
+                        <button type="button" id="crm-admin-history-load" hidden>Ver historial</button>
+                        <button type="button" id="crm-admin-confirm" hidden>Confirmar acción</button>
+                        <button type="button" id="crm-admin-edit" hidden>Editar</button>
+                        <button type="button" id="crm-admin-close">Cerrar</button>
+                    </div>
+                </form>
+            </dialog>
+            {% endif %}
 
             <!-- PAGINACIÓN -->
             {% if pagination.total_count > 0 %}
@@ -4093,6 +4158,239 @@
             }
 
         </script>
+        {% if can_supervise_crm_assignments and not review_mode %}
+        <script>
+const adminDialog = document.getElementById('crm-admin-dialog');
+            if (adminDialog) {
+                const actionSelect = document.getElementById('crm-admin-action');
+                const targetSelect = document.getElementById('crm-admin-target');
+                const targetWrap = document.getElementById('crm-admin-target-wrap');
+                const holdWrap = document.getElementById('crm-admin-hold-wrap');
+                const reasonWrap = document.getElementById('crm-admin-reason-wrap');
+                const reasonInput = document.getElementById('crm-admin-reason');
+                const preview = document.getElementById('crm-admin-preview');
+                const historyBox = document.getElementById('crm-admin-history');
+                const reviewButton = document.getElementById('crm-admin-review');
+                const confirmButton = document.getElementById('crm-admin-confirm');
+                const historyButton = document.getElementById('crm-admin-history-load');
+                const editButton = document.getElementById('crm-admin-edit');
+                let activeLead = null;
+                let previousOwner = null;
+
+                function resetPreview() {
+                    preview.hidden = true;
+                    historyBox.hidden = true;
+                    reviewButton.hidden = false;
+                    confirmButton.hidden = true;
+                    historyButton.hidden = actionSelect.value !== 'history';
+                    editButton.hidden = true;
+                }
+
+                function updateActionFields() {
+                    const action = actionSelect.value;
+                    targetWrap.hidden = !['reassign', 'emergency_reassign'].includes(action);
+                    holdWrap.hidden = !['protect', 'emergency_reassign'].includes(action);
+                    if (action === 'emergency_reassign') {
+                        document.getElementById('crm-admin-hold-hours').value = 2;
+                    } else if (action === 'protect') {
+                        document.getElementById('crm-admin-hold-hours').value = 24;
+                    }
+                    reasonWrap.hidden = action === 'history';
+                    reasonInput.required = action !== 'history';
+                    const reasonLabel = document.querySelector('label[for="crm-admin-reason"]');
+                    reasonLabel.textContent = action === 'activate_handoff'
+                        ? 'Evidencia del traspaso confirmado (obligatoria)'
+                        : 'Motivo obligatorio';
+                    document.getElementById('crm-admin-previous-owner').hidden = action !== 'return_previous';
+                    historyButton.hidden = action !== 'history';
+                    resetPreview();
+                }
+
+                document.addEventListener('input', function(event) {
+                    if (event.target.closest('#crm-admin-dialog')) resetPreview();
+                });
+                actionSelect.addEventListener('change', updateActionFields);
+
+                document.addEventListener('click', async function(event) {
+                    const openButton = event.target.closest('[data-admin-open]');
+                    if (!openButton) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const row = openButton.closest('.clickable-row');
+                    activeLead = {
+                        id: openButton.dataset.leadId || '',
+                        cycleId: row?.dataset.assignmentCycleId || '',
+                        name: row?.dataset.leadName || 'Lead',
+                        owner: row?.dataset.currentOwner || 'Sin asignar',
+                        sla: row?.dataset.slaSummary || 'SLA no disponible'
+                    };
+                    if (!activeLead.id) return window.alert('No se encontró el identificador del lead.');
+                    document.getElementById('crm-admin-title').textContent = 'Administrar lead';
+                    document.getElementById('crm-admin-context').textContent =
+                        activeLead.name + ' · Responsable actual: ' + activeLead.owner +
+                        ' · Ciclo activo: ' + (activeLead.cycleId || 'sin ciclo') + ' · SLA: ' + activeLead.sla;
+                    document.getElementById('crm-admin-previous-owner').textContent = '';
+                    targetSelect.innerHTML = '<option value="">Cargando ejecutivos…</option>';
+                    previousOwner = null;
+                    reasonInput.value = '';
+                    actionSelect.value = 'reassign';
+                    updateActionFields();
+                    historyBox.hidden = true;
+                    adminDialog.showModal();
+                    try {
+                        const response = await fetch('/api/crm/admin/eligible-executives?lead_id=' + encodeURIComponent(activeLead.id), { credentials: 'same-origin' });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok) throw new Error(result.detail || 'No se pudieron cargar los ejecutivos');
+                        targetSelect.innerHTML = '<option value="">Selecciona un ejecutivo…</option>';
+                        (result.executives || []).forEach(function(item) {
+                            const option = document.createElement('option');
+                            option.value = item.user_id;
+                            option.textContent = item.name;
+                            targetSelect.appendChild(option);
+                        });
+                        previousOwner = result.previous_owner || null;
+                        document.getElementById('crm-admin-previous-owner').textContent =
+                            previousOwner ? 'Destino verificado: ' + previousOwner.name : 'No hay un ejecutivo anterior elegible para esta oficina.';
+                    } catch (error) {
+                        targetSelect.innerHTML = '<option value="">No disponible</option>';
+                        window.alert(error.message);
+                    }
+                });
+
+                reviewButton.addEventListener('click', function() {
+                    const action = actionSelect.value;
+                    if (action === 'history') {
+                        historyButton.click();
+                        return;
+                    }
+                    if (!activeLead || (!activeLead.cycleId && !['reassign'].includes(action))) {
+                        return window.alert('Este lead no tiene un ciclo activo verificable.');
+                    }
+                    if (!reasonInput.value.trim()) {
+                        reasonInput.focus();
+                        return window.alert('Escribe el motivo obligatorio.');
+                    }
+                    if (['reassign', 'emergency_reassign'].includes(action) && !targetSelect.value) {
+                        targetSelect.focus();
+                        return window.alert('Selecciona un ejecutivo de destino.');
+                    }
+                    if (action === 'return_previous' && !previousOwner) {
+                        return window.alert('No hay un ejecutivo anterior elegible para esta oficina.');
+                    }
+                    const actionLabels = {
+                        reassign: 'Asignar o reasignar',
+                        emergency_reassign: 'Reasignación de emergencia, sin notificaciones',
+                        activate_handoff: 'Activar SLA tras confirmar el traspaso',
+                        return_previous: 'Devolver al ejecutivo anterior',
+                        extend_sla: 'Ampliar el SLA en 2 horas',
+                        protect: 'Proteger temporalmente'
+                    };
+                    let details = 'Lead: ' + activeLead.name + '\nResponsable actual: ' + activeLead.owner +
+                        '\nCiclo activo: ' + activeLead.cycleId + '\nSLA actual: ' + activeLead.sla +
+                        '\nAcción: ' + actionLabels[action];
+                    if (['reassign', 'emergency_reassign'].includes(action)) details += '\nEjecutivo destino: ' + targetSelect.selectedOptions[0].textContent;
+                    if (action === 'emergency_reassign') {
+                        const hours = Number(document.getElementById('crm-admin-hold-hours').value);
+                        if (!Number.isInteger(hours) || hours < 1 || hours > 168) return window.alert('La protección debe durar entre 1 y 168 horas.');
+                        details += '\nSLA: pendiente hasta la activación del supervisor; protección: ' + hours + ' horas';
+                    }
+                    if (action === 'activate_handoff') details += '\nEvidencia registrada: ' + reasonInput.value.trim();
+                    if (action === 'return_previous') details += '\nEjecutivo destino: ' + previousOwner.name;
+                    if (action === 'extend_sla') details += '\nNuevo plazo: +2 horas';
+                    if (action === 'protect') {
+                        const hours = Number(document.getElementById('crm-admin-hold-hours').value);
+                        if (!Number.isInteger(hours) || hours < 1 || hours > 168) return window.alert('La protección debe durar entre 1 y 168 horas.');
+                        details += '\nProtección hasta: ' + new Date(Date.now() + hours * 3600000).toLocaleString();
+                    }
+                    details += '\nMotivo: ' + reasonInput.value.trim() + '\nNotificaciones: ninguna';
+                    preview.textContent = details;
+                    preview.hidden = false;
+                    reviewButton.hidden = true;
+                    confirmButton.hidden = false;
+                    editButton.hidden = false;
+                });
+
+                editButton.addEventListener('click', resetPreview);
+                document.getElementById('crm-admin-close').addEventListener('click', function() { adminDialog.close(); });
+
+                historyButton.addEventListener('click', async function() {
+                    if (!activeLead) return;
+                    historyButton.disabled = true;
+                    try {
+                        const response = await fetch('/api/crm/admin/history?lead_id=' + encodeURIComponent(activeLead.id), { credentials: 'same-origin' });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok) throw new Error(result.detail || 'No se pudo leer el historial');
+                        const events = result.events || [];
+                        historyBox.textContent = events.length
+                            ? events.map(function(item) {
+                                return [item.created_at || '', item.actor_display_name || 'Supervisión', item.action || '',
+                                    item.target_display_name || (item.minutes ? item.minutes + ' min' : ''),
+                                    item.hold_until ? 'Protegido hasta ' + item.hold_until : '',
+                                    item.handoff_evidence ? 'Evidencia del traspaso: ' + item.handoff_evidence : '',
+                                    item.sla_started_at ? 'SLA iniciado: ' + item.sla_started_at : '',
+                                    item.reason || ''].filter(Boolean).join(' · ');
+                            }).join('\n')
+                            : 'No hay intervenciones administrativas registradas para este lead.';
+                        historyBox.hidden = false;
+                    } catch (error) {
+                        window.alert(error.message);
+                    } finally {
+                        historyButton.disabled = false;
+                    }
+                });
+
+                confirmButton.addEventListener('click', async function() {
+                    if (!activeLead || !reasonInput.value.trim()) return window.alert('Falta el motivo obligatorio.');
+                    const action = actionSelect.value;
+                    const actionId = (window.crypto && crypto.randomUUID)
+                        ? crypto.randomUUID()
+                        : 'crm-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+                    let endpoint = '';
+                    let payload = { lead_id: activeLead.id, assignment_cycle_id: activeLead.cycleId,
+                        reason: reasonInput.value.trim(), action_id: actionId };
+                    if (action === 'reassign') {
+                        endpoint = '/api/crm/admin/assignment';
+                        payload.action = 'reassign';
+                        payload.target_user_id = targetSelect.value;
+                        payload.hold_hours = 0;
+                    } else if (action === 'return_previous') {
+                        endpoint = '/api/crm/admin/assignment';
+                        payload.action = 'return_previous';
+                    } else if (action === 'extend_sla') {
+                        endpoint = '/api/crm/admin/sla-extension';
+                        payload.minutes = 120;
+                    } else if (action === 'protect') {
+                        endpoint = '/api/crm/admin/protect';
+                        payload.hold_hours = Number(document.getElementById('crm-admin-hold-hours').value);
+                    } else if (action === 'emergency_reassign') {
+                        endpoint = '/api/crm/admin/emergency-reassignment';
+                        payload.expected_cycle_id = activeLead.cycleId;
+                        payload.target_user_id = targetSelect.value;
+                        payload.hold_hours = Number(document.getElementById('crm-admin-hold-hours').value);
+                    } else if (action === 'activate_handoff') {
+                        endpoint = '/api/crm/admin/activate-handoff';
+                        payload.handoff_evidence = reasonInput.value.trim();
+                    }
+                    confirmButton.disabled = true;
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            credentials: 'same-origin', body: JSON.stringify(payload)
+                        });
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok) throw new Error(result.detail || 'No se pudo guardar la acción');
+                        adminDialog.close();
+                        window.location.reload();
+                    } catch (error) {
+                        window.alert('No se aplicó la acción: ' + error.message);
+                    } finally {
+                        confirmButton.disabled = false;
+                    }
+                });
+            }
+
+        </script>
+        {% endif %}
     </body>
 
 </html>

@@ -191,7 +191,7 @@ def test_administrator_menu_is_absent_until_a_complete_action_set_is_available()
     assert 'tabindex="0" role="link"' in rendered
 
 
-def test_backend_routes_enforce_admin_and_ownership_permissions():
+def test_backend_routes_enforce_supervisor_and_ownership_permissions():
     source = Path("webhook.py").read_text(encoding="utf-8")
     update_block = source[source.index('async def api_crm_update_lead'):source.index('@app.post("/api/crm/admin/reassign")')]
     reassign_block = source[source.index('async def api_crm_admin_reassign'):source.index('@app.post("/api/crm/admin/mark-duplicate")')]
@@ -201,8 +201,9 @@ def test_backend_routes_enforce_admin_and_ownership_permissions():
     assert "await _get_authorized_crm_lead(request, phone)" in update_block
     assert "payload_attempts_reassignment(data)" in update_block
     assert "status_code=403" in update_block
-    assert "administrative=True" in reassign_block
-    assert "CrmService.assign_executive" in reassign_block
+    assert "_get_authorized_crm_lead_by_id(request" in reassign_block
+    assert "admin_reassign_lead(" in reassign_block
+    assert "CrmService.assign_executive" not in reassign_block
     assert "administrative=True" in duplicate_block
     assert "CrmService.mark_duplicate" in duplicate_block
     assert "administrative=True" in archive_block

@@ -346,3 +346,124 @@ def test_missing_capacity_stays_unknown_and_batch_projection_updates_load():
     )
     assert second["winner"] is None
     assert second["selection_reason"] == "DYNAMIC_V2_CAPACITY_LIMIT"
+
+
+
+def test_performance_snapshot_cache_revalidates_policy_and_preserves_ttls():
+    import asyncio
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    cache = PerformanceSnapshotCache()
+    start = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    historical_calls = []
+    live_calls = []
+
+    async def fetch_historical(version):
+        historical_calls.append(version)
+        return {"policy_version": version, "team": {"version": version}}
+
+    async def fetch_live(version):
+        live_calls.append(version)
+        return {"policy_version": "crm_sla_reassignment_v1", "capacity_metrics": {}}
+
+    for offset, version in enumerate((
+        "crm_sla_reassignment_v1",
+        "crm_sla_reassignment_v2",
+        "crm_sla_reassignment_v1",
+    )):
+        now = start + timedelta(seconds=offset)
+        historical = asyncio.run(cache.get_historical(
+            now=now, policy_version=version,
+            builder=lambda version=version: fetch_historical(version),
+        ))
+        live = asyncio.run(cache.get_live_capacity(
+            now=now, policy_version=version,
+            builder=lambda version=version: fetch_live(version),
+        ))
+        assert historical["policy_version"] == version
+        assert live["policy_version"] == version
+        assert datetime.fromisoformat(historical["expires_at"]) == now + timedelta(seconds=300)
+        assert datetime.fromisoformat(live["expires_at"]) == now + timedelta(seconds=60)
+
+    asyncio.run(cache.get_historical(
+        now=start + timedelta(seconds=4), policy_version="crm_sla_reassignment_v1",
+        builder=lambda: fetch_historical("unexpected"),
+    ))
+    asyncio.run(cache.get_live_capacity(
+        now=start + timedelta(seconds=4), policy_version="crm_sla_reassignment_v1",
+        builder=lambda: fetch_live("unexpected"),
+    ))
+    assert historical_calls == [
+        "crm_sla_reassignment_v1",
+        "crm_sla_reassignment_v2",
+        "crm_sla_reassignment_v1",
+    ]
+    assert live_calls == [
+        "crm_sla_reassignment_v1",
+        "crm_sla_reassignment_v2",
+        "crm_sla_reassignment_v1",
+    ]
+    assert cache.stats()["historical_ttl_seconds"] == 300
+    assert cache.stats()["live_capacity_ttl_seconds"] == 60
+
+
+def test_default_snapshot_distinguishes_verified_zero_from_incomplete_capacity(monkeypatch):
+    import asyncio
+    import chatbot.crm_sla_reassignment_worker as worker
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+
+    async def forbidden_watermark_read(*args, **kwargs):
+        raise AssertionError("worker cache hits must not poll source watermarks")
+
+    monkeypatch.setattr(worker, "read_source_watermarks", forbidden_watermark_read)
+
+    async def historical_builder(*args, **kwargs):
+        return {
+            "candidates": [{
+                "user_id": "quiet-agent", "open_current_policy": 91,
+                "unmanaged_current_policy": 91, "expired_current_policy": 91,
+            }],
+            "team": {"sla_compliance_rate": 0.75},
+            "users_by_id": {}, "records_by_cycle": {}, "properties": {}, "catalog": {},
+            "docs_examined": 0,
+        }
+
+    for audit, expected_complete, expected_capacity in (
+        ({"lead_missing_or_filtered": 0, "owner_missing": 0}, True, 0),
+        ({"lead_missing_or_filtered": 1, "owner_missing": 0}, False, None),
+    ):
+        async def live_builder(*args, audit=audit, **kwargs):
+            return {
+                "policy_version": "crm_sla_reassignment_v1",
+                "variant": "A1", "capacity_metrics": {}, "cycle_audit": audit, "docs_examined": 0,
+            }
+
+        monkeypatch.setattr(worker, "build_historical_performance_snapshot", historical_builder)
+        monkeypatch.setattr(worker, "build_live_capacity_variant", live_builder)
+        result = asyncio.run(worker._default_performance_snapshot(
+            as_of, policy_version="crm_sla_reassignment_v2", db=object(),
+            performance_cache=PerformanceSnapshotCache(), shadow_live_capacity=True,
+        ))
+        candidate = result["candidates"][0]
+        assert result["capacity_snapshot_complete"] is expected_complete
+        assert candidate["open_current_policy"] == expected_capacity
+        assert candidate["unmanaged_current_policy"] == expected_capacity
+        assert candidate["expired_current_policy"] == expected_capacity
+        assert candidate["hot_unmanaged_backlog"] == expected_capacity
+        assert result["live_capacity_variant"] == "A1"
+        assert result["source_watermarks"] == {}
+
+        selectable = _candidate("quiet-agent", p50=10, p90=20)
+        selectable.update(candidate)
+        selected = select_v2_winner(
+            {"owner_user_id": "source"}, [selectable], team=_team(),
+            branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+            admin_user_ids=set(),
+        )
+        if expected_complete:
+            assert selected["winner"]["user_id"] == "quiet-agent"
+        else:
+            assert selected["winner"] is None
+            assert selected["selection_reason"] == "DYNAMIC_V2_CAPACITY_LIMIT"

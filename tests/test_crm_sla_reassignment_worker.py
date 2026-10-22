@@ -1032,3 +1032,65 @@ def test_worker_module_has_no_executor_or_startup_side_effect():
     assert "create_task(" not in source
     assert "insert_one" not in source
     assert "delete_one" not in source
+
+
+
+def test_v2_skips_metrics_and_ledger_for_nonexpired_cycles(monkeypatch):
+    import chatbot.crm_sla_reassignment_worker as worker
+
+    monkeypatch.setattr(Config, "CRM_SLA_REASSIGNMENT_POLICY_VERSION", "crm_sla_reassignment_v2", raising=False)
+    row = cycle(990, assigned_at=NOW - timedelta(minutes=10))
+    row["sla_started_at"] = row["assigned_at"]
+    fixture_lead = lead(990)
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("V2 must not load metrics or the rescue ledger when no cycle can reach ranking")
+
+    monkeypatch.setattr(worker, "_default_performance_snapshot", forbidden)
+    monkeypatch.setattr(worker, "_load_committed_events", forbidden)
+    result = run(
+        db=None, now=NOW, cutover_at=CUTOVER,
+        scan_result={"cycles": [row], "documents_examined": 1},
+        context=context([row], [fixture_lead]), performance_snapshot=None,
+        committed_events=None,
+    )
+
+    assert result["status"] == "shadow"
+    assert result["performance_snapshot_skipped"] is True
+    assert result["performance_docs_examined"] == 0
+    assert result["iteration"]["not_actually_expired"] == 1
+    assert result["evaluations"][0]["exclusion_reason"] == "NOT_ACTUALLY_EXPIRED"
+
+
+
+def test_v2_idle_scan_keeps_fast_and_maintenance_checks_without_metric_reads(monkeypatch):
+    import chatbot.crm_sla_reassignment_worker as worker
+
+    monkeypatch.setattr(Config, "CRM_SLA_REASSIGNMENT_POLICY_VERSION", "crm_sla_reassignment_v2", raising=False)
+    calls = []
+
+    async def fast_scan(*args, **kwargs):
+        calls.append("fast")
+        return {"cycles": [], "urgent_scan_truncated": False, "documents_examined": 0}
+
+    async def maintenance_scan(*args, **kwargs):
+        calls.append("maintenance")
+        return {"cycles": [], "documents_examined": 0}
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("idle V2 scan must not rebuild snapshots or read the rescue ledger")
+
+    monkeypatch.setattr(worker, "scan_sla_reassignment_fast_path_candidates", fast_scan)
+    monkeypatch.setattr(worker, "scan_sla_reassignment_candidates", maintenance_scan)
+    monkeypatch.setattr(worker, "_batch_context", forbidden)
+    monkeypatch.setattr(worker, "_default_performance_snapshot", forbidden)
+    monkeypatch.setattr(worker, "_load_committed_events", forbidden)
+
+    result = run(db=None, now=NOW, cutover_at=CUTOVER, scan_result=None, context={})
+
+    assert calls == ["fast", "maintenance"]
+    assert result["status"] == "shadow"
+    assert result["performance_snapshot_skipped"] is True
+    assert result["performance_docs_examined"] == 0
+    assert not result["evaluations"]
+    assert not result["decisions"]

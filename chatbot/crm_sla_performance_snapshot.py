@@ -276,10 +276,12 @@ class HistoricalPerformanceSnapshot:
     read_ms: float = 0.0
     payload: Mapping[str, Any] = field(default_factory=dict)
 
-    def is_fresh(self, *, now: Any, source_watermarks: Mapping[str, Any] | None = None) -> bool:
+    def is_fresh(self, *, now: Any, policy_version: str | None = None, source_watermarks: Mapping[str, Any] | None = None) -> bool:
         current = _utc(now)
         expires = _utc(self.expires_at)
         if not current or not expires or current >= expires:
+            return False
+        if policy_version is not None and self.policy_version != str(policy_version):
             return False
         return source_watermarks is None or dict(source_watermarks) == dict(self.source_watermarks)
 
@@ -323,10 +325,12 @@ class LiveCapacitySnapshot:
     read_ms: float = 0.0
     payload: Mapping[str, Any] = field(default_factory=dict)
 
-    def is_fresh(self, *, now: Any, source_watermarks: Mapping[str, Any] | None = None) -> bool:
+    def is_fresh(self, *, now: Any, policy_version: str | None = None, source_watermarks: Mapping[str, Any] | None = None) -> bool:
         current = _utc(now)
         expires = _utc(self.expires_at)
         if not current or not expires or current >= expires:
+            return False
+        if policy_version is not None and self.policy_version != str(policy_version):
             return False
         return source_watermarks is None or dict(source_watermarks) == dict(self.source_watermarks)
 
@@ -393,8 +397,8 @@ class PerformanceSnapshotCache:
 
     async def get_historical(self, *, now: Any, builder: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]], policy_version: str, source_watermarks: Mapping[str, Any] | None = None, force: bool = False) -> dict[str, Any]:
         current = _utc(now) or datetime.now(timezone.utc)
-        watermarks = dict(source_watermarks or {})
-        if not force and self._historical and self._historical.is_fresh(now=current, source_watermarks=watermarks):
+        watermarks = dict(source_watermarks) if source_watermarks is not None else None
+        if not force and self._historical and self._historical.is_fresh(now=current, policy_version=policy_version, source_watermarks=watermarks):
             self._stats["historical_hits"] += 1
             return self._historical.to_dict()
         self._stats["historical_misses"] += 1
@@ -403,15 +407,19 @@ class PerformanceSnapshotCache:
         if not isinstance(raw, Mapping):
             raise RuntimeError("historical_snapshot_builder_invalid")
         raw = dict(raw)
+        source_policy_version = str(raw.get("policy_version") or "")
+        if source_policy_version and source_policy_version != str(policy_version):
+            raw.setdefault("source_policy_version", source_policy_version)
+        raw["policy_version"] = str(policy_version)
         raw.setdefault("read_ms", (time.perf_counter() - started) * 1000.0)
-        self._historical = _historical_record(raw, now=current, ttl_seconds=self.historical_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks)
+        self._historical = _historical_record(raw, now=current, ttl_seconds=self.historical_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks or {})
         self._stats["historical_refreshes"] += 1
         return self._historical.to_dict()
 
     async def get_live_capacity(self, *, now: Any, builder: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]], policy_version: str, source_watermarks: Mapping[str, Any] | None = None, force: bool = False) -> dict[str, Any]:
         current = _utc(now) or datetime.now(timezone.utc)
-        watermarks = dict(source_watermarks or {})
-        if not force and self._live and self._live.is_fresh(now=current, source_watermarks=watermarks):
+        watermarks = dict(source_watermarks) if source_watermarks is not None else None
+        if not force and self._live and self._live.is_fresh(now=current, policy_version=policy_version, source_watermarks=watermarks):
             self._stats["live_hits"] += 1
             return self._live.to_dict()
         self._stats["live_misses"] += 1
@@ -420,8 +428,12 @@ class PerformanceSnapshotCache:
         if not isinstance(raw, Mapping):
             raise RuntimeError("live_capacity_snapshot_builder_invalid")
         raw = dict(raw)
+        source_policy_version = str(raw.get("policy_version") or "")
+        if source_policy_version and source_policy_version != str(policy_version):
+            raw.setdefault("source_policy_version", source_policy_version)
+        raw["policy_version"] = str(policy_version)
         raw.setdefault("read_ms", (time.perf_counter() - started) * 1000.0)
-        self._live = _live_record(raw, now=current, ttl_seconds=self.live_capacity_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks)
+        self._live = _live_record(raw, now=current, ttl_seconds=self.live_capacity_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks or {})
         self._stats["live_refreshes"] += 1
         return self._live.to_dict()
 

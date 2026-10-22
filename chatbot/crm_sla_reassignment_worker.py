@@ -1255,6 +1255,23 @@ async def _legacy_default_performance_snapshot(as_of: datetime) -> dict[str, Any
     }
 
 
+def _live_capacity_snapshot_is_complete(snapshot: Mapping[str, Any]) -> bool:
+    """Only infer zero capacity when the complete live cycle set was checked."""
+    audit = snapshot.get("cycle_audit")
+    capacity = snapshot.get("capacity_metrics")
+    if not isinstance(audit, Mapping) or not isinstance(capacity, Mapping):
+        return False
+    for key in ("lead_missing_or_filtered", "owner_missing"):
+        if _capacity_number(audit.get(key)) != 0:
+            return False
+    for row in capacity.values():
+        if not isinstance(row, Mapping):
+            return False
+        if any(_capacity_number(row.get(key)) is None for key in ("open", "unmanaged", "expired", "hot_unmanaged")):
+            return False
+    return True
+
+
 async def _default_performance_snapshot(
     as_of: datetime,
     *,
@@ -1278,11 +1295,12 @@ async def _default_performance_snapshot(
     if not policy_start:
         raise RuntimeError("performance_policy_cutover_unavailable")
     cache = performance_cache or (_DEFAULT_SHADOW_PERFORMANCE_SNAPSHOT_CACHE if shadow_live_capacity else _DEFAULT_PERFORMANCE_SNAPSHOT_CACHE)
-    watermarks = await read_source_watermarks(db, instrumentation=read_instrumentation)
+    # Snapshot TTLs are the freshness boundary. Per-iteration watermark reads
+    # both bypass those TTLs whenever a cycle is updated and add up to five
+    # MongoDB round trips before cached snapshots can be reused.
     historical = await cache.get_historical(
         now=as_of,
         policy_version=policy_version,
-        source_watermarks=watermarks,
         builder=lambda: build_historical_performance_snapshot(
             db, as_of=as_of, policy_since=policy_start,
             performance_window_days=PERFORMANCE_WINDOW_DAYS,
@@ -1293,7 +1311,6 @@ async def _default_performance_snapshot(
     live = await cache.get_live_capacity(
         now=as_of,
         policy_version=policy_version,
-        source_watermarks=watermarks,
         builder=(
             lambda: build_live_capacity_variant(
                 db, variant=A1_NAME, as_of=as_of, policy_since=policy_start,
@@ -1309,21 +1326,32 @@ async def _default_performance_snapshot(
     )
     combined = dict(historical)
     capacity = dict(live.get("capacity_metrics") or {})
+    capacity_snapshot_complete = _live_capacity_snapshot_is_complete(live)
     candidates = []
     for raw in combined.get("candidates") or []:
         row = dict(raw)
         live_row = capacity.get(_text(row.get("user_id")), {})
-        row["open_current_policy"] = live_row.get("open", row.get("open_current_policy", 0))
-        row["unmanaged_current_policy"] = live_row.get("unmanaged", row.get("unmanaged_current_policy", 0))
-        row["expired_current_policy"] = live_row.get("expired", row.get("expired_current_policy", 0))
-        row["hot_unmanaged_backlog"] = live_row.get("hot_unmanaged", row.get("hot_unmanaged_backlog"))
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            # An absent owner row means verified zero only after the full
+            # capacity snapshot passed its completeness checks. Otherwise all
+            # V2 capacity dimensions remain unknown and selection fails closed.
+            row["open_current_policy"] = live_row.get("open", 0) if capacity_snapshot_complete else None
+            row["unmanaged_current_policy"] = live_row.get("unmanaged", 0) if capacity_snapshot_complete else None
+            row["expired_current_policy"] = live_row.get("expired", 0) if capacity_snapshot_complete else None
+            row["hot_unmanaged_backlog"] = live_row.get("hot_unmanaged", 0) if capacity_snapshot_complete else None
+        else:
+            row["open_current_policy"] = live_row.get("open", row.get("open_current_policy", 0))
+            row["unmanaged_current_policy"] = live_row.get("unmanaged", row.get("unmanaged_current_policy", 0))
+            row["expired_current_policy"] = live_row.get("expired", row.get("expired_current_policy", 0))
+            row["hot_unmanaged_backlog"] = live_row.get("hot_unmanaged", row.get("hot_unmanaged_backlog"))
         candidates.append(row)
     combined["candidates"] = candidates
     combined["backlog"] = capacity
+    combined["capacity_snapshot_complete"] = capacity_snapshot_complete
     combined["live_capacity_snapshot_id"] = live.get("snapshot_id")
     combined["capacity_snapshot_at"] = live.get("generated_at")
     combined["live_capacity_variant"] = live.get("variant") or (A1_NAME if shadow_live_capacity else "CURRENT_REFERENCE")
-    combined["source_watermarks"] = watermarks
+    combined["source_watermarks"] = dict(historical.get("source_watermarks") or live.get("source_watermarks") or {})
     combined["performance_snapshot_version"] = historical.get("snapshot_id") or historical.get("performance_snapshot_version")
     combined["performance_cache_stats"] = cache.stats()
     combined["historical_docs_examined"] = historical.get("docs_examined", 0)
@@ -1954,6 +1982,7 @@ async def run_sla_reassignment_worker_iteration(
     """
     started = time.perf_counter()
     result = SLAWorkerIterationResult(status="disabled")
+    performance_snapshot_was_injected = performance_snapshot is not None
     if committed_events is not None and not isinstance(committed_events, list):
         committed_events = [dict(event) for event in committed_events]
     execution_mode = str(execution_mode or "shadow").strip().lower()
@@ -2072,7 +2101,11 @@ async def run_sla_reassignment_worker_iteration(
             expiration = _cycle_only_pre_cutover_expiration(cycle, now=as_of, cutover=cutover)
             if expiration is not None:
                 cycle_only_pre_cutover[_text(cycle.get("assignment_cycle_id"))] = expiration
-        if context is None:
+        if context is None and policy_version == DYNAMIC_POLICY_VERSION and not cycles:
+            # The normal scans and quarantine checks have completed; with no
+            # cycle there is no batch context to join or score.
+            context = {}
+        elif context is None:
             if db is None:
                 from .storage import get_async_db
                 db = get_async_db()
@@ -2081,20 +2114,70 @@ async def run_sla_reassignment_worker_iteration(
                 [cycle for cycle in cycles if _text(cycle.get("assignment_cycle_id")) not in cycle_only_pre_cutover],
                 read_instrumentation=read_instrumentation,
             )
+        v2_prefetched_cycles: dict[str, dict[str, Any]] = {}
+        v2_potentially_processable = policy_version != DYNAMIC_POLICY_VERSION
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            v2_potentially_processable = False
+            for cycle in cycles:
+                cycle_id = _text(cycle.get("assignment_cycle_id"))
+                lead, lookup_status = _resolve_lead_from_context(context, cycle.get("lead_id"))
+                cached: dict[str, Any] = {"lead": lead, "lead_lookup_status": lookup_status}
+                if not lead:
+                    if cycle_id not in cycle_only_pre_cutover:
+                        # Keep the existing orphan/error-recovery path intact.
+                        v2_potentially_processable = True
+                    v2_prefetched_cycles[cycle_id] = cached
+                    continue
+                try:
+                    expiration = canonical_expiration_recheck(cycle, lead, now=as_of)
+                    events = (context.get("events_by_lead") or {}).get(_text(cycle.get("lead_id")), [])
+                    results = (context.get("results_by_cycle") or {}).get(cycle_id, [])
+                    protection = _management_protection(cycle, lead, events, results, breach_at=expiration.breach_at)
+                    cached.update(expiration=expiration, protection=protection)
+                    v2_prefetched_cycles[cycle_id] = cached
+                    stop_before_breach = bool(
+                        protection.current_stop_at
+                        and expiration.breach_at
+                        and protection.current_stop_at <= expiration.breach_at
+                    )
+                    if (
+                        expiration.started_at and expiration.expired and expiration.breach_at
+                        and expiration.breach_at >= cutover
+                        and not stop_before_breach and not protection.protected
+                    ):
+                        v2_potentially_processable = True
+                except Exception:
+                    # Fall through to the existing per-cycle error handling.
+                    v2_potentially_processable = True
+                    v2_prefetched_cycles[cycle_id] = cached
+        skip_v2_metrics = policy_version == DYNAMIC_POLICY_VERSION and not v2_potentially_processable
         if performance_snapshot is None:
-            try:
+            if skip_v2_metrics:
+                # No cycle can reach ranking; keep diagnostic processing and
+                # shadow recovery, but avoid historical/live metric rebuilds.
+                performance_snapshot = {
+                    "candidates": [], "team": {}, "users_by_id": {},
+                    "records_by_cycle": {}, "properties": {}, "catalog": {},
+                    "capacity_snapshot_complete": False,
+                    "performance_snapshot_version": "",
+                    "capacity_snapshot_at": "", "live_capacity_snapshot_id": "",
+                    "live_capacity_variant": "SKIPPED_NO_PROCESSABLE_CYCLES",
+                    "docs_examined": 0, "read_ms": 0.0,
+                }
+            else:
+                try:
                     performance_snapshot = await _default_performance_snapshot(
                         as_of, policy_version=policy_version, db=db, performance_cache=performance_cache,
                         read_instrumentation=read_instrumentation,
                         shadow_live_capacity=True,
                     )
-            except Exception:
-                result.status = "snapshot_unavailable"
-                result.errors += 1
-                result.error_codes.append("SNAPSHOT_UNAVAILABLE")
-                result.duration_ms = (time.perf_counter() - started) * 1000.0
-                logger.error("%s outcome=SNAPSHOT_UNAVAILABLE", WORKER_LOG_PREFIX)
-                return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
+                except Exception:
+                    result.status = "snapshot_unavailable"
+                    result.errors += 1
+                    result.error_codes.append("SNAPSHOT_UNAVAILABLE")
+                    result.duration_ms = (time.perf_counter() - started) * 1000.0
+                    logger.error("%s outcome=SNAPSHOT_UNAVAILABLE", WORKER_LOG_PREFIX)
+                    return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
         snapshot = dict(performance_snapshot)
         params = RescueParameters(performance_window_days=PERFORMANCE_WINDOW_DAYS)
         team = _normalise_team(snapshot)
@@ -2103,6 +2186,7 @@ async def run_sla_reassignment_worker_iteration(
         dynamic_snapshot_verified = bool(
             (snapshot.get("performance_snapshot_version") or snapshot.get("snapshot_id"))
             and (snapshot.get("capacity_snapshot_at") or snapshot.get("live_capacity_snapshot_id"))
+            and snapshot.get("capacity_snapshot_complete") is True
             and isinstance(snapshot.get("team"), Mapping)
             and isinstance(snapshot.get("candidates"), list)
             and all(
@@ -2130,7 +2214,9 @@ async def run_sla_reassignment_worker_iteration(
                 read_instrumentation=read_instrumentation,
             )
         if policy_version == DYNAMIC_POLICY_VERSION:
-            if committed_events is not None:
+            if skip_v2_metrics:
+                rescue_events = []
+            elif committed_events is not None:
                 rescue_events = [
                     dict(row) for row in committed_events
                     if _text(row.get("policy_version")) in {POLICY_VERSION, DYNAMIC_POLICY_VERSION}
@@ -2185,15 +2271,19 @@ async def run_sla_reassignment_worker_iteration(
             db, [_text(row.get("assignment_cycle_id")) for row in cycles],
             policy_version=policy_version,
             read_instrumentation=read_instrumentation,
-        ) if db is not None and execution_mode == "shadow" else {}
+        ) if db is not None and execution_mode == "shadow" and cycles else {}
         for cycle in cycles:
-            lead, lead_lookup_status = _resolve_lead_from_context(context, cycle.get("lead_id"))
+            prefetched = v2_prefetched_cycles.get(_text(cycle.get("assignment_cycle_id")), {})
+            lead = prefetched.get("lead") if policy_version == DYNAMIC_POLICY_VERSION else None
+            lead_lookup_status = prefetched.get("lead_lookup_status") if policy_version == DYNAMIC_POLICY_VERSION else None
+            if policy_version != DYNAMIC_POLICY_VERSION or not prefetched:
+                lead, lead_lookup_status = _resolve_lead_from_context(context, cycle.get("lead_id"))
             if lead:
                 try:
-                    exp = canonical_expiration_recheck(cycle, lead, now=as_of)
+                    exp = prefetched.get("expiration") or canonical_expiration_recheck(cycle, lead, now=as_of)
                     events = (context.get("events_by_lead") or {}).get(_text(cycle.get("lead_id")), [])
                     results = (context.get("results_by_cycle") or {}).get(_text(cycle.get("assignment_cycle_id")), [])
-                    protection = _management_protection(cycle, lead, events, results, breach_at=exp.breach_at)
+                    protection = prefetched.get("protection") or _management_protection(cycle, lead, events, results, breach_at=exp.breach_at)
                     row = _policy_row(cycle, lead, snapshot, state_counts=_state_counts(shadow_state))
                     lead_rows.append((row, cycle, exp, protection, _owner_cycle_issue(cycle, lead, (context.get("active_cycles_by_lead") or {}).get(_text(cycle.get("lead_id")), [cycle]), snapshot.get("users_by_id") or {})))
                     protection_by_cycle[_text(cycle.get("assignment_cycle_id"))] = protection
@@ -2360,6 +2450,7 @@ async def run_sla_reassignment_worker_iteration(
                 "scan_mode": scan_mode,
                 "performance_snapshot_version": perf_version, "distribution_state_version": dist_version,
                 "performance_docs_examined": snapshot.get("docs_examined", 0), "performance_read_ms": snapshot.get("read_ms"),
+                "performance_snapshot_skipped": bool(skip_v2_metrics and not performance_snapshot_was_injected),
                 "query_documents_examined": scan_result.get("documents_examined", 0),
                 "shadow_storage_status": "NOT_APPLICABLE", "shadow_storage_writes": 0,
                 "shadow_storage_ms": 0.0, "new_shadow_would_execute": 0,
@@ -2408,6 +2499,7 @@ async def run_sla_reassignment_worker_iteration(
             "scan_mode": scan_mode,
             "performance_snapshot_version": perf_version, "distribution_state_version": dist_version,
             "performance_docs_examined": snapshot.get("docs_examined", 0), "performance_read_ms": snapshot.get("read_ms"),
+            "performance_snapshot_skipped": bool(skip_v2_metrics and not performance_snapshot_was_injected),
             "query_documents_examined": scan_result.get("documents_examined", 0),
             "shadow_state_counts": _state_counts(shadow_state),
             "shadow_storage_status": persistence_status,

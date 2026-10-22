@@ -443,7 +443,7 @@ def validate_shadow_configuration(
         reasons.append("SHADOW_DISABLED")
     if not parsed_cutover:
         reasons.append("CUTOVER_MISSING_OR_INVALID")
-    if policy_version != SHADOW_POLICY_VERSION:
+    if policy_version not in {SHADOW_POLICY_VERSION, "crm_sla_reassignment_v2"}:
         reasons.append("POLICY_VERSION_MISMATCH")
     if reassignment_enabled:
         reasons.append("MASTER_REASSIGNMENT_MUST_BE_DISABLED")

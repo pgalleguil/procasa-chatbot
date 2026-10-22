@@ -53,12 +53,14 @@ from .crm_sla_hybrid_stabilization import (
 )
 from .crm_sla_policy_freeze import (
     POLICY_VERSION,
+    RM_ADMIN_EXCLUDED_USER_IDS,
     TIER1_BALANCE_WINDOW_SIZE,
     _jpc_selection,
     _rm_selection,
     _update_state,
     derive_jpc_share_targets,
 )
+from .crm_sla_dynamic_ranking_v2 import POLICY_VERSION as DYNAMIC_POLICY_VERSION, RankingParameters, select_v2_winner
 from .crm_sla_reassignment_cutover import CUTOVER_POLICY_VERSION
 from .crm_sla_performance_snapshot import (
     DEFAULT_HISTORICAL_TTL_SECONDS,
@@ -220,6 +222,13 @@ def _json_version(rows: Iterable[Mapping[str, Any]]) -> str:
 def _cfg(name: str, default: Any) -> Any:
     from config import Config
     return getattr(Config, name, default)
+
+
+def _configured_policy_version() -> str:
+    value = _text(_cfg("CRM_SLA_REASSIGNMENT_POLICY_VERSION", POLICY_VERSION)).strip()
+    if value not in {POLICY_VERSION, DYNAMIC_POLICY_VERSION}:
+        raise ValueError("unsupported CRM_SLA_REASSIGNMENT_POLICY_VERSION")
+    return value
 
 
 def _validated_batch_size(value: int | None) -> int:
@@ -1240,6 +1249,7 @@ async def _legacy_default_performance_snapshot(as_of: datetime) -> dict[str, Any
 async def _default_performance_snapshot(
     as_of: datetime,
     *,
+    policy_version: str = POLICY_VERSION,
     db: Any = None,
     performance_cache: PerformanceSnapshotCache | None = None,
     policy_since: Any = None,
@@ -1262,18 +1272,18 @@ async def _default_performance_snapshot(
     watermarks = await read_source_watermarks(db, instrumentation=read_instrumentation)
     historical = await cache.get_historical(
         now=as_of,
-        policy_version=POLICY_VERSION,
+        policy_version=policy_version,
         source_watermarks=watermarks,
         builder=lambda: build_historical_performance_snapshot(
             db, as_of=as_of, policy_since=policy_start,
             performance_window_days=PERFORMANCE_WINDOW_DAYS,
-            policy_version=POLICY_VERSION,
+            policy_version=policy_version,
             instrumentation=read_instrumentation,
         ),
     )
     live = await cache.get_live_capacity(
         now=as_of,
-        policy_version=POLICY_VERSION,
+        policy_version=policy_version,
         source_watermarks=watermarks,
         builder=(
             lambda: build_live_capacity_variant(
@@ -1283,7 +1293,7 @@ async def _default_performance_snapshot(
             if shadow_live_capacity else
             lambda: build_live_capacity_snapshot(
                 db, as_of=as_of, policy_since=policy_start,
-                policy_version=POLICY_VERSION,
+                policy_version=policy_version,
                 instrumentation=read_instrumentation,
             )
         ),
@@ -1297,6 +1307,7 @@ async def _default_performance_snapshot(
         row["open_current_policy"] = live_row.get("open", row.get("open_current_policy", 0))
         row["unmanaged_current_policy"] = live_row.get("unmanaged", row.get("unmanaged_current_policy", 0))
         row["expired_current_policy"] = live_row.get("expired", row.get("expired_current_policy", 0))
+        row["hot_unmanaged_backlog"] = live_row.get("hot_unmanaged", row.get("hot_unmanaged_backlog"))
         candidates.append(row)
     combined["candidates"] = candidates
     combined["backlog"] = capacity
@@ -1437,6 +1448,8 @@ def _initial_candidate_state(rows: Iterable[Mapping[str, Any]], committed_counts
             "simulated_open_current": _number(row.get("open_current_policy")),
             "simulated_unmanaged_current": _number(row.get("unmanaged_current_policy")),
             "simulated_expired_current": _number(row.get("expired_current_policy")),
+            "hot_unmanaged_backlog": _number(row.get("hot_unmanaged_backlog")),
+            "recent_rescues_7d": _number(row.get("recent_rescues_7d")),
             "shadow_received_count": _number(committed_counts.get(user_id, row.get("shadow_received_count", 0))),
             "tier1_recent_count_before": int(_number(balance_counts.get(user_id, row.get("tier1_recent_count_before", 0)))),
             "tier1_last_assignment_at": str(balance_last.get(user_id, row.get("tier1_last_assignment_at") or "")),
@@ -1448,8 +1461,30 @@ def _state_counts(state: Mapping[str, Mapping[str, Any]]) -> dict[str, int]:
     return {user_id: int(_number(values.get("shadow_received_count"))) for user_id, values in state.items() if not str(user_id).startswith("__")}
 
 
+def _update_v2_state(
+    state: dict[str, dict[str, Any]],
+    winner: Mapping[str, Any],
+    *,
+    source_user_id: str,
+    temperature: str,
+) -> None:
+    source = state.get(source_user_id)
+    if source:
+        for key in ("simulated_open_current", "simulated_unmanaged_current", "simulated_expired_current"):
+            source[key] = max(0.0, _number(source.get(key)) - 1.0)
+        if temperature == "HOT":
+            source["hot_unmanaged_backlog"] = max(0.0, _number(source.get("hot_unmanaged_backlog")) - 1.0)
+    _update_state(state, winner)
+    target_user_id = _text(winner.get("user_id"))
+    if not target_user_id:
+        return
+    state[target_user_id]["recent_rescues_7d"] = _number(state[target_user_id].get("recent_rescues_7d")) + 1.0
+    if temperature == "HOT":
+        state[target_user_id]["hot_unmanaged_backlog"] = _number(state[target_user_id].get("hot_unmanaged_backlog")) + 1.0
+
+
 def _event_sort_key(event: Mapping[str, Any]) -> tuple[str, str]:
-    timestamp = _iso(event.get("reassigned_at") or event.get("commit_time") or event.get("created_at") or event.get("timestamp"))
+    timestamp = _iso(event.get("reassigned_at") or event.get("commit_time") or event.get("created_at") or event.get("timestamp") or event.get("at"))
     return timestamp, _text(event.get("decision_id") or event.get("_id"))
 
 
@@ -1457,6 +1492,7 @@ async def _load_committed_events(
     db: Any,
     *,
     events: Iterable[Mapping[str, Any]] | None = None,
+    policy_versions: Iterable[str] | None = None,
     read_instrumentation: ReadInstrumentation | None = None,
 ) -> list[dict[str, Any]]:
     if events is not None:
@@ -1464,9 +1500,11 @@ async def _load_committed_events(
     if db is None:
         from .storage import get_async_db
         db = get_async_db()
+    versions = list(dict.fromkeys(_text(value) for value in (policy_versions or (POLICY_VERSION,)) if _text(value)))
+    version_query: Any = versions[0] if len(versions) == 1 else {"$in": versions}
     return await _find_many(
         db[LEDGER_COLLECTION],
-        {"event_type": COMMITTED_EVENT, "policy_version": POLICY_VERSION},
+        {"event_type": COMMITTED_EVENT, "policy_version": version_query},
         {"_id": 1, "event_type": 1, "decision_id": 1, "lead_id": 1, "source_cycle_id": 1,
          "target_owner_user_id": 1, "selected_user_id": 1, "policy_version": 1, "policy_branch": 1,
          "branch": 1, "source_cycle_sla_breached_at": 1, "sla_breached_at": 1,
@@ -1477,6 +1515,17 @@ async def _load_committed_events(
         instrumentation=read_instrumentation,
         query_name="worker.distribution.committed_events",
     )
+
+
+def _recent_rescue_counts(events: Iterable[Mapping[str, Any]], *, as_of: datetime, days: int = 7) -> Counter[str]:
+    cutoff = as_of - timedelta(days=days)
+    counts: Counter[str] = Counter()
+    for event in events:
+        target = _text(event.get("target_owner_user_id") or event.get("selected_user_id") or event.get("target_user_id"))
+        timestamp = _utc(event.get("reassigned_at") or event.get("commit_time") or event.get("created_at") or event.get("timestamp") or event.get("at"))
+        if target and timestamp and cutoff <= timestamp <= as_of:
+            counts[target] += 1
+    return counts
 
 
 def _post_cutover_committed(events: Iterable[Mapping[str, Any]], cutover_at: datetime, branch: str | Iterable[str]) -> list[dict[str, Any]]:
@@ -1701,6 +1750,7 @@ async def load_existing_shadow_documents(
     db: Any,
     cycle_ids: Iterable[Any],
     *,
+    policy_version: str = POLICY_VERSION,
     read_instrumentation: ReadInstrumentation | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Read the current shadow view once to preserve one-count semantics."""
@@ -1709,7 +1759,7 @@ async def load_existing_shadow_documents(
         return {}
     rows = await _find_many(
         db[SHADOW_COLLECTION],
-        {"source_cycle_id": {"$in": ids}, "policy_version": SHADOW_POLICY_VERSION},
+        {"source_cycle_id": {"$in": ids}, "policy_version": policy_version},
         {"_id": 1, "source_cycle_id": 1, "shadow_assignment_counted_at": 1, "would_execute": 1, "human_management_at": 1},
         instrumentation=read_instrumentation,
         query_name="worker.shadow.existing_cycles",
@@ -1753,7 +1803,8 @@ def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, res
     scored = list(result.get("scored") or [])
     selection_scored = list(result.get("selection_pool") or scored)
     winner_id = _text(winner.get("user_id")) or None
-    score_field = "dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score"
+    policy_version = _text(result.get("policy_version")) or POLICY_VERSION
+    score_field = "performance_score" if policy_version == DYNAMIC_POLICY_VERSION else ("dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score")
     selected_score = _number(winner.get(score_field)) if winner else None
     second_id, second_score = _select_second(selection_scored, winner_id or "", score_field)
     excluded = list(lead_row.get("previous_owner_user_ids") or ())
@@ -1764,7 +1815,7 @@ def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, res
         selected_score=selected_score, selection_reason=_text(result.get("selection_reason")),
         performance_confidence=_text(winner.get("performance_confidence")), assignment_number=_assignment_number(cycle),
         excluded_previous_owners=excluded, management_evidence_checked_at=evaluated_at.isoformat(),
-        sla_breached_at=breach_at.isoformat(), evaluated_at=evaluated_at.isoformat(), policy_version=POLICY_VERSION,
+        sla_breached_at=breach_at.isoformat(), evaluated_at=evaluated_at.isoformat(), policy_version=policy_version,
         candidate_scores_snapshot=scored, selection_rule=_text(result.get("selection_rule")) or ("RM_R2" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "JPC_J3"),
         guardrail_applied=bool(result.get("guardrail_reason")), guardrail_reason=_text(result.get("guardrail_reason")),
         jpc_target_share=result.get("jpc_target_share") if branch == REGION_JPC_MARIA_HERNAN else None,
@@ -1789,11 +1840,44 @@ def _shadow_error(cycle: Mapping[str, Any], *, now: datetime, cutover: datetime,
     return SLAReassignmentShadowEvaluation(
         evaluated_at=now.isoformat(), lead_id=_text(cycle.get("lead_id")), source_cycle_id=_text(cycle.get("assignment_cycle_id")),
         breach_at="", cutover=cutover.isoformat(), branch=branch, eligible=False, exclusion_reason=reason,
-        assignment_number=_assignment_number(cycle), decision_id=generate_decision_id(cycle.get("lead_id"), cycle.get("assignment_cycle_id"), POLICY_VERSION),
+        assignment_number=_assignment_number(cycle), decision_id=generate_decision_id(cycle.get("lead_id"), cycle.get("assignment_cycle_id"), _configured_policy_version()),
     )
 
 
-def _policy_selection(lead_row: dict[str, Any], cycle: Mapping[str, Any], *, branch: str, state: dict[str, dict[str, float]], rm_history: list[str], jpc_counts: Counter[str], jpc_total: int, jpc_targets: Mapping[str, float], team: Mapping[str, Any], params: RescueParameters) -> dict[str, Any]:
+def _policy_selection(
+    lead_row: dict[str, Any], cycle: Mapping[str, Any], *, branch: str,
+    state: dict[str, dict[str, Any]], rm_history: list[str], jpc_counts: Counter[str],
+    jpc_total: int, jpc_targets: Mapping[str, float], team: Mapping[str, Any],
+    params: RescueParameters, policy_version: str = POLICY_VERSION,
+    dynamic_team: Mapping[str, Any] | None = None,
+    selection_context_verified: bool = False,
+) -> dict[str, Any]:
+    if policy_version == DYNAMIC_POLICY_VERSION:
+        candidates = []
+        for raw in lead_row.get("rm_candidates") or []:
+            row = dict(raw)
+            values = state.get(_text(row.get("user_id")), {})
+            row.update(values)
+            row["simulated_open_current"] = values.get("simulated_open_current", row.get("open_current_policy"))
+            row["simulated_unmanaged_current"] = values.get("simulated_unmanaged_current", row.get("unmanaged_current_policy"))
+            row["simulated_expired_current"] = values.get("simulated_expired_current", row.get("expired_current_policy"))
+            row["hot_unmanaged_backlog"] = values.get("hot_unmanaged_backlog", row.get("hot_unmanaged_backlog"))
+            row["recent_rescues_7d"] = values.get("recent_rescues_7d", row.get("recent_rescues_7d"))
+            candidates.append(row)
+        dynamic_params = RankingParameters(
+            shrinkage_k=params.shrinkage_k,
+            minimum_speed_sample=params.minimum_speed_sample,
+            tie_threshold=params.tie_threshold,
+            speed_p50_weight=params.speed_p50_weight,
+            speed_p90_weight=params.speed_p90_weight,
+            winsor_lower=params.winsor_lower,
+            winsor_upper=params.winsor_upper,
+        )
+        return select_v2_winner(
+            lead_row, candidates, team=dict(dynamic_team or team), branch=branch,
+            selection_context_verified=selection_context_verified,
+            admin_user_ids=RM_ADMIN_EXCLUDED_USER_IDS, params=dynamic_params,
+        )
     if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}:
         return _rm_selection(lead_row, state, rm_history, scenario=R2_ROLLING_SHARE, low_policy=L1_LOW_NEEDS_PLUS_5, team=team, params=params)
     if branch == REGION_JPC_MARIA_HERNAN:
@@ -1842,6 +1926,14 @@ async def run_sla_reassignment_worker_iteration(
         return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
     if not bool(_cfg("CRM_SLA_REASSIGNMENT_WORKER_ENABLED", False)):
         result.status = "disabled"
+        result.duration_ms = (time.perf_counter() - started) * 1000.0
+        return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
+    try:
+        policy_version = _configured_policy_version()
+    except ValueError:
+        result.status = "fatal_configuration_error"
+        result.errors += 1
+        result.error_codes.append("POLICY_VERSION_CONFIGURATION_INVALID")
         result.duration_ms = (time.perf_counter() - started) * 1000.0
         return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
     if execution_mode == "shadow":
@@ -1953,7 +2045,7 @@ async def run_sla_reassignment_worker_iteration(
         if performance_snapshot is None:
             try:
                     performance_snapshot = await _default_performance_snapshot(
-                        as_of, db=db, performance_cache=performance_cache,
+                        as_of, policy_version=policy_version, db=db, performance_cache=performance_cache,
                         read_instrumentation=read_instrumentation,
                         shadow_live_capacity=True,
                     )
@@ -1968,9 +2060,22 @@ async def run_sla_reassignment_worker_iteration(
         params = RescueParameters(performance_window_days=PERFORMANCE_WINDOW_DAYS)
         team = _normalise_team(snapshot)
         all_candidates = list(snapshot.get("candidates") or [])
+        dynamic_team = dict(snapshot.get("team") or {})
+        dynamic_snapshot_verified = bool(
+            (snapshot.get("performance_snapshot_version") or snapshot.get("snapshot_id"))
+            and (snapshot.get("capacity_snapshot_at") or snapshot.get("live_capacity_snapshot_id"))
+            and isinstance(snapshot.get("team"), Mapping)
+            and isinstance(snapshot.get("candidates"), list)
+            and all(
+                all(key in row for key in ("open_current_policy", "unmanaged_current_policy", "expired_current_policy"))
+                for row in all_candidates
+            )
+        )
         maria_id = next((_text(row.get("user_id")) for row in all_candidates if _identity(row.get("identity_key") or row.get("executive_key")) == "maria paz galleguillos"), None)
         hernan_id = next((_text(row.get("user_id")) for row in all_candidates if _identity(row.get("identity_key") or row.get("executive_key")) == "hernan castro"), None)
-        if db is None and context is not None:
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            tier1_balance_state = None
+        elif db is None and context is not None:
             tier1_balance_state = {
                 "window_size": TIER1_BALANCE_WINDOW_SIZE,
                 "events": [], "counts": {}, "last_assignment_at": {},
@@ -1983,7 +2088,24 @@ async def run_sla_reassignment_worker_iteration(
                 events=committed_events,
                 read_instrumentation=read_instrumentation,
             )
-        if shadow_state_mode and db is None:
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            if committed_events is not None:
+                rescue_events = [
+                    dict(row) for row in committed_events
+                    if _text(row.get("policy_version")) in {POLICY_VERSION, DYNAMIC_POLICY_VERSION}
+                ]
+            elif db is not None:
+                rescue_events = await _load_committed_events(
+                    db, policy_versions=(POLICY_VERSION, DYNAMIC_POLICY_VERSION),
+                    read_instrumentation=read_instrumentation,
+                )
+            else:
+                rescue_events = []
+            state_version = _json_version(rescue_events)
+            rm_state = {"history": [], "recent_history": [], "received_counts": {}, "committed_total": 0, "distribution_state_version": state_version, "events": [], "source": "v2_recent_rescue_load"}
+            jpc_state = {"counts": {}, "committed_total": 0, "observed_share": {}, "distribution_state_version": state_version, "events": [], "source": "v2_recent_rescue_load"}
+            recent_rescues = _recent_rescue_counts(rescue_events, as_of=as_of)
+        elif shadow_state_mode and db is None:
             # Unit/replay callers may inject the complete scan context without
             # a database.  Production startup always supplies the guarded DB;
             # the injected path starts from an empty prospective state.
@@ -2003,11 +2125,15 @@ async def run_sla_reassignment_worker_iteration(
                 maria_user_id=maria_id, hernan_user_id=hernan_id,
                 read_instrumentation=read_instrumentation,
             )
+            recent_rescues = Counter()
         jpc_state["maria_received"] = jpc_state.get("counts", {}).get(_text(maria_id), 0) if maria_id else 0
         jpc_state["hernan_received"] = jpc_state.get("counts", {}).get(_text(hernan_id), 0) if hernan_id else 0
         committed_counts = Counter(rm_state.get("received_counts") or {})
         committed_counts.update(jpc_state.get("counts") or {})
         shadow_state = _initial_candidate_state(all_candidates, committed_counts, tier1_balance_state)
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            for user_id, values in shadow_state.items():
+                values["recent_rescues_7d"] = float(recent_rescues.get(user_id, 0))
         rm_history = list(rm_state.get("history") or [])
         jpc_counts = Counter(jpc_state.get("counts") or {})
         future_jpc_count = 0
@@ -2015,6 +2141,7 @@ async def run_sla_reassignment_worker_iteration(
         protection_by_cycle: dict[str, ManagementProtection] = {}
         existing_shadow = await load_existing_shadow_documents(
             db, [_text(row.get("assignment_cycle_id")) for row in cycles],
+            policy_version=policy_version,
             read_instrumentation=read_instrumentation,
         ) if db is not None and execution_mode == "shadow" else {}
         for cycle in cycles:
@@ -2074,7 +2201,7 @@ async def run_sla_reassignment_worker_iteration(
             try:
                 lead_id = _text(cycle.get("lead_id"))
                 cycle_id = _text(cycle.get("assignment_cycle_id"))
-                decision_id = generate_decision_id(lead_id, cycle_id, POLICY_VERSION)
+                decision_id = generate_decision_id(lead_id, cycle_id, policy_version)
                 if owner_status == "PRE_CUTOVER_NO_LEAD":
                     result.canonically_expired += 1
                     result.pre_cutover_skipped += 1
@@ -2123,14 +2250,26 @@ async def run_sla_reassignment_worker_iteration(
                 counts = _state_counts(shadow_state)
                 for candidate in lead_row["rm_candidates"] + lead_row["jpc_candidates"]:
                     candidate["shadow_received_count"] = counts.get(_text(candidate.get("user_id")), 0)
-                selection = _policy_selection(lead_row, cycle, branch=branch, state=shadow_state, rm_history=rm_history, jpc_counts=jpc_counts, jpc_total=max(1, int(jpc_horizon_total or (int(jpc_state.get("committed_total", 0)) + future_jpc_count))), jpc_targets=jpc_targets, team=team, params=params)
+                selection = _policy_selection(
+                    lead_row, cycle, branch=branch, state=shadow_state,
+                    rm_history=rm_history, jpc_counts=jpc_counts,
+                    jpc_total=max(1, int(jpc_horizon_total or (int(jpc_state.get("committed_total", 0)) + future_jpc_count))),
+                    jpc_targets=jpc_targets, team=team, params=params,
+                    policy_version=policy_version, dynamic_team=dynamic_team,
+                    selection_context_verified=(
+                        dynamic_snapshot_verified and owner_status == "OWNER_OK"
+                        and bool(lead_row.get("lead_id")) and bool(lead_row.get("assignment_cycle_id"))
+                        and bool(lead_row.get("owner_user_id"))
+                    ),
+                )
                 winner = selection.get("winner") or {}
                 scored = list(selection.get("scored") or [])
+                selection_scored = list(selection.get("selection_pool") or scored)
                 candidate_ids = tuple(_text(row.get("user_id")) for row in scored if _text(row.get("user_id")))
                 selected_id = _text(winner.get("user_id")) if winner else None
-                score_field = "dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score"
+                score_field = "performance_score" if policy_version == DYNAMIC_POLICY_VERSION else ("dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score")
                 selected_score = _number(winner.get(score_field)) if winner else None
-                second_id, second_score = _select_second(scored, selected_id or "", score_field)
+                second_id, second_score = _select_second(selection_scored, selected_id or "", score_field)
                 margin = selected_score - second_score if selected_id and second_score is not None and selected_score is not None else None
                 reason = _text(selection.get("selection_reason")) or ("NO_ELIGIBLE_RESCUER" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "NO_ELIGIBLE_JPC_RESCUER")
                 decision = _make_decision(lead_row, cycle, result=selection, branch=branch, breach_at=exp.breach_at, cutover=cutover, evaluated_at=as_of, params=params)
@@ -2139,11 +2278,18 @@ async def run_sla_reassignment_worker_iteration(
                     result.evaluated += 1
                     result.would_reassign += 1
                     if not already_counted:
-                        if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} or selection.get("candidate_tier") == 2:
-                            rm_history.append(selected_id)
+                        if policy_version == DYNAMIC_POLICY_VERSION:
+                            _update_v2_state(
+                                shadow_state, winner,
+                                source_user_id=_text(lead_row.get("owner_user_id")),
+                                temperature=_text(lead_row.get("temperature")).upper(),
+                            )
                         else:
-                            jpc_counts[selected_id] += 1
-                        _update_state(shadow_state, winner)
+                            if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} or selection.get("candidate_tier") == 2:
+                                rm_history.append(selected_id)
+                            else:
+                                jpc_counts[selected_id] += 1
+                            _update_state(shadow_state, winner)
                     decisions.append(decision)
                     logger.info("%s cycle_id=%s lead_id=%s branch=%s outcome=would_reassign target_id=%s decision_id=%s duration_ms=%.2f", WORKER_LOG_PREFIX, cycle_id, lead_id, branch, selected_id, decision_id, (time.perf_counter() - started) * 1000.0)
                 else:
@@ -2154,6 +2300,8 @@ async def run_sla_reassignment_worker_iteration(
                 result.error_codes.append("LEAD_EVALUATION_ERROR")
                 evaluations.append(_shadow_error(cycle, now=as_of, cutover=cutover, reason="LEAD_EVALUATION_ERROR").to_dict())
                 logger.warning("%s cycle_id=%s lead_id=%s outcome=error error_type=%s", WORKER_LOG_PREFIX, _text(cycle.get("assignment_cycle_id")), _text(cycle.get("lead_id")), type(exc).__name__)
+        for evaluation in evaluations:
+            evaluation["policy_version"] = policy_version
         persistence_status = "NOT_ATTEMPTED"
         persistence_writes = 0
         persistence_ms = 0.0
@@ -2307,7 +2455,7 @@ def worker_configuration_snapshot() -> dict[str, Any]:
         "shadow_enabled": bool(_cfg("CRM_SLA_REASSIGNMENT_SHADOW_ENABLED", False)),
         "interval_seconds": int(_cfg("CRM_SLA_REASSIGNMENT_WORKER_INTERVAL_SECONDS", 60)),
         "batch_size": int(_cfg("CRM_SLA_REASSIGNMENT_BATCH_SIZE", 25)),
-        "policy_version": POLICY_VERSION,
+        "policy_version": _text(_cfg("CRM_SLA_REASSIGNMENT_POLICY_VERSION", POLICY_VERSION)),
         "cutover_source": "CRM_SLA_REASSIGNMENT_SHADOW_CUTOVER_AT",
         "production_cutover_source": "CRM_SLA_REASSIGNMENT_CUTOVER_AT",
         "shadow_cutover_at": _text(_cfg("CRM_SLA_REASSIGNMENT_SHADOW_CUTOVER_AT", None)) or None,
@@ -2334,7 +2482,7 @@ def validate_worker_configuration() -> dict[str, Any]:
         reassignment_enabled=bool(_cfg("CRM_SLA_REASSIGNMENT_ENABLED", False)),
         shadow_cutover_at=_cfg("CRM_SLA_REASSIGNMENT_SHADOW_CUTOVER_AT", None),
         production_cutover_at=_cfg("CRM_SLA_REASSIGNMENT_CUTOVER_AT", None),
-        policy_version=POLICY_VERSION,
+        policy_version=_text(_cfg("CRM_SLA_REASSIGNMENT_POLICY_VERSION", POLICY_VERSION)),
         security_enabled=bool(_cfg("CRM_SLA_SECURITY_LAYER_ENABLED", False)),
         transaction_gate_enabled=bool(_cfg("CRM_SLA_TRANSACTION_GATE_ENABLED", False)),
     )

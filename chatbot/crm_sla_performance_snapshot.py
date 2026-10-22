@@ -64,6 +64,83 @@ def _version(value: Any) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _dynamic_temperature_metrics(
+    records: list[dict[str, Any]],
+    agents: list[dict[str, Any]],
+    *,
+    as_of: datetime,
+    performance_window_days: int,
+) -> tuple[dict[str, dict[str, dict[str, Any]]], dict[str, dict[str, Any]]]:
+    """Summarize bounded historical records by owner and assignment temperature."""
+    from scripts.run_phase1a_crm_sla_shadow import cycle_first_management_minutes
+
+    start = as_of - timedelta(days=performance_window_days)
+    agent_ids = {str(user.get("_id") or "") for user in agents}
+    eligible = [
+        row for row in records
+        if row.get("is_post_cutover")
+        and row.get("canonical")
+        and not row.get("excluded_origin")
+        and row.get("assigned_at")
+        and start <= row["assigned_at"] <= as_of
+        and str(row.get("owner_id") or "") in agent_ids
+    ]
+
+    def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        measured = [(row, cycle_first_management_minutes(row)) for row in rows]
+        durations = [duration for _, duration in measured if duration is not None]
+        sample_size = len(rows)
+        managed_count = len(durations)
+        compliant = sum(
+            1 for row, duration in measured
+            if duration is not None and duration < float(row.get("threshold") or 0)
+        )
+        return {
+            "sample_size": sample_size,
+            "managed_count": managed_count,
+            "sla_compliance_rate": compliant / sample_size if sample_size else None,
+            "attention_rate": managed_count / sample_size if sample_size else None,
+            "p50": _dynamic_quantile(durations, 0.50),
+            "p90": _dynamic_quantile(durations, 0.90),
+        }
+
+    grouped: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    team_rows: dict[str, list[dict[str, Any]]] = {"HOT": [], "NORMAL": []}
+    for row in eligible:
+        temperature = str(row.get("temperature") or "NORMAL").strip().upper()
+        if temperature not in team_rows:
+            temperature = "NORMAL"
+        owner = str(row.get("owner_id") or "")
+        grouped.setdefault(owner, {"HOT": [], "NORMAL": []})[temperature].append(row)
+        team_rows[temperature].append(row)
+
+    by_owner = {
+        str(agent.get("_id") or ""): {
+            temperature: summarize(grouped.get(str(agent.get("_id") or ""), {}).get(temperature, []))
+            for temperature in ("HOT", "NORMAL")
+        }
+        for agent in agents
+    }
+    by_temperature = {
+        temperature: summarize(team_rows[temperature])
+        for temperature in ("HOT", "NORMAL")
+    }
+    return by_owner, by_temperature
+
+
+def _dynamic_quantile(values: list[float], probability: float) -> float | None:
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        return None
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * probability
+    lower = int(position)
+    upper = min(len(ordered) - 1, lower + 1)
+    fraction = position - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
+
+
 async def _maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
@@ -447,17 +524,28 @@ async def build_historical_performance_snapshot(
     params = RescueParameters(performance_window_days=performance_window_days)
     metrics_started = time.perf_counter()
     metrics, team = historical_metrics(records, agents, as_of=as_of, params=params)
+    owner_temperature_metrics, team_temperature_metrics = _dynamic_temperature_metrics(
+        records, agents, as_of=as_of, performance_window_days=performance_window_days,
+    )
+    team = dict(team)
+    team["by_temperature"] = team_temperature_metrics
+    team["temperature_mix"] = {
+        temperature: team_temperature_metrics[temperature]["sample_size"]
+        for temperature in ("HOT", "NORMAL")
+    }
     metrics_ms = (time.perf_counter() - metrics_started) * 1000.0
     candidates = []
     for agent in agents:
         user_id = str(agent.get("_id") or "")
         metric = metrics.get(user_id, {})
+        metric["by_temperature"] = owner_temperature_metrics.get(user_id, {})
         candidates.append({
             "user_id": user_id, "executive": str(agent.get("nombre") or ""),
             "identity_key": str(agent.get("nombre") or "").strip().lower(), "executive_key": str(agent.get("nombre") or "").strip().lower(),
             "active": agent.get("is_active") is True, "role": str(agent.get("rol") or "").strip().lower(),
             "legacy": False, "protected_by_management": False, "data_issue": False, "closed_lead": False,
             "not_currently_expired": False, "sample_size": metric.get("sample_size", 0),
+            "by_temperature": metric.get("by_temperature", {}),
             "sla_compliance_rate": metric.get("sla_compliance_rate", 0.0), "attention_rate": metric.get("attention_rate", 0.0),
             "sla_compliance_rate_adjusted": metric.get("sla_compliance_rate_adjusted", 0.0),
             "attention_rate_adjusted": metric.get("attention_rate_adjusted", 0.0),
@@ -503,7 +591,7 @@ async def build_live_capacity_snapshot(
 ) -> dict[str, Any]:
     """Refresh current capacity without re-reading historical performance."""
     started = time.perf_counter()
-    from .crm_metrics import calculate_cycle_sla, is_first_sla_management_completed
+    from .crm_metrics import calculate_cycle_sla, is_first_sla_management_completed, resolve_cycle_sla_temperature
     from .crm_sla_alert_evaluator import CLOSED_STAGES, EXCLUDED_ORIGINS, SYNTHETIC_PHONES
     from .crm_sla_alert_settings import CUTOVER_AT
 
@@ -608,7 +696,7 @@ async def build_live_capacity_snapshot(
         if not owner:
             cycle_audit["owner_missing"] += 1
             continue
-        row = capacity.setdefault(owner, {"open": 0, "unmanaged": 0, "expired": 0})
+        row = capacity.setdefault(owner, {"open": 0, "unmanaged": 0, "expired": 0, "hot_unmanaged": 0})
         row["open"] += 1
         assigned_at = cycle.get("sla_started_at") or cycle.get("assigned_at")
         factual_assigned_at = _utc(cycle.get("assigned_at")) or _utc(assigned_at) or policy_since
@@ -632,6 +720,9 @@ async def build_live_capacity_snapshot(
         if stop:
             continue
         row["unmanaged"] += 1
+        temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+        if temperature == "HOT":
+            row["hot_unmanaged"] += 1
         if not assigned_at:
             continue
         sla = calculate_cycle_sla(

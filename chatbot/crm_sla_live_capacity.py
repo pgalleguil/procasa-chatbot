@@ -318,7 +318,7 @@ def _capacity_from_rows(
         if not owner:
             audit["owner_missing"] += 1
             continue
-        row = capacity.setdefault(owner, {"open": 0, "unmanaged": 0, "expired": 0})
+        row = capacity.setdefault(owner, {"open": 0, "unmanaged": 0, "expired": 0, "hot_unmanaged": 0})
         row["open"] += 1
 
         cycle_events = events_by_lead.get(str(cycle.get("lead_id") or ""), [])
@@ -343,9 +343,11 @@ def _capacity_from_rows(
 
         row["unmanaged"] += 1
         assigned_at = cycle.get("sla_started_at") or cycle.get("assigned_at")
+        temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+        if temperature == "HOT":
+            row["hot_unmanaged"] += 1
         if not assigned_at:
             continue
-        temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
         sla = calculate_cycle_sla(
             cycle=cycle, lead=lead, now=as_of,
             management_results=cycle.get("management_results") or (),

@@ -58,11 +58,14 @@ from .crm_sla_reassignment_transaction import (
     decision_new_cycle_id,
 )
 from .mongo_identity import mongo_id_variants
+from .crm_sla_policy_freeze import RM_ADMIN_EXCLUDED_USER_IDS
+from .crm_sla_territorial_shadow import compact_region_key, regional_profile_regions
 
 
 logger = logging.getLogger(__name__)
 
 FROZEN_POLICY_VERSION = "crm_sla_reassignment_v1"
+ALLOWED_POLICY_VERSIONS = frozenset({FROZEN_POLICY_VERSION, "crm_sla_reassignment_v2"})
 ALLOWED_POLICY_BRANCHES = frozenset({RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN})
 MAX_TRANSACTION_ATTEMPTS = 3
 HUMAN_ACTOR_TYPES = frozenset({"human", "human_agent", "agent", "administrator", "supervisor"})
@@ -262,7 +265,10 @@ def record_reassignment_metric(
 
 def _prevalidate_decision(decision: Mapping[str, Any]) -> None:
     policy_version = str(decision.get("policy_version") or "")
-    if policy_version != FROZEN_POLICY_VERSION:
+    configured_policy_version = str(
+        getattr(Config, "CRM_SLA_REASSIGNMENT_POLICY_VERSION", FROZEN_POLICY_VERSION)
+    ).strip()
+    if configured_policy_version not in ALLOWED_POLICY_VERSIONS or policy_version != configured_policy_version:
         raise _KnownAbort(
             SLAReassignmentErrorCode.ABORT_POLICY_VERSION_CHANGED,
             "policy_version_mismatch",
@@ -280,7 +286,7 @@ def _prevalidate_decision(decision: Mapping[str, Any]) -> None:
     lead_id = _id(decision, "lead_id")
     cycle_id = _id(decision, "current_assignment_cycle_id")
     decision_id = _id(decision, "decision_id")
-    expected_id = generate_decision_id(lead_id, cycle_id, FROZEN_POLICY_VERSION)
+    expected_id = generate_decision_id(lead_id, cycle_id, configured_policy_version)
     if decision_id != expected_id:
         raise _KnownAbort(
             SLAReassignmentErrorCode.IDEMPOTENCY_CONFLICT,
@@ -393,6 +399,61 @@ def _open_lead(lead: Mapping[str, Any]) -> bool:
         str(lead.get(field) or "").upper() in closed_values
         for field in ("stage", "pipeline_stage", "status")
     )
+
+
+def _path_value(document: Mapping[str, Any], path: str) -> Any:
+    value: Any = document
+    for part in path.split("."):
+        if not isinstance(value, Mapping):
+            return None
+        value = value.get(part)
+    return value
+
+
+def _verify_v2_jpc_territory(
+    db: Any,
+    *,
+    lead: Mapping[str, Any],
+    source: Mapping[str, Any],
+    target: Mapping[str, Any],
+    session: Any,
+) -> None:
+    property_code = (
+        source.get("property_code") or lead.get("property_code")
+        or _path_value(lead, "prospecto.codigo")
+        or _path_value(lead, "prospecto.codigo_propiedad")
+        or _path_value(lead, "prospecto.codigo_referencia")
+    )
+    property_row = None
+    if property_code not in (None, ""):
+        collection = getattr(Config, "PROPERTY_COLLECTION_NAME", "universo_cartera_prop360")
+        property_row = _find_one(db[collection], {"codigo": str(property_code)}, session=session)
+    region = (
+        _path_value(property_row or {}, "ubicacion.region")
+        or _path_value(property_row or {}, "region")
+        or _path_value(lead, "region")
+        or _path_value(lead, "prospecto.region")
+        or _path_value(lead, "prospecto.ubicacion.region")
+    )
+    region_key = compact_region_key(region)
+    if not region_key:
+        raise _KnownAbort(
+            SLAReassignmentErrorCode.ABORT_SELECTED_USER_INELIGIBLE,
+            "v2_jpc_property_region_unverified",
+        )
+    try:
+        from scripts.run_phase1c_crm_territory_audit import build_catalog
+        candidate_regions = regional_profile_regions(target, build_catalog())
+    except Exception as exc:
+        raise _KnownAbort(
+            SLAReassignmentErrorCode.ABORT_SELECTED_USER_INELIGIBLE,
+            "v2_jpc_territory_catalog_unavailable",
+        ) from exc
+    if region_key not in candidate_regions:
+        raise _KnownAbort(
+            SLAReassignmentErrorCode.ABORT_SELECTED_USER_INELIGIBLE,
+            "v2_jpc_target_region_not_certified",
+        )
 
 
 def _predeadline_evidence(value: Any, *, breach_at: datetime | None) -> bool:
@@ -724,6 +785,14 @@ def _revalidate(
             SLAReassignmentErrorCode.ABORT_SELECTED_USER_INACTIVE,
             "selected_user_inactive",
         )
+    if str(decision.get("policy_version") or "") == "crm_sla_reassignment_v2":
+        if str(target.get("rol") or "").strip().lower() != "agente" or selected_id in RM_ADMIN_EXCLUDED_USER_IDS:
+            raise _KnownAbort(
+                SLAReassignmentErrorCode.ABORT_SELECTED_USER_INELIGIBLE,
+                "v2_target_role_or_admin_exclusion_failed",
+            )
+        if str(decision.get("policy_branch") or "") == REGION_JPC_MARIA_HERNAN:
+            _verify_v2_jpc_territory(db, lead=lead, source=source, target=target, session=session)
     if selected_id not in {str(item) for item in (decision.get("candidate_user_ids") or [])}:
         raise _KnownAbort(
             SLAReassignmentErrorCode.ABORT_SELECTED_USER_INELIGIBLE,

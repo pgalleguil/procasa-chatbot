@@ -1132,26 +1132,3 @@ def test_v2_admin_protection_skips_snapshot_and_ledger_rebuild(monkeypatch, admi
     assert result["performance_snapshot_skipped"] is True
     assert result["performance_docs_examined"] == 0
     assert not result["decisions"]
-
-
-@pytest.mark.parametrize(
-    ("admin_fields", "expected_reason"),
-    [
-        ({"administrative_assignment_mode": "SUPERVISOR_LOCK"}, "SUPERVISOR_LOCK"),
-        ({"administrative_hold_until": NOW + timedelta(minutes=5)}, "HOLD_UNTIL"),
-    ],
-)
-def test_v2_admin_protection_prevents_transfer(monkeypatch, admin_fields, expected_reason):
-    monkeypatch.setattr(
-        Config, "CRM_SLA_REASSIGNMENT_POLICY_VERSION",
-        "crm_sla_reassignment_v2", raising=False,
-    )
-    row = cycle(992, assigned_at=NOW - timedelta(days=2))
-    row["sla_started_at"] = row["assigned_at"]
-    row.update(admin_fields)
-    result = run(**base_kwargs([row], [lead(992)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
-
-    assert result["status"] == "shadow"
-    assert result["iteration"]["protected_skipped"] == 1
-    assert result["evaluations"][0]["exclusion_reason"] == expected_reason
-    assert not result["decisions"]

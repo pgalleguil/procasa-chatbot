@@ -465,5 +465,14 @@ def test_default_snapshot_distinguishes_verified_zero_from_incomplete_capacity(m
         if expected_complete:
             assert selected["winner"]["user_id"] == "quiet-agent"
         else:
+            # The shared fixture has simulated capacity counters. Remove them
+            # so this case exercises a snapshot whose live capacity is unknown.
+            for key in ("simulated_open_current", "simulated_unmanaged_current", "simulated_expired_current"):
+                selectable.pop(key, None)
+            selected = select_v2_winner(
+                {"owner_user_id": "source"}, [selectable], team=_team(),
+                branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+                admin_user_ids=set(),
+            )
             assert selected["winner"] is None
             assert selected["selection_reason"] == "DYNAMIC_V2_CAPACITY_LIMIT"

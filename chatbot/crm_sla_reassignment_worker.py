@@ -2328,7 +2328,7 @@ async def run_sla_reassignment_worker_iteration(
         evaluations: list[dict[str, Any]] = []
         decisions: list[dict[str, Any]] = []
         perf_version = _text(snapshot.get("performance_snapshot_version"))
-        dist_version = sha256((_text(rm_state.get("distribution_state_version")) + _text(jpc_state.get("distribution_state_version")) + _text(tier1_balance_state.get("state_version"))).encode("utf-8")).hexdigest()
+        dist_version = sha256((_text(rm_state.get("distribution_state_version")) + _text(jpc_state.get("distribution_state_version")) + _text((tier1_balance_state or {}).get("state_version"))).encode("utf-8")).hexdigest()
         for lead_row, cycle, exp, protection, owner_status in ordered:
             try:
                 lead_id = _text(cycle.get("lead_id"))

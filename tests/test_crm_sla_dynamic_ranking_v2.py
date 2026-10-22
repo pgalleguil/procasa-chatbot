@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from chatbot.crm_sla_dynamic_ranking_v2 import (
     BASE_WEIGHTS,
@@ -176,3 +176,172 @@ def test_executor_requires_decision_version_to_match_explicit_configuration(monk
         assert exc.code.value == "ABORT_POLICY_VERSION_CHANGED"
     else:
         raise AssertionError("V1 decision must be rejected while V2 is configured")
+
+
+
+def test_shrinkage_fairness_example_5_of_5_vs_85_of_100():
+    team_rate = 0.75
+    assert shrink_rate(1.0, 5, team_rate, 20) == 0.80
+    assert abs(shrink_rate(0.85, 100, team_rate, 20) - (100 * 0.85 + 20 * 0.75) / 120) < 1e-12
+    assert shrink_rate(0.85, 100, team_rate, 20) > shrink_rate(1.0, 5, team_rate, 20)
+
+
+def test_temperature_denominators_exclude_unevaluable_episodes_and_future_management():
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    assigned = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
+    records = [
+        {
+            "is_post_cutover": True, "canonical": True, "excluded_origin": False,
+            "assigned_at": assigned, "owner_id": "a", "temperature": "HOT",
+            "sla_started_at": assigned, "a_stop_at": datetime(2026, 10, 21, 12, tzinfo=timezone.utc),
+            "deadline": datetime(2026, 10, 21, 13, tzinfo=timezone.utc), "threshold": 100000,
+        },
+        {
+            "is_post_cutover": True, "canonical": True, "excluded_origin": False,
+            "assigned_at": assigned, "owner_id": "a", "temperature": "NORMAL",
+            "sla_started_at": assigned, "deadline": datetime(2026, 10, 21, 12, tzinfo=timezone.utc),
+            "threshold": 60,
+        },
+        {
+            "is_post_cutover": True, "canonical": True, "excluded_origin": False,
+            "assigned_at": assigned, "owner_id": "a", "temperature": "HOT",
+            "sla_started_at": assigned, "deadline": datetime(2026, 10, 23, 12, tzinfo=timezone.utc),
+            "threshold": 60,
+        },
+        {
+            "is_post_cutover": True, "canonical": True, "excluded_origin": False,
+            "assigned_at": assigned, "owner_id": "a", "temperature": "NORMAL",
+            "sla_started_at": assigned, "a_stop_at": datetime(2026, 10, 23, 12, tzinfo=timezone.utc),
+            "deadline": datetime(2026, 10, 23, 12, tzinfo=timezone.utc), "threshold": 60,
+        },
+    ]
+    owners, team = _dynamic_temperature_metrics(
+        records, [{"_id": "a"}], as_of=as_of, performance_window_days=60,
+    )
+    assert owners["a"]["HOT"]["eligible_count"] == 2
+    assert owners["a"]["HOT"]["sample_size"] == 1
+    assert owners["a"]["HOT"]["excluded_non_evaluable_count"] == 1
+    assert owners["a"]["HOT"]["sla_compliant_count"] == 1
+    assert owners["a"]["NORMAL"]["eligible_count"] == 2
+    assert owners["a"]["NORMAL"]["sample_size"] == 1
+    assert owners["a"]["NORMAL"]["excluded_non_evaluable_count"] == 1
+    assert owners["a"]["NORMAL"]["missed_deadline_count"] == 1
+    assert team["HOT"]["sample_size"] == 1
+    assert team["NORMAL"]["sample_size"] == 1
+
+
+def test_dynamic_temperature_calculation_is_skipped_for_v1(monkeypatch):
+    import chatbot.crm_sla_performance_snapshot as snapshot_module
+
+    called = []
+    monkeypatch.setattr(snapshot_module, "_dynamic_temperature_metrics", lambda *args, **kwargs: called.append(True))
+    assert snapshot_module._dynamic_metrics_for_policy(
+        [], [], as_of=datetime(2026, 10, 22, tzinfo=timezone.utc),
+        performance_window_days=60, policy_version="crm_sla_reassignment_v1",
+    ) is None
+    assert called == []
+    result = snapshot_module._dynamic_metrics_for_policy(
+        [], [], as_of=datetime(2026, 10, 22, tzinfo=timezone.utc),
+        performance_window_days=60, policy_version="crm_sla_reassignment_v2",
+    )
+    assert called == [True]
+    assert result is None
+
+
+def test_committed_event_loader_bounds_all_legacy_timestamp_aliases(monkeypatch):
+    import asyncio
+    import chatbot.crm_sla_reassignment_worker as worker
+
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    since = as_of - timedelta(days=7)
+    captured = {}
+
+    async def fake_find_many(collection, query, projection, **kwargs):
+        captured.update(query=query, projection=projection, kwargs=kwargs)
+        return []
+
+    monkeypatch.setattr(worker, "_find_many", fake_find_many)
+
+    class DummyDB:
+        def __getitem__(self, name):
+            return name
+
+    asyncio.run(worker._load_committed_events(
+        DummyDB(), policy_versions=("crm_sla_reassignment_v1", "crm_sla_reassignment_v2"),
+        since=since, until=as_of,
+    ))
+    query = captured["query"]
+    assert query["event_type"] == worker.COMMITTED_EVENT
+    assert query["policy_version"] == {"$in": ["crm_sla_reassignment_v1", "crm_sla_reassignment_v2"]}
+    assert len(query["$or"]) == 5
+    for clause in query["$or"]:
+        timestamp_field, bounds = next(iter(clause.items()))
+        assert timestamp_field in {"reassigned_at", "commit_time", "created_at", "timestamp", "at"}
+        assert bounds == {"$gte": since, "$lte": as_of}
+        assert timestamp_field in captured["projection"]
+
+
+def test_recent_rescue_counts_support_legacy_timestamp_names_and_apply_priority():
+    from chatbot.crm_sla_reassignment_worker import _recent_rescue_counts
+
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    since = as_of - timedelta(days=7)
+    rows = [
+        {"target_owner_user_id": "reassigned", "reassigned_at": as_of - timedelta(days=1)},
+        {"target_owner_user_id": "commit", "commit_time": as_of - timedelta(days=2)},
+        {"target_owner_user_id": "created", "created_at": as_of - timedelta(days=3)},
+        {"target_owner_user_id": "timestamp", "timestamp": as_of - timedelta(days=4)},
+        {"target_owner_user_id": "at", "at": as_of - timedelta(days=5)},
+        {"target_owner_user_id": "old", "created_at": since - timedelta(seconds=1)},
+        {"target_owner_user_id": "future", "at": as_of + timedelta(seconds=1)},
+        {
+            "target_owner_user_id": "priority",
+            "reassigned_at": since - timedelta(seconds=1),
+            "commit_time": as_of - timedelta(days=1),
+        },
+    ]
+    assert _recent_rescue_counts(rows, as_of=as_of) == {
+        "reassigned": 1, "commit": 1, "created": 1, "timestamp": 1, "at": 1,
+    }
+
+
+def test_missing_capacity_stays_unknown_and_batch_projection_updates_load():
+    from chatbot.crm_sla_reassignment_worker import _initial_candidate_state, _update_v2_state
+
+    state = _initial_candidate_state([{
+        "user_id": "unknown",
+        "open_current_policy": None,
+        "unmanaged_current_policy": None,
+        "expired_current_policy": None,
+    }])
+    assert state["unknown"]["simulated_open_current"] is None
+    assert state["unknown"]["simulated_unmanaged_current"] is None
+    assert state["unknown"]["simulated_expired_current"] is None
+
+    candidate = _candidate("target", p50=10, p90=20, load=1)
+    projected = _initial_candidate_state([{
+        "user_id": "target", "open_current_policy": 1,
+        "unmanaged_current_policy": 1, "expired_current_policy": 0,
+        "hot_unmanaged_backlog": 0, "recent_rescues_7d": 0,
+    }])
+    params = RankingParameters(max_unmanaged_backlog=2)
+    first = select_v2_winner(
+        {"owner_user_id": "source"}, [candidate], team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(), params=params,
+    )
+    assert first["winner"] is not None
+    _update_v2_state(projected, first["winner"], source_user_id="source", temperature="HOT")
+    assert projected["target"]["simulated_open_current"] == 2
+    assert projected["target"]["simulated_unmanaged_current"] == 2
+    assert projected["target"]["hot_unmanaged_backlog"] == 1
+
+    next_candidate = dict(candidate)
+    next_candidate.update(projected["target"])
+    second = select_v2_winner(
+        {"owner_user_id": "another-source"}, [next_candidate], team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(), params=params,
+    )
+    assert second["winner"] is None
+    assert second["selection_reason"] == "DYNAMIC_V2_CAPACITY_LIMIT"

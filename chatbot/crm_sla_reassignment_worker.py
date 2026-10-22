@@ -19,6 +19,7 @@ import inspect
 import json
 import logging
 import time
+from math import isfinite
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -121,6 +122,14 @@ def _number(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _capacity_number(value: Any) -> float | None:
+    """Return verified live-capacity numbers without turning missing data into zero."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    parsed = float(value)
+    return parsed if isfinite(parsed) and parsed >= 0 else None
 
 
 def _iso(value: Any) -> str:
@@ -1445,9 +1454,9 @@ def _initial_candidate_state(rows: Iterable[Mapping[str, Any]], committed_counts
         if not user_id:
             continue
         state.setdefault(user_id, {
-            "simulated_open_current": _number(row.get("open_current_policy")),
-            "simulated_unmanaged_current": _number(row.get("unmanaged_current_policy")),
-            "simulated_expired_current": _number(row.get("expired_current_policy")),
+            "simulated_open_current": _capacity_number(row.get("open_current_policy")),
+            "simulated_unmanaged_current": _capacity_number(row.get("unmanaged_current_policy")),
+            "simulated_expired_current": _capacity_number(row.get("expired_current_policy")),
             "hot_unmanaged_backlog": _number(row.get("hot_unmanaged_backlog")),
             "recent_rescues_7d": _number(row.get("recent_rescues_7d")),
             "shadow_received_count": _number(committed_counts.get(user_id, row.get("shadow_received_count", 0))),
@@ -1471,21 +1480,34 @@ def _update_v2_state(
     source = state.get(source_user_id)
     if source:
         for key in ("simulated_open_current", "simulated_unmanaged_current", "simulated_expired_current"):
-            source[key] = max(0.0, _number(source.get(key)) - 1.0)
+            current = _capacity_number(source.get(key))
+            if current is not None:
+                source[key] = max(0.0, current - 1.0)
         if temperature == "HOT":
             source["hot_unmanaged_backlog"] = max(0.0, _number(source.get("hot_unmanaged_backlog")) - 1.0)
     _update_state(state, winner)
     target_user_id = _text(winner.get("user_id"))
     if not target_user_id:
         return
-    state[target_user_id]["recent_rescues_7d"] = _number(state[target_user_id].get("recent_rescues_7d")) + 1.0
+    target = state[target_user_id]
+    for key in ("simulated_open_current", "simulated_unmanaged_current"):
+        current = _capacity_number(target.get(key))
+        if current is not None:
+            target[key] = current + 1.0
+    target["recent_rescues_7d"] = _number(target.get("recent_rescues_7d")) + 1.0
     if temperature == "HOT":
-        state[target_user_id]["hot_unmanaged_backlog"] = _number(state[target_user_id].get("hot_unmanaged_backlog")) + 1.0
+        target["hot_unmanaged_backlog"] = _number(target.get("hot_unmanaged_backlog")) + 1.0
+
+
+_EVENT_TIMESTAMP_FIELDS = ("reassigned_at", "commit_time", "created_at", "timestamp", "at")
+
+
+def _event_timestamp(event: Mapping[str, Any]) -> Any:
+    return next((event.get(field) for field in _EVENT_TIMESTAMP_FIELDS if event.get(field) is not None), None)
 
 
 def _event_sort_key(event: Mapping[str, Any]) -> tuple[str, str]:
-    timestamp = _iso(event.get("reassigned_at") or event.get("commit_time") or event.get("created_at") or event.get("timestamp") or event.get("at"))
-    return timestamp, _text(event.get("decision_id") or event.get("_id"))
+    return _iso(_event_timestamp(event)), _text(event.get("decision_id") or event.get("_id"))
 
 
 async def _load_committed_events(
@@ -1493,23 +1515,45 @@ async def _load_committed_events(
     *,
     events: Iterable[Mapping[str, Any]] | None = None,
     policy_versions: Iterable[str] | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
     read_instrumentation: ReadInstrumentation | None = None,
 ) -> list[dict[str, Any]]:
+    lower = _utc(since) if since is not None else None
+    upper = _utc(until) if until is not None else None
     if events is not None:
-        return [dict(row) for row in events]
+        rows = [dict(row) for row in events]
+        if lower is None and upper is None:
+            return rows
+        bounded = []
+        for row in rows:
+            timestamp = _utc(_event_timestamp(row))
+            if timestamp and (lower is None or timestamp >= lower) and (upper is None or timestamp <= upper):
+                bounded.append(row)
+        return bounded
     if db is None:
         from .storage import get_async_db
         db = get_async_db()
     versions = list(dict.fromkeys(_text(value) for value in (policy_versions or (POLICY_VERSION,)) if _text(value)))
     version_query: Any = versions[0] if len(versions) == 1 else {"$in": versions}
+    query: dict[str, Any] = {"event_type": COMMITTED_EVENT, "policy_version": version_query}
+    if lower is not None or upper is not None:
+        time_range: dict[str, Any] = {}
+        if lower is not None:
+            time_range["$gte"] = lower
+        if upper is not None:
+            time_range["$lte"] = upper
+        # Keep timestamp aliases used by legacy committed rows. The worker's
+        # seven-day V2 rescue read is bounded in MongoDB, before Python counts.
+        query["$or"] = [{field: time_range} for field in _EVENT_TIMESTAMP_FIELDS]
     return await _find_many(
         db[LEDGER_COLLECTION],
-        {"event_type": COMMITTED_EVENT, "policy_version": version_query},
+        query,
         {"_id": 1, "event_type": 1, "decision_id": 1, "lead_id": 1, "source_cycle_id": 1,
          "target_owner_user_id": 1, "selected_user_id": 1, "policy_version": 1, "policy_branch": 1,
          "branch": 1, "source_cycle_sla_breached_at": 1, "sla_breached_at": 1,
-         "reassigned_at": 1, "commit_time": 1, "created_at": 1, "assignment_number": 1,
-         "selection_rule": 1, "actor": 1, "assigned_by": 1,
+         "reassigned_at": 1, "commit_time": 1, "created_at": 1, "timestamp": 1, "at": 1,
+         "assignment_number": 1, "selection_rule": 1, "actor": 1, "assigned_by": 1,
          "reassignment_reason": 1, "policy_repair_id": 1, "policy_repair_reason": 1,
          "repair_type": 1, "reverted": 1, "reversed": 1, "reversal": 1},
         instrumentation=read_instrumentation,
@@ -1522,7 +1566,7 @@ def _recent_rescue_counts(events: Iterable[Mapping[str, Any]], *, as_of: datetim
     counts: Counter[str] = Counter()
     for event in events:
         target = _text(event.get("target_owner_user_id") or event.get("selected_user_id") or event.get("target_user_id"))
-        timestamp = _utc(event.get("reassigned_at") or event.get("commit_time") or event.get("created_at") or event.get("timestamp") or event.get("at"))
+        timestamp = _utc(_event_timestamp(event))
         if target and timestamp and cutoff <= timestamp <= as_of:
             counts[target] += 1
     return counts
@@ -2067,7 +2111,9 @@ async def run_sla_reassignment_worker_iteration(
             and isinstance(snapshot.get("team"), Mapping)
             and isinstance(snapshot.get("candidates"), list)
             and all(
-                all(key in row for key in ("open_current_policy", "unmanaged_current_policy", "expired_current_policy"))
+                all(_capacity_number(row.get(key)) is not None for key in (
+                    "open_current_policy", "unmanaged_current_policy", "expired_current_policy",
+                ))
                 for row in all_candidates
             )
         )
@@ -2097,6 +2143,7 @@ async def run_sla_reassignment_worker_iteration(
             elif db is not None:
                 rescue_events = await _load_committed_events(
                     db, policy_versions=(POLICY_VERSION, DYNAMIC_POLICY_VERSION),
+                    since=as_of - timedelta(days=7), until=as_of,
                     read_instrumentation=read_instrumentation,
                 )
             else:

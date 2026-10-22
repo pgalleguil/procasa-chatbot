@@ -87,19 +87,46 @@ def _dynamic_temperature_metrics(
     ]
 
     def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
-        measured = [(row, cycle_first_management_minutes(row)) for row in rows]
-        durations = [duration for _, duration in measured if duration is not None]
-        sample_size = len(rows)
+        durations: list[float] = []
+        compliant = 0
+        evaluable_count = 0
+        missed_deadline_count = 0
+        for row in rows:
+            stop_at = _utc(row.get("a_stop_at"))
+            duration = (
+                cycle_first_management_minutes(row)
+                if stop_at is not None and stop_at <= as_of
+                else None
+            )
+            if duration is not None:
+                evaluable_count += 1
+                durations.append(duration)
+                threshold = float(row.get("threshold") or 0)
+                if duration < threshold:
+                    compliant += 1
+                else:
+                    missed_deadline_count += 1
+                continue
+
+            deadline = _utc(row.get("deadline"))
+            if deadline is not None and deadline <= as_of:
+                # No valid management by an elapsed SLA deadline is a measured
+                # miss. An open episode whose deadline is still future has no
+                # outcome yet and is excluded from this denominator.
+                evaluable_count += 1
+                missed_deadline_count += 1
+
         managed_count = len(durations)
-        compliant = sum(
-            1 for row, duration in measured
-            if duration is not None and duration < float(row.get("threshold") or 0)
-        )
+        excluded_non_evaluable = len(rows) - evaluable_count
         return {
-            "sample_size": sample_size,
+            "sample_size": evaluable_count,
+            "eligible_count": len(rows),
+            "excluded_non_evaluable_count": excluded_non_evaluable,
             "managed_count": managed_count,
-            "sla_compliance_rate": compliant / sample_size if sample_size else None,
-            "attention_rate": managed_count / sample_size if sample_size else None,
+            "sla_compliant_count": compliant,
+            "missed_deadline_count": missed_deadline_count,
+            "sla_compliance_rate": compliant / evaluable_count if evaluable_count else None,
+            "attention_rate": managed_count / evaluable_count if evaluable_count else None,
             "p50": _dynamic_quantile(durations, 0.50),
             "p90": _dynamic_quantile(durations, 0.90),
         }
@@ -126,6 +153,23 @@ def _dynamic_temperature_metrics(
         for temperature in ("HOT", "NORMAL")
     }
     return by_owner, by_temperature
+
+
+def _dynamic_metrics_for_policy(
+    records: list[dict[str, Any]],
+    agents: list[dict[str, Any]],
+    *,
+    as_of: datetime,
+    performance_window_days: int,
+    policy_version: str,
+) -> tuple[dict[str, dict[str, dict[str, Any]]], dict[str, dict[str, Any]]] | None:
+    """Only compute temperature strata for V2; V1 keeps its historical cost path."""
+    if policy_version != "crm_sla_reassignment_v2":
+        return None
+    return _dynamic_temperature_metrics(
+        records, agents, as_of=as_of,
+        performance_window_days=performance_window_days,
+    )
 
 
 def _dynamic_quantile(values: list[float], probability: float) -> float | None:
@@ -524,21 +568,27 @@ async def build_historical_performance_snapshot(
     params = RescueParameters(performance_window_days=performance_window_days)
     metrics_started = time.perf_counter()
     metrics, team = historical_metrics(records, agents, as_of=as_of, params=params)
-    owner_temperature_metrics, team_temperature_metrics = _dynamic_temperature_metrics(
-        records, agents, as_of=as_of, performance_window_days=performance_window_days,
+    dynamic_metrics = _dynamic_metrics_for_policy(
+        records, agents, as_of=as_of,
+        performance_window_days=performance_window_days,
+        policy_version=policy_version,
     )
-    team = dict(team)
-    team["by_temperature"] = team_temperature_metrics
-    team["temperature_mix"] = {
-        temperature: team_temperature_metrics[temperature]["sample_size"]
-        for temperature in ("HOT", "NORMAL")
-    }
+    owner_temperature_metrics: dict[str, dict[str, dict[str, Any]]] = {}
+    if dynamic_metrics is not None:
+        owner_temperature_metrics, team_temperature_metrics = dynamic_metrics
+        team = dict(team)
+        team["by_temperature"] = team_temperature_metrics
+        team["temperature_mix"] = {
+            temperature: team_temperature_metrics[temperature]["sample_size"]
+            for temperature in ("HOT", "NORMAL")
+        }
     metrics_ms = (time.perf_counter() - metrics_started) * 1000.0
     candidates = []
     for agent in agents:
         user_id = str(agent.get("_id") or "")
         metric = metrics.get(user_id, {})
-        metric["by_temperature"] = owner_temperature_metrics.get(user_id, {})
+        if policy_version == "crm_sla_reassignment_v2":
+            metric["by_temperature"] = owner_temperature_metrics.get(user_id, {})
         candidates.append({
             "user_id": user_id, "executive": str(agent.get("nombre") or ""),
             "identity_key": str(agent.get("nombre") or "").strip().lower(), "executive_key": str(agent.get("nombre") or "").strip().lower(),

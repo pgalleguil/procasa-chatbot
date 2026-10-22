@@ -807,3 +807,20 @@ def test_result_and_logs_contract_has_no_contact_pii(monkeypatch, caplog):
     assert "phone" not in text
     assert "email" not in text
     assert "whatsapp" not in text
+
+
+def test_executor_revalidates_selected_recipient_inside_transaction(monkeypatch):
+    enable_flags(monkeypatch)
+    db, decision = make_fixture()
+    # The worker selected this recipient earlier; model deactivation before the
+    # executor's transaction begins. The transactional read must reject it
+    # before any source, lead, destination, or ledger write.
+    db["usuarios"].rows["new-user"]["is_active"] = False
+    result = execute_sla_reassignment_transaction(db, decision, evaluated_at=NOW)
+
+    assert result.outcome == SLAReassignmentErrorCode.ABORT_SELECTED_USER_INACTIVE.value
+    assert result.committed is False
+    assert db["crm_assignment_cycles"].rows["mongo-cycle-1"]["cycle_status"] == "active"
+    assert db["leads"].rows["lead-1"]["lifecycle"]["current_assignment_cycle_id"] == "cycle-1"
+    assert len(db["crm_assignment_cycles"].rows) == 1
+    assert not db["crm_sla_reassignment_audit_v1"].rows

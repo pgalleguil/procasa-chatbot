@@ -783,6 +783,20 @@ def test_index_migration_is_dry_run_and_does_not_create_indexes():
     assert plan["dry_run"] is True
     assert plan["blocking_duplicates"] is False
     assert all("name" in item for item in plan["proposed_indexes"])
+    committed_time_indexes = [
+        item for item in plan["proposed_indexes"]
+        if item["name"].startswith("idx_committed_policy_")
+    ]
+    assert {
+        item["keys"][-1][0] for item in committed_time_indexes
+    } == {"reassigned_at", "commit_time", "created_at", "timestamp", "at"}
+    assert all(
+        item["partial_filter"] == {
+            "event_type": "SLA_REASSIGNMENT_COMMITTED",
+            item["keys"][-1][0]: {"$exists": True},
+        }
+        for item in committed_time_indexes
+    )
 
 
 def test_result_and_logs_contract_has_no_contact_pii(monkeypatch, caplog):

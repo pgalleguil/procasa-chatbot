@@ -61,7 +61,13 @@ def build_index_migration_plan(db: Any) -> dict[str, Any]:
             "name": f"idx_committed_policy_{field}_v1",
             "keys": [("event_type", 1), ("policy_version", 1), (field, 1)],
             "unique": False,
-            "partial_filter": {"event_type": "SLA_REASSIGNMENT_COMMITTED"},
+            # The query branch also constrains this timestamp field. Keep
+            # missing legacy aliases out of the index instead of storing null
+            # keys for every committed event.
+            "partial_filter": {
+                "event_type": "SLA_REASSIGNMENT_COMMITTED",
+                field: {"$exists": True},
+            },
             "blocked": False,
         }
         for field in ("reassigned_at", "commit_time", "created_at", "timestamp", "at")

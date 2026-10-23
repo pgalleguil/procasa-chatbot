@@ -70,6 +70,7 @@ jobs:
             tests: >-
               tests/test_p0_repair_17252.py
               tests/test_assignment_integrity_p0.py
+              tests/test_p0_integrity_readback.py
               tests/test_prop360_crm_incident.py
               tests/test_crm_list_actions.py
               tests/test_repair_procasa_prop360_duplicate_cycles.py

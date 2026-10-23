@@ -227,21 +227,55 @@ def prepare_pending_assignment_notification(
 
 
 def cycle_has_human_management(db: Any, cycle: Mapping[str, Any]) -> bool:
-    """Read exact-cycle human evidence used by the existing SLA evaluator."""
+    """Read human evidence that occurred inside this assignment cycle.
+
+    The general SLA evaluator intentionally accepts legacy evidence after an
+    assignment.  For a historical transfer finding, however, evidence after
+    ``unassigned_at`` cannot prove that the previous owner had managed the
+    lead before the transfer.  Bound both canonical and legacy evidence to the
+    cycle window so a later close note is not retroactively attributed.
+    """
     if not cycle:
         return False
     cycle_id = str(cycle.get("assignment_cycle_id") or "")
     if not cycle_id:
         return False
+    assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
+    if assigned_at is None:
+        return False
+    unassigned_at = coerce_utc_datetime(cycle.get("unassigned_at"))
+
+    def occurred_inside_cycle(value: Any) -> bool:
+        occurred_at = coerce_utc_datetime(value)
+        return bool(
+            occurred_at
+            and occurred_at >= assigned_at
+            and (unassigned_at is None or occurred_at <= unassigned_at)
+        )
+
     lead_id = cycle.get("lead_id")
     variants = list(mongo_id_variants(lead_id))
     results = list(db["crm_management_results"].find({
         "assignment_cycle_id": cycle_id,
     }).limit(100))
+    results = [row for row in results if occurred_inside_cycle(row.get("occurred_at"))]
     events = list(db["crm_events"].find({
         "lead_id": {"$in": variants},
     }).limit(500)) if variants else []
-    return is_first_sla_management_completed(cycle, results, events)
+    events = [
+        row for row in events
+        if occurred_inside_cycle(row.get("timestamp") or row.get("occurred_at"))
+    ]
+
+    # The SLA evaluator treats a legacy "completed" status as authoritative
+    # even without a timestamp.  Do not use that unbounded status to attribute
+    # a historical transfer; only retain it alongside dated in-cycle evidence.
+    bounded_cycle = dict(cycle)
+    marker = cycle.get("first_valid_management_at")
+    if not occurred_inside_cycle(marker):
+        bounded_cycle.pop("first_valid_management_at", None)
+        bounded_cycle["sla_first_management_status"] = None
+    return is_first_sla_management_completed(bounded_cycle, results, events)
 
 
 def record_assignment_integrity_alert(
@@ -333,21 +367,56 @@ def _valid_transfer_transition(
             and actor == str(current.get("assigned_by") or "").strip()
         )
     if assigned_by == "sla_reassignment":
-        decision_id = str(current.get("reassignment_decision_id") or "").strip()
-        if not decision_id:
+        cycle_id = str(current.get("assignment_cycle_id") or "").strip()
+        # The cycle ID records the decision that created this cycle.  On some
+        # production records reassignment_decision_id is already populated
+        # with the *next* rescue decision, so using it alone falsely rejects
+        # otherwise exact SLA audit rows.
+        decision_ids = []
+        prefix = "sla-reassignment:"
+        if cycle_id.startswith(prefix):
+            decision_ids.append(cycle_id[len(prefix):])
+        recorded_decision = str(current.get("reassignment_decision_id") or "").strip()
+        if recorded_decision and recorded_decision not in decision_ids:
+            decision_ids.append(recorded_decision)
+        if not cycle_id or not decision_ids:
             return False
         if db is None:
             # Preserve the pure helper contract for callers without a database;
             # the production reconciliation path always verifies the audit row.
             return True
         audit = db["crm_sla_reassignment_audit_v1"].find_one({
-            "_id": decision_id,
+            "_id": {"$in": decision_ids},
             "event_type": "SLA_REASSIGNMENT_COMMITTED",
-            "decision_id": decision_id,
+            "decision_id": {"$in": decision_ids},
             "source_cycle_id": str(previous.get("assignment_cycle_id") or ""),
-            "new_cycle_id": str(current.get("assignment_cycle_id") or ""),
+            "new_cycle_id": cycle_id,
         })
         return bool(audit)
+    # Human/admin transfers are valid only when the exact cycle has a matching
+    # canonical ASSIGNMENT event.  The cycle fields alone are not authorization.
+    if db is not None and reason in {
+        "crm_list_admin_reactivation",
+        "manual_exceptional_reassignment",
+        "manual_vacation_reassignment",
+        "vacation_reassignment",
+    }:
+        cycle_id = str(current.get("assignment_cycle_id") or "").strip()
+        lead_id = current.get("lead_id") or previous.get("lead_id")
+        owner_name = str(current.get("assigned_to_display_name") or "").strip()
+        variants = list(mongo_id_variants(lead_id))
+        if not cycle_id or not owner_name or not variants:
+            return False
+        authorization = db["crm_events"].find_one({
+            "lead_id": {"$in": variants},
+            "type": "ASSIGNMENT",
+            "actor_type": {"$in": ["human", "administrator", "supervisor"]},
+            "assignment_cycle_id": cycle_id,
+            "meta.assignment_cycle_id": cycle_id,
+            "meta.method": reason,
+            "meta.executive": owner_name,
+        })
+        return bool(authorization and str(authorization.get("actor") or "").strip())
     return False
 
 
@@ -364,6 +433,37 @@ def _was_transition_administratively_corrected(
     both exact cycles, restore the same owner, carry a valid human admin
     authorization, and be marked excluded from performance scoring.
     """
+    # Legacy October-holiday corrections predate the normalized cycle flags.
+    # Recognize only an exact administrator event that links this source cycle
+    # to this correction cycle, restores its recorded target owner, and is
+    # excluded from owner notification.  This is deliberately cause-specific.
+    if (
+        db is not None
+        and str(current.get("assigned_by") or "").strip().lower() == "administrative_correction"
+        and current.get("notification_eligible") is False
+    ):
+        correction_cycle_id = str(current.get("assignment_cycle_id") or "").strip()
+        source_cycle_id = str(previous.get("assignment_cycle_id") or "").strip()
+        lead_id = current.get("lead_id") or previous.get("lead_id")
+        target_owner = str(current.get("assigned_to_user_id") or "").strip()
+        variants = list(mongo_id_variants(lead_id))
+        if (
+            correction_cycle_id.startswith("admin-correction:HOLIDAY_SLA_CORRECTION_2026_10_12:")
+            and source_cycle_id and target_owner and variants
+        ):
+            event = db["crm_events"].find_one({
+                "lead_id": {"$in": variants},
+                "type": "ADMIN_ASSIGNMENT_CORRECTION",
+                "actor_type": {"$in": ["administrator", "supervisor"]},
+                "assignment_cycle_id": correction_cycle_id,
+                "meta.assignment_cycle_id": correction_cycle_id,
+                "meta.cause": "HOLIDAY_SLA_CORRECTION_2026_10_12",
+                "meta.source_assignment_cycle_id": source_cycle_id,
+                "meta.target_owner_user_id": target_owner,
+            })
+            if event and str(event.get("actor") or "").strip():
+                return True
+
     if current.get("administratively_corrected") is not True:
         return False
     corrected_cycle_id = str(current.get("assignment_cycle_id") or "")
@@ -565,12 +665,49 @@ def _chatbot_owner_findings(lead: Mapping[str, Any], cycles: list[dict[str, Any]
     for message in lead.get("messages") or []:
         if message.get("role") != "assistant":
             continue
+        delivery_status = str(message.get("delivery_status") or "").strip().lower()
+        # A generated transcript is not proof that the message left the
+        # service.  Only inspect outbound records accepted by the provider (or
+        # with a provider message ID); unknown legacy transcript delivery must
+        # not become a P0 customer-impact claim.
+        if delivery_status not in {"accepted", "delivered", "read"} and not message.get("provider_message_id"):
+            continue
         content = str(message.get("content") or "")
-        if any(name in content.casefold() for name in names):
+        mentioned_names = [name for name in names if name in content.casefold()]
+        if not mentioned_names:
+            continue
+        occurred_at = coerce_utc_datetime(message.get("timestamp"))
+        if occurred_at is None:
+            continue
+        message_cycle_id = str(message.get("assignment_cycle_id") or "").strip()
+        candidates = []
+        for cycle in cycles:
+            cycle_id = str(cycle.get("assignment_cycle_id") or "")
+            if message_cycle_id and cycle_id != message_cycle_id:
+                continue
+            assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
+            unassigned_at = coerce_utc_datetime(cycle.get("unassigned_at"))
+            if assigned_at and occurred_at >= assigned_at and (unassigned_at is None or occurred_at <= unassigned_at):
+                candidates.append(cycle)
+        # Overlapping or incomplete histories cannot attribute the message to
+        # one executive safely; keep them for manual history review instead of
+        # guessing from the set of every owner ever assigned to the lead.
+        if len(candidates) != 1:
+            continue
+        cycle = candidates[0]
+        expected_owner = str(cycle.get("assigned_to_display_name") or "").strip().casefold()
+        if expected_owner and all(name == expected_owner for name in mentioned_names):
+            continue
+        if any(name != expected_owner for name in mentioned_names):
             return [{
                 "issue_code": "chatbot_named_executive_during_assignment_conflict",
                 "lead_id": lead.get("_id"),
-                "cycle_ids": sorted(str(row.get("assignment_cycle_id") or "") for row in cycles),
+                "cycle_ids": [str(cycle.get("assignment_cycle_id") or "")],
+                "message_timestamp": message.get("timestamp"),
+                "provider_accepted": delivery_status in {"accepted", "delivered", "read"},
+                "provider_message_id_present": bool(message.get("provider_message_id")),
+                "mentioned_executives": mentioned_names,
+                "canonical_cycle_owner": cycle.get("assigned_to_display_name"),
                 "signature": hashlib.sha256(content.encode("utf-8", "replace")).hexdigest()[:16],
             }]
     return []
@@ -664,7 +801,9 @@ def reconcile_assignment_integrity(
     lead_projection = {
         "_id": 1, "lifecycle": 1, "ejecutivo_asignado": 1,
         "prospecto.ejecutivo": 1, "prospecto.codigo": 1, "codigo": 1,
-        "messages.role": 1, "messages.content": 1,
+        "messages.role": 1, "messages.content": 1, "messages.timestamp": 1,
+        "messages.delivery_status": 1, "messages.provider_message_id": 1,
+        "messages.assignment_cycle_id": 1,
     }
     lead_rows = []
     if query_ids:

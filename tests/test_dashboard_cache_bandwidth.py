@@ -55,3 +55,14 @@ def test_ten_minute_idle_bandwidth_regression_is_removed():
     assert before.mongo_bytes == 10_269_990
     assert after == BandwidthModel(0, 0, 0, 0)
     assert (before.mongo_bytes - after.mongo_bytes) / before.mongo_bytes == 1.0
+
+
+def test_commercial_dashboard_only_refreshes_on_open_or_explicit_actions():
+    """Opening the dashboard and user filters are the only refresh triggers."""
+    from pathlib import Path
+
+    dashboard = (Path(__file__).resolve().parents[1] / "templates" / "leads_dashboard.html").read_text(encoding="utf-8")
+    assert "if (INITIAL_TAB === 'executive') loadData('full');" in dashboard
+    assert "loadData('refresh');" in dashboard  # explicit filters still update
+    assert "if (!document.hidden) loadData('refresh');" not in dashboard
+    assert "}, 900000);" not in dashboard

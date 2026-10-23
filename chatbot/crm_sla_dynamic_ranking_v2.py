@@ -29,9 +29,6 @@ class RankingParameters:
     shrinkage_k: float = 20.0
     minimum_speed_sample: int = 5
     tie_threshold: float = 1.0
-    max_expired_backlog: int = 5
-    max_unmanaged_backlog: int = 10
-    max_hot_unmanaged_backlog: int = 8
     expired_load_weight: float = 3.0
     unmanaged_load_weight: float = 2.0
     open_load_weight: float = 1.0
@@ -255,14 +252,9 @@ def _capacity(candidate: Mapping[str, Any], params: RankingParameters) -> tuple[
         + params.hot_unmanaged_load_weight * (hot or 0.0)
         + params.recent_rescue_load_weight * (rescues or 0.0)
     )
-    reasons = []
-    if expired >= params.max_expired_backlog:
-        reasons.append("expired_backlog_limit")
-    if unmanaged >= params.max_unmanaged_backlog:
-        reasons.append("unmanaged_backlog_limit")
-    if hot is not None and hot >= params.max_hot_unmanaged_backlog:
-        reasons.append("hot_unmanaged_backlog_limit")
-    return pressure, ";".join(reasons) or None, imputed
+    # Verified load affects only the weighted capacity score. It must not
+    # make an otherwise eligible executive ineligible by itself.
+    return pressure, None, imputed
 
 
 def filter_candidates(
@@ -466,4 +458,5 @@ def select_v2_winner(
         "second_place": by_score[1] if len(by_score) > 1 else None,
     })
     return base
+
 

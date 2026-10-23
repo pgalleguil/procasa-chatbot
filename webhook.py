@@ -7706,7 +7706,8 @@ async def reassign_unassigned_leads_loop():
                 "queued": lead_processing_queue.qsize(),
                 "claims_last_cycle": claimed_count,
             })
-            if time.monotonic() - last_health_refresh >= 10.0:
+            # Observability only: processing and recovery continue at their original cadence.
+            if time.monotonic() - last_health_refresh >= 60.0:
                 from chatbot.processing_service import get_process_service_health
                 from chatbot.storage import get_db
                 background_tasks_status["lead_processing"]["health_snapshot"] = await run_in_threadpool(

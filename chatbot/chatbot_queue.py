@@ -1043,7 +1043,8 @@ async def chatbot_response_worker_loop():
             for phone in legacy_phones:
                 await run_in_threadpool(batch_inbound_jobs, db, phone=phone)
 
-            if time.monotonic() - last_health_refresh >= 10.0:
+            # Observability only: processing and recovery continue at their original cadence.
+            if time.monotonic() - last_health_refresh >= 60.0:
                 status["health_snapshot"] = await run_in_threadpool(
                     get_queue_health, db, heartbeat=status,
                 )

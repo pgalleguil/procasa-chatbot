@@ -306,8 +306,13 @@ class CrmService:
         lead = CrmService.get_lead(phone)
         if not lead:
             return False
-        if lead and (lead.get("prospecto") or {}).get("link_detectado") is True:
-            logger.info(f"[CRM_SERVICE] Lead {phone} con link_detectado=True. No se asigna ejecutivo.")
+        prospect = lead.get("prospecto") or {}
+        resolved_property_code = (
+            prospect.get("codigo") or prospect.get("codigo_propiedad")
+            or lead.get("codigo_propiedad") or lead.get("codigo")
+        )
+        if prospect.get("link_detectado") is True and not resolved_property_code:
+            logger.info(f"[CRM_SERVICE] Lead {phone} con link_detectado=True y propiedad no resuelta. No se asigna ejecutivo.")
             return False
         from .lead_router import get_next_business_slot
         

@@ -762,6 +762,26 @@ def test_awaiting_owner_notification_has_no_sla_clock_or_expiration():
     assert result.expired is False
 
 
+def test_supervisor_handoff_expiry_requires_review_and_never_starts_sla():
+    row = cycle(4, assigned_at=NOW - timedelta(days=5), temperature="HOT")
+    row.update({
+        "sla_start_status": "pending_supervisor_activation",
+        "reassignment_state": "AWAITING_SUPERVISOR_HANDOFF",
+        "sla_started_at": None,
+        "administrative_hold_until": NOW - timedelta(minutes=1),
+    })
+    expiration = canonical_expiration_recheck(row, lead(4), now=NOW)
+    assert expiration.started_at is None
+    assert expiration.breach_at is None
+    assert expiration.expired is False
+    assert expiration.start_source == "supervisor_handoff_pending"
+
+    result = run(**base_kwargs([row], [lead(4)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))
+    assert result["iteration"]["would_reassign"] == 0
+    assert result["evaluations"][0]["exclusion_reason"] == "SUPERVISOR_HANDOFF_REQUIRED"
+    assert not result["decisions"]
+
+
 def test_owner_and_previous_owner_are_excluded():
     row = cycle(1, previous=["a"])
     result = run(**base_kwargs([row], [lead(1)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC)))

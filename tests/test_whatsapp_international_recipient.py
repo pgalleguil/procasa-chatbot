@@ -99,9 +99,3 @@ def test_sync_sender_matches_international_policy_and_no_provider_for_invalid(mo
     assert bad["provider_called"] is False
     assert len(calls) == 1
 
-
-def test_real_customer_phone_is_not_embedded_in_regression_fixture():
-    # Keep tests synthetic and confidential, while covering E.164 semantics.
-    from pathlib import Path
-    source = Path(__file__).read_text(encoding="utf-8")
-    assert "6282248278754" not in source

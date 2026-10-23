@@ -252,8 +252,14 @@ def record_assignment_integrity_alert(
     evidence: Mapping[str, Any] | None = None,
     detected_at: datetime | None = None,
     detection_run_id: str | None = None,
+    read_back: bool = True,
 ) -> dict[str, Any]:
-    """Upsert one durable, deduplicated internal review alert."""
+    """Upsert one durable, deduplicated internal review alert.
+
+    Reconciliation discards the returned document. Avoid a redundant MongoDB
+    round-trip there while retaining all three original durable update steps,
+    per-run observation idempotency and the public read-back default.
+    """
     when = detected_at or datetime.now(timezone.utc)
     evidence = dict(evidence or {})
     digest = hashlib.sha256(
@@ -312,7 +318,11 @@ def record_assignment_integrity_alert(
             },
             upsert=True,
         )
-    return db[ALERT_COLLECTION].find_one({"_id": alert_id}) or {
+    if read_back:
+        document = db[ALERT_COLLECTION].find_one({"_id": alert_id})
+        if document is not None:
+            return document
+    return {
         "_id": alert_id, "lead_id": lead_id, "issue_code": issue_code,
         "severity": "P0", "status": "open", "evidence": evidence,
     }
@@ -728,6 +738,7 @@ def reconcile_assignment_integrity(
             record_assignment_integrity_alert(
                 db, lead_id=finding.get("lead_id"), issue_code=str(finding["issue_code"]),
                 evidence=finding, detected_at=current, detection_run_id=detection_run_id,
+                read_back=False,  # no consumer uses the returned alert document
             )
             persisted += 1
     report = {

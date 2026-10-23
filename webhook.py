@@ -1314,6 +1314,7 @@ async def lifespan(app: FastAPI):
     async def _sla_alert_orchestrator_runner():
         consecutive_failures = 0
         while True:
+            cycle_started_monotonic = time.monotonic()
             entry = background_tasks_status.setdefault("sla_alert", {})
             entry["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
             delay_seconds = 60
@@ -1356,7 +1357,14 @@ async def lifespan(app: FastAPI):
                               "last_error": str(exc),
                               "consecutive_failures": consecutive_failures,
                               "retry_in_seconds": delay_seconds})
-            await asyncio.sleep(delay_seconds)
+            # Cadence from the start of each evaluation, not five extra minutes
+            # after queries complete. Slow runs never overlap or spin.
+            from chatbot.crm_sla_alert_orchestrator import next_sla_alert_delay_seconds
+            delay_to_next = next_sla_alert_delay_seconds(
+                time.monotonic() - cycle_started_monotonic,
+                retry_seconds=delay_seconds if consecutive_failures else 0,
+            )
+            await asyncio.sleep(delay_to_next)
 
     sla_orch_task = None
     try:

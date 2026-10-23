@@ -923,3 +923,77 @@ def test_sla_stop_results_has_valid_types():
               "EMAIL_SENT"):
         assert r in SLA_STOP_RESULTS
 
+
+
+
+# ---------------------------------------------------------------------------
+# P1 - Batch recipient resolution: the same eligible agents, one Mongo call.
+# ---------------------------------------------------------------------------
+class TestActiveAgentBatch:
+    @pytest.mark.asyncio
+    async def test_many_cycles_sharing_an_agent_require_one_indexed_read(self):
+        from chatbot.crm_sla_alert_evaluator import _get_active_agents_batched
+
+        class CountingCollection(FakeCollection):
+            def __init__(self, rows):
+                super().__init__(rows)
+                self.find_calls = 0
+                self.last_filter = None
+                self.last_projection = None
+
+            def find(self, query, projection=None):
+                self.find_calls += 1
+                self.last_filter = query
+                self.last_projection = projection
+                return super().find(query, projection)
+
+        collection = CountingCollection([
+            {"_id": "user-1", "nombre": "Ejecutivo 1",
+             "is_active": True, "rol": "agente", "telefono": "+56911111111"},
+            {"_id": "user-2", "nombre": "Inactivo",
+             "is_active": False, "rol": "agente", "telefono": "+56922222222"},
+            {"_id": "user-3", "nombre": "Admin",
+             "is_active": True, "rol": "admin", "telefono": "+56933333333"},
+        ])
+        db = FakeDB({"usuarios": collection})
+        cycles = [{"assigned_to_user_id": "user-1"} for _ in range(199)]
+        cycles.extend([{"assigned_to_user_id": "user-2"},
+                       {"assigned_to_user_id": "user-3"},
+                       {"assigned_to_user_id": "user-missing"}])
+        result = await _get_active_agents_batched(db, cycles)
+        assert collection.find_calls == 1
+        assert collection.last_filter["is_active"] is True
+        assert collection.last_filter["rol"] == "agente"
+        assert collection.last_projection["_id"] == 1
+        assert result["user-1"]["telefono"] == "+56911111111"
+        assert "user-2" not in result
+        assert "user-3" not in result
+        assert "user-missing" not in result
+
+    @pytest.mark.asyncio
+    async def test_string_id_has_precedence_over_object_id(self):
+        from bson import ObjectId
+        from chatbot.crm_sla_alert_evaluator import _get_active_agents_batched
+
+        raw = "507f1f77bcf86cd799439011"
+        col = FakeCollection([
+            {"_id": ObjectId(raw), "is_active": True,
+             "rol": "agente", "telefono": "+56999999999"},
+            {"_id": raw, "is_active": True,
+             "rol": "agente", "telefono": "+56911111111"},
+        ])
+        db = FakeDB({"usuarios": col})
+        result = await _get_active_agents_batched(db, [{"assigned_to_user_id": raw}])
+        assert result[raw]["telefono"] == "+56911111111"
+
+    @pytest.mark.asyncio
+    async def test_user_lookup_error_propagates_fail_closed(self):
+        from chatbot.crm_sla_alert_evaluator import _get_active_agents_batched
+
+        class BrokenUsers:
+            def find(self, *_args, **_kwargs):
+                raise RuntimeError("Mongo unavailable")
+
+        db = FakeDB({"usuarios": BrokenUsers()})
+        with pytest.raises(RuntimeError, match="Mongo unavailable"):
+            await _get_active_agents_batched(db, [{"assigned_to_user_id": "u1"}])

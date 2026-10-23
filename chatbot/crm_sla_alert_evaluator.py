@@ -268,10 +268,8 @@ async def _get_active_agents_batched(db, cycles) -> dict[str, dict]:
     ids_for_query = []
     for user_id in sorted(user_ids):
         ids_for_query.append(user_id)
-        try:
+        if ObjectId.is_valid(user_id):
             ids_for_query.append(ObjectId(user_id))
-        except (ValueError, TypeError):
-            pass
 
     cursor = db["usuarios"].find(
         {"_id": {"$in": ids_for_query}, "is_active": True, "rol": "agente"},
@@ -283,11 +281,8 @@ async def _get_active_agents_batched(db, cycles) -> dict[str, dict]:
     resolved = {}
     for user_id in user_ids:
         user = by_raw_id.get((str, user_id))
-        if user is None:
-            try:
-                user = by_raw_id.get((ObjectId, str(ObjectId(user_id))))
-            except (ValueError, TypeError):
-                pass
+        if user is None and ObjectId.is_valid(user_id):
+            user = by_raw_id.get((ObjectId, str(ObjectId(user_id))))
         if user is not None:
             resolved[user_id] = user
     return resolved

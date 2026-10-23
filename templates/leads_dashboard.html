@@ -10700,14 +10700,16 @@
                     }
                 };
                 const bind = () => {
-                    ['demandActive', 'demandWithDemand', 'demandCoverage'].forEach(id => {
+                    // Actualizar los textos solo cuando cambian los dos indicadores.
+                    // Evita el trabajo DOM repetido cada 300 ms sin nuevas cifras.
+                    const observer = new MutationObserver(sync);
+                    ['demandActive', 'demandWithDemand'].forEach(id => {
                         const element = document.getElementById(id);
-                        if (element && !element.dataset.contextSyncBound) {
-                            element.dataset.contextSyncBound = '1';
-                        }
+                        if (element) observer.observe(element, {
+                            childList: true, characterData: true, subtree: true
+                        });
                     });
                     sync();
-                    window.setInterval(sync, 300);
                 };
                 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, { once: true });
                 else bind();

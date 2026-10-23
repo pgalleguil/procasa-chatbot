@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 import logging
 import random
+import re
 import time
 from typing import Any
 
@@ -62,6 +63,14 @@ def normalize_whatsapp_recipient(number: str) -> str:
         digits = "56" + digits
     if len(digits) == 11 and digits.startswith("569"):
         return "+" + digits
+    # The inbound webhook supports explicit international E.164 identities.
+    # Preserve the country code; never guess one for a local-looking number.
+    if (
+        raw.startswith("+")
+        and re.fullmatch(r"\+[0-9\s().-]+", raw)
+        and re.fullmatch(r"[1-9][0-9]{7,14}", digits)
+    ):
+        return "+" + digits
     raise ValueError("Destinatario de WhatsApp inválido")
 
 
@@ -77,7 +86,9 @@ def mask_whatsapp_recipient(number: str) -> str:
         return "<destinatario inválido>"
     if "@" in normalized:
         return "grupo:***" + normalized[-8:]
-    return f"+56 9 **** {normalized[-4:]}"
+    if normalized.startswith("+569"):
+        return f"+56 9 **** {normalized[-4:]}"
+    return f"internacional **** {normalized[-4:]}"
 
 
 def _provider_message_id(payload: Any) -> str | None:
@@ -293,7 +304,15 @@ async def send_whatsapp_message_detailed(number: str, text: str) -> dict:
         return {"success": False, "delivery_status": "rejected_placeholder", "provider_message_id": None,
                 "http_status": None, "provider_called": False}
 
-    clean = provider_recipient(number)
+    try:
+        clean = provider_recipient(number)
+    except ValueError:
+        logger.warning("[WHATSAPP_SEND] status=rejected_invalid_recipient provider_called=false")
+        return {
+            "success": False, "delivery_status": "rejected_invalid_recipient",
+            "provider_message_id": None, "http_status": 422,
+            "provider_called": False,
+        }
     masked = mask_whatsapp_recipient(number)
     url = f"{Config.WASENDER_BASE_URL}/send-message"
     payload = {"to": clean, "text": text}
@@ -391,7 +410,15 @@ def send_whatsapp_message_detailed_sync(number: str, text: str) -> dict:
         return {"success": False, "delivery_status": "rejected_placeholder", "provider_message_id": None,
                 "http_status": None, "provider_called": False}
 
-    clean = provider_recipient(number)
+    try:
+        clean = provider_recipient(number)
+    except ValueError:
+        logger.warning("[WHATSAPP_SEND_SYNC] status=rejected_invalid_recipient provider_called=false")
+        return {
+            "success": False, "delivery_status": "rejected_invalid_recipient",
+            "provider_message_id": None, "http_status": 422,
+            "provider_called": False,
+        }
     masked = mask_whatsapp_recipient(number)
     url = f"{Config.WASENDER_BASE_URL}/send-message"
     payload = {"to": clean, "text": text}

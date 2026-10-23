@@ -2806,6 +2806,9 @@
                     <i class="fa-solid fa-bars"></i>
                 </button>
                 <h2 class="fw-bold m-0 fs-4">Gestión de Leads</h2>
+                <button type="button" class="btn-filter ms-auto" onclick="refreshCrmList({ force: true })" title="Consultar los responsables y estados SLA actuales">
+                    <i class="fa-solid fa-rotate me-1"></i> Actualizar
+                </button>
             </div>
 
             <div id="crmUpdateNotice" class="crm-update-notice" role="status" aria-live="polite">
@@ -3861,7 +3864,7 @@
             });
 
             // --- ACTUALIZACIÓN HÍBRIDA DEL LISTADO (sin recargar la página) ---
-            const CRM_POLL_INTERVAL_MS = 20000;
+            // Sin polling: la página se actualiza al abrir o por acción explícita.
             const CRM_MUTATION_ENDPOINTS = /\/api\/crm\/(update|management-result|notes|log_action|send_recommendation|admin\/(reassign|mark-duplicate|archive))/;
             let crmVersion = Number(document.getElementById('crmDynamicContent')?.dataset.crmVersion || 0);
             let crmCheckInFlight = false;
@@ -3949,30 +3952,6 @@
                 }
             }
 
-            async function checkCrmUpdates({ forceRefresh = false } = {}) {
-                if (document.hidden || crmCheckInFlight || crmRefreshInFlight) return;
-                crmCheckInFlight = true;
-                try {
-                    const response = await fetch(`/crm/check-updates?since=${encodeURIComponent(crmVersion)}`, {
-                        credentials: 'same-origin',
-                        cache: 'no-store'
-                    });
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    const result = await response.json();
-                    if (result.changed && Number(result.version) !== crmVersion) {
-                        if (forceRefresh || !isCrmUserWorking()) {
-                            await refreshCrmList({ force: forceRefresh });
-                        } else {
-                            showCrmUpdateNotice(true);
-                        }
-                    }
-                } catch (error) {
-                    console.debug('[CRM_UPDATES] Chequeo omitido:', error);
-                } finally {
-                    crmCheckInFlight = false;
-                }
-            }
-
             ['input', 'change', 'submit'].forEach(eventName => {
                 document.addEventListener(eventName, event => {
                     if (event.target.closest?.('#crmDynamicContent')) {
@@ -3999,59 +3978,11 @@
             };
 
             window.refreshCrmList = refreshCrmList;
-            window.setInterval(() => checkCrmUpdates(), CRM_POLL_INTERVAL_MS);
-
-            document.addEventListener('visibilitychange', () => {
-                if (!document.hidden) checkCrmUpdates();
-            });
-
+            // BFCache puede conservar un titular anterior; una navegación restaurada
+            // exige un único render fresco desde el servidor.
             window.addEventListener('pageshow', event => {
-                if (event.persisted && !document.hidden) checkCrmUpdates();
+                if (event.persisted) window.location.reload();
             });
-
-            // --- GESTOR DE SESIÓN ---
-            const SESSION_LIFETIME = 120 * 60 * 1000;
-            const WARNING_THRESHOLD = 2 * 60 * 1000;
-            const RENEWAL_INTERVAL = 10 * 60 * 1000;
-
-            let lastActivity = Date.now();
-            let lastRenewal = Date.now();
-
-            function updateActivity() { lastActivity = Date.now(); }
-            ['mousemove', 'click', 'keydown', 'scroll', 'touchstart'].forEach(evt => document.addEventListener(evt, updateActivity));
-
-            setInterval(() => {
-                const now = Date.now();
-                const idleTime = now - lastActivity;
-
-                // 1. HARD EXPIRATION
-                if (idleTime > SESSION_LIFETIME) {
-                    window.location.href = '/logout?reason=timeout';
-                    return;
-                }
-
-                // 2. WARNING MODAL
-                const timeLeft = SESSION_LIFETIME - idleTime;
-                try {
-                    const modalEl = document.getElementById('sessionWarningModal');
-                    if (modalEl) {
-                        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-                        if (timeLeft < WARNING_THRESHOLD) {
-                            document.getElementById('sessionTimeLeft').innerText = Math.ceil(timeLeft / 1000) + "s";
-                            modal.show();
-                        } else {
-                            modal.hide();
-                        }
-                    }
-                } catch (e) { console.error("Session modal error", e); }
-
-                // 3. PASSIVE RENEWAL (Keep-Alive)
-                if (idleTime < RENEWAL_INTERVAL && (now - lastRenewal) > RENEWAL_INTERVAL) {
-                    fetch('/api/session/renew', { method: 'POST' })
-                        .then(res => { if (res.ok) lastRenewal = now; })
-                        .catch(err => console.error("Session renew failed", err));
-                }
-            }, 5000); 
 
             function toggleSlaInfo(event) {
                 event.stopPropagation();
@@ -4093,6 +4024,7 @@
             }
 
         </script>
+    <script src="{{ url_for('static', path='js/crm_session_activity.js') }}"></script>
     </body>
 
 </html>

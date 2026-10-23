@@ -9749,11 +9749,9 @@
                 if (INITIAL_TAB === 'executive') loadData('full');
             });
 
-            // Actualización silenciosa cada 15 min. No es una recarga de página
-            // y se omite si la pestaña no está visible.
-            setInterval(() => {
-                if (!document.hidden) loadData('refresh');
-            }, 900000);
+            // El dashboard comercial se actualiza solo al abrir la vista
+            // o cuando el usuario aplica filtros o solicita una recarga manual.
+            // No ejecutar consultas periódicas mientras la página permanece abierta.
 
             // --- SMART SESSION CONTROL ---
             // 120 min session. Passive renew every 10 mins if active. Warning at 118 mins.

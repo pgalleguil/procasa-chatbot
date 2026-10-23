@@ -35,6 +35,11 @@ def can_administer_leads(role: object) -> bool:
     return _normalized_text(role) in CRM_ADMIN_ROLES
 
 
+def can_supervise_crm_assignments(role: object) -> bool:
+    """Only the dedicated supervisor role may manage lead assignments."""
+    return _normalized_text(role) == "supervisor"
+
+
 def lead_is_assigned_to_user(lead: Mapping | None, user: Mapping | None) -> bool:
     """Match an agent with the lead assignment, allowing legacy shortened surnames."""
     if not lead or not user:

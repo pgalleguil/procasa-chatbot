@@ -819,6 +819,38 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
     )
 
 
+def _legacy_lifecycle_blocked_by_executor(
+    cycle: Mapping[str, Any],
+    lead: Mapping[str, Any] | None,
+    *,
+    breach_at: datetime | None,
+) -> str | None:
+    """Skip only a demonstrable historic marker the live executor already rejects.
+
+    The executor's _cycle_field_protection() treats any lifecycle management
+    marker at/before the breach as protective, even if it predates this cycle.
+    The evaluator normally filters such old markers out. Avoid repeatedly
+    attempting the *same already-aborted* transaction only when timestamps
+    are well formed and unambiguously predate this assignment.
+
+    Unknown, missing, malformed or post-assignment timestamps still reach
+    the original selection and the transactional revalidation unchanged.
+    No persistent suppressions, cooldowns or decisions are introduced.
+    """
+    assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
+    if not assigned_at or not breach_at or not isinstance(lead, Mapping):
+        return None
+    lifecycle = lead.get("lifecycle")
+    if not isinstance(lifecycle, Mapping):
+        return None
+    for field in ("first_contact_attempt_at", "first_valid_management_at"):
+        raw = lifecycle.get(field)
+        parsed = coerce_utc_datetime(raw)
+        if parsed and parsed < assigned_at and parsed <= breach_at:
+            return field
+    return None
+
+
 def _owner_cycle_issue(cycle: Mapping[str, Any], lead: Mapping[str, Any] | None, active_cycles: Iterable[Mapping[str, Any]], users_by_id: Mapping[str, Mapping[str, Any]]) -> str:
     cycle_id = _text(cycle.get("assignment_cycle_id"))
     owner_id = _text(cycle.get("assigned_to_user_id"))
@@ -2111,6 +2143,33 @@ async def run_sla_reassignment_worker_iteration(
                     result.protected_skipped += 1
                     evaluations.append(SLAReassignmentShadowEvaluation(as_of.isoformat(), lead_id, cycle_id, exp.breach_at.isoformat() if exp.breach_at else "", cutover.isoformat(), "", False, "PROTECTED_BY_MANAGEMENT", assignment_number=_assignment_number(cycle), decision_id=decision_id, current_overdue_business_minutes=exp.overdue_business_minutes, temperature=exp.temperature, performance_snapshot_version=perf_version, distribution_state_version=dist_version).to_dict())
                     continue
+                # Live-only optimization: the transactional executor *always*
+                # aborts an otherwise eligible reassignment when a historical
+                # lifecycle marker exists before the SLA breach. Pre-filter
+                # this proven rejection without relaxing any safety check.
+                # A changed/removed marker becomes eligible next iteration.
+                if execution_mode == "live":
+                    current_lead, _ = _resolve_lead_from_context(context, cycle.get("lead_id"))
+                    blocked_field = _legacy_lifecycle_blocked_by_executor(
+                        cycle, current_lead, breach_at=exp.breach_at,
+                    )
+                    if blocked_field:
+                        result.protected_skipped += 1
+                        evaluations.append(
+                            SLAReassignmentShadowEvaluation(
+                                as_of.isoformat(), lead_id, cycle_id,
+                                exp.breach_at.isoformat() if exp.breach_at else "",
+                                cutover.isoformat(), "", False,
+                                "EXECUTOR_HISTORICAL_LIFECYCLE_GUARD",
+                                assignment_number=_assignment_number(cycle),
+                                decision_id=decision_id,
+                                current_overdue_business_minutes=exp.overdue_business_minutes,
+                                temperature=exp.temperature,
+                                performance_snapshot_version=perf_version,
+                                distribution_state_version=dist_version,
+                            ).to_dict()
+                        )
+                        continue
                 assignment_number = _assignment_number(cycle)
                 branch = _text(lead_row.get("policy_category"))
                 if branch not in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE, REGION_JPC_MARIA_HERNAN}:

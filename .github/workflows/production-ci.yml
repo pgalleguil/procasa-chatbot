@@ -99,6 +99,7 @@ jobs:
               tests/test_crm_sla_reassignment_cutover.py
               tests/test_crm_sla_reassignment_transaction.py
               tests/test_crm_sla_reassignment_worker.py
+              tests/test_p0_sla_redundant_abort_guard.py
           - suite: Captación and phone learning
             tests: >-
               tests/test_captacion_management.py

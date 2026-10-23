@@ -85,6 +85,7 @@ jobs:
             tests: >-
               tests/test_crm_sla_alert_evaluator.py
               tests/test_crm_sla_event_batch.py
+              tests/test_sla_event_prefetch_policy.py
               tests/test_crm_sla_5minute_policy.py
               tests/test_crm_sla_policy_freeze.py
               tests/test_crm_sla_alert_failure_reporting.py

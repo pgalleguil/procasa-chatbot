@@ -3610,30 +3610,6 @@
         </div>
     </div>
 
-    <!-- MODAL DE EXPIRACIÓN DE SESIÓN (ORIGINAL) -->
-    <div class="modal fade" id="sessionModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="fa-solid fa-hourglass-half me-2"></i> Sesión por Expirar</h5>
-                </div>
-                <div class="modal-body text-center">
-                    <p class="text-secondary">Por seguridad, su sesión expirará pronto debido a inactividad.</p>
-                    <div class="timer-display" id="sessionTimerDisplay">02:00</div>
-                    <p class="small text-muted">Si no extiende la sesión, será redirigido al login y podría perder
-                        los
-                        datos no guardados.</p>
-                </div>
-                <div class="modal-footer justify-content-center">
-                    <a href="/logout" class="btn btn-outline-danger btn-sm">Cerrar Sesión</a>
-                    <button type="button" class="btn btn-warning fw-bold" onclick="sessionManager.extendSession()">
-                        <i class="fa-solid fa-rotate-right me-2"></i> Extender Sesión
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- COMMUNICATION MODAL -->
     <div class="modal fade" id="commModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" id="commModalDialog">
@@ -3744,91 +3720,8 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script>
-        // --- 1. GESTOR DE SESIÓN (ORIGINAL) ---
-        // --- 1. GESTOR DE SESIÓN (MEJORADO: PASIVO) ---
-        const sessionManager = {
-            timeoutSeconds: 1800, // 30 mins
-            warningSeconds: 120,
-            lastActivity: Date.now(),
-            checkInterval: null,
-            modalInstance: null,
-            warningActive: false,
-
-            init: function () {
-                this.modalInstance = new bootstrap.Modal(document.getElementById('sessionModal'));
-
-                // Listeners Pasivos (Teclado, Clic)
-                ['click', 'keydown', 'mousemove'].forEach(evt => {
-                    document.addEventListener(evt, () => this.recordActivity());
-                });
-
-                // Chequeo periódico (cada 1 min)
-                this.checkInterval = setInterval(() => this.checkSession(), 60000);
-                console.log("Monitor de sesión pasivo iniciado.");
-            },
-
-            recordActivity: function () {
-                this.lastActivity = Date.now();
-                if (this.warningActive) {
-                    this.extendSession(true); // Auto-extender si estaba en warning
-                }
-            },
-
-            checkSession: function () {
-                const now = Date.now();
-                const idleTimeSeconds = (now - this.lastActivity) / 1000;
-
-                // Si ha pasado mucho tiempo sin actividad en el backend (> 5 min), hacemos ping silencioso
-                // para mantener la cookie viva mientras el usuario trabaja
-                if (idleTimeSeconds < 300 && idleTimeSeconds > 10) {
-                    // Si hay actividad reciente, pero no hemos hecho ping hace rato, lo hacemos
-                    // (Logica simplificada: cada vez que hay actividad real, el backend recibe requests si navega,
-                    // pero si solo está escribiendo un email largo, necesitamos el ping)
-                }
-
-                if (idleTimeSeconds > (this.timeoutSeconds - this.warningSeconds)) {
-                    this.showWarning(Math.max(0, this.timeoutSeconds - idleTimeSeconds));
-                }
-            },
-
-            showWarning: function (timeLeft) {
-                if (this.warningActive) return;
-                this.warningActive = true;
-
-                let secondsLeft = Math.floor(timeLeft);
-                const display = document.getElementById('sessionTimerDisplay');
-                this.modalInstance.show();
-
-                this.countdownInterval = setInterval(() => {
-                    secondsLeft--;
-                    const min = Math.floor(secondsLeft / 60);
-                    const sec = secondsLeft % 60;
-                    display.innerText = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
-
-                    if (secondsLeft <= 0) {
-                        window.location.href = '/logout?reason=timeout';
-                    }
-                }, 1000);
-            },
-
-            extendSession: function (silent = false) {
-                this.lastActivity = Date.now();
-                this.warningActive = false;
-                if (this.countdownInterval) clearInterval(this.countdownInterval);
-                if (!silent) this.modalInstance.hide();
-
-                // Usar el nuevo endpoint POST para evitar 405
-                fetch('/api/keep-alive', { method: 'POST', credentials: 'include' })
-                    .then(r => console.log("Sesión extendida (Keep-Alive)"))
-                    .catch(e => console.error("Error keeping alive", e));
-            }
-        };
-
         document.addEventListener('DOMContentLoaded', () => {
-            // 1. Iniciar Session Manager
-            sessionManager.init();
-
-            // 2. Inicializar Banner Canónico
+            // Inicializar Banner Canónico
             updateCanonicalBanner(leadData.crm_estado, leadData.next_action_date, leadData.last_action_label, leadData.last_action_relative);
 
             // 3. AUTO-ARRAQUE LOGICA
@@ -5697,50 +5590,6 @@
             setActionMode('contact');
         });
 
-        // --- SMART SESSION CONTROL ---
-        // 120 min session. Passive renew every 10 mins if active. Warning at 118 mins.
-        const SESSION_LIFETIME = 120 * 60 * 1000;
-        const WARNING_THRESHOLD = 2 * 60 * 1000;
-        const RENEWAL_INTERVAL = 10 * 60 * 1000;
-
-        let lastActivity = Date.now();
-        let lastRenewal = Date.now();
-
-        function updateActivity() { lastActivity = Date.now(); }
-        ['mousemove', 'click', 'keydown', 'scroll', 'touchstart'].forEach(evt => document.addEventListener(evt, updateActivity));
-
-        setInterval(() => {
-            const now = Date.now();
-            const idleTime = now - lastActivity;
-
-            // 1. HARD EXPIRATION
-            if (idleTime > SESSION_LIFETIME) {
-                window.location.href = '/logout?reason=timeout';
-                return;
-            }
-
-            // 2. WARNING MODAL
-            const timeLeft = SESSION_LIFETIME - idleTime;
-            try {
-                const modalEl = document.getElementById('sessionWarningModal');
-                if (modalEl) {
-                    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-                    if (timeLeft < WARNING_THRESHOLD) {
-                        document.getElementById('sessionTimeLeft').innerText = Math.ceil(timeLeft / 1000) + "s";
-                        modal.show();
-                    } else {
-                        modal.hide();
-                    }
-                }
-            } catch (e) { console.error("Session modal error", e); }
-
-            // 3. PASSIVE RENEWAL (Keep-Alive)
-            if (idleTime < RENEWAL_INTERVAL && (now - lastRenewal) > RENEWAL_INTERVAL) {
-                fetch('/api/session/renew', { method: 'POST' })
-                    .then(res => { if (res.ok) lastRenewal = now; })
-                    .catch(err => console.error("Session renew failed", err));
-            }
-        }, 5000);
     </script>
     <!-- Overlay para cerrar menú móvil -->
     <div id="sidebarOverlay"
@@ -6262,6 +6111,7 @@
             if (typeof resetSearchHistory === 'function') resetSearchHistory();
         });
     </script>
+    <script src="{{ url_for('static', path='js/crm_session_activity.js') }}"></script>
 </body>
 
 </html>

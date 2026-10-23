@@ -783,6 +783,20 @@ def test_index_migration_is_dry_run_and_does_not_create_indexes():
     assert plan["dry_run"] is True
     assert plan["blocking_duplicates"] is False
     assert all("name" in item for item in plan["proposed_indexes"])
+    committed_time_indexes = [
+        item for item in plan["proposed_indexes"]
+        if item["name"].startswith("idx_committed_policy_")
+    ]
+    assert {
+        item["keys"][-1][0] for item in committed_time_indexes
+    } == {"reassigned_at", "commit_time", "created_at", "timestamp", "at"}
+    assert all(
+        item["partial_filter"] == {
+            "event_type": "SLA_REASSIGNMENT_COMMITTED",
+            item["keys"][-1][0]: {"$exists": True},
+        }
+        for item in committed_time_indexes
+    )
 
 
 def test_result_and_logs_contract_has_no_contact_pii(monkeypatch, caplog):
@@ -793,3 +807,21 @@ def test_result_and_logs_contract_has_no_contact_pii(monkeypatch, caplog):
     assert "phone" not in text
     assert "email" not in text
     assert "whatsapp" not in text
+
+
+
+def test_executor_revalidates_selected_recipient_inside_transaction(monkeypatch):
+    enable_flags(monkeypatch)
+    db, decision = make_fixture()
+    # The worker selected this recipient earlier; model deactivation before the
+    # executor's transaction begins. The transactional read must reject it
+    # before any source, lead, destination, or ledger write.
+    db["usuarios"].rows["new-user"]["is_active"] = False
+    result = execute_sla_reassignment_transaction(db, decision, evaluated_at=NOW)
+
+    assert result.outcome == SLAReassignmentErrorCode.ABORT_SELECTED_USER_INACTIVE.value
+    assert result.committed is False
+    assert db["crm_assignment_cycles"].rows["mongo-cycle-1"]["cycle_status"] == "active"
+    assert db["leads"].rows["lead-1"]["lifecycle"]["current_assignment_cycle_id"] == "cycle-1"
+    assert len(db["crm_assignment_cycles"].rows) == 1
+    assert not db["crm_sla_reassignment_audit_v1"].rows

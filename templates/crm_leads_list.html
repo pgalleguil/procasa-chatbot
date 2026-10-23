@@ -2806,6 +2806,9 @@
                     <i class="fa-solid fa-bars"></i>
                 </button>
                 <h2 class="fw-bold m-0 fs-4">Gestión de Leads</h2>
+                <button type="button" class="btn-filter ms-auto" onclick="refreshCrmList({ force: true })" title="Consultar los responsables y estados SLA actuales">
+                    <i class="fa-solid fa-rotate me-1"></i> Actualizar
+                </button>
             </div>
 
             <div id="crmUpdateNotice" class="crm-update-notice" role="status" aria-live="polite">
@@ -3861,7 +3864,7 @@
             });
 
             // --- ACTUALIZACIÓN HÍBRIDA DEL LISTADO (sin recargar la página) ---
-            const CRM_POLL_INTERVAL_MS = 20000;
+            // Sin polling: la página se actualiza al abrir o por acción explícita.
             const CRM_MUTATION_ENDPOINTS = /\/api\/crm\/(update|management-result|notes|log_action|send_recommendation|admin\/(reassign|mark-duplicate|archive))/;
             let crmVersion = Number(document.getElementById('crmDynamicContent')?.dataset.crmVersion || 0);
             let crmCheckInFlight = false;
@@ -3949,30 +3952,6 @@
                 }
             }
 
-            async function checkCrmUpdates({ forceRefresh = false } = {}) {
-                if (document.hidden || crmCheckInFlight || crmRefreshInFlight) return;
-                crmCheckInFlight = true;
-                try {
-                    const response = await fetch(`/crm/check-updates?since=${encodeURIComponent(crmVersion)}`, {
-                        credentials: 'same-origin',
-                        cache: 'no-store'
-                    });
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    const result = await response.json();
-                    if (result.changed && Number(result.version) !== crmVersion) {
-                        if (forceRefresh || !isCrmUserWorking()) {
-                            await refreshCrmList({ force: forceRefresh });
-                        } else {
-                            showCrmUpdateNotice(true);
-                        }
-                    }
-                } catch (error) {
-                    console.debug('[CRM_UPDATES] Chequeo omitido:', error);
-                } finally {
-                    crmCheckInFlight = false;
-                }
-            }
-
             ['input', 'change', 'submit'].forEach(eventName => {
                 document.addEventListener(eventName, event => {
                     if (event.target.closest?.('#crmDynamicContent')) {
@@ -3999,14 +3978,10 @@
             };
 
             window.refreshCrmList = refreshCrmList;
-            window.setInterval(() => checkCrmUpdates(), CRM_POLL_INTERVAL_MS);
-
-            document.addEventListener('visibilitychange', () => {
-                if (!document.hidden) checkCrmUpdates();
-            });
-
+            // BFCache puede conservar un titular anterior; una navegación restaurada
+            // exige un único render fresco desde el servidor.
             window.addEventListener('pageshow', event => {
-                if (event.persisted && !document.hidden) checkCrmUpdates();
+                if (event.persisted) window.location.reload();
             });
 
             // --- GESTOR DE SESIÓN ---

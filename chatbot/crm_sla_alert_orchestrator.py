@@ -23,6 +23,25 @@ from .crm_sla_alert_settings import (
 
 logger = logging.getLogger("sla_alert.orchestrator")
 
+# Start-to-start cadence for the SLA alert evaluation only. Reassignments and
+# the canonical SLA calculation remain independent and unchanged.
+SLA_ALERT_CADENCE_SECONDS = 5 * 60
+SLA_ALERT_OVERRUN_COOLDOWN_SECONDS = 60
+
+
+def next_sla_alert_delay_seconds(elapsed_seconds: float, *, retry_seconds: float = 0) -> float:
+    """Aim for five minutes between starts, never overlap or spin on overruns.
+
+    An iteration taking over five minutes cannot meet the cadence; retain a
+    cooldown before the next attempt so a slow Atlas connection cannot create
+    back-to-back full scans. Failure backoff is a lower bound, not an override.
+    """
+    elapsed = max(0.0, float(elapsed_seconds))
+    remaining = SLA_ALERT_CADENCE_SECONDS - elapsed
+    if remaining <= 0:
+        remaining = SLA_ALERT_OVERRUN_COOLDOWN_SECONDS
+    return max(remaining, max(0.0, float(retry_seconds)))
+
 
 async def run_sla_alert_cycle(db=None):
     """One complete cycle: evaluate, persist, process. Fully self-contained."""

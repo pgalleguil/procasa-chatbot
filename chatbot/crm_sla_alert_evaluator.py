@@ -248,6 +248,46 @@ async def _get_assigned_agent_async(db, user_id: str) -> dict | None:
     return None
 
 
+async def _get_active_agents_batched(db, cycles) -> dict[str, dict]:
+    """Resolve recipients in one Mongo read, keeping the legacy ID precedence.
+
+    The old lookup tries the string _id first, then BSON ObjectId. Preserve
+    exactly that preference, and verify agent status/role in the Mongo query.
+    Do not cache across evaluations: revoked/inactive users must be rechecked.
+    A query error intentionally aborts the evaluation (fail closed).
+    """
+    user_ids = {
+        str(cycle.get("assigned_to_user_id") or "")
+        for cycle in cycles
+        if cycle.get("assigned_to_user_id")
+    }
+    user_ids.discard("")
+    if not user_ids:
+        return {}
+
+    ids_for_query = []
+    for user_id in sorted(user_ids):
+        ids_for_query.append(user_id)
+        if ObjectId.is_valid(user_id):
+            ids_for_query.append(ObjectId(user_id))
+
+    cursor = db["usuarios"].find(
+        {"_id": {"$in": ids_for_query}, "is_active": True, "rol": "agente"},
+        {"_id": 1, "nombre": 1, "telefono": 1, "tel": 1, "movil": 1},
+    )
+    users = await cursor.to_list(length=len(ids_for_query))
+    by_raw_id = {(type(user.get("_id")), str(user.get("_id"))): user for user in users}
+
+    resolved = {}
+    for user_id in user_ids:
+        user = by_raw_id.get((str, user_id))
+        if user is None and ObjectId.is_valid(user_id):
+            user = by_raw_id.get((ObjectId, str(ObjectId(user_id))))
+        if user is not None:
+            resolved[user_id] = user
+    return resolved
+
+
 # ---------------------------------------------------------------------------
 # Bounded batch fetch of CRM events (avoids one MongoDB read per active cycle).
 # ---------------------------------------------------------------------------
@@ -420,6 +460,10 @@ async def evaluate_sla_alerts(
         db, cycles, limit_events=limit_events,
     )
 
+    # Resolve at most one fresh, indexed user batch per evaluation rather
+    # than issuing a network lookup for every alert candidate.
+    active_agents_by_id = await _get_active_agents_batched(db, cycles)
+
     # 4. Evaluate each cycle
     excluded = Counter()
     alerts: list[dict] = []
@@ -538,9 +582,7 @@ async def evaluate_sla_alerts(
 
         # ---- Executive phone (async Motor) ----
         executive_fallback = str(lead.get("ejecutivo_asignado") or "")
-        recipient_user = await _get_assigned_agent_async(
-            db, recipient_user_id,
-        )
+        recipient_user = active_agents_by_id.get(recipient_user_id)
         if not recipient_user:
             excluded["recipient_not_active_agent"] += 1
             continue

@@ -3,7 +3,6 @@ from datetime import datetime, timedelta, timezone
 from chatbot.crm_sla_dynamic_ranking_v2 import (
     BASE_WEIGHTS,
     NO_CANDIDATE_CATEGORY,
-    RankingParameters,
     filter_candidates,
     select_v2_winner,
     shrink_rate,
@@ -115,6 +114,54 @@ def test_capacity_snapshot_incomplete_candidates_are_not_selected():
     )
     assert result["winner"] is None
     assert result["selection_reason"] == "DYNAMIC_V2_CAPACITY_LIMIT"
+    assert [row["capacity_exclusion_reason"] for row in result["hard_excluded"]] == ["capacity_snapshot_incomplete"]
+
+
+def test_verified_overload_at_all_legacy_thresholds_remains_eligible():
+    overloaded_best = _candidate("best", p50=10, p90=20, load=10)
+    overloaded_other = _candidate("other", p50=70, p90=180, load=10)
+    for candidate in (overloaded_best, overloaded_other):
+        candidate.update({
+            "simulated_expired_current": 5,
+            "simulated_unmanaged_current": 10,
+            "simulated_open_current": 15,
+            "expired_current_policy": 5,
+            "unmanaged_current_policy": 10,
+            "open_current_policy": 15,
+            "hot_unmanaged_backlog": 8,
+            "recent_rescues_7d": 0,
+        })
+
+    result = select_v2_winner(
+        {"owner_user_id": "source"}, [overloaded_best, overloaded_other], team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+
+    assert result["winner"]["user_id"] == "best"
+    assert {row["user_id"] for row in result["selection_pool"]} == {"best", "other"}
+    assert all(row["capacity_exclusion_reason"] is None for row in result["scored"])
+    assert all(row["capacity_score"] == 100 for row in result["scored"])
+    assert result["selection_reason"] == "DYNAMIC_V2_SCORE_MAXIMIZED"
+
+
+def test_verified_heavier_candidate_loses_priority_but_is_not_excluded():
+    lighter = _candidate("lighter", p50=20, p90=40, load=1)
+    heavier = _candidate("heavier", p50=20, p90=40, load=20)
+
+    result = select_v2_winner(
+        {"owner_user_id": "source"}, [heavier, lighter], team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+
+    assert result["winner"]["user_id"] == "lighter"
+    assert {row["user_id"] for row in result["selection_pool"]} == {"lighter", "heavier"}
+    scored = {row["user_id"]: row for row in result["scored"]}
+    assert scored["heavier"]["load_pressure"] > scored["lighter"]["load_pressure"]
+    assert scored["heavier"]["capacity_score"] < scored["lighter"]["capacity_score"]
+    assert scored["heavier"]["capacity_exclusion_reason"] is None
+    assert not any(row.get("user_id") == "heavier" for row in result["hard_excluded"])
 
 
 def test_temperature_snapshot_preserves_hot_and_normal_sample_sizes():
@@ -319,33 +366,41 @@ def test_missing_capacity_stays_unknown_and_batch_projection_updates_load():
     assert state["unknown"]["simulated_unmanaged_current"] is None
     assert state["unknown"]["simulated_expired_current"] is None
 
-    candidate = _candidate("target", p50=10, p90=20, load=1)
-    projected = _initial_candidate_state([{
-        "user_id": "target", "open_current_policy": 1,
-        "unmanaged_current_policy": 1, "expired_current_policy": 0,
-        "hot_unmanaged_backlog": 0, "recent_rescues_7d": 0,
-    }])
-    params = RankingParameters(max_unmanaged_backlog=2)
+    candidates = [
+        _candidate("target", p50=10, p90=20, load=1),
+        _candidate("alternative", p50=10, p90=20, load=2),
+    ]
+    projected = _initial_candidate_state([
+        {"user_id": "target", "open_current_policy": 1, "unmanaged_current_policy": 1,
+         "expired_current_policy": 0, "hot_unmanaged_backlog": 0, "recent_rescues_7d": 0},
+        {"user_id": "alternative", "open_current_policy": 2, "unmanaged_current_policy": 2,
+         "expired_current_policy": 0, "hot_unmanaged_backlog": 0, "recent_rescues_7d": 0},
+    ])
     first = select_v2_winner(
-        {"owner_user_id": "source"}, [candidate], team=_team(),
+        {"owner_user_id": "source"}, candidates, team=_team(),
         branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
-        admin_user_ids=set(), params=params,
+        admin_user_ids=set(),
     )
-    assert first["winner"] is not None
+    assert first["winner"]["user_id"] == "target"
     _update_v2_state(projected, first["winner"], source_user_id="source", temperature="HOT")
     assert projected["target"]["simulated_open_current"] == 2
     assert projected["target"]["simulated_unmanaged_current"] == 2
     assert projected["target"]["hot_unmanaged_backlog"] == 1
+    assert projected["target"]["recent_rescues_7d"] == 1
 
-    next_candidate = dict(candidate)
-    next_candidate.update(projected["target"])
+    next_candidates = [dict(candidate) for candidate in candidates]
+    next_target = next(row for row in next_candidates if row["user_id"] == "target")
+    next_target.update(projected["target"])
     second = select_v2_winner(
-        {"owner_user_id": "another-source"}, [next_candidate], team=_team(),
+        {"owner_user_id": "another-source"}, next_candidates, team=_team(),
         branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
-        admin_user_ids=set(), params=params,
+        admin_user_ids=set(),
     )
-    assert second["winner"] is None
-    assert second["selection_reason"] == "DYNAMIC_V2_CAPACITY_LIMIT"
+    assert second["winner"]["user_id"] == "alternative"
+    assert {row["user_id"] for row in second["selection_pool"]} == {"target", "alternative"}
+    scored = {row["user_id"]: row for row in second["scored"]}
+    assert scored["target"]["load_pressure"] > scored["alternative"]["load_pressure"]
+    assert scored["target"]["capacity_score"] < scored["alternative"]["capacity_score"]
 
 
 
@@ -595,6 +650,14 @@ def test_attributed_orphan_keeps_other_executives_verified_and_unknown_owner_fai
         candidate.update(by_id[user_id])
         for key in ("simulated_open_current", "simulated_unmanaged_current", "simulated_expired_current"):
             candidate.pop(key, None)
+        if user_id == "verified-a":
+            candidate.update({
+                "open_current_policy": 15,
+                "unmanaged_current_policy": 10,
+                "expired_current_policy": 5,
+                "hot_unmanaged_backlog": 8,
+                "recent_rescues_7d": 0,
+            })
         selectable.append(candidate)
     selected = select_v2_winner(
         {"owner_user_id": "source"}, selectable, team=_team(),
@@ -602,6 +665,9 @@ def test_attributed_orphan_keeps_other_executives_verified_and_unknown_owner_fai
         admin_user_ids=set(),
     )
     assert selected["winner"]["user_id"] == "verified-a"
+    assert selected["winner"]["load_pressure"] == 3 * 5 + 2 * 10 + 1 * 15 + 1.5 * 8
+    assert selected["winner"]["capacity_exclusion_reason"] is None
+    assert {row["user_id"] for row in selected["selection_pool"]} == {"verified-a"}
     excluded = {row.get("user_id"): row.get("capacity_exclusion_reason") for row in selected["hard_excluded"]}
     assert excluded["orphan-owner"] == "capacity_snapshot_incomplete"
 
@@ -614,3 +680,4 @@ def test_attributed_orphan_keeps_other_executives_verified_and_unknown_owner_fai
         "capacity_metrics": metrics,
     }
     assert worker._live_capacity_snapshot_is_usable(unattributed) is False
+

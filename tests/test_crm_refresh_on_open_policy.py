@@ -17,6 +17,8 @@ def test_commercial_dashboard_loads_on_open_or_explicit_filter_only():
     assert "loadData('refresh');" in DASHBOARD  # explicit filter controls still work
     assert "}, 900000);" not in DASHBOARD
     assert "if (!document.hidden) loadData('refresh');" not in DASHBOARD
+    assert "window.setInterval(sync, 300)" not in DASHBOARD
+    assert "new MutationObserver(sync)" in DASHBOARD
 
 
 def test_crm_lead_list_never_polls_in_background():

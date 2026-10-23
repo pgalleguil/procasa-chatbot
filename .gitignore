@@ -63,6 +63,9 @@ scripts/*
 !scripts/report_crm_sla_alerts.py
 !scripts/report_leads_por_canal.py
 !scripts/report_propiedades_problema.py
+!scripts/reconcile_sucre_publications.py
+!scripts/run_sucre_publication_sync_batch.py
+!scripts/restore_sucre_publications_backup.py
 scripts_legacy/
 tests/
 !tests/
@@ -80,6 +83,7 @@ tests/*
 !tests/test_team_management_p0_contract.py
 !tests/test_properties_inventory_p0_contract.py
 !tests/test_captacion_followup_v2.py
+!tests/test_prop360_publication_issue46.py
 !tests/test_internal_campaign_drive_check.py
 !tests/test_owner_campaign_admin_panel.py
 !tests/test_owner_campaign_private_portal.py

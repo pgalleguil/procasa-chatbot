@@ -32,30 +32,7 @@ class Collection:
         self.documents = documents
 
     def find(self, query):
-        if "$or" in query:
-            results = {}
-            for clause in query["$or"]:
-                for document in self.find(clause):
-                    results[str(document.get("codigo") or document.get("_id"))] = document
-            return list(results.values())
-        path, expected = next(iter(query.items()))
-        matches = []
-        for document in self.documents:
-            if path == "publicaciones.aliases":
-                elem = expected.get("$elemMatch", {})
-                for alias in document.get("publicaciones", {}).get("aliases", []):
-                    if all(_matches_value(alias.get(key), value) for key, value in elem.items()):
-                        matches.append(deepcopy(document))
-                        break
-                continue
-            actual = _get_path(document, path)
-            if isinstance(actual, list):
-                matched = any(_matches_value(item, expected) for item in actual)
-            else:
-                matched = _matches_value(actual, expected)
-            if matched:
-                matches.append(deepcopy(document))
-        return matches
+        return [deepcopy(document) for document in self.documents if _matches_query(document, query)]
 
     def find_one(self, query):
         found = self.find(query)
@@ -68,6 +45,29 @@ class DB:
 
     def __getitem__(self, _name):
         return self.collection
+
+
+def _matches_query(document, query):
+    """Small Mongo query adapter: model the logical operators used by lookup."""
+    if "$and" in query:
+        return all(_matches_query(document, clause) for clause in query["$and"])
+    if "$or" in query:
+        return any(_matches_query(document, clause) for clause in query["$or"])
+    for path, expected in query.items():
+        if path == "publicaciones.aliases" and isinstance(expected, dict) and "$elemMatch" in expected:
+            elem = expected["$elemMatch"]
+            aliases = _get_path(document, path) or []
+            if not any(all(_matches_value(alias.get(key), value) for key, value in elem.items())
+                       for alias in aliases if isinstance(alias, dict)):
+                return False
+            continue
+        actual = _get_path(document, path)
+        if isinstance(actual, list):
+            if not any(_matches_value(item, expected) for item in actual):
+                return False
+        elif not _matches_value(actual, expected):
+            return False
+    return True
 
 
 CASES = (
@@ -118,6 +118,17 @@ def test_historical_alias_resolves_even_when_publication_is_inactive():
     prop, meta = lookup_property_link(DB([doc]), CASES[0][3])
     assert prop["codigo"] == "6473"
     assert meta["publication_status"] == "historical"
+
+
+def test_current_publication_marked_unpublished_is_not_returned_as_current():
+    doc = _doc()
+    doc["publicaciones"]["portal_inmobiliario"]["publicaciones"]["V"]["publicada"] = False
+    prop, meta = lookup_property_link(DB([doc]), CASES[0][1])
+    assert prop is None
+    assert meta.get("error_code") is None
+    historical, historical_meta = lookup_property_link(DB([doc]), CASES[0][3])
+    assert historical["codigo"] == "6473"
+    assert historical_meta["publication_status"] == "historical"
 
 
 def test_general_identifier_lookup_uses_historical_mlc_alias():

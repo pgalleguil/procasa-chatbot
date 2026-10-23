@@ -120,7 +120,13 @@ async def test_full_alert_report_same_when_event_prefetch_is_reduced(monkeypatch
             "_id": "agent-1", "nombre": "Ejecutivo", "is_active": True,
             "rol": "agente", "telefono": "+56911111111",
         }]),
-        "crm_management_results": Collection(),
+        # A canonical completed result belongs to the current cycle; the
+        # sample event alone is not necessarily a valid management record.
+        "crm_management_results": Collection([{
+            "assignment_cycle_id": "cycle-event-managed",
+            "result_type": "EFFECTIVE_CONTACT", "status": "completed",
+            "occurred_at": ASSIGNED + timedelta(minutes=4),
+        }]),
         "crm_notifications_v1": Collection(),
     })
     original = evaluator._load_sla_events_batched

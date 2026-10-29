@@ -5523,6 +5523,19 @@
             const phone = target === 'lead' ? leadData.telefono : leadData.ownerPhone;
             const email = target === 'lead' ? leadData.email : leadData.ownerEmail;
 
+            // An external WhatsApp compose window is not evidence of a delivered message
+            // or a verified CRM management result; prevent a misleading SLA impression.
+            let slaNotice = document.getElementById('crm-wa-sla-guidance');
+            if (!slaNotice) {
+                slaNotice = document.createElement('div');
+                slaNotice.id = 'crm-wa-sla-guidance';
+                slaNotice.className = 'small alert alert-warning mt-2 mb-0';
+                slaNotice.setAttribute('role', 'status');
+                slaNotice.textContent = 'Importante: abrir WhatsApp NO registra una gestión ni detiene el SLA. Si contactaste al cliente o te pidió seguimiento, vuelve al CRM y registra el resultado en Gestionar antes del vencimiento.';
+                btn.insertAdjacentElement('afterend', slaNotice);
+            }
+            slaNotice.hidden = !(target === 'lead' && currentCommChannel === 'wa' && category !== 'recommendation');
+
             // --- Common Logic: WhatsApp Green ---
             const waGreen = '#25D366';
 

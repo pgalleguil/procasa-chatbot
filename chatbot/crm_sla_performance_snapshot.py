@@ -507,6 +507,71 @@ class PerformanceSnapshotCache:
         output["candidates"] = candidates
         return output
 
+
+    async def load_or_publish_weekly_v2_scores(
+        self, db: Any, historical: Mapping[str, Any], *, now: Any,
+    ) -> dict[str, Any]:
+        """Get one immutable weekly baseline shared across worker restarts.
+
+        Only six agents' aggregated score inputs and the team baseline are
+        persisted. No leads, contacts, cycles or ownership are modified. The
+        collection needs only MongoDB's built-in unique _id index. A failed
+        read/write aborts V2 scoring rather than silently changing its scores.
+        """
+        from pymongo.errors import DuplicateKeyError
+
+        start, end = weekly_ranking_window(now)
+        key = start.isoformat()
+        if self._weekly_v2_scores is not None and self._weekly_v2_scores.get("period_start") == key:
+            return self.apply_weekly_v2_scores(historical, now=now)
+
+        collection = db["crm_sla_weekly_scores_v2"]
+        doc_id = "crm_sla_reassignment_v2:" + key
+
+        def validate(doc: Mapping[str, Any] | None) -> dict[str, Any]:
+            if not isinstance(doc, Mapping) or not (
+                doc.get("schema_version") == 1
+                and doc.get("policy_version") == WEEKLY_RANKING_POLICY_VERSION
+                and doc.get("period_start") == key
+                and doc.get("period_end") == end.isoformat()
+                and isinstance(doc.get("metrics"), Mapping)
+                and isinstance(doc.get("team"), Mapping)
+                and doc.get("baseline_id")
+            ):
+                raise RuntimeError("weekly_score_persisted_baseline_invalid")
+            return {
+                "period_start": key,
+                "period_end": end.isoformat(),
+                "generated_at": str(doc.get("generated_at") or ""),
+                "baseline_id": str(doc["baseline_id"]),
+                "metrics": copy.deepcopy(dict(doc["metrics"])),
+                "team": copy.deepcopy(dict(doc["team"])),
+            }
+
+        doc = await _maybe_await(collection.find_one({"_id": doc_id}))
+        if doc is not None:
+            self._weekly_v2_scores = validate(doc)
+            return self.apply_weekly_v2_scores(historical, now=now)
+
+        # Prepare the baseline from the same validated historical evidence
+        # that the worker would use in memory. Insert is create-only.
+        self.apply_weekly_v2_scores(historical, now=now)
+        payload = {
+            "_id": doc_id,
+            "schema_version": 1,
+            "policy_version": WEEKLY_RANKING_POLICY_VERSION,
+            **copy.deepcopy(self._weekly_v2_scores),
+        }
+        try:
+            await _maybe_await(collection.insert_one(payload))
+        except DuplicateKeyError:
+            doc = await _maybe_await(collection.find_one({"_id": doc_id}))
+            self._weekly_v2_scores = validate(doc)
+        except Exception:
+            self._weekly_v2_scores = None
+            raise
+        return self.apply_weekly_v2_scores(historical, now=now)
+
     async def get_live_capacity(self, *, now: Any, builder: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]], policy_version: str, source_watermarks: Mapping[str, Any] | None = None, force: bool = False) -> dict[str, Any]:
         current = _utc(now) or datetime.now(timezone.utc)
         watermarks = dict(source_watermarks) if source_watermarks is not None else None

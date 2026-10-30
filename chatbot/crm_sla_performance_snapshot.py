@@ -16,6 +16,7 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Awaitable, Callable, Mapping
 
 from .crm_sla_snapshot_queries import ReadInstrumentation, find_many
@@ -25,6 +26,26 @@ from .mongo_identity import mongo_id_variants
 HISTORICAL_TTL_CANDIDATES = (60, 120, 300, 600)
 DEFAULT_HISTORICAL_TTL_SECONDS = 300
 DEFAULT_LIVE_CAPACITY_TTL_SECONDS = 60
+WEEKLY_RANKING_POLICY_VERSION = "crm_sla_reassignment_v2"
+WEEKLY_RANKING_TIMEZONE = ZoneInfo("America/Santiago")
+WEEKLY_RANKING_HOUR = 9
+
+
+def weekly_ranking_window(now: Any) -> tuple[datetime, datetime]:
+    """Return the current Chile-local Monday 09:00 scoring interval in UTC."""
+    instant = _utc(now)
+    if instant is None:
+        raise ValueError("weekly_ranking_requires_valid_timestamp")
+    local_now = instant.astimezone(WEEKLY_RANKING_TIMEZONE)
+    monday = local_now.date() - timedelta(days=local_now.weekday())
+    start_local = datetime(monday.year, monday.month, monday.day, WEEKLY_RANKING_HOUR, tzinfo=WEEKLY_RANKING_TIMEZONE)
+    if local_now < start_local:
+        monday -= timedelta(days=7)
+        start_local = datetime(monday.year, monday.month, monday.day, WEEKLY_RANKING_HOUR, tzinfo=WEEKLY_RANKING_TIMEZONE)
+    following = monday + timedelta(days=7)
+    end_local = datetime(following.year, following.month, following.day, WEEKLY_RANKING_HOUR, tzinfo=WEEKLY_RANKING_TIMEZONE)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
 
 
 def _utc(value: Any) -> datetime | None:
@@ -395,10 +416,19 @@ class PerformanceSnapshotCache:
         self._live: LiveCapacitySnapshot | None = None
         self._stats = {"historical_hits": 0, "historical_misses": 0, "live_hits": 0, "live_misses": 0, "historical_refreshes": 0, "live_refreshes": 0}
 
-    async def get_historical(self, *, now: Any, builder: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]], policy_version: str, source_watermarks: Mapping[str, Any] | None = None, force: bool = False) -> dict[str, Any]:
+    async def get_historical(self, *, now: Any, builder: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]], policy_version: str, source_watermarks: Mapping[str, Any] | None = None, force: bool = False, weekly_schedule: bool = False) -> dict[str, Any]:
         current = _utc(now) or datetime.now(timezone.utc)
         watermarks = dict(source_watermarks) if source_watermarks is not None else None
-        if not force and self._historical and self._historical.is_fresh(now=current, policy_version=policy_version, source_watermarks=watermarks):
+        weekly_start = weekly_end = None
+        if weekly_schedule:
+            if policy_version != WEEKLY_RANKING_POLICY_VERSION:
+                raise ValueError("weekly_score_schedule_requires_v2")
+            weekly_start, weekly_end = weekly_ranking_window(current)
+        cached_week = (
+            self._historical is not None
+            and (not weekly_schedule or self._historical.payload.get("weekly_score_period_start") == weekly_start.isoformat())
+        )
+        if not force and cached_week and self._historical.is_fresh(now=current, policy_version=policy_version, source_watermarks=watermarks):
             self._stats["historical_hits"] += 1
             return self._historical.to_dict()
         self._stats["historical_misses"] += 1
@@ -411,6 +441,12 @@ class PerformanceSnapshotCache:
         if source_policy_version and source_policy_version != str(policy_version):
             raw.setdefault("source_policy_version", source_policy_version)
         raw["policy_version"] = str(policy_version)
+        if weekly_schedule:
+            # Freeze historical scores for the Chile commercial week; the
+            # independent live-capacity cache remains on its 60-second TTL.
+            raw["weekly_score_period_start"] = weekly_start.isoformat()
+            raw["weekly_score_period_end"] = weekly_end.isoformat()
+            raw["expires_at"] = weekly_end.isoformat()
         raw.setdefault("read_ms", (time.perf_counter() - started) * 1000.0)
         self._historical = _historical_record(raw, now=current, ttl_seconds=self.historical_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks or {})
         self._stats["historical_refreshes"] += 1

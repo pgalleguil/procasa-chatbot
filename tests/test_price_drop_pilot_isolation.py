@@ -149,7 +149,7 @@ def test_freeform_reply_runs_isolated_model_not_crm(isolated):
         seen.append((message, ctx, history))
         return "La ficha de esta prueba no indica si incluye bodega."
     result = process_test_inbound(
-        db, PHONE, "question-1", "¿Tiene bodega?", sender=sender, llm=llm
+        db, PHONE, "question-1", "¿Tiene conserjería?", sender=sender, llm=llm
     )
     assert result["status"] == "test_reply_sent"
     assert seen[0][1]["property_code"] == "6436"
@@ -215,7 +215,7 @@ def test_provider_failure_has_no_retry(isolated):
 
 def test_model_cannot_claim_executive_was_notified(isolated):
     ctx = {"property_code": "6436", "old_price_uf": 2790, "new_price_uf": 2690}
-    answer = build_test_reply("¿Qué gastos comunes tiene?", ctx,
+    answer = build_test_reply("¿Hay conserjería?", ctx,
                               llm=lambda *_: "He notificado al ejecutivo y te llamará")
     assert "he notificado" not in answer.lower()
     assert "no notificaremos" in answer.lower()

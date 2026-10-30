@@ -1481,9 +1481,28 @@ async def lifespan(app: FastAPI):
         ready_ms,
     )
     
+    # Explicit one-shot test bootstrap. Disabled by default. The script
+    # inserts a deterministic Mongo _id BEFORE contacting WhatsApp, so any
+    # restart/deploy cannot send the same campaign twice. This never invokes
+    # the CRM/lead/SLA pipeline and only addresses the configured test phone.
+    price_drop_send_task = None
+    if str(os.getenv("PRICE_DROP_PILOT_SEND_ON_START", "")).lower() in {"1", "true", "yes"}:
+        async def _run_price_drop_one_shot():
+            try:
+                from scripts.price_drop_pilot_test import run_test_once
+                exit_code = await asyncio.get_running_loop().run_in_executor(
+                    _WEB_THREAD_POOL, lambda: run_test_once(send=True),
+                )
+                logger.info("[PRICE_DROP_PILOT_SEND_ON_START] exit_code=%s", exit_code)
+            except Exception:
+                logger.exception("[PRICE_DROP_PILOT_SEND_ON_START] failed; never retry automatically")
+        price_drop_send_task = asyncio.create_task(_run_price_drop_one_shot())
+
     yield
     
     # Shutdown logic
+    if price_drop_send_task is not None:
+        price_drop_send_task.cancel()
     logger.info("Bot PRO Apagando (Lifespan Shutdown)...")
     n_task.cancel()
     if s_task is not None:

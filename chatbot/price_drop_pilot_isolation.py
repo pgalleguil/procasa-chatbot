@@ -43,7 +43,7 @@ ORIENTATION = re.compile(r"\b(?:orientaci[oó]n|hacia d[oó]nde)\b", re.I)
 POOL = re.compile(r"\b(?:piscinas?)\b", re.I)
 PETS = re.compile(r"\b(?:mascotas?|perros?|gatos?)\b", re.I)
 CONTACT_HUMAN = re.compile(r"\b(?:hablar con (?:un |una )?(?:ejecutiv[oa]|asesor[oa])|que me llame|me puede llamar|me pueden llamar|contacte (?:un |una )?(?:ejecutiv[oa]|asesor[oa]))\b", re.I)
-NEGATE_VISIT = re.compile(r"\b(?:no quiero (?:visitarla|visitar|una visita|agendar|coordinar)|no me interesa una visita)\b", re.I)
+NEGATE_VISIT = re.compile(r"\b(?:no quiero (?:visitarla|visitar|visita|una visita|agendar|coordinar)|no me interesa una visita)\b", re.I)
 COMMISSION = re.compile(r"\b(?:comisi[oó]n|honorarios|corretaje)\b", re.I)
 VISIT_WHEN = re.compile(
     r"\b(?:pr[oó]ximo mes|mes que viene|siguiente mes|pr[oó]xima semana|"
@@ -250,11 +250,11 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
     if _other_property_referenced(clean, code):
         return (f"Esta prueba está asociada al departamento {code}. "
                 "Para consultar otra propiedad, debes hacerlo fuera del modo de prueba.")
-    if DECLINE.search(clean):
-        return "Entendido, gracias por responder. No insistiremos en esta propiedad."
     if NEGATE_VISIT.search(clean):
         return (f"De acuerdo, no coordinaremos visitas al departamento {code}. "
                 "Si prefieres, puedes consultar características o el precio sin compromiso.")
+    if DECLINE.search(clean):
+        return "Entendido, gracias por responder. No insistiremos en esta propiedad."
     facts = ctx.get("property_facts") or {}
     previous = (history or [])[-1].get("bot_text", "") if history else ""
     if VISIT_WHEN.search(clean) and re.search(r"d[ií]a|horario|semana", previous, re.I):

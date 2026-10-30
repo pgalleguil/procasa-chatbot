@@ -14,8 +14,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from chatbot.phone_utils import normalize_phone_strict, phone_identity_variants
+from chatbot.phone_utils import normalize_phone_strict
 from chatbot.price_drop_pilot import COLLECTION, FLAG, TEST_PHONE
+from chatbot.price_drop_pilot_isolation import is_test_phone
 from chatbot.property_lookup import PROPERTY_COLLECTION_NAME
 from chatbot.storage import get_db
 from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
@@ -40,20 +41,10 @@ def main() -> int:
         return 2
 
     db = get_db()
-    variants = phone_identity_variants(phone)
-    leads = list(db["leads"].find({
-        "$or": [
-            {"phone": {"$in": variants}},
-            {"contact_phone_normalized": {"$in": variants}},
-        ]
-    }, {"_id": 1, "prospecto.codigo": 1, "pipeline_stage": 1}).limit(3))
-    if len(leads) != 1:
-        print(f"BLOCKED: ambiguous recipient identity ({len(leads)} matching lead records)")
-        return 2
-    lead = leads[0]
-    code = (lead.get("prospecto") or {}).get("codigo")
-    if code not in (None, "", PROPERTY_CODE):
-        print("BLOCKED: test recipient has another active property context")
+    # The test never reads or edits existing leads. Historic duplicate identities
+    # are intentionally irrelevant to this separate test conversation.
+    if not is_test_phone(phone):
+        print("BLOCKED: recipient is outside isolated test allowlist")
         return 2
 
     prop = db[PROPERTY_COLLECTION_NAME].find_one(
@@ -89,7 +80,7 @@ def main() -> int:
         "recuerda a qué propiedad se refiere el mensaje."
     )
     if not args.send:
-        print("DRY RUN PASSED: single recipient and current price verified; no WhatsApp sent")
+        print("DRY RUN PASSED: isolated recipient and current price verified; no WhatsApp sent")
         print(message)
         return 0
 
@@ -97,7 +88,7 @@ def main() -> int:
     db[COLLECTION].insert_one({
         "_id": key,
         "phone_normalized": phone,
-        "lead_id": lead["_id"],
+        "test_mode": True,
         "property_code": PROPERTY_CODE,
         "old_price_uf": OLD_UF,
         "new_price_uf": NEW_UF,
@@ -105,6 +96,7 @@ def main() -> int:
         "channel": "whatsapp",
         "campaign_version": "price_drop_pilot_v1",
         "status": "SENDING",
+        "isolation_version": "test_webhook_before_crm_v1",
         "created_at": now,
     })
     # One provider attempt; timeout/unknown is never auto-retried.

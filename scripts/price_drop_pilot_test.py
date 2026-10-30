@@ -27,11 +27,8 @@ NEW_UF = 2690.0
 TEST_ID = "20261030-6436-price-drop-pilot-v1"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--send", action="store_true", help="Perform one real provider attempt")
-    args = parser.parse_args()
-
+def run_test_once(*, send: bool = False) -> int:
+    """One durable provider attempt at most, even after Render restarts."""
     phone = normalize_phone_strict(os.environ.get(TEST_PHONE, ""))
     if not phone:
         print("BLOCKED: test recipient is not configured")
@@ -79,7 +76,7 @@ def main() -> int:
         "Responde 'Sí, me interesa' para comprobar que el chatbot "
         "recuerda a qué propiedad se refiere el mensaje."
     )
-    if not args.send:
+    if not send:
         print("DRY RUN PASSED: isolated recipient and current price verified; no WhatsApp sent")
         print(message)
         return 0
@@ -123,6 +120,13 @@ def main() -> int:
         return 1
     print("SENT: provider accepted one test message; wait for inbound reply verification")
     return 0
+
+    
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--send", action="store_true", help="Perform one real provider attempt")
+    args = parser.parse_args()
+    return run_test_once(send=args.send)
 
 
 if __name__ == "__main__":

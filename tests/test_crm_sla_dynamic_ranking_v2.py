@@ -560,6 +560,77 @@ def test_weekly_v2_score_baseline_is_isolated_from_v1_and_new_agent_not_promoted
     assert v1["team"]["version"] == "v1"
 
 
+
+def test_durable_weekly_v2_scores_survive_worker_restarts_without_touching_leads():
+    import asyncio
+    import mongomock
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    db = mongomock.MongoClient().url
+    monday = datetime(2026, 10, 26, 13, tzinfo=timezone.utc)
+    initial = {
+        "policy_version": "crm_sla_reassignment_v2",
+        "team": {"sla_compliance_rate": 0.6},
+        "candidates": [{
+            "user_id": "susana", "active": True, "role": "agente",
+            "sample_size": 33, "by_temperature": {"NORMAL": {"sample_size": 33}},
+        }],
+        "properties": {"5704": {"version": 1}},
+    }
+    first = asyncio.run(PerformanceSnapshotCache().load_or_publish_weekly_v2_scores(
+        db, initial, now=monday,
+    ))
+    later = {
+        **initial,
+        "team": {"sla_compliance_rate": 0.9},
+        "candidates": [{**initial["candidates"][0], "sample_size": 77}],
+        "properties": {"5704": {"version": 2}},
+    }
+    # Brand-new worker instance: must reuse the recorded weekly baseline.
+    after_restart = asyncio.run(PerformanceSnapshotCache().load_or_publish_weekly_v2_scores(
+        db, later, now=monday + timedelta(days=1),
+    ))
+    assert first["team"]["sla_compliance_rate"] == after_restart["team"]["sla_compliance_rate"] == 0.6
+    assert after_restart["candidates"][0]["sample_size"] == 33
+    assert after_restart["properties"]["5704"]["version"] == 2
+    assert db["crm_sla_weekly_scores_v2"].count_documents({}) == 1
+    assert db["leads"].count_documents({}) == 0
+    assert db["crm_assignment_cycles"].count_documents({}) == 0
+
+    next_week = asyncio.run(PerformanceSnapshotCache().load_or_publish_weekly_v2_scores(
+        db, later, now=datetime(2026, 11, 2, 13, tzinfo=timezone.utc),
+    ))
+    assert next_week["team"]["sla_compliance_rate"] == 0.9
+    assert db["crm_sla_weekly_scores_v2"].count_documents({}) == 2
+
+
+def test_weekly_v2_fails_closed_on_corrupted_persisted_baseline():
+    import asyncio
+    import mongomock
+    import pytest
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache, weekly_ranking_window
+
+    now = datetime(2026, 10, 26, 13, tzinfo=timezone.utc)
+    start, end = weekly_ranking_window(now)
+    db = mongomock.MongoClient().url
+    db["crm_sla_weekly_scores_v2"].insert_one({
+        "_id": "crm_sla_reassignment_v2:" + start.isoformat(),
+        "schema_version": 1,
+        "policy_version": "crm_sla_reassignment_v2",
+        "period_start": start.isoformat(),
+        "period_end": end.isoformat(),
+        "team": {"sla_compliance_rate": 0.75},
+        # Missing metrics: never fall back to freshly calculated scores.
+    })
+    with pytest.raises(RuntimeError, match="weekly_score_persisted_baseline_invalid"):
+        asyncio.run(PerformanceSnapshotCache().load_or_publish_weekly_v2_scores(
+            db,
+            {"policy_version": "crm_sla_reassignment_v2", "team": {},
+             "candidates": [{"user_id": "susana", "sample_size": 20}]},
+            now=now,
+        ))
+
+
 def test_default_snapshot_distinguishes_verified_zero_from_incomplete_capacity(monkeypatch):
     import asyncio
     import chatbot.crm_sla_reassignment_worker as worker

@@ -28,13 +28,93 @@ DECLINE = re.compile(r"^\s*(?:no|no gracias|no me interesa|ya no me interesa|no 
 VISIT = re.compile(r"\b(?:visitar(?:la|lo)?|visitas?|agendar|coordinar|quiero verla|ir a ver|conocerla|ver el departamento)\b", re.I)
 PRICE = re.compile(r"\b(?:precio|cu[aá]nto (?:cuesta|vale|sale)|a cu[aá]nto|rebaja|baj[oó]|uf)\b", re.I)
 NEGOTIATION = re.compile(r"\b(?:ofertas?|negociar|rebajar|aceptan menos|descuento|contraofertas?)\b", re.I)
-YES = re.compile(r"^\s*(?:s[ií]|s[ií],?\s*me interesa|claro|ok|dale|por supuesto|me interesa|perfecto)\s*[.!]?\s*$", re.I)
+YES = re.compile(r"^\s*(?:s[ií](?:,?\s*me interesa)?|claro|ok(?:a|ey)?(?:\s+me interesa)?|dale|por supuesto|me interesa|perfecto|s[ií]\s+claro)\s*[.!]?\s*$", re.I)
 ALTERNATIVE = re.compile(r"\b(?:otra|otras|alternativas|opciones|ñuñoa|nunoa)\b", re.I)
+DETAILS = re.compile(r"\b(?:caracter[ií]sticas|detalles|informaci[oó]n del departamento|ficha)\b", re.I)
+BATHS = re.compile(r"\b(?:ba[ñn]os?|servicios hig[ií]enicos)\b", re.I)
+BEDROOMS = re.compile(r"\b(?:dormitorios?|habitaciones?|piezas?)\b", re.I)
+AREA = re.compile(r"\b(?:superficie|metros|m2|m²|tama[ñn]o)\b", re.I)
+COMMON_EXPENSES = re.compile(r"\b(?:gastos? comunes?|ggcc)\b", re.I)
+STORAGE = re.compile(r"\b(?:bodegas?)\b", re.I)
+PARKING = re.compile(r"\b(?:estacionamientos?|parking)\b", re.I)
+TERRACE = re.compile(r"\b(?:terrazas?)\b", re.I)
+FLOOR = re.compile(r"\b(?:en qu[eé] piso|qu[eé] piso|piso (?:est[aá]|queda)|n[uú]mero de piso)\b", re.I)
+ORIENTATION = re.compile(r"\b(?:orientaci[oó]n|hacia d[oó]nde)\b", re.I)
+POOL = re.compile(r"\b(?:piscinas?)\b", re.I)
+PETS = re.compile(r"\b(?:mascotas?|perros?|gatos?)\b", re.I)
+CONTACT_HUMAN = re.compile(r"\b(?:hablar con (?:un |una )?(?:ejecutiv[oa]|asesor[oa])|que me llame|me puede llamar|me pueden llamar|contacte (?:un |una )?(?:ejecutiv[oa]|asesor[oa]))\b", re.I)
+NEGATE_VISIT = re.compile(r"\b(?:no quiero (?:visitarla|visitar|visita|una visita|agendar|coordinar)|no me interesa una visita)\b", re.I)
+COMMISSION = re.compile(r"\b(?:comisi[oó]n|honorarios|corretaje)\b", re.I)
+VISIT_WHEN = re.compile(
+    r"\b(?:pr[oó]ximo mes|mes que viene|siguiente mes|pr[oó]xima semana|"
+    r"semana que viene|el (?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|"
+    r"(?:ma[ñn]ana|pasado ma[ñn]ana)|por la (?:ma[ñn]ana|tarde)|a fin de mes|"
+    r"este fin de semana)\b", re.I
+)
 BAD_CLAIM = re.compile(
     r"\b(?:he (?:avisado|notificado|contactado|agendado|registrado|derivado)|"
     r"(?:ya |est[aá] )?(?:agendada|confirmada) la visita|"
-    r"el ejecutivo (?:fue notificado|te (?:llamar[aá]|contactar[aá])))\b", re.I
+    r"la visita (?:est[aá] |qued[oó] )?(?:confirmada|agendada)|"
+    r"el ejecutivo (?:fue notificado|te (?:llamar[aá]|contactar[aá]))|"
+    r"lo (?:dejamos|dej[eé]|dejo|qued[oó]) anotado|"
+    r"(?:te vamos a llamar|te contactaremos|ya registr[eé]|queda reservada|qued[oó] agendada|"
+    r"le informamos al ejecutivo|avisamos al ejecutivo))\b", re.I
 )
+
+
+def _verified_property_facts(prop: dict) -> dict:
+    """Extract only validated Prop360 facts; never infer unknown fields."""
+    characteristics = prop.get("caracteristicas") or {}
+    operation = prop.get("tipo_operacion") or {}
+    facts = {}
+    for key in ("banos", "dormitorios", "bodegas"):
+        value = characteristics.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 50:
+            facts[key] = value
+    for key in ("superficie_total", "superficie_util", "superficie_terraza"):
+        value = _money(characteristics.get(key))
+        if value is not None and value <= 100000:
+            facts[key] = value
+    for key in ("piso", "ascensores", "ano_construccion"):
+        value = characteristics.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            if (1 <= value <= 200 if key != "ano_construccion" else 1800 <= value <= 2100):
+                facts[key] = value
+    orientation = characteristics.get("orientacion")
+    if isinstance(orientation, str) and 1 <= len(orientation.strip()) <= 60:
+        facts["orientacion"] = orientation.strip()
+    features = characteristics.get("features") or []
+    if isinstance(features, list):
+        for value, field in (("piscina", "piscina"), ("has_terrace", "terraza"),
+                             ("mascotas", "mascotas_ficha")):
+            if value in features:
+                facts[field] = True
+    expenses = _money(operation.get("gastos_comunes"))
+    if expenses is not None and expenses < 100000000:
+        facts["gastos_comunes_clp"] = int(expenses)
+    return facts
+
+
+def _formatted_facts(facts: dict) -> str:
+    labels = (
+        ("dormitorios", "dormitorios"),
+        ("banos", "baños"),
+        ("superficie_total", "m² totales"),
+        ("superficie_util", "m² útiles"),
+        ("superficie_terraza", "m² de terraza"),
+        ("bodegas", "bodega(s)"),
+        ("piso", "piso"),
+        ("orientacion", "orientación"),
+        ("gastos_comunes_clp", "pesos de gastos comunes"),
+    )
+    items = [f"{facts[key]} {label}" for key, label in labels if key in facts]
+    if facts.get("piscina"):
+        items.append("piscina según ficha")
+    if facts.get("terraza"):
+        items.append("terraza según ficha")
+    if facts.get("mascotas_ficha"):
+        items.append("mascotas mencionadas en ficha (reglamento por confirmar)")
+    return ", ".join(items)
 
 
 def is_test_phone(phone: str) -> bool:
@@ -83,7 +163,13 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
     property_doc = db[PROPERTY_COLLECTION_NAME].find_one(
         {"codigo": str(campaign.get("property_code") or "")},
         {"codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
-         "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1},
+         "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1,
+         "tipo_operacion.gastos_comunes": 1, "caracteristicas.banos": 1,
+         "caracteristicas.dormitorios": 1, "caracteristicas.bodegas": 1,
+         "caracteristicas.superficie_total": 1, "caracteristicas.superficie_util": 1,
+         "caracteristicas.superficie_terraza": 1, "caracteristicas.piso": 1,
+         "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
+         "caracteristicas.orientacion": 1, "caracteristicas.features": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
@@ -96,6 +182,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
         "campaign_id": campaign["_id"],
         "property_code": str(campaign["property_code"]),
         "old_price_uf": old, "new_price_uf": new,
+        "property_facts": _verified_property_facts(property_doc),
     }
 
 
@@ -115,12 +202,14 @@ def _llm_answer(message: str, ctx: dict, history: list[dict]) -> str:
     code = ctx["property_code"]
     price = _format_uf(ctx["new_price_uf"])
     old = _format_uf(ctx["old_price_uf"])
+    facts = _formatted_facts(ctx.get("property_facts") or {})
     sys = (
         "Eres el asistente de PROCASA, en una PRUEBA INTERNA por WhatsApp. "
         f"La propiedad es un departamento en VENTA en San Miguel, código {code}. "
         f"Precio anterior UF {old}, precio ACTUAL UF {price}. "
-        "Estas son las únicas características confirmadas; no inventes superficie, "
-        "disponibilidad de visitas, financiamiento, gastos comunes ni otras propiedades. "
+        f"Datos contrastados con Prop360: {facts or 'sin atributos adicionales confirmados'}. "
+        "Usa exclusivamente estos hechos. No inventes otros atributos, disponibilidad "
+        "de visitas, financiamiento ni otras propiedades. "
         "Responde en español natural, breve, como el chatbot comercial, con contexto del mensaje previo. "
         "Responde cualquier pregunta libre de forma coherente; si no sabes, dilo. "
         "Un 'sí' genérico significa interés, nunca visita confirmada. "
@@ -161,9 +250,60 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
     if _other_property_referenced(clean, code):
         return (f"Esta prueba está asociada al departamento {code}. "
                 "Para consultar otra propiedad, debes hacerlo fuera del modo de prueba.")
+    if NEGATE_VISIT.search(clean):
+        return (f"De acuerdo, no coordinaremos visitas al departamento {code}. "
+                "Si prefieres, puedes consultar características o el precio sin compromiso.")
     if DECLINE.search(clean):
         return "Entendido, gracias por responder. No insistiremos en esta propiedad."
+    facts = ctx.get("property_facts") or {}
+    previous = (history or [])[-1].get("bot_text", "") if history else ""
+    if VISIT_WHEN.search(clean) and re.search(r"d[ií]a|horario|semana", previous, re.I):
+        return (f"Entiendo, considerarías visitar el departamento {code} {clean.lower()}. "
+                "¿Tienes un día u horario más concreto en mente? "
+                "Es una prueba: no se ha agendado ninguna visita ni notificado a un ejecutivo.")
+    if DETAILS.search(clean) and facts:
+        return (f"El departamento {code} está en venta a UF {new}. "
+                f"Su ficha informa: {_formatted_facts(facts)}. "
+                "¿Hay alguna característica que quieras conocer con más detalle?")
+    # Multiple questions in one message should yield all verified attributes.
+    checks = (
+        (BATHS, "banos", lambda v: f"{v} baños"),
+        (BEDROOMS, "dormitorios", lambda v: f"{v} dormitorios"),
+        (COMMON_EXPENSES, "gastos_comunes_clp", lambda v: f"${v:,.0f}".replace(",", ".") + " de gastos comunes mensuales"),
+        (AREA, "superficie_total", lambda v: f"{v:g} m² totales"),
+        (STORAGE, "bodegas", lambda v: f"{v} bodega(s)"),
+        (PARKING, "estacionamientos", lambda v: f"{v} estacionamiento(s)"),
+        (TERRACE, "superficie_terraza", lambda v: f"{v:g} m² de terraza"),
+        (FLOOR, "piso", lambda v: f"piso {v}"),
+        (ORIENTATION, "orientacion", lambda v: f"orientación {v}"),
+        (POOL, "piscina", lambda v: "piscina informada en la ficha"),
+    )
+    asked = [(key, formatter) for pattern, key, formatter in checks if pattern.search(clean)]
+    if asked:
+        found = [format_value(facts[key]) for key, format_value in asked if key in facts]
+        missing = [key for key, _ in asked if key not in facts]
+        answer = (f"Según la ficha vigente del departamento {code}: " + ", ".join(found) + ".") if found else ""
+        if missing:
+            answer += (" " if answer else "") + "No tengo confirmado " + (
+                "el resto de esos datos." if found else "ese dato en su ficha."
+            )
+        if PRICE.search(clean):
+            answer += f" El precio vigente es UF {new}."
+        return answer
+    if PETS.search(clean):
+        return (f"La ficha del departamento {code} menciona mascotas, pero el reglamento del edificio "
+                "y sus condiciones deben confirmarse." if facts.get("mascotas_ficha") else
+                f"No tengo confirmadas las reglas sobre mascotas del departamento {code}.")
+    if COMMISSION.search(clean):
+        return "No tengo confirmados los honorarios de corretaje para esta operación."
+    if CONTACT_HUMAN.search(clean):
+        return ("Puedes pedir hablar con un ejecutivo, pero en esta prueba no se enviará "
+                "ninguna solicitud ni notificación comercial.")
     if VISIT.search(clean):
+        if VISIT_WHEN.search(clean):
+            return (f"Entiendo que quieres evaluar una visita al departamento {code} {clean.lower()}. "
+                    "¿Qué horario te acomodaría? Es una prueba: ninguna visita quedó agendada "
+                    "ni se notificó a un ejecutivo.")
         return (f"Podemos evaluar una visita al departamento {code}, ahora en UF {new}. "
                 "¿Qué día u horario te acomoda? Es una prueba: no se enviará ninguna solicitud a un ejecutivo.")
     if NEGOTIATION.search(clean):

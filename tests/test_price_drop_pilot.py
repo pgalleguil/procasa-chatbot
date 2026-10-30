@@ -110,7 +110,6 @@ def test_valid_delivered_context_for_short_yes(allowed):
     {"operation": "Arriendo"},
     {"old_price_uf": 2600},
     {"new_price_uf": 5100},
-    {"phone_normalized": "+56977770001"},
 ])
 def test_bad_campaign_record_rejected(changes):
     assert not validate_record(record(**changes), sale(), "lead-1")
@@ -156,3 +155,8 @@ def test_not_yet_sent_context_rejected(allowed):
 def test_short_other_code_rejected(allowed):
     db = fake_db()
     assert load_active_context(db, "+56977770000", "6500") is None
+
+
+def test_campaign_recipient_mismatch_rejected(allowed):
+    db = fake_db(campaign=record(phone_normalized="+56977770001"))
+    assert load_active_context(db, "+56977770000", "sí") is None

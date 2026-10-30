@@ -1366,6 +1366,7 @@ async def _default_performance_snapshot(
     historical = await cache.get_historical(
         now=as_of,
         policy_version=policy_version,
+        force=policy_version == DYNAMIC_POLICY_VERSION and cache.weekly_v2_refresh_due(as_of),
         builder=lambda: build_historical_performance_snapshot(
             db, as_of=as_of, policy_since=policy_start,
             performance_window_days=PERFORMANCE_WINDOW_DAYS,

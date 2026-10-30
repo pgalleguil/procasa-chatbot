@@ -286,3 +286,81 @@ def test_failed_provider_attempt_does_not_auto_retry(isolated, monkeypatch):
     assert db["crm_price_drop_pilot_v1"].docs[0]["status"] == "DELIVERY_UNKNOWN"
     assert sender_script.run_test_once(send=True) == 2
     assert len(calls) == 1
+
+
+
+def test_prop360_real_features_are_included_in_verified_context(isolated):
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["caracteristicas"] = {
+        "dormitorios": 2, "banos": 2, "bodegas": 1,
+        "superficie_total": 65, "superficie_util": 60,
+    }
+    db["universo_cartera_prop360"].docs[0]["tipo_operacion"]["gastos_comunes"] = 85000
+    ctx = load_test_context(db, PHONE)
+    assert ctx["property_facts"] == {
+        "dormitorios": 2, "banos": 2, "bodegas": 1,
+        "superficie_total": 65.0, "superficie_util": 60.0,
+        "gastos_comunes_clp": 85000,
+    }
+    assert "2 baños" in build_test_reply("¿Cuántos baños tiene?", ctx)
+    assert "2 dormitorios" in build_test_reply("¿Cuántos dormitorios tiene?", ctx)
+    assert "85000" in build_test_reply("¿Cuánto son los gastos comunes?", ctx)
+    assert "65" in build_test_reply("¿Cuántos metros cuadrados?", ctx)
+    assert "bodega" in build_test_reply("¿Tiene bodega?", ctx)
+    features = build_test_reply("¿Cuáles son sus características?", ctx)
+    assert "2 baños" in features and "2 dormitorios" in features
+    assert "65" in features and "85000" in features
+
+
+def test_missing_facts_are_never_invented(isolated):
+    db = db_case()
+    ctx = load_test_context(db, PHONE)
+    reply = build_test_reply("¿Cuántos baños tiene?", ctx)
+    assert "No tengo confirmado" in reply
+    assert "2 baños" not in reply
+
+
+def test_short_reply_to_visit_time_preserves_conversation(isolated):
+    ctx = {
+        "property_code": "6436",
+        "old_price_uf": 2790,
+        "new_price_uf": 2690,
+        "property_facts": {"banos": 2},
+    }
+    hist = [{"customer_text": "oka me interesa",
+             "bot_text": "Si quieres conocerlo, dime qué día u horario te acomodaría para una posible visita."}]
+    for msg in ("el proximo mes", "la próxima semana", "por la tarde"):
+        answer = build_test_reply(msg, ctx, hist, llm=lambda *_: (_ for _ in ()).throw(AssertionError("should not ask model")))
+        assert "6436" in answer
+        assert "no se ha agendado" in answer
+        assert "¿Tienes un día u horario" in answer
+
+
+def test_followup_without_visit_prompt_does_not_infer_a_visit(isolated):
+    ctx = {"property_code": "6436", "old_price_uf": 2790, "new_price_uf": 2690}
+    answer = build_test_reply(
+        "el próximo mes", ctx,
+        [{"bot_text": "¿Quieres más información del precio?"}],
+        llm=lambda *_: "Puedes aclararme a qué te refieres con el próximo mes?",
+    )
+    assert answer.startswith("Puedes aclararme")
+
+
+def test_invalid_property_attributes_do_not_leak_into_reply(isolated):
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["caracteristicas"] = {
+        "banos": None, "dormitorios": -4, "bodegas": 900, "superficie_total": "inválido",
+    }
+    ctx = load_test_context(db, PHONE)
+    assert ctx["property_facts"] == {}
+    assert "No tengo confirmado" in build_test_reply("¿Cuántos baños?", ctx)
+
+
+def test_trusted_facts_flow_through_isolated_inbound_not_crm(isolated):
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["caracteristicas"] = {"banos": 2}
+    sender, calls = sender_spy()
+    result = process_test_inbound(db, PHONE, "question-bathrooms", "¿Cuántos baños tiene?", sender=sender)
+    assert result["status"] == "test_reply_sent"
+    assert "2 baños" in calls[0][1]
+    assert len(db["crm_price_drop_pilot_test_turns_v1"].docs) == 1

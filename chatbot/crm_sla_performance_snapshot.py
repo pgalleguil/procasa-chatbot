@@ -439,6 +439,13 @@ class PerformanceSnapshotCache:
         return self._historical.to_dict()
 
 
+    def weekly_v2_refresh_due(self, now: Any) -> bool:
+        """Require a fresh 60-day historical read at the Monday boundary."""
+        return bool(
+            self._weekly_v2_scores is not None
+            and self._weekly_v2_scores.get("period_start") != weekly_ranking_window(now)[0].isoformat()
+        )
+
     def apply_weekly_v2_scores(self, historical: Mapping[str, Any], *, now: Any) -> dict[str, Any]:
         """Freeze ONLY the V2 performance baseline, never user/territory context.
 

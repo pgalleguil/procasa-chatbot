@@ -462,6 +462,85 @@ def test_performance_snapshot_cache_revalidates_policy_and_preserves_ttls():
     assert cache.stats()["live_capacity_ttl_seconds"] == 60
 
 
+
+def test_v2_scores_refresh_only_on_monday_nine_santiago_and_keep_live_capacity_fresh():
+    import asyncio
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache, weekly_ranking_window
+
+    cache = PerformanceSnapshotCache()
+    calls = {"historical": 0, "live": 0}
+
+    async def hist():
+        calls["historical"] += 1
+        return {"policy_version": "crm_sla_reassignment_v2", "team": {"sample": calls["historical"]}}
+
+    async def live():
+        calls["live"] += 1
+        return {"policy_version": "crm_sla_reassignment_v2", "capacity_metrics": {"check": calls["live"]}}
+
+    async def sample(iso):
+        now = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        historical = await cache.get_historical(
+            now=now, policy_version="crm_sla_reassignment_v2",
+            builder=hist, weekly_schedule=True,
+        )
+        capacity = await cache.get_live_capacity(
+            now=now, policy_version="crm_sla_reassignment_v2", builder=live,
+        )
+        return historical, capacity
+
+    # 08:59 and 09:00 Chile are in DIFFERENT scoring weeks.
+    before, _ = asyncio.run(sample("2026-10-26T11:59:00Z"))
+    after, _ = asyncio.run(sample("2026-10-26T12:00:00Z"))
+    next_day, next_live = asyncio.run(sample("2026-10-27T12:00:00Z"))
+    next_week, _ = asyncio.run(sample("2026-11-02T12:00:00Z"))
+
+    assert calls["historical"] == 3
+    assert calls["live"] == 4
+    assert before["team"]["sample"] == 1
+    assert after["team"]["sample"] == next_day["team"]["sample"] == 2
+    assert next_week["team"]["sample"] == 3
+    assert next_live["capacity_metrics"]["check"] == 3
+    assert datetime.fromisoformat(after["expires_at"]) == datetime(2026, 11, 2, 12, tzinfo=timezone.utc)
+    assert after["weekly_score_period_start"] == "2026-10-26T12:00:00+00:00"
+
+    # Timezone/DST: keep local Monday 09:00 even when the UTC offset changes.
+    from zoneinfo import ZoneInfo
+    zone = ZoneInfo("America/Santiago")
+    for date in ("2026-04-05T12:00:00Z", "2026-09-06T12:00:00Z"):
+        start, end = weekly_ranking_window(datetime.fromisoformat(date.replace("Z", "+00:00")))
+        assert start.astimezone(zone).weekday() == 0
+        assert end.astimezone(zone).weekday() == 0
+        assert start.astimezone(zone).hour == end.astimezone(zone).hour == 9
+
+
+def test_weekly_cache_rejects_v1_and_does_not_mask_policy_changes():
+    import asyncio
+    import pytest
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    cache = PerformanceSnapshotCache()
+    async def builder():
+        return {"team": {}}
+
+    now = datetime(2026, 10, 26, 13, tzinfo=timezone.utc)
+    with pytest.raises(ValueError, match="weekly_score_schedule_requires_v2"):
+        asyncio.run(cache.get_historical(
+            now=now, policy_version="crm_sla_reassignment_v1",
+            weekly_schedule=True, builder=builder,
+        ))
+    first = asyncio.run(cache.get_historical(
+        now=now, policy_version="crm_sla_reassignment_v2",
+        weekly_schedule=True, builder=builder,
+    ))
+    assert first["expires_at"] != (now + timedelta(seconds=300)).isoformat()
+    v1 = asyncio.run(cache.get_historical(
+        now=now, policy_version="crm_sla_reassignment_v1", builder=builder,
+    ))
+    assert v1["expires_at"] == (now + timedelta(seconds=300)).isoformat()
+    assert v1["policy_version"] == "crm_sla_reassignment_v1"
+
+
 def test_default_snapshot_distinguishes_verified_zero_from_incomplete_capacity(monkeypatch):
     import asyncio
     import chatbot.crm_sla_reassignment_worker as worker

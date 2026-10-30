@@ -1481,9 +1481,28 @@ async def lifespan(app: FastAPI):
         ready_ms,
     )
     
+    # Explicit one-shot test bootstrap. Disabled by default. The script
+    # inserts a deterministic Mongo _id BEFORE contacting WhatsApp, so any
+    # restart/deploy cannot send the same campaign twice. This never invokes
+    # the CRM/lead/SLA pipeline and only addresses the configured test phone.
+    price_drop_send_task = None
+    if str(os.getenv("PRICE_DROP_PILOT_SEND_ON_START", "")).lower() in {"1", "true", "yes"}:
+        async def _run_price_drop_one_shot():
+            try:
+                from scripts.price_drop_pilot_test import run_test_once
+                exit_code = await asyncio.get_running_loop().run_in_executor(
+                    _WEB_THREAD_POOL, lambda: run_test_once(send=True),
+                )
+                logger.info("[PRICE_DROP_PILOT_SEND_ON_START] exit_code=%s", exit_code)
+            except Exception:
+                logger.exception("[PRICE_DROP_PILOT_SEND_ON_START] failed; never retry automatically")
+        price_drop_send_task = asyncio.create_task(_run_price_drop_one_shot())
+
     yield
     
     # Shutdown logic
+    if price_drop_send_task is not None:
+        price_drop_send_task.cancel()
     logger.info("Bot PRO Apagando (Lifespan Shutdown)...")
     n_task.cancel()
     if s_task is not None:
@@ -4227,6 +4246,29 @@ async def webhook(
         logger.warning("[WHATSAPP] inbound rejected: invalid or synthetic contact phone")
         return JSONResponse({"status": "invalid phone"}, status_code=200)
     phone = normalized_contact_phone
+
+    # Isolated price-drop test: intercept this exact phone BEFORE log_event,
+    # commercial intake, the chatbot response queue and all CRM/SLA mutations.
+    # When enabled, even an inactive/expired test stays fail-closed instead of
+    # falling through to production. Every other phone is unchanged.
+    from chatbot.price_drop_pilot_isolation import is_test_phone, process_test_inbound
+    if is_test_phone(phone):
+        if from_me:
+            return JSONResponse({"ok": True, "status": "test_outbound_ignored"}, status_code=200)
+        if not provider_message_id:
+            return JSONResponse({"ok": True, "status": "test_missing_provider_id"}, status_code=200)
+        from chatbot.storage import get_db as _test_db
+        try:
+            test_result = await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: process_test_inbound(
+                    _test_db(), phone, str(provider_message_id), text,
+                ),
+            )
+        except Exception:
+            logger.exception("[PRICE_DROP_TEST] isolated inbound failed; never fall through to CRM")
+            raise HTTPException(status_code=503, detail="Isolated test processing unavailable")
+        return JSONResponse({"ok": True, **test_result}, status_code=200)
 
     logger.info(f"[WHATSAPP] {'[HUMANO]' if from_me else '[CLIENTE]'} Mensaje en {phone}: {text}")
     try:

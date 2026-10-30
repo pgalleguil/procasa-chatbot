@@ -66,7 +66,10 @@ def _other_property_referenced(message: str, campaign_code: str) -> bool:
     if re.search(r"https?://|www\.", message or "", re.I):
         return True
     m = re.search(r"\b(?:c[oó]digo|cod\.?|propiedad\s+(?:n[uú]mero|nro\.?))\s*[:#]?\s*(\d{4,6})\b", message or "", re.I)
-    return bool(m and m.group(1) != campaign_code)
+    if m:
+        return m.group(1) != campaign_code
+    bare = re.fullmatch(r"\s*(\d{4,6})\s*", message or "")
+    return bool(bare and bare.group(1) != campaign_code)
 
 
 def load_active_context(db: Any, phone: str, message: str, *, now: datetime | None = None) -> dict | None:
@@ -96,6 +99,16 @@ def load_active_context(db: Any, phone: str, message: str, *, now: datetime | No
         sort=[("sent_at", -1)],
     )
     if not record or _other_property_referenced(message, str(record.get("property_code") or "")):
+        return None
+    # Secondary guard: never trust the DB query alone for time and recipient.
+    sent_at, expires_at = record.get("sent_at"), record.get("expires_at")
+    if not isinstance(sent_at, datetime) or not isinstance(expires_at, datetime):
+        return None
+    if sent_at.tzinfo is None or expires_at.tzinfo is None:
+        return None
+    if not (sent_at <= now < expires_at):
+        return None
+    if normalize_phone_strict(record.get("phone_normalized") or "") != normalize_phone_strict(phone):
         return None
     from .property_lookup import PROPERTY_COLLECTION_NAME
     property_doc = db[PROPERTY_COLLECTION_NAME].find_one(

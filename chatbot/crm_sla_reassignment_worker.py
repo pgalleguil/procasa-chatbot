@@ -1372,10 +1372,12 @@ async def _default_performance_snapshot(
             policy_version=policy_version,
             instrumentation=read_instrumentation,
         ),
-        # V2 reviews the historical score on Chile-local Mondays at 09:00;
-        # live capacity (below) continues refreshing every 60 seconds.
-        weekly_schedule=policy_version == DYNAMIC_POLICY_VERSION,
     )
+    if policy_version == DYNAMIC_POLICY_VERSION:
+        # Freeze only SLA/management/speed evidence for the commercial week.
+        # Fresh user, property and territory context still refreshes every
+        # five minutes; live capacity remains on its 60-second cache.
+        historical = cache.apply_weekly_v2_scores(historical, now=as_of)
     live = await cache.get_live_capacity(
         now=as_of,
         policy_version=policy_version,

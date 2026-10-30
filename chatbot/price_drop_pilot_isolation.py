@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 TURN_COLLECTION = "crm_price_drop_pilot_test_turns_v1"
 STOP = re.compile(r"\b(?:stop|no me escriban|dejen de escribir|no quiero (?:más |mas )?mensajes|darme de baja|eliminar mi n[uú]mero)\b", re.I)
 DECLINE = re.compile(r"^\s*(?:no|no gracias|no me interesa|ya no me interesa|no estoy interesado|por ahora no)\b", re.I)
-VISIT = re.compile(r"\b(?:visitar|visita|agendar|coordinar|quiero verla|ir a ver|conocerla|ver el departamento)\b", re.I)
+VISIT = re.compile(r"\b(?:visitar(?:la|lo)?|visitas?|agendar|coordinar|quiero verla|ir a ver|conocerla|ver el departamento)\b", re.I)
 PRICE = re.compile(r"\b(?:precio|cu[aá]nto (?:cuesta|vale|sale)|a cu[aá]nto|rebaja|baj[oó]|uf)\b", re.I)
-NEGOTIATION = re.compile(r"\b(?:oferta|negociar|rebajar|aceptan menos|descuento|contraoferta)\b", re.I)
+NEGOTIATION = re.compile(r"\b(?:ofertas?|negociar|rebajar|aceptan menos|descuento|contraofertas?)\b", re.I)
 YES = re.compile(r"^\s*(?:s[ií]|s[ií],?\s*me interesa|claro|ok|dale|por supuesto|me interesa|perfecto)\s*[.!]?\s*$", re.I)
 ALTERNATIVE = re.compile(r"\b(?:otra|otras|alternativas|opciones|ñuñoa|nunoa)\b", re.I)
 BAD_CLAIM = re.compile(
@@ -57,6 +57,10 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
     }, sort=[("sent_at", -1)])
     if not campaign or not campaign.get("provider_message_id"):
         return None
+    if campaign.get("status") != "SENT" or campaign.get("test_mode") is not True:
+        return None
+    if campaign.get("lead_id") is not None:
+        return None
     if normalize_phone_strict(campaign.get("phone_normalized") or "") != canon:
         return None
     sent_at, expires_at = campaign.get("sent_at"), campaign.get("expires_at")
@@ -83,7 +87,8 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
-    if (not property_doc.get("disponible_prop360") or
+    if (str(property_doc.get("codigo") or "") != str(campaign.get("property_code") or "") or
+        not property_doc.get("disponible_prop360") or
         (property_doc.get("estado") or {}).get("oficina") != "PROCASA SUCRE" or
         tipo.get("venta") is not True or price is None or abs(price - new) > 0.01):
         return None

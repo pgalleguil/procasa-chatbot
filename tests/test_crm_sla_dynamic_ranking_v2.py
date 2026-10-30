@@ -1,0 +1,852 @@
+from datetime import datetime, timedelta, timezone
+
+from chatbot.crm_sla_dynamic_ranking_v2 import (
+    BASE_WEIGHTS,
+    NO_CANDIDATE_CATEGORY,
+    filter_candidates,
+    select_v2_winner,
+    shrink_rate,
+)
+from chatbot.crm_sla_performance_snapshot import _dynamic_temperature_metrics
+
+
+def _team():
+    return {
+        "sla_compliance_rate": 0.75,
+        "attention_rate": 0.8,
+        "team_p50_average": 40,
+        "team_p90_average": 120,
+        "temperature_mix": {"HOT": 20, "NORMAL": 80},
+        "by_temperature": {
+            "HOT": {"sample_size": 20, "sla_compliance_rate": 0.6, "attention_rate": 0.7, "p50": 20, "p90": 60},
+            "NORMAL": {"sample_size": 80, "sla_compliance_rate": 0.8, "attention_rate": 0.85, "p50": 40, "p90": 120},
+        },
+    }
+
+
+def _candidate(user_id, *, p50, p90, sla=0.9, attention=0.9, sample=40, load=0, region="yes"):
+    return {
+        "user_id": user_id,
+        "active": True,
+        "role": "agente",
+        "same_region": region,
+        "sample_size": sample,
+        "by_temperature": {
+            "HOT": {"sample_size": sample // 2, "sla_compliance_rate": sla, "attention_rate": attention, "p50": p50, "p90": p90},
+            "NORMAL": {"sample_size": sample // 2, "sla_compliance_rate": sla, "attention_rate": attention, "p50": p50, "p90": p90},
+        },
+        "simulated_open_current": load,
+        "simulated_unmanaged_current": load,
+        "simulated_expired_current": 0,
+        "open_current_policy": load,
+        "unmanaged_current_policy": load,
+        "expired_current_policy": 0,
+        "hot_unmanaged_backlog": 0,
+        "recent_rescues_7d": 0,
+    }
+
+
+def test_v2_weights_are_normalized_and_exclude_unverified_commercial_metric():
+    assert BASE_WEIGHTS == {"sla": 6 / 18, "management": 5 / 18, "speed": 4 / 18, "capacity": 3 / 18}
+    assert sum(BASE_WEIGHTS.values()) == 1
+    assert "commercial" not in BASE_WEIGHTS
+
+
+def test_shrinkage_uses_personal_sample_and_team_prior():
+    assert shrink_rate(0.0, 0, 0.8, 20) == 0.8
+    assert shrink_rate(1.0, 20, 0.5, 20) == 0.75
+
+
+def test_jpc_filter_requires_certified_region_and_excludes_owner_history_and_admin():
+    lead = {"owner_user_id": "owner", "previous_owner_user_ids": ["previous"]}
+    rows = [
+        _candidate("eligible", p50=10, p90=30),
+        _candidate("wrong-region", p50=10, p90=30, region="no"),
+        _candidate("owner", p50=10, p90=30),
+        _candidate("previous", p50=10, p90=30),
+        _candidate("admin", p50=10, p90=30),
+    ]
+    eligible, excluded = filter_candidates(
+        lead, rows, branch="REGION_JPC_MARIA_HERNAN",
+        selection_context_verified=True, admin_user_ids={"admin"},
+    )
+    assert [row["user_id"] for row in eligible] == ["eligible"]
+    reasons = {row["user_id"]: row["excluded_reason"] for row in excluded}
+    assert "territory_not_certified" in reasons["wrong-region"]
+    assert "current_owner_excluded" in reasons["owner"]
+    assert "previous_owner_excluded" in reasons["previous"]
+    assert "administrator_excluded" in reasons["admin"]
+
+
+def test_v2_ranks_with_auditable_scores_and_fails_closed_without_context():
+    candidates = [
+        _candidate("fast", p50=10, p90=25, sla=0.95, attention=0.95),
+        _candidate("slow", p50=70, p90=180, sla=0.55, attention=0.6, load=4),
+    ]
+    result = select_v2_winner(
+        {"owner_user_id": "source", "previous_owner_user_ids": []}, candidates,
+        team=_team(), branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+    assert result["winner"]["user_id"] == "fast"
+    assert result["policy_version"] == "crm_sla_reassignment_v2"
+    assert result["selection_rule"] == "dynamic_performance_v2"
+    assert set(result["winner"]["weights_applied"]) == {"sla", "management", "speed", "capacity"}
+    assert abs(sum(result["winner"]["weights_applied"].values()) - 1) < 1e-9
+
+    blocked = select_v2_winner(
+        {"owner_user_id": "source"}, candidates, team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=False,
+        admin_user_ids=set(),
+    )
+    assert blocked["winner"] is None
+    assert blocked["selection_reason"] != NO_CANDIDATE_CATEGORY
+
+
+def test_capacity_snapshot_incomplete_candidates_are_not_selected():
+    candidate = _candidate("missing-capacity", p50=10, p90=20)
+    candidate.pop("simulated_open_current")
+    candidate.pop("open_current_policy")
+    result = select_v2_winner(
+        {"owner_user_id": "source"}, [candidate], team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+    assert result["winner"] is None
+    assert result["selection_reason"] == "DYNAMIC_V2_CAPACITY_LIMIT"
+    assert [row["capacity_exclusion_reason"] for row in result["hard_excluded"]] == ["capacity_snapshot_incomplete"]
+
+
+def test_verified_overload_at_all_legacy_thresholds_remains_eligible():
+    overloaded_best = _candidate("best", p50=10, p90=20, load=10)
+    overloaded_other = _candidate("other", p50=70, p90=180, load=10)
+    for candidate in (overloaded_best, overloaded_other):
+        candidate.update({
+            "simulated_expired_current": 5,
+            "simulated_unmanaged_current": 10,
+            "simulated_open_current": 15,
+            "expired_current_policy": 5,
+            "unmanaged_current_policy": 10,
+            "open_current_policy": 15,
+            "hot_unmanaged_backlog": 8,
+            "recent_rescues_7d": 0,
+        })
+
+    result = select_v2_winner(
+        {"owner_user_id": "source"}, [overloaded_best, overloaded_other], team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+
+    assert result["winner"]["user_id"] == "best"
+    assert {row["user_id"] for row in result["selection_pool"]} == {"best", "other"}
+    assert all(row["capacity_exclusion_reason"] is None for row in result["scored"])
+    assert all(row["capacity_score"] == 100 for row in result["scored"])
+    assert result["selection_reason"] == "DYNAMIC_V2_SCORE_MAXIMIZED"
+
+
+def test_verified_heavier_candidate_loses_priority_but_is_not_excluded():
+    lighter = _candidate("lighter", p50=20, p90=40, load=1)
+    heavier = _candidate("heavier", p50=20, p90=40, load=20)
+
+    result = select_v2_winner(
+        {"owner_user_id": "source"}, [heavier, lighter], team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+
+    assert result["winner"]["user_id"] == "lighter"
+    assert {row["user_id"] for row in result["selection_pool"]} == {"lighter", "heavier"}
+    scored = {row["user_id"]: row for row in result["scored"]}
+    assert scored["heavier"]["load_pressure"] > scored["lighter"]["load_pressure"]
+    assert scored["heavier"]["capacity_score"] < scored["lighter"]["capacity_score"]
+    assert scored["heavier"]["capacity_exclusion_reason"] is None
+    assert not any(row.get("user_id") == "heavier" for row in result["hard_excluded"])
+
+
+def test_temperature_snapshot_preserves_hot_and_normal_sample_sizes():
+    as_of = datetime(2026, 10, 22, tzinfo=timezone.utc)
+    assigned = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    records = [
+        {"is_post_cutover": True, "canonical": True, "excluded_origin": False, "assigned_at": assigned, "sla_started_at": assigned, "a_stop_at": assigned + timedelta(minutes=10), "hot_started_at": assigned, "deadline": assigned + timedelta(minutes=60), "owner_id": "a", "temperature": "HOT", "threshold": 60},
+        {"is_post_cutover": True, "canonical": True, "excluded_origin": False, "assigned_at": assigned, "sla_started_at": assigned, "a_stop_at": assigned + timedelta(minutes=10), "deadline": assigned + timedelta(minutes=180), "owner_id": "a", "temperature": "NORMAL", "threshold": 180},
+        {"is_post_cutover": True, "canonical": False, "excluded_origin": False, "assigned_at": assigned, "owner_id": "a", "temperature": "HOT", "threshold": 60},
+    ]
+    owners, team = _dynamic_temperature_metrics(
+        records, [{"_id": "a"}], as_of=as_of, performance_window_days=60,
+    )
+    assert owners["a"]["HOT"]["sample_size"] == 1
+    assert owners["a"]["NORMAL"]["sample_size"] == 1
+    assert team["HOT"]["sample_size"] == 1
+    assert team["NORMAL"]["sample_size"] == 1
+
+
+
+def test_worker_defaults_to_v1_and_uses_dynamic_selector_only_for_configured_v2(monkeypatch):
+    from config import Config
+    from chatbot.crm_sla_global_rescue import RescueParameters
+    from chatbot.crm_sla_reassignment_worker import _configured_policy_version, _policy_selection
+
+    assert _configured_policy_version() == "crm_sla_reassignment_v1"
+    monkeypatch.setattr(Config, "CRM_SLA_REASSIGNMENT_POLICY_VERSION", "crm_sla_reassignment_v2", raising=False)
+    assert _configured_policy_version() == "crm_sla_reassignment_v2"
+
+    candidates = [
+        _candidate("fast", p50=10, p90=25),
+        _candidate("slow", p50=70, p90=180, sla=0.55, attention=0.6, load=4),
+    ]
+    result = _policy_selection(
+        {"owner_user_id": "source", "previous_owner_user_ids": [], "rm_candidates": candidates},
+        {}, branch="RM_GLOBAL_RESCUE", state={}, rm_history=[], jpc_counts={}, jpc_total=0,
+        jpc_targets={}, team=_team(), dynamic_team=_team(), params=RescueParameters(),
+        policy_version="crm_sla_reassignment_v2", selection_context_verified=True,
+    )
+    assert result["winner"]["user_id"] == "fast"
+    assert result["selection_rule"] == "dynamic_performance_v2"
+
+
+def test_executor_requires_decision_version_to_match_explicit_configuration(monkeypatch):
+    from config import Config
+    from chatbot.crm_sla_reassignment_executor import _KnownAbort, _prevalidate_decision
+
+    try:
+        _prevalidate_decision({"policy_version": "crm_sla_reassignment_v2"})
+    except _KnownAbort as exc:
+        assert exc.code.value == "ABORT_POLICY_VERSION_CHANGED"
+    else:
+        raise AssertionError("V2 decision must be rejected while V1 is configured")
+
+    monkeypatch.setattr(Config, "CRM_SLA_REASSIGNMENT_POLICY_VERSION", "crm_sla_reassignment_v2", raising=False)
+    try:
+        _prevalidate_decision({"policy_version": "crm_sla_reassignment_v1"})
+    except _KnownAbort as exc:
+        assert exc.code.value == "ABORT_POLICY_VERSION_CHANGED"
+    else:
+        raise AssertionError("V1 decision must be rejected while V2 is configured")
+
+
+
+def test_shrinkage_fairness_example_5_of_5_vs_85_of_100():
+    team_rate = 0.75
+    assert shrink_rate(1.0, 5, team_rate, 20) == 0.80
+    assert abs(shrink_rate(0.85, 100, team_rate, 20) - (100 * 0.85 + 20 * 0.75) / 120) < 1e-12
+    assert shrink_rate(0.85, 100, team_rate, 20) > shrink_rate(1.0, 5, team_rate, 20)
+
+
+def test_temperature_denominators_exclude_unevaluable_episodes_and_future_management():
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    assigned = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
+    records = [
+        {
+            "is_post_cutover": True, "canonical": True, "excluded_origin": False,
+            "assigned_at": assigned, "owner_id": "a", "temperature": "HOT",
+            "sla_started_at": assigned, "a_stop_at": datetime(2026, 10, 21, 12, tzinfo=timezone.utc),
+            "hot_started_at": assigned,
+            "deadline": datetime(2026, 10, 21, 13, tzinfo=timezone.utc), "threshold": 100000,
+        },
+        {
+            "is_post_cutover": True, "canonical": True, "excluded_origin": False,
+            "assigned_at": assigned, "owner_id": "a", "temperature": "NORMAL",
+            "sla_started_at": assigned, "deadline": datetime(2026, 10, 21, 12, tzinfo=timezone.utc),
+            "threshold": 60,
+        },
+        {
+            "is_post_cutover": True, "canonical": True, "excluded_origin": False,
+            "assigned_at": assigned, "owner_id": "a", "temperature": "HOT",
+            "sla_started_at": assigned, "deadline": datetime(2026, 10, 23, 12, tzinfo=timezone.utc),
+            "threshold": 60,
+        },
+        {
+            "is_post_cutover": True, "canonical": True, "excluded_origin": False,
+            "assigned_at": assigned, "owner_id": "a", "temperature": "NORMAL",
+            "sla_started_at": assigned, "a_stop_at": datetime(2026, 10, 23, 12, tzinfo=timezone.utc),
+            "deadline": datetime(2026, 10, 23, 12, tzinfo=timezone.utc), "threshold": 60,
+        },
+    ]
+    owners, team = _dynamic_temperature_metrics(
+        records, [{"_id": "a"}], as_of=as_of, performance_window_days=60,
+    )
+    assert owners["a"]["HOT"]["eligible_count"] == 2
+    assert owners["a"]["HOT"]["sample_size"] == 1
+    assert owners["a"]["HOT"]["excluded_non_evaluable_count"] == 1
+    assert owners["a"]["HOT"]["sla_compliant_count"] == 1
+    assert owners["a"]["NORMAL"]["eligible_count"] == 2
+    assert owners["a"]["NORMAL"]["sample_size"] == 1
+    assert owners["a"]["NORMAL"]["excluded_non_evaluable_count"] == 1
+    assert owners["a"]["NORMAL"]["missed_deadline_count"] == 1
+    assert team["HOT"]["sample_size"] == 1
+    assert team["NORMAL"]["sample_size"] == 1
+
+
+def test_dynamic_temperature_calculation_is_skipped_for_v1(monkeypatch):
+    import chatbot.crm_sla_performance_snapshot as snapshot_module
+
+    called = []
+    monkeypatch.setattr(snapshot_module, "_dynamic_temperature_metrics", lambda *args, **kwargs: called.append(True))
+    assert snapshot_module._dynamic_metrics_for_policy(
+        [], [], as_of=datetime(2026, 10, 22, tzinfo=timezone.utc),
+        performance_window_days=60, policy_version="crm_sla_reassignment_v1",
+    ) is None
+    assert called == []
+    result = snapshot_module._dynamic_metrics_for_policy(
+        [], [], as_of=datetime(2026, 10, 22, tzinfo=timezone.utc),
+        performance_window_days=60, policy_version="crm_sla_reassignment_v2",
+    )
+    assert called == [True]
+    assert result is None
+
+
+def test_committed_event_loader_bounds_all_legacy_timestamp_aliases(monkeypatch):
+    import asyncio
+    import chatbot.crm_sla_reassignment_worker as worker
+
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    since = as_of - timedelta(days=7)
+    captured = {}
+
+    async def fake_find_many(collection, query, projection, **kwargs):
+        captured.update(query=query, projection=projection, kwargs=kwargs)
+        return []
+
+    monkeypatch.setattr(worker, "_find_many", fake_find_many)
+
+    class DummyDB:
+        def __getitem__(self, name):
+            return name
+
+    asyncio.run(worker._load_committed_events(
+        DummyDB(), policy_versions=("crm_sla_reassignment_v1", "crm_sla_reassignment_v2"),
+        since=since, until=as_of,
+    ))
+    query = captured["query"]
+    assert query["event_type"] == worker.COMMITTED_EVENT
+    assert query["policy_version"] == {"$in": ["crm_sla_reassignment_v1", "crm_sla_reassignment_v2"]}
+    assert len(query["$or"]) == 5
+    for clause in query["$or"]:
+        timestamp_field, bounds = next(iter(clause.items()))
+        assert timestamp_field in {"reassigned_at", "commit_time", "created_at", "timestamp", "at"}
+        assert bounds == {"$gte": since, "$lte": as_of}
+        assert timestamp_field in captured["projection"]
+
+
+def test_recent_rescue_counts_support_legacy_timestamp_names_and_apply_priority():
+    from chatbot.crm_sla_reassignment_worker import _recent_rescue_counts
+
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    since = as_of - timedelta(days=7)
+    rows = [
+        {"target_owner_user_id": "reassigned", "reassigned_at": as_of - timedelta(days=1)},
+        {"target_owner_user_id": "commit", "commit_time": as_of - timedelta(days=2)},
+        {"target_owner_user_id": "created", "created_at": as_of - timedelta(days=3)},
+        {"target_owner_user_id": "timestamp", "timestamp": as_of - timedelta(days=4)},
+        {"target_owner_user_id": "at", "at": as_of - timedelta(days=5)},
+        {"target_owner_user_id": "old", "created_at": since - timedelta(seconds=1)},
+        {"target_owner_user_id": "future", "at": as_of + timedelta(seconds=1)},
+        {
+            "target_owner_user_id": "priority",
+            "reassigned_at": since - timedelta(seconds=1),
+            "commit_time": as_of - timedelta(days=1),
+        },
+    ]
+    assert _recent_rescue_counts(rows, as_of=as_of) == {
+        "reassigned": 1, "commit": 1, "created": 1, "timestamp": 1, "at": 1,
+    }
+
+
+def test_missing_capacity_stays_unknown_and_batch_projection_updates_load():
+    from chatbot.crm_sla_reassignment_worker import _initial_candidate_state, _update_v2_state
+
+    state = _initial_candidate_state([{
+        "user_id": "unknown",
+        "open_current_policy": None,
+        "unmanaged_current_policy": None,
+        "expired_current_policy": None,
+    }])
+    assert state["unknown"]["simulated_open_current"] is None
+    assert state["unknown"]["simulated_unmanaged_current"] is None
+    assert state["unknown"]["simulated_expired_current"] is None
+
+    candidates = [
+        _candidate("target", p50=10, p90=20, load=1),
+        _candidate("alternative", p50=10, p90=20, load=2),
+    ]
+    projected = _initial_candidate_state([
+        {"user_id": "target", "open_current_policy": 1, "unmanaged_current_policy": 1,
+         "expired_current_policy": 0, "hot_unmanaged_backlog": 0, "recent_rescues_7d": 0},
+        {"user_id": "alternative", "open_current_policy": 2, "unmanaged_current_policy": 2,
+         "expired_current_policy": 0, "hot_unmanaged_backlog": 0, "recent_rescues_7d": 0},
+    ])
+    first = select_v2_winner(
+        {"owner_user_id": "source"}, candidates, team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+    assert first["winner"]["user_id"] == "target"
+    _update_v2_state(projected, first["winner"], source_user_id="source", temperature="HOT")
+    assert projected["target"]["simulated_open_current"] == 2
+    assert projected["target"]["simulated_unmanaged_current"] == 2
+    assert projected["target"]["hot_unmanaged_backlog"] == 1
+    assert projected["target"]["recent_rescues_7d"] == 1
+
+    next_candidates = [dict(candidate) for candidate in candidates]
+    next_target = next(row for row in next_candidates if row["user_id"] == "target")
+    next_target.update(projected["target"])
+    second = select_v2_winner(
+        {"owner_user_id": "another-source"}, next_candidates, team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+    assert second["winner"]["user_id"] == "alternative"
+    assert {row["user_id"] for row in second["selection_pool"]} == {"target", "alternative"}
+    scored = {row["user_id"]: row for row in second["scored"]}
+    assert scored["target"]["load_pressure"] > scored["alternative"]["load_pressure"]
+    assert scored["target"]["capacity_score"] < scored["alternative"]["capacity_score"]
+
+
+
+def test_performance_snapshot_cache_revalidates_policy_and_preserves_ttls():
+    import asyncio
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    cache = PerformanceSnapshotCache()
+    start = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    historical_calls = []
+    live_calls = []
+
+    async def fetch_historical(version):
+        historical_calls.append(version)
+        return {"policy_version": version, "team": {"version": version}}
+
+    async def fetch_live(version):
+        live_calls.append(version)
+        return {"policy_version": "crm_sla_reassignment_v1", "capacity_metrics": {}}
+
+    for offset, version in enumerate((
+        "crm_sla_reassignment_v1",
+        "crm_sla_reassignment_v2",
+        "crm_sla_reassignment_v1",
+    )):
+        now = start + timedelta(seconds=offset)
+        historical = asyncio.run(cache.get_historical(
+            now=now, policy_version=version,
+            builder=lambda version=version: fetch_historical(version),
+        ))
+        live = asyncio.run(cache.get_live_capacity(
+            now=now, policy_version=version,
+            builder=lambda version=version: fetch_live(version),
+        ))
+        assert historical["policy_version"] == version
+        assert live["policy_version"] == version
+        assert datetime.fromisoformat(historical["expires_at"]) == now + timedelta(seconds=300)
+        assert datetime.fromisoformat(live["expires_at"]) == now + timedelta(seconds=60)
+
+    asyncio.run(cache.get_historical(
+        now=start + timedelta(seconds=4), policy_version="crm_sla_reassignment_v1",
+        builder=lambda: fetch_historical("unexpected"),
+    ))
+    asyncio.run(cache.get_live_capacity(
+        now=start + timedelta(seconds=4), policy_version="crm_sla_reassignment_v1",
+        builder=lambda: fetch_live("unexpected"),
+    ))
+    assert historical_calls == [
+        "crm_sla_reassignment_v1",
+        "crm_sla_reassignment_v2",
+        "crm_sla_reassignment_v1",
+    ]
+    assert live_calls == [
+        "crm_sla_reassignment_v1",
+        "crm_sla_reassignment_v2",
+        "crm_sla_reassignment_v1",
+    ]
+    assert cache.stats()["historical_ttl_seconds"] == 300
+    assert cache.stats()["live_capacity_ttl_seconds"] == 60
+
+
+
+
+def test_v2_scores_update_weekly_while_context_and_capacity_remain_fresh():
+    import asyncio
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache, weekly_ranking_window
+
+    cache = PerformanceSnapshotCache()
+    calls = {"historical": 0, "live": 0}
+
+    async def hist():
+        calls["historical"] += 1
+        n = calls["historical"]
+        return {
+            "policy_version": "crm_sla_reassignment_v2",
+            "team": {"sample": n, "by_temperature": {"HOT": {"sample_size": n}}},
+            "candidates": [{"user_id": "susana", "active": True, "role": "agente",
+                            "sample_size": n, "by_temperature": {"HOT": {"sample_size": n}}}],
+            "properties": {"5704": {"version": n}},
+        }
+
+    async def live():
+        calls["live"] += 1
+        return {"policy_version": "crm_sla_reassignment_v2",
+                "capacity_metrics": {"check": calls["live"]}}
+
+    async def sample(iso):
+        now = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        historical = await cache.get_historical(
+            now=now, policy_version="crm_sla_reassignment_v2", builder=hist,
+            force=cache.weekly_v2_refresh_due(now),
+        )
+        frozen = cache.apply_weekly_v2_scores(historical, now=now)
+        capacity = await cache.get_live_capacity(
+            now=now, policy_version="crm_sla_reassignment_v2", builder=live,
+        )
+        return frozen, capacity
+
+    before, _ = asyncio.run(sample("2026-10-26T11:59:00Z"))  # 08:59 Chile
+    after, _ = asyncio.run(sample("2026-10-26T12:00:00Z"))   # 09:00 Chile
+    next_day, next_live = asyncio.run(sample("2026-10-27T12:00:00Z"))
+    next_week, _ = asyncio.run(sample("2026-11-02T12:00:00Z"))
+    assert calls == {"historical": 4, "live": 4}
+    assert before["team"]["sample"] == 1
+    assert after["team"]["sample"] == next_day["team"]["sample"] == 2
+    assert next_week["team"]["sample"] == 4
+    assert next_day["candidates"][0]["sample_size"] == 2
+    # Territory/property metadata is NOT frozen with the weekly performance.
+    assert next_day["properties"]["5704"]["version"] == 3
+    assert next_live["capacity_metrics"]["check"] == 3
+    assert after["weekly_score_period_start"] == "2026-10-26T12:00:00+00:00"
+
+    from zoneinfo import ZoneInfo
+    zone = ZoneInfo("America/Santiago")
+    for date in ("2026-04-05T12:00:00Z", "2026-09-06T12:00:00Z"):
+        start, end = weekly_ranking_window(datetime.fromisoformat(date.replace("Z", "+00:00")))
+        assert start.astimezone(zone).weekday() == end.astimezone(zone).weekday() == 0
+        assert start.astimezone(zone).hour == end.astimezone(zone).hour == 9
+
+
+def test_weekly_v2_score_baseline_is_isolated_from_v1_and_new_agent_not_promoted():
+    import asyncio
+    import pytest
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    cache = PerformanceSnapshotCache()
+    now = datetime(2026, 10, 26, 13, tzinfo=timezone.utc)
+    with pytest.raises(ValueError, match="weekly_score_baseline_requires_v2"):
+        cache.apply_weekly_v2_scores({"policy_version": "crm_sla_reassignment_v1"}, now=now)
+    base = {
+        "policy_version": "crm_sla_reassignment_v2",
+        "team": {"sla_compliance_rate": 0.6},
+        "candidates": [{"user_id": "susana", "active": True, "role": "agente",
+                        "sample_size": 30, "by_temperature": {}}],
+    }
+    first = cache.apply_weekly_v2_scores(base, now=now)
+    updated = {**base, "team": {"sla_compliance_rate": 0.9},
+               "candidates": [
+                   {"user_id": "susana", "active": False, "role": "agente",
+                    "sample_size": 45, "by_temperature": {}},
+                   {"user_id": "new-agent", "active": True, "role": "agente",
+                    "sample_size": 1, "by_temperature": {}},
+               ]}
+    later = cache.apply_weekly_v2_scores(updated, now=now + timedelta(hours=3))
+    assert first["team"]["sla_compliance_rate"] == later["team"]["sla_compliance_rate"] == 0.6
+    assert later["candidates"][0]["sample_size"] == 30
+    assert later["candidates"][0]["active"] is False
+    assert later["candidates"][1]["weekly_score_unavailable"] is True
+    assert later["candidates"][1]["data_issue"] is True
+
+    async def builder():
+        return {"policy_version": "crm_sla_reassignment_v1", "team": {"version": "v1"}}
+    v1 = asyncio.run(cache.get_historical(
+        now=now, policy_version="crm_sla_reassignment_v1", builder=builder,
+    ))
+    assert v1["expires_at"] == (now + timedelta(seconds=300)).isoformat()
+    assert v1["team"]["version"] == "v1"
+
+
+
+def test_durable_weekly_v2_scores_survive_worker_restarts_without_touching_leads():
+    import asyncio
+    import mongomock
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    db = mongomock.MongoClient().url
+    monday = datetime(2026, 10, 26, 13, tzinfo=timezone.utc)
+    initial = {
+        "policy_version": "crm_sla_reassignment_v2",
+        "team": {"sla_compliance_rate": 0.6},
+        "candidates": [{
+            "user_id": "susana", "active": True, "role": "agente",
+            "sample_size": 33, "by_temperature": {"NORMAL": {"sample_size": 33}},
+        }],
+        "properties": {"5704": {"version": 1}},
+    }
+    first = asyncio.run(PerformanceSnapshotCache().load_or_publish_weekly_v2_scores(
+        db, initial, now=monday,
+    ))
+    later = {
+        **initial,
+        "team": {"sla_compliance_rate": 0.9},
+        "candidates": [{**initial["candidates"][0], "sample_size": 77}],
+        "properties": {"5704": {"version": 2}},
+    }
+    # Brand-new worker instance: must reuse the recorded weekly baseline.
+    after_restart = asyncio.run(PerformanceSnapshotCache().load_or_publish_weekly_v2_scores(
+        db, later, now=monday + timedelta(days=1),
+    ))
+    assert first["team"]["sla_compliance_rate"] == after_restart["team"]["sla_compliance_rate"] == 0.6
+    assert after_restart["candidates"][0]["sample_size"] == 33
+    assert after_restart["properties"]["5704"]["version"] == 2
+    assert db["crm_sla_weekly_scores_v2"].count_documents({}) == 1
+    assert db["leads"].count_documents({}) == 0
+    assert db["crm_assignment_cycles"].count_documents({}) == 0
+
+    next_week = asyncio.run(PerformanceSnapshotCache().load_or_publish_weekly_v2_scores(
+        db, later, now=datetime(2026, 11, 2, 13, tzinfo=timezone.utc),
+    ))
+    assert next_week["team"]["sla_compliance_rate"] == 0.9
+    assert db["crm_sla_weekly_scores_v2"].count_documents({}) == 2
+
+
+def test_weekly_v2_fails_closed_on_corrupted_persisted_baseline():
+    import asyncio
+    import mongomock
+    import pytest
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache, weekly_ranking_window
+
+    now = datetime(2026, 10, 26, 13, tzinfo=timezone.utc)
+    start, end = weekly_ranking_window(now)
+    db = mongomock.MongoClient().url
+    db["crm_sla_weekly_scores_v2"].insert_one({
+        "_id": "crm_sla_reassignment_v2:" + start.isoformat(),
+        "schema_version": 1,
+        "policy_version": "crm_sla_reassignment_v2",
+        "period_start": start.isoformat(),
+        "period_end": end.isoformat(),
+        "team": {"sla_compliance_rate": 0.75},
+        # Missing metrics: never fall back to freshly calculated scores.
+    })
+    with pytest.raises(RuntimeError, match="weekly_score_persisted_baseline_invalid"):
+        asyncio.run(PerformanceSnapshotCache().load_or_publish_weekly_v2_scores(
+            db,
+            {"policy_version": "crm_sla_reassignment_v2", "team": {},
+             "candidates": [{"user_id": "susana", "sample_size": 20}]},
+            now=now,
+        ))
+
+
+def test_default_snapshot_distinguishes_verified_zero_from_incomplete_capacity(monkeypatch):
+    import asyncio
+    import chatbot.crm_sla_reassignment_worker as worker
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+
+    async def forbidden_watermark_read(*args, **kwargs):
+        raise AssertionError("worker cache hits must not poll source watermarks")
+
+    monkeypatch.setattr(worker, "read_source_watermarks", forbidden_watermark_read)
+
+    async def historical_builder(*args, **kwargs):
+        return {
+            "candidates": [{
+                "user_id": "quiet-agent", "open_current_policy": 91,
+                "unmanaged_current_policy": 91, "expired_current_policy": 91,
+            }],
+            "team": {"sla_compliance_rate": 0.75},
+            "users_by_id": {}, "records_by_cycle": {}, "properties": {}, "catalog": {},
+            "docs_examined": 0,
+        }
+
+    for audit, expected_complete, expected_capacity in (
+        ({"lead_missing_or_filtered": 0, "owner_missing": 0}, True, 0),
+        ({"lead_missing_or_filtered": 1, "owner_missing": 0}, False, None),
+    ):
+        async def live_builder(*args, audit=audit, **kwargs):
+            return {
+                "policy_version": "crm_sla_reassignment_v1",
+                "variant": "A1", "capacity_metrics": {}, "cycle_audit": audit, "docs_examined": 0,
+            }
+
+        monkeypatch.setattr(worker, "build_historical_performance_snapshot", historical_builder)
+        monkeypatch.setattr(worker, "build_live_capacity_variant", live_builder)
+        result = asyncio.run(worker._default_performance_snapshot(
+            as_of, policy_version="crm_sla_reassignment_v2", db=object(),
+            performance_cache=PerformanceSnapshotCache(), shadow_live_capacity=True,
+        ))
+        candidate = result["candidates"][0]
+        assert result["capacity_snapshot_complete"] is expected_complete
+        assert candidate["open_current_policy"] == expected_capacity
+        assert candidate["unmanaged_current_policy"] == expected_capacity
+        assert candidate["expired_current_policy"] == expected_capacity
+        assert candidate["hot_unmanaged_backlog"] == expected_capacity
+        assert result["live_capacity_variant"] == "A1"
+        assert result["source_watermarks"] == {}
+
+        selectable = _candidate("quiet-agent", p50=10, p90=20)
+        selectable.update(candidate)
+        selected = select_v2_winner(
+            {"owner_user_id": "source"}, [selectable], team=_team(),
+            branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+            admin_user_ids=set(),
+        )
+        if expected_complete:
+            assert selected["winner"]["user_id"] == "quiet-agent"
+        else:
+            # The shared fixture has simulated capacity counters. Remove them
+            # so this case exercises a snapshot whose live capacity is unknown.
+            for key in ("simulated_open_current", "simulated_unmanaged_current", "simulated_expired_current"):
+                selectable.pop(key, None)
+            selected = select_v2_winner(
+                {"owner_user_id": "source"}, [selectable], team=_team(),
+                branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+                admin_user_ids=set(),
+            )
+            assert selected["winner"] is None
+            assert selected["selection_reason"] == "DYNAMIC_V2_CAPACITY_LIMIT"
+
+
+def test_attributed_orphan_keeps_other_executives_verified_and_unknown_owner_fails_closed(monkeypatch):
+    import asyncio
+    import chatbot.crm_sla_reassignment_worker as worker
+    from chatbot.crm_sla_live_capacity import _capacity_from_rows
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    as_of = datetime(2026, 10, 22, 12, tzinfo=timezone.utc)
+    assigned = as_of - timedelta(minutes=5)
+
+    def cycle(owner, lead_id, *, lead_found=True):
+        row = {
+            "lead_id": lead_id,
+            "assignment_cycle_id": f"cycle-{lead_id}",
+            "assigned_to_user_id": owner,
+            "assigned_at": assigned,
+            "sla_started_at": assigned,
+            "schema_version": "crm_assignment_cycle_v1",
+            "first_valid_management_at": assigned if lead_found else None,
+            "sla_first_management_status": "completed" if lead_found else None,
+            "management_results": [],
+            "lead_found": lead_found,
+        }
+        if lead_found:
+            row["lead"] = {"pipeline_stage": "OPEN", "lead_temperature_effective": "NORMAL"}
+        return row
+
+    metrics, audit = _capacity_from_rows(
+        [
+            cycle("verified-a", "lead-a"),
+            cycle("verified-b", "lead-b"),
+            cycle("orphan-owner", "missing-lead", lead_found=False),
+        ],
+        [],
+        as_of=as_of,
+        policy_since=as_of - timedelta(days=60),
+    )
+    live = {
+        "policy_version": "crm_sla_reassignment_v1",
+        "variant": "A1",
+        "generated_at": as_of.isoformat(),
+        "snapshot_id": "live-test",
+        "capacity_metrics": metrics,
+        "cycle_audit": audit,
+        "docs_examined": 3,
+    }
+    assert audit["lead_missing_or_filtered"] == 1
+    assert audit["lead_missing_or_filtered_owner_attributed"] == 1
+    assert audit["lead_missing_or_filtered_unattributed"] == 0
+    assert worker._live_capacity_snapshot_is_complete(live) is False
+    assert worker._live_capacity_snapshot_is_usable(live) is True
+    assert metrics["verified-a"]["capacity_complete"] is True
+    assert metrics["verified-b"]["capacity_complete"] is True
+    assert metrics["orphan-owner"]["capacity_complete"] is False
+
+    async def historical_builder(*args, **kwargs):
+        return {
+            "candidates": [
+                {"user_id": "verified-a", "open_current_policy": 91, "unmanaged_current_policy": 91, "expired_current_policy": 91},
+                {"user_id": "verified-b", "open_current_policy": 91, "unmanaged_current_policy": 91, "expired_current_policy": 91},
+                {"user_id": "orphan-owner", "open_current_policy": 91, "unmanaged_current_policy": 91, "expired_current_policy": 91},
+                {"user_id": "zero-load", "open_current_policy": 91, "unmanaged_current_policy": 91, "expired_current_policy": 91},
+            ],
+            "team": _team(),
+            "snapshot_id": "historical-test",
+            "docs_examined": 0,
+            "source_watermarks": {},
+        }
+
+    async def live_builder(*args, **kwargs):
+        return live
+
+    monkeypatch.setattr(worker, "build_historical_performance_snapshot", historical_builder)
+    monkeypatch.setattr(worker, "build_live_capacity_variant", live_builder)
+    snapshot = asyncio.run(worker._default_performance_snapshot(
+        as_of,
+        policy_version="crm_sla_reassignment_v2",
+        db=object(),
+        performance_cache=PerformanceSnapshotCache(),
+        policy_since=as_of - timedelta(days=60),
+        shadow_live_capacity=True,
+    ))
+    by_id = {row["user_id"]: row for row in snapshot["candidates"]}
+    assert snapshot["capacity_snapshot_complete"] is False
+    assert snapshot["capacity_snapshot_usable"] is True
+    assert worker._capacity_snapshot_verified_for_policy(
+        snapshot, snapshot["candidates"], "crm_sla_reassignment_v2",
+    ) is True
+    assert worker._capacity_snapshot_verified_for_policy(
+        snapshot, snapshot["candidates"], "crm_sla_reassignment_v1",
+    ) is False
+    globally_unknown = dict(snapshot, capacity_snapshot_usable=False)
+    assert worker._capacity_snapshot_verified_for_policy(
+        globally_unknown, snapshot["candidates"], "crm_sla_reassignment_v2",
+    ) is False
+    assert by_id["verified-a"]["open_current_policy"] == 1
+    assert by_id["verified-b"]["open_current_policy"] == 1
+    assert by_id["orphan-owner"]["open_current_policy"] is None
+    assert by_id["orphan-owner"]["unmanaged_current_policy"] is None
+    assert by_id["zero-load"]["open_current_policy"] == 0
+
+    v1_snapshot = asyncio.run(worker._default_performance_snapshot(
+        as_of,
+        policy_version="crm_sla_reassignment_v1",
+        db=object(),
+        performance_cache=PerformanceSnapshotCache(),
+        policy_since=as_of - timedelta(days=60),
+        shadow_live_capacity=True,
+    ))
+    v1_by_id = {row["user_id"]: row for row in v1_snapshot["candidates"]}
+    assert v1_by_id["orphan-owner"]["open_current_policy"] == 91
+
+    selectable = []
+    for user_id, p50 in (("verified-a", 70), ("orphan-owner", 5)):
+        candidate = _candidate(user_id, p50=p50, p90=p50 * 2)
+        candidate.update(by_id[user_id])
+        for key in ("simulated_open_current", "simulated_unmanaged_current", "simulated_expired_current"):
+            candidate.pop(key, None)
+        if user_id == "verified-a":
+            candidate.update({
+                "open_current_policy": 15,
+                "unmanaged_current_policy": 10,
+                "expired_current_policy": 5,
+                "hot_unmanaged_backlog": 8,
+                "recent_rescues_7d": 0,
+            })
+        selectable.append(candidate)
+    selected = select_v2_winner(
+        {"owner_user_id": "source"}, selectable, team=_team(),
+        branch="RM_GLOBAL_RESCUE", selection_context_verified=True,
+        admin_user_ids=set(),
+    )
+    assert selected["winner"]["user_id"] == "verified-a"
+    assert selected["winner"]["load_pressure"] == 3 * 5 + 2 * 10 + 1 * 15 + 1.5 * 8
+    assert selected["winner"]["capacity_exclusion_reason"] is None
+    assert {row["user_id"] for row in selected["selection_pool"]} == {"verified-a"}
+    excluded = {row.get("user_id"): row.get("capacity_exclusion_reason") for row in selected["hard_excluded"]}
+    assert excluded["orphan-owner"] == "capacity_snapshot_incomplete"
+
+    unattributed = {
+        "cycle_audit": {
+            **audit,
+            "lead_missing_or_filtered_unattributed": 1,
+            "lead_missing_or_filtered_owner_attributed": 0,
+        },
+        "capacity_metrics": metrics,
+    }
+    assert worker._live_capacity_snapshot_is_usable(unattributed) is False
+

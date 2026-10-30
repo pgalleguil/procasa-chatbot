@@ -51,7 +51,29 @@ def build_index_migration_plan(db: Any) -> dict[str, Any]:
     blocking_duplicates = bool(
         cycle_id_duplicates or source_cycle_duplicates or active_duplicates
     )
+    # Committed audit rows in production use reassigned_at, commit_time and
+    # created_at; older writers may use timestamp or at. The V2 seven-day
+    # rescue query has an $or over these aliases, so each branch needs a
+    # compound equality/range index to avoid reverting to a collection scan.
+    committed_time_indexes = [
+        {
+            "collection": LEDGER_COLLECTION,
+            "name": f"idx_committed_policy_{field}_v1",
+            "keys": [("event_type", 1), ("policy_version", 1), (field, 1)],
+            "unique": False,
+            # The query branch also constrains this timestamp field. Keep
+            # missing legacy aliases out of the index instead of storing null
+            # keys for every committed event.
+            "partial_filter": {
+                "event_type": "SLA_REASSIGNMENT_COMMITTED",
+                field: {"$exists": True},
+            },
+            "blocked": False,
+        }
+        for field in ("reassigned_at", "commit_time", "created_at", "timestamp", "at")
+    ]
     proposed = [
+        *committed_time_indexes,
         {
             "collection": LEDGER_COLLECTION,
             "name": "uq_reassignment_source_cycle",

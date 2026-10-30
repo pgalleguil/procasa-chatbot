@@ -22,6 +22,13 @@ from tests.test_crm_sla_reassignment_executor import FakeCollection, make_fixtur
 
 
 class NotificationCollection(FakeCollection):
+    def update_one(self, filter_, update, *args, **kwargs):
+        if kwargs.get("upsert") and not self.find_one(filter_):
+            document = deepcopy(update.get("$setOnInsert") or {})
+            document.setdefault("_id", filter_.get("_id"))
+            return self.insert_one(document, *args, **kwargs)
+        return super().update_one(filter_, update, *args, **kwargs)
+
     def insert_one(self, document, *args, **kwargs):
         document = dict(document)
         document.setdefault("_id", f"notification-{len(self.rows) + 1}")
@@ -61,9 +68,15 @@ class NotificationCollection(FakeCollection):
         return True
 
 
-def notification_db():
+def notification_fixture():
     db, decision = make_fixture()
     db.collections["crm_notifications_v1"] = NotificationCollection()
+    db.collections["crm_sla_short_links_v1"] = NotificationCollection()
+    return db, decision
+
+
+def notification_db():
+    db, decision = notification_fixture()
     db["leads"].update_one(
         {"_id": "lead-1"},
         {"$set": {
@@ -123,7 +136,7 @@ def test_reassignment_commit_to_notification_delivery_end_to_end(monkeypatch):
 
     enable_flags(monkeypatch)
     monkeypatch.setattr(Config, "CRM_SLA_REASSIGNMENT_WORKER_ENABLED", True)
-    db, decision = make_fixture()
+    db, decision = notification_fixture()
     db.collections["crm_notifications_v1"] = NotificationCollection()
     db["usuarios"].update_one({"_id": "new-user"}, {"$set": {"telefono": "+56911111111"}})
 
@@ -223,7 +236,7 @@ def test_reassignment_notifications_continue_after_two_reassignments():
 
 
 def test_post_commit_notification_failure_does_not_change_committed_result(monkeypatch):
-    db, decision = make_fixture()
+    db, decision = notification_fixture()
     result = _result()
     monkeypatch.setattr(executor_module, "execute_sla_reassignment_transaction", lambda *args, **kwargs: result)
 
@@ -243,7 +256,7 @@ def test_post_commit_notification_failure_does_not_change_committed_result(monke
 
 
 def test_async_executor_adapter_does_not_block_heartbeat(monkeypatch):
-    db, decision = make_fixture()
+    db, decision = notification_fixture()
     result = _result()
 
     def slow_executor(*args, **kwargs):
@@ -270,7 +283,7 @@ def test_old_owner_is_locked_after_reassignment(monkeypatch):
     from tests.test_crm_sla_reassignment_executor import enable_flags
 
     enable_flags(monkeypatch)
-    db, decision = make_fixture()
+    db, decision = notification_fixture()
     result = execute_sla_reassignment_transaction(db, decision)
     assert result.status == "APPLIED"
 
@@ -292,7 +305,7 @@ def test_current_owner_must_use_current_cycle_then_can_save(monkeypatch):
     from tests.test_crm_sla_reassignment_executor import enable_flags
 
     enable_flags(monkeypatch)
-    db, decision = make_fixture()
+    db, decision = notification_fixture()
     result = execute_sla_reassignment_transaction(db, decision)
     assert result.status == "APPLIED"
 

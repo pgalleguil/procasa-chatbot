@@ -16,6 +16,7 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Awaitable, Callable, Mapping
 
 from .crm_sla_snapshot_queries import ReadInstrumentation, find_many
@@ -25,6 +26,26 @@ from .mongo_identity import mongo_id_variants
 HISTORICAL_TTL_CANDIDATES = (60, 120, 300, 600)
 DEFAULT_HISTORICAL_TTL_SECONDS = 300
 DEFAULT_LIVE_CAPACITY_TTL_SECONDS = 60
+WEEKLY_RANKING_POLICY_VERSION = "crm_sla_reassignment_v2"
+WEEKLY_RANKING_TIMEZONE = ZoneInfo("America/Santiago")
+WEEKLY_RANKING_HOUR = 9
+
+
+def weekly_ranking_window(now: Any) -> tuple[datetime, datetime]:
+    """Return the current Chile-local Monday 09:00 scoring interval in UTC."""
+    instant = _utc(now)
+    if instant is None:
+        raise ValueError("weekly_ranking_requires_valid_timestamp")
+    local_now = instant.astimezone(WEEKLY_RANKING_TIMEZONE)
+    monday = local_now.date() - timedelta(days=local_now.weekday())
+    start_local = datetime(monday.year, monday.month, monday.day, WEEKLY_RANKING_HOUR, tzinfo=WEEKLY_RANKING_TIMEZONE)
+    if local_now < start_local:
+        monday -= timedelta(days=7)
+        start_local = datetime(monday.year, monday.month, monday.day, WEEKLY_RANKING_HOUR, tzinfo=WEEKLY_RANKING_TIMEZONE)
+    following = monday + timedelta(days=7)
+    end_local = datetime(following.year, following.month, following.day, WEEKLY_RANKING_HOUR, tzinfo=WEEKLY_RANKING_TIMEZONE)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
 
 
 def _utc(value: Any) -> datetime | None:
@@ -62,6 +83,127 @@ def _path_value(document: Mapping[str, Any], path: str) -> Any:
 def _version(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _dynamic_temperature_metrics(
+    records: list[dict[str, Any]],
+    agents: list[dict[str, Any]],
+    *,
+    as_of: datetime,
+    performance_window_days: int,
+) -> tuple[dict[str, dict[str, dict[str, Any]]], dict[str, dict[str, Any]]]:
+    """Summarize bounded historical records by owner and assignment temperature."""
+    from scripts.run_phase1a_crm_sla_shadow import cycle_first_management_minutes
+
+    start = as_of - timedelta(days=performance_window_days)
+    agent_ids = {str(user.get("_id") or "") for user in agents}
+    eligible = [
+        row for row in records
+        if row.get("is_post_cutover")
+        and row.get("canonical")
+        and not row.get("excluded_origin")
+        and row.get("assigned_at")
+        and start <= row["assigned_at"] <= as_of
+        and str(row.get("owner_id") or "") in agent_ids
+    ]
+
+    def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        durations: list[float] = []
+        compliant = 0
+        evaluable_count = 0
+        missed_deadline_count = 0
+        for row in rows:
+            stop_at = _utc(row.get("a_stop_at"))
+            duration = (
+                cycle_first_management_minutes(row)
+                if stop_at is not None and stop_at <= as_of
+                else None
+            )
+            if duration is not None:
+                evaluable_count += 1
+                durations.append(duration)
+                threshold = float(row.get("threshold") or 0)
+                if duration < threshold:
+                    compliant += 1
+                else:
+                    missed_deadline_count += 1
+                continue
+
+            deadline = _utc(row.get("deadline"))
+            if deadline is not None and deadline <= as_of:
+                # No valid management by an elapsed SLA deadline is a measured
+                # miss. An open episode whose deadline is still future has no
+                # outcome yet and is excluded from this denominator.
+                evaluable_count += 1
+                missed_deadline_count += 1
+
+        managed_count = len(durations)
+        excluded_non_evaluable = len(rows) - evaluable_count
+        return {
+            "sample_size": evaluable_count,
+            "eligible_count": len(rows),
+            "excluded_non_evaluable_count": excluded_non_evaluable,
+            "managed_count": managed_count,
+            "sla_compliant_count": compliant,
+            "missed_deadline_count": missed_deadline_count,
+            "sla_compliance_rate": compliant / evaluable_count if evaluable_count else None,
+            "attention_rate": managed_count / evaluable_count if evaluable_count else None,
+            "p50": _dynamic_quantile(durations, 0.50),
+            "p90": _dynamic_quantile(durations, 0.90),
+        }
+
+    grouped: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    team_rows: dict[str, list[dict[str, Any]]] = {"HOT": [], "NORMAL": []}
+    for row in eligible:
+        temperature = str(row.get("temperature") or "NORMAL").strip().upper()
+        if temperature not in team_rows:
+            temperature = "NORMAL"
+        owner = str(row.get("owner_id") or "")
+        grouped.setdefault(owner, {"HOT": [], "NORMAL": []})[temperature].append(row)
+        team_rows[temperature].append(row)
+
+    by_owner = {
+        str(agent.get("_id") or ""): {
+            temperature: summarize(grouped.get(str(agent.get("_id") or ""), {}).get(temperature, []))
+            for temperature in ("HOT", "NORMAL")
+        }
+        for agent in agents
+    }
+    by_temperature = {
+        temperature: summarize(team_rows[temperature])
+        for temperature in ("HOT", "NORMAL")
+    }
+    return by_owner, by_temperature
+
+
+def _dynamic_metrics_for_policy(
+    records: list[dict[str, Any]],
+    agents: list[dict[str, Any]],
+    *,
+    as_of: datetime,
+    performance_window_days: int,
+    policy_version: str,
+) -> tuple[dict[str, dict[str, dict[str, Any]]], dict[str, dict[str, Any]]] | None:
+    """Only compute temperature strata for V2; V1 keeps its historical cost path."""
+    if policy_version != "crm_sla_reassignment_v2":
+        return None
+    return _dynamic_temperature_metrics(
+        records, agents, as_of=as_of,
+        performance_window_days=performance_window_days,
+    )
+
+
+def _dynamic_quantile(values: list[float], probability: float) -> float | None:
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        return None
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * probability
+    lower = int(position)
+    upper = min(len(ordered) - 1, lower + 1)
+    fraction = position - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
 
 
 async def _maybe_await(value: Any) -> Any:
@@ -155,10 +297,12 @@ class HistoricalPerformanceSnapshot:
     read_ms: float = 0.0
     payload: Mapping[str, Any] = field(default_factory=dict)
 
-    def is_fresh(self, *, now: Any, source_watermarks: Mapping[str, Any] | None = None) -> bool:
+    def is_fresh(self, *, now: Any, policy_version: str | None = None, source_watermarks: Mapping[str, Any] | None = None) -> bool:
         current = _utc(now)
         expires = _utc(self.expires_at)
         if not current or not expires or current >= expires:
+            return False
+        if policy_version is not None and self.policy_version != str(policy_version):
             return False
         return source_watermarks is None or dict(source_watermarks) == dict(self.source_watermarks)
 
@@ -202,10 +346,12 @@ class LiveCapacitySnapshot:
     read_ms: float = 0.0
     payload: Mapping[str, Any] = field(default_factory=dict)
 
-    def is_fresh(self, *, now: Any, source_watermarks: Mapping[str, Any] | None = None) -> bool:
+    def is_fresh(self, *, now: Any, policy_version: str | None = None, source_watermarks: Mapping[str, Any] | None = None) -> bool:
         current = _utc(now)
         expires = _utc(self.expires_at)
         if not current or not expires or current >= expires:
+            return False
+        if policy_version is not None and self.policy_version != str(policy_version):
             return False
         return source_watermarks is None or dict(source_watermarks) == dict(self.source_watermarks)
 
@@ -268,12 +414,13 @@ class PerformanceSnapshotCache:
         self.live_capacity_ttl_seconds = int(live_capacity_ttl_seconds)
         self._historical: HistoricalPerformanceSnapshot | None = None
         self._live: LiveCapacitySnapshot | None = None
+        self._weekly_v2_scores: dict[str, Any] | None = None
         self._stats = {"historical_hits": 0, "historical_misses": 0, "live_hits": 0, "live_misses": 0, "historical_refreshes": 0, "live_refreshes": 0}
 
     async def get_historical(self, *, now: Any, builder: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]], policy_version: str, source_watermarks: Mapping[str, Any] | None = None, force: bool = False) -> dict[str, Any]:
         current = _utc(now) or datetime.now(timezone.utc)
-        watermarks = dict(source_watermarks or {})
-        if not force and self._historical and self._historical.is_fresh(now=current, source_watermarks=watermarks):
+        watermarks = dict(source_watermarks) if source_watermarks is not None else None
+        if not force and self._historical and self._historical.is_fresh(now=current, policy_version=policy_version, source_watermarks=watermarks):
             self._stats["historical_hits"] += 1
             return self._historical.to_dict()
         self._stats["historical_misses"] += 1
@@ -282,15 +429,153 @@ class PerformanceSnapshotCache:
         if not isinstance(raw, Mapping):
             raise RuntimeError("historical_snapshot_builder_invalid")
         raw = dict(raw)
+        source_policy_version = str(raw.get("policy_version") or "")
+        if source_policy_version and source_policy_version != str(policy_version):
+            raw.setdefault("source_policy_version", source_policy_version)
+        raw["policy_version"] = str(policy_version)
         raw.setdefault("read_ms", (time.perf_counter() - started) * 1000.0)
-        self._historical = _historical_record(raw, now=current, ttl_seconds=self.historical_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks)
+        self._historical = _historical_record(raw, now=current, ttl_seconds=self.historical_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks or {})
         self._stats["historical_refreshes"] += 1
         return self._historical.to_dict()
 
+
+    def weekly_v2_refresh_due(self, now: Any) -> bool:
+        """Require a fresh 60-day historical read at the Monday boundary."""
+        return bool(
+            self._weekly_v2_scores is not None
+            and self._weekly_v2_scores.get("period_start") != weekly_ranking_window(now)[0].isoformat()
+        )
+
+    def apply_weekly_v2_scores(self, historical: Mapping[str, Any], *, now: Any) -> dict[str, Any]:
+        """Freeze ONLY the V2 performance baseline, never user/territory context.
+
+        Historical evidence, current user eligibility and property metadata
+        keep their existing 300-second refresh. A new eligible user absent
+        from the week's baseline is guarded until the next score publication.
+        Live capacity is merged separately by the worker every 60 seconds.
+        """
+        if historical.get("policy_version") != WEEKLY_RANKING_POLICY_VERSION:
+            raise ValueError("weekly_score_baseline_requires_v2")
+        start, end = weekly_ranking_window(now)
+        key = start.isoformat()
+        if self._weekly_v2_scores is None or self._weekly_v2_scores.get("period_start") != key:
+            candidates = historical.get("candidates")
+            team = historical.get("team")
+            if not isinstance(candidates, list) or not isinstance(team, Mapping):
+                raise RuntimeError("weekly_score_source_incomplete")
+            metrics = {
+                str(row.get("user_id")): {
+                    name: copy.deepcopy(row.get(name))
+                    for name in (
+                        "sample_size", "by_temperature",
+                        "sla_compliance_rate", "attention_rate",
+                        "sla_compliance_rate_adjusted", "attention_rate_adjusted",
+                        "p50_first_management_business_minutes",
+                        "p90_first_management_business_minutes",
+                    )
+                }
+                for row in candidates if row.get("user_id")
+            }
+            self._weekly_v2_scores = {
+                "period_start": key,
+                "period_end": end.isoformat(),
+                "generated_at": _iso(now),
+                "baseline_id": str(historical.get("snapshot_id") or historical.get("performance_snapshot_version") or _iso(now)),
+                "metrics": metrics,
+                "team": copy.deepcopy(dict(team)),
+            }
+        baseline = self._weekly_v2_scores
+        output = dict(historical)
+        output["team"] = copy.deepcopy(baseline["team"])
+        output["weekly_score_period_start"] = baseline["period_start"]
+        output["weekly_score_period_end"] = baseline["period_end"]
+        output["weekly_score_generated_at"] = baseline["generated_at"]
+        output["weekly_score_baseline_id"] = baseline["baseline_id"]
+        candidates = []
+        for raw in historical.get("candidates") or []:
+            row = dict(raw)
+            metrics = baseline["metrics"].get(str(row.get("user_id") or ""))
+            if metrics is None:
+                # Never borrow a new executive's current-week history as if
+                # it had been included in the frozen weekly evaluation.
+                row["data_issue"] = True
+                row["weekly_score_unavailable"] = True
+            else:
+                row.update(copy.deepcopy(metrics))
+                row["weekly_score_unavailable"] = False
+            candidates.append(row)
+        output["candidates"] = candidates
+        return output
+
+
+    async def load_or_publish_weekly_v2_scores(
+        self, db: Any, historical: Mapping[str, Any], *, now: Any,
+    ) -> dict[str, Any]:
+        """Get one immutable weekly baseline shared across worker restarts.
+
+        Only six agents' aggregated score inputs and the team baseline are
+        persisted. No leads, contacts, cycles or ownership are modified. The
+        collection needs only MongoDB's built-in unique _id index. A failed
+        read/write aborts V2 scoring rather than silently changing its scores.
+        """
+        from pymongo.errors import DuplicateKeyError
+
+        start, end = weekly_ranking_window(now)
+        key = start.isoformat()
+        if self._weekly_v2_scores is not None and self._weekly_v2_scores.get("period_start") == key:
+            return self.apply_weekly_v2_scores(historical, now=now)
+
+        collection = db["crm_sla_weekly_scores_v2"]
+        doc_id = "crm_sla_reassignment_v2:" + key
+
+        def validate(doc: Mapping[str, Any] | None) -> dict[str, Any]:
+            if not isinstance(doc, Mapping) or not (
+                doc.get("schema_version") == 1
+                and doc.get("policy_version") == WEEKLY_RANKING_POLICY_VERSION
+                and doc.get("period_start") == key
+                and doc.get("period_end") == end.isoformat()
+                and isinstance(doc.get("metrics"), Mapping)
+                and isinstance(doc.get("team"), Mapping)
+                and doc.get("baseline_id")
+            ):
+                raise RuntimeError("weekly_score_persisted_baseline_invalid")
+            return {
+                "period_start": key,
+                "period_end": end.isoformat(),
+                "generated_at": str(doc.get("generated_at") or ""),
+                "baseline_id": str(doc["baseline_id"]),
+                "metrics": copy.deepcopy(dict(doc["metrics"])),
+                "team": copy.deepcopy(dict(doc["team"])),
+            }
+
+        doc = await _maybe_await(collection.find_one({"_id": doc_id}))
+        if doc is not None:
+            self._weekly_v2_scores = validate(doc)
+            return self.apply_weekly_v2_scores(historical, now=now)
+
+        # Prepare the baseline from the same validated historical evidence
+        # that the worker would use in memory. Insert is create-only.
+        self.apply_weekly_v2_scores(historical, now=now)
+        payload = {
+            "_id": doc_id,
+            "schema_version": 1,
+            "policy_version": WEEKLY_RANKING_POLICY_VERSION,
+            **copy.deepcopy(self._weekly_v2_scores),
+        }
+        try:
+            await _maybe_await(collection.insert_one(payload))
+        except DuplicateKeyError:
+            doc = await _maybe_await(collection.find_one({"_id": doc_id}))
+            self._weekly_v2_scores = validate(doc)
+        except Exception:
+            self._weekly_v2_scores = None
+            raise
+        return self.apply_weekly_v2_scores(historical, now=now)
+
     async def get_live_capacity(self, *, now: Any, builder: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]], policy_version: str, source_watermarks: Mapping[str, Any] | None = None, force: bool = False) -> dict[str, Any]:
         current = _utc(now) or datetime.now(timezone.utc)
-        watermarks = dict(source_watermarks or {})
-        if not force and self._live and self._live.is_fresh(now=current, source_watermarks=watermarks):
+        watermarks = dict(source_watermarks) if source_watermarks is not None else None
+        if not force and self._live and self._live.is_fresh(now=current, policy_version=policy_version, source_watermarks=watermarks):
             self._stats["live_hits"] += 1
             return self._live.to_dict()
         self._stats["live_misses"] += 1
@@ -299,14 +584,19 @@ class PerformanceSnapshotCache:
         if not isinstance(raw, Mapping):
             raise RuntimeError("live_capacity_snapshot_builder_invalid")
         raw = dict(raw)
+        source_policy_version = str(raw.get("policy_version") or "")
+        if source_policy_version and source_policy_version != str(policy_version):
+            raw.setdefault("source_policy_version", source_policy_version)
+        raw["policy_version"] = str(policy_version)
         raw.setdefault("read_ms", (time.perf_counter() - started) * 1000.0)
-        self._live = _live_record(raw, now=current, ttl_seconds=self.live_capacity_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks)
+        self._live = _live_record(raw, now=current, ttl_seconds=self.live_capacity_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks or {})
         self._stats["live_refreshes"] += 1
         return self._live.to_dict()
 
     def invalidate(self) -> None:
         self._historical = None
         self._live = None
+        self._weekly_v2_scores = None
 
     def stats(self) -> dict[str, Any]:
         return {**self._stats, "historical_ttl_seconds": self.historical_ttl_seconds, "live_capacity_ttl_seconds": self.live_capacity_ttl_seconds, "historical_snapshot_id": self._historical.snapshot_id if self._historical else None, "live_snapshot_id": self._live.snapshot_id if self._live else None}
@@ -447,17 +737,34 @@ async def build_historical_performance_snapshot(
     params = RescueParameters(performance_window_days=performance_window_days)
     metrics_started = time.perf_counter()
     metrics, team = historical_metrics(records, agents, as_of=as_of, params=params)
+    dynamic_metrics = _dynamic_metrics_for_policy(
+        records, agents, as_of=as_of,
+        performance_window_days=performance_window_days,
+        policy_version=policy_version,
+    )
+    owner_temperature_metrics: dict[str, dict[str, dict[str, Any]]] = {}
+    if dynamic_metrics is not None:
+        owner_temperature_metrics, team_temperature_metrics = dynamic_metrics
+        team = dict(team)
+        team["by_temperature"] = team_temperature_metrics
+        team["temperature_mix"] = {
+            temperature: team_temperature_metrics[temperature]["sample_size"]
+            for temperature in ("HOT", "NORMAL")
+        }
     metrics_ms = (time.perf_counter() - metrics_started) * 1000.0
     candidates = []
     for agent in agents:
         user_id = str(agent.get("_id") or "")
         metric = metrics.get(user_id, {})
+        if policy_version == "crm_sla_reassignment_v2":
+            metric["by_temperature"] = owner_temperature_metrics.get(user_id, {})
         candidates.append({
             "user_id": user_id, "executive": str(agent.get("nombre") or ""),
             "identity_key": str(agent.get("nombre") or "").strip().lower(), "executive_key": str(agent.get("nombre") or "").strip().lower(),
             "active": agent.get("is_active") is True, "role": str(agent.get("rol") or "").strip().lower(),
             "legacy": False, "protected_by_management": False, "data_issue": False, "closed_lead": False,
             "not_currently_expired": False, "sample_size": metric.get("sample_size", 0),
+            "by_temperature": metric.get("by_temperature", {}),
             "sla_compliance_rate": metric.get("sla_compliance_rate", 0.0), "attention_rate": metric.get("attention_rate", 0.0),
             "sla_compliance_rate_adjusted": metric.get("sla_compliance_rate_adjusted", 0.0),
             "attention_rate_adjusted": metric.get("attention_rate_adjusted", 0.0),
@@ -503,7 +810,7 @@ async def build_live_capacity_snapshot(
 ) -> dict[str, Any]:
     """Refresh current capacity without re-reading historical performance."""
     started = time.perf_counter()
-    from .crm_metrics import calculate_cycle_sla, is_first_sla_management_completed
+    from .crm_metrics import calculate_cycle_sla, is_first_sla_management_completed, resolve_cycle_sla_temperature
     from .crm_sla_alert_evaluator import CLOSED_STAGES, EXCLUDED_ORIGINS, SYNTHETIC_PHONES
     from .crm_sla_alert_settings import CUTOVER_AT
 
@@ -608,7 +915,7 @@ async def build_live_capacity_snapshot(
         if not owner:
             cycle_audit["owner_missing"] += 1
             continue
-        row = capacity.setdefault(owner, {"open": 0, "unmanaged": 0, "expired": 0})
+        row = capacity.setdefault(owner, {"open": 0, "unmanaged": 0, "expired": 0, "hot_unmanaged": 0})
         row["open"] += 1
         assigned_at = cycle.get("sla_started_at") or cycle.get("assigned_at")
         factual_assigned_at = _utc(cycle.get("assigned_at")) or _utc(assigned_at) or policy_since
@@ -632,6 +939,9 @@ async def build_live_capacity_snapshot(
         if stop:
             continue
         row["unmanaged"] += 1
+        temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+        if temperature == "HOT":
+            row["hot_unmanaged"] += 1
         if not assigned_at:
             continue
         sla = calculate_cycle_sla(

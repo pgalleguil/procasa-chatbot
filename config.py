@@ -161,6 +161,16 @@ class Config:
     # intentionally independent from the transaction engine.  The worker
     # module is not imported by startup; these values only govern an explicit
     # invocation or a future, supervised loop.
+    # Explicit opt-in ranking version. V1 remains the default for every
+    # environment until a controlled rollout sets this value to V2.
+    CRM_SLA_REASSIGNMENT_POLICY_VERSION = os.getenv(
+        "CRM_SLA_REASSIGNMENT_POLICY_VERSION", "crm_sla_reassignment_v1"
+    ).strip() or "crm_sla_reassignment_v1"
+    # Opt-in for a durable weekly V2 score snapshot shared across restarts.
+    # This never affects V1 and never changes CRM leads/cycles/ownership.
+    CRM_SLA_V2_WEEKLY_PERSISTENCE_ENABLED = os.getenv(
+        "CRM_SLA_V2_WEEKLY_PERSISTENCE_ENABLED", "false"
+    ).strip().lower() == "true"
     CRM_SLA_REASSIGNMENT_WORKER_ENABLED = os.getenv(
         "CRM_SLA_REASSIGNMENT_WORKER_ENABLED", "false"
     ).strip().lower() == "true"

@@ -19,6 +19,7 @@ import inspect
 import json
 import logging
 import time
+from math import isfinite
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -53,12 +54,14 @@ from .crm_sla_hybrid_stabilization import (
 )
 from .crm_sla_policy_freeze import (
     POLICY_VERSION,
+    RM_ADMIN_EXCLUDED_USER_IDS,
     TIER1_BALANCE_WINDOW_SIZE,
     _jpc_selection,
     _rm_selection,
     _update_state,
     derive_jpc_share_targets,
 )
+from .crm_sla_dynamic_ranking_v2 import POLICY_VERSION as DYNAMIC_POLICY_VERSION, RankingParameters, select_v2_winner
 from .crm_sla_reassignment_cutover import CUTOVER_POLICY_VERSION
 from .crm_sla_performance_snapshot import (
     DEFAULT_HISTORICAL_TTL_SECONDS,
@@ -119,6 +122,14 @@ def _number(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _capacity_number(value: Any) -> float | None:
+    """Return verified live-capacity numbers without turning missing data into zero."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    parsed = float(value)
+    return parsed if isfinite(parsed) and parsed >= 0 else None
 
 
 def _iso(value: Any) -> str:
@@ -220,6 +231,13 @@ def _json_version(rows: Iterable[Mapping[str, Any]]) -> str:
 def _cfg(name: str, default: Any) -> Any:
     from config import Config
     return getattr(Config, name, default)
+
+
+def _configured_policy_version() -> str:
+    value = _text(_cfg("CRM_SLA_REASSIGNMENT_POLICY_VERSION", POLICY_VERSION)).strip()
+    if value not in {POLICY_VERSION, DYNAMIC_POLICY_VERSION}:
+        raise ValueError("unsupported CRM_SLA_REASSIGNMENT_POLICY_VERSION")
+    return value
 
 
 def _validated_batch_size(value: int | None) -> int:
@@ -1237,9 +1255,92 @@ async def _legacy_default_performance_snapshot(as_of: datetime) -> dict[str, Any
     }
 
 
+def _live_capacity_snapshot_is_complete(snapshot: Mapping[str, Any]) -> bool:
+    """Only infer zero capacity when the complete live cycle set was checked."""
+    audit = snapshot.get("cycle_audit")
+    capacity = snapshot.get("capacity_metrics")
+    if not isinstance(audit, Mapping) or not isinstance(capacity, Mapping):
+        return False
+    if _capacity_number(audit.get("lead_missing_or_filtered")) != 0:
+        return False
+    if _capacity_number(audit.get("owner_missing")) != 0:
+        return False
+    for row in capacity.values():
+        if not isinstance(row, Mapping):
+            return False
+        if any(_capacity_number(row.get(key)) is None for key in ("open", "unmanaged", "expired", "hot_unmanaged")):
+            return False
+        if row.get("capacity_complete") is False:
+            return False
+    return True
+
+
+def _live_capacity_snapshot_is_usable(snapshot: Mapping[str, Any]) -> bool:
+    """Allow verified owners through when incomplete rows are fully attributable.
+
+    Unknown owner capacity still blocks the V2 snapshot globally. A known
+    owner's missing/filtered lead instead marks only that owner incomplete;
+    the selector excludes that candidate because its capacity dimensions are
+    passed as None.
+    """
+    audit = snapshot.get("cycle_audit")
+    capacity = snapshot.get("capacity_metrics")
+    if not isinstance(audit, Mapping) or not isinstance(capacity, Mapping):
+        return False
+    missing = _capacity_number(audit.get("lead_missing_or_filtered"))
+    owner_missing = _capacity_number(audit.get("owner_missing"))
+    attributed = _capacity_number(audit.get("lead_missing_or_filtered_owner_attributed"))
+    unattributed = _capacity_number(audit.get("lead_missing_or_filtered_unattributed"))
+    if missing is None or owner_missing != 0:
+        return False
+    if missing == 0:
+        attributed = 0 if attributed is None else attributed
+        unattributed = 0 if unattributed is None else unattributed
+    elif attributed is None or unattributed is None:
+        return False
+    if missing != attributed + unattributed or unattributed != 0:
+        return False
+    for row in capacity.values():
+        if not isinstance(row, Mapping):
+            return False
+        if any(_capacity_number(row.get(key)) is None for key in ("open", "unmanaged", "expired", "hot_unmanaged")):
+            return False
+        if row.get("capacity_complete") not in (None, True, False):
+            return False
+    return True
+
+
+def _capacity_snapshot_verified_for_policy(
+    snapshot: Mapping[str, Any],
+    candidates: Iterable[Mapping[str, Any]],
+    policy_version: str,
+) -> bool:
+    """Verify the snapshot without treating an unknown owner's load as zero."""
+    if policy_version == DYNAMIC_POLICY_VERSION:
+        if snapshot.get("capacity_snapshot_usable") is not True:
+            return False
+        for row in candidates:
+            if row.get("capacity_snapshot_owner_verified") is False:
+                continue
+            if any(_capacity_number(row.get(key)) is None for key in (
+                "open_current_policy", "unmanaged_current_policy", "expired_current_policy",
+            )):
+                return False
+        return True
+    if snapshot.get("capacity_snapshot_complete") is not True:
+        return False
+    return all(
+        all(_capacity_number(row.get(key)) is not None for key in (
+            "open_current_policy", "unmanaged_current_policy", "expired_current_policy",
+        ))
+        for row in candidates
+    )
+
+
 async def _default_performance_snapshot(
     as_of: datetime,
     *,
+    policy_version: str = POLICY_VERSION,
     db: Any = None,
     performance_cache: PerformanceSnapshotCache | None = None,
     policy_since: Any = None,
@@ -1259,22 +1360,32 @@ async def _default_performance_snapshot(
     if not policy_start:
         raise RuntimeError("performance_policy_cutover_unavailable")
     cache = performance_cache or (_DEFAULT_SHADOW_PERFORMANCE_SNAPSHOT_CACHE if shadow_live_capacity else _DEFAULT_PERFORMANCE_SNAPSHOT_CACHE)
-    watermarks = await read_source_watermarks(db, instrumentation=read_instrumentation)
+    # Snapshot TTLs are the freshness boundary. Per-iteration watermark reads
+    # both bypass those TTLs whenever a cycle is updated and add up to five
+    # MongoDB round trips before cached snapshots can be reused.
     historical = await cache.get_historical(
         now=as_of,
-        policy_version=POLICY_VERSION,
-        source_watermarks=watermarks,
+        policy_version=policy_version,
+        force=policy_version == DYNAMIC_POLICY_VERSION and cache.weekly_v2_refresh_due(as_of),
         builder=lambda: build_historical_performance_snapshot(
             db, as_of=as_of, policy_since=policy_start,
             performance_window_days=PERFORMANCE_WINDOW_DAYS,
-            policy_version=POLICY_VERSION,
+            policy_version=policy_version,
             instrumentation=read_instrumentation,
         ),
     )
+    if policy_version == DYNAMIC_POLICY_VERSION:
+        # Freeze only score evidence. Keep user, territory and property
+        # context fresh; live capacity has a separate 60-second cache.
+        if bool(_cfg("CRM_SLA_V2_WEEKLY_PERSISTENCE_ENABLED", False)):
+            historical = await cache.load_or_publish_weekly_v2_scores(
+                db, historical, now=as_of,
+            )
+        else:
+            historical = cache.apply_weekly_v2_scores(historical, now=as_of)
     live = await cache.get_live_capacity(
         now=as_of,
-        policy_version=POLICY_VERSION,
-        source_watermarks=watermarks,
+        policy_version=policy_version,
         builder=(
             lambda: build_live_capacity_variant(
                 db, variant=A1_NAME, as_of=as_of, policy_since=policy_start,
@@ -1283,28 +1394,56 @@ async def _default_performance_snapshot(
             if shadow_live_capacity else
             lambda: build_live_capacity_snapshot(
                 db, as_of=as_of, policy_since=policy_start,
-                policy_version=POLICY_VERSION,
+                policy_version=policy_version,
                 instrumentation=read_instrumentation,
             )
         ),
     )
     combined = dict(historical)
     capacity = dict(live.get("capacity_metrics") or {})
+    capacity_snapshot_complete = _live_capacity_snapshot_is_complete(live)
+    capacity_snapshot_usable = _live_capacity_snapshot_is_usable(live)
     candidates = []
     for raw in combined.get("candidates") or []:
         row = dict(raw)
         live_row = capacity.get(_text(row.get("user_id")), {})
-        row["open_current_policy"] = live_row.get("open", row.get("open_current_policy", 0))
-        row["unmanaged_current_policy"] = live_row.get("unmanaged", row.get("unmanaged_current_policy", 0))
-        row["expired_current_policy"] = live_row.get("expired", row.get("expired_current_policy", 0))
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            # An absent owner row means verified zero only if the scan is
+            # usable. An attributed anomaly makes just that owner's capacity
+            # unknown, and V2's selector excludes the candidate.
+            owner_capacity_complete = live_row.get("capacity_complete") is not False
+            verified = capacity_snapshot_usable and owner_capacity_complete
+            row["open_current_policy"] = live_row.get("open", 0) if verified else None
+            row["unmanaged_current_policy"] = live_row.get("unmanaged", 0) if verified else None
+            row["expired_current_policy"] = live_row.get("expired", 0) if verified else None
+            row["hot_unmanaged_backlog"] = live_row.get("hot_unmanaged", 0) if verified else None
+            row["capacity_snapshot_owner_verified"] = verified
+        else:
+            # Preserve historical V1 fallback if an A1 row is partial.
+            if live_row.get("capacity_complete") is False:
+                live_row = {}
+            row["open_current_policy"] = live_row.get("open", row.get("open_current_policy", 0))
+            row["unmanaged_current_policy"] = live_row.get("unmanaged", row.get("unmanaged_current_policy", 0))
+            row["expired_current_policy"] = live_row.get("expired", row.get("expired_current_policy", 0))
+            row["hot_unmanaged_backlog"] = live_row.get("hot_unmanaged", row.get("hot_unmanaged_backlog"))
         candidates.append(row)
     combined["candidates"] = candidates
     combined["backlog"] = capacity
+    combined["capacity_snapshot_complete"] = capacity_snapshot_complete
+    combined["capacity_snapshot_usable"] = capacity_snapshot_usable
     combined["live_capacity_snapshot_id"] = live.get("snapshot_id")
     combined["capacity_snapshot_at"] = live.get("generated_at")
     combined["live_capacity_variant"] = live.get("variant") or (A1_NAME if shadow_live_capacity else "CURRENT_REFERENCE")
-    combined["source_watermarks"] = watermarks
-    combined["performance_snapshot_version"] = historical.get("snapshot_id") or historical.get("performance_snapshot_version")
+    combined["source_watermarks"] = dict(historical.get("source_watermarks") or live.get("source_watermarks") or {})
+    combined["performance_snapshot_version"] = (
+        historical.get("weekly_score_baseline_id")
+        if policy_version == DYNAMIC_POLICY_VERSION
+        else (historical.get("snapshot_id") or historical.get("performance_snapshot_version"))
+    )
+    if policy_version == DYNAMIC_POLICY_VERSION:
+        combined["weekly_score_period_start"] = historical.get("weekly_score_period_start")
+        combined["weekly_score_period_end"] = historical.get("weekly_score_period_end")
+        combined["weekly_score_generated_at"] = historical.get("weekly_score_generated_at")
     combined["performance_cache_stats"] = cache.stats()
     combined["historical_docs_examined"] = historical.get("docs_examined", 0)
     combined["live_capacity_docs_examined"] = live.get("docs_examined", 0)
@@ -1434,9 +1573,11 @@ def _initial_candidate_state(rows: Iterable[Mapping[str, Any]], committed_counts
         if not user_id:
             continue
         state.setdefault(user_id, {
-            "simulated_open_current": _number(row.get("open_current_policy")),
-            "simulated_unmanaged_current": _number(row.get("unmanaged_current_policy")),
-            "simulated_expired_current": _number(row.get("expired_current_policy")),
+            "simulated_open_current": _capacity_number(row.get("open_current_policy")),
+            "simulated_unmanaged_current": _capacity_number(row.get("unmanaged_current_policy")),
+            "simulated_expired_current": _capacity_number(row.get("expired_current_policy")),
+            "hot_unmanaged_backlog": _number(row.get("hot_unmanaged_backlog")),
+            "recent_rescues_7d": _number(row.get("recent_rescues_7d")),
             "shadow_received_count": _number(committed_counts.get(user_id, row.get("shadow_received_count", 0))),
             "tier1_recent_count_before": int(_number(balance_counts.get(user_id, row.get("tier1_recent_count_before", 0)))),
             "tier1_last_assignment_at": str(balance_last.get(user_id, row.get("tier1_last_assignment_at") or "")),
@@ -1448,35 +1589,101 @@ def _state_counts(state: Mapping[str, Mapping[str, Any]]) -> dict[str, int]:
     return {user_id: int(_number(values.get("shadow_received_count"))) for user_id, values in state.items() if not str(user_id).startswith("__")}
 
 
+def _update_v2_state(
+    state: dict[str, dict[str, Any]],
+    winner: Mapping[str, Any],
+    *,
+    source_user_id: str,
+    temperature: str,
+) -> None:
+    source = state.get(source_user_id)
+    if source:
+        for key in ("simulated_open_current", "simulated_unmanaged_current", "simulated_expired_current"):
+            current = _capacity_number(source.get(key))
+            if current is not None:
+                source[key] = max(0.0, current - 1.0)
+        if temperature == "HOT":
+            source["hot_unmanaged_backlog"] = max(0.0, _number(source.get("hot_unmanaged_backlog")) - 1.0)
+    _update_state(state, winner)
+    target_user_id = _text(winner.get("user_id"))
+    if not target_user_id:
+        return
+    state[target_user_id]["recent_rescues_7d"] = _number(state[target_user_id].get("recent_rescues_7d")) + 1.0
+    if temperature == "HOT":
+        state[target_user_id]["hot_unmanaged_backlog"] = _number(state[target_user_id].get("hot_unmanaged_backlog")) + 1.0
+
+
+_EVENT_TIMESTAMP_FIELDS = ("reassigned_at", "commit_time", "created_at", "timestamp", "at")
+
+
+def _event_timestamp(event: Mapping[str, Any]) -> Any:
+    return next((event.get(field) for field in _EVENT_TIMESTAMP_FIELDS if event.get(field) is not None), None)
+
+
 def _event_sort_key(event: Mapping[str, Any]) -> tuple[str, str]:
-    timestamp = _iso(event.get("reassigned_at") or event.get("commit_time") or event.get("created_at") or event.get("timestamp"))
-    return timestamp, _text(event.get("decision_id") or event.get("_id"))
+    return _iso(_event_timestamp(event)), _text(event.get("decision_id") or event.get("_id"))
 
 
 async def _load_committed_events(
     db: Any,
     *,
     events: Iterable[Mapping[str, Any]] | None = None,
+    policy_versions: Iterable[str] | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
     read_instrumentation: ReadInstrumentation | None = None,
 ) -> list[dict[str, Any]]:
+    lower = _utc(since) if since is not None else None
+    upper = _utc(until) if until is not None else None
     if events is not None:
-        return [dict(row) for row in events]
+        rows = [dict(row) for row in events]
+        if lower is None and upper is None:
+            return rows
+        bounded = []
+        for row in rows:
+            timestamp = _utc(_event_timestamp(row))
+            if timestamp and (lower is None or timestamp >= lower) and (upper is None or timestamp <= upper):
+                bounded.append(row)
+        return bounded
     if db is None:
         from .storage import get_async_db
         db = get_async_db()
+    versions = list(dict.fromkeys(_text(value) for value in (policy_versions or (POLICY_VERSION,)) if _text(value)))
+    version_query: Any = versions[0] if len(versions) == 1 else {"$in": versions}
+    query: dict[str, Any] = {"event_type": COMMITTED_EVENT, "policy_version": version_query}
+    if lower is not None or upper is not None:
+        time_range: dict[str, Any] = {}
+        if lower is not None:
+            time_range["$gte"] = lower
+        if upper is not None:
+            time_range["$lte"] = upper
+        # Keep timestamp aliases used by legacy committed rows. The worker's
+        # seven-day V2 rescue read is bounded in MongoDB, before Python counts.
+        query["$or"] = [{field: time_range} for field in _EVENT_TIMESTAMP_FIELDS]
     return await _find_many(
         db[LEDGER_COLLECTION],
-        {"event_type": COMMITTED_EVENT, "policy_version": POLICY_VERSION},
+        query,
         {"_id": 1, "event_type": 1, "decision_id": 1, "lead_id": 1, "source_cycle_id": 1,
          "target_owner_user_id": 1, "selected_user_id": 1, "policy_version": 1, "policy_branch": 1,
          "branch": 1, "source_cycle_sla_breached_at": 1, "sla_breached_at": 1,
-         "reassigned_at": 1, "commit_time": 1, "created_at": 1, "assignment_number": 1,
-         "selection_rule": 1, "actor": 1, "assigned_by": 1,
+         "reassigned_at": 1, "commit_time": 1, "created_at": 1, "timestamp": 1, "at": 1,
+         "assignment_number": 1, "selection_rule": 1, "actor": 1, "assigned_by": 1,
          "reassignment_reason": 1, "policy_repair_id": 1, "policy_repair_reason": 1,
          "repair_type": 1, "reverted": 1, "reversed": 1, "reversal": 1},
         instrumentation=read_instrumentation,
         query_name="worker.distribution.committed_events",
     )
+
+
+def _recent_rescue_counts(events: Iterable[Mapping[str, Any]], *, as_of: datetime, days: int = 7) -> Counter[str]:
+    cutoff = as_of - timedelta(days=days)
+    counts: Counter[str] = Counter()
+    for event in events:
+        target = _text(event.get("target_owner_user_id") or event.get("selected_user_id") or event.get("target_user_id"))
+        timestamp = _utc(_event_timestamp(event))
+        if target and timestamp and cutoff <= timestamp <= as_of:
+            counts[target] += 1
+    return counts
 
 
 def _post_cutover_committed(events: Iterable[Mapping[str, Any]], cutover_at: datetime, branch: str | Iterable[str]) -> list[dict[str, Any]]:
@@ -1701,6 +1908,7 @@ async def load_existing_shadow_documents(
     db: Any,
     cycle_ids: Iterable[Any],
     *,
+    policy_version: str = POLICY_VERSION,
     read_instrumentation: ReadInstrumentation | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Read the current shadow view once to preserve one-count semantics."""
@@ -1709,7 +1917,7 @@ async def load_existing_shadow_documents(
         return {}
     rows = await _find_many(
         db[SHADOW_COLLECTION],
-        {"source_cycle_id": {"$in": ids}, "policy_version": SHADOW_POLICY_VERSION},
+        {"source_cycle_id": {"$in": ids}, "policy_version": policy_version},
         {"_id": 1, "source_cycle_id": 1, "shadow_assignment_counted_at": 1, "would_execute": 1, "human_management_at": 1},
         instrumentation=read_instrumentation,
         query_name="worker.shadow.existing_cycles",
@@ -1753,7 +1961,8 @@ def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, res
     scored = list(result.get("scored") or [])
     selection_scored = list(result.get("selection_pool") or scored)
     winner_id = _text(winner.get("user_id")) or None
-    score_field = "dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score"
+    policy_version = _text(result.get("policy_version")) or POLICY_VERSION
+    score_field = "performance_score" if policy_version == DYNAMIC_POLICY_VERSION else ("dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score")
     selected_score = _number(winner.get(score_field)) if winner else None
     second_id, second_score = _select_second(selection_scored, winner_id or "", score_field)
     excluded = list(lead_row.get("previous_owner_user_ids") or ())
@@ -1764,7 +1973,7 @@ def _make_decision(lead_row: Mapping[str, Any], cycle: Mapping[str, Any], *, res
         selected_score=selected_score, selection_reason=_text(result.get("selection_reason")),
         performance_confidence=_text(winner.get("performance_confidence")), assignment_number=_assignment_number(cycle),
         excluded_previous_owners=excluded, management_evidence_checked_at=evaluated_at.isoformat(),
-        sla_breached_at=breach_at.isoformat(), evaluated_at=evaluated_at.isoformat(), policy_version=POLICY_VERSION,
+        sla_breached_at=breach_at.isoformat(), evaluated_at=evaluated_at.isoformat(), policy_version=policy_version,
         candidate_scores_snapshot=scored, selection_rule=_text(result.get("selection_rule")) or ("RM_R2" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "JPC_J3"),
         guardrail_applied=bool(result.get("guardrail_reason")), guardrail_reason=_text(result.get("guardrail_reason")),
         jpc_target_share=result.get("jpc_target_share") if branch == REGION_JPC_MARIA_HERNAN else None,
@@ -1789,11 +1998,44 @@ def _shadow_error(cycle: Mapping[str, Any], *, now: datetime, cutover: datetime,
     return SLAReassignmentShadowEvaluation(
         evaluated_at=now.isoformat(), lead_id=_text(cycle.get("lead_id")), source_cycle_id=_text(cycle.get("assignment_cycle_id")),
         breach_at="", cutover=cutover.isoformat(), branch=branch, eligible=False, exclusion_reason=reason,
-        assignment_number=_assignment_number(cycle), decision_id=generate_decision_id(cycle.get("lead_id"), cycle.get("assignment_cycle_id"), POLICY_VERSION),
+        assignment_number=_assignment_number(cycle), decision_id=generate_decision_id(cycle.get("lead_id"), cycle.get("assignment_cycle_id"), _configured_policy_version()),
     )
 
 
-def _policy_selection(lead_row: dict[str, Any], cycle: Mapping[str, Any], *, branch: str, state: dict[str, dict[str, float]], rm_history: list[str], jpc_counts: Counter[str], jpc_total: int, jpc_targets: Mapping[str, float], team: Mapping[str, Any], params: RescueParameters) -> dict[str, Any]:
+def _policy_selection(
+    lead_row: dict[str, Any], cycle: Mapping[str, Any], *, branch: str,
+    state: dict[str, dict[str, Any]], rm_history: list[str], jpc_counts: Counter[str],
+    jpc_total: int, jpc_targets: Mapping[str, float], team: Mapping[str, Any],
+    params: RescueParameters, policy_version: str = POLICY_VERSION,
+    dynamic_team: Mapping[str, Any] | None = None,
+    selection_context_verified: bool = False,
+) -> dict[str, Any]:
+    if policy_version == DYNAMIC_POLICY_VERSION:
+        candidates = []
+        for raw in lead_row.get("rm_candidates") or []:
+            row = dict(raw)
+            values = state.get(_text(row.get("user_id")), {})
+            row.update(values)
+            row["simulated_open_current"] = values.get("simulated_open_current", row.get("open_current_policy"))
+            row["simulated_unmanaged_current"] = values.get("simulated_unmanaged_current", row.get("unmanaged_current_policy"))
+            row["simulated_expired_current"] = values.get("simulated_expired_current", row.get("expired_current_policy"))
+            row["hot_unmanaged_backlog"] = values.get("hot_unmanaged_backlog", row.get("hot_unmanaged_backlog"))
+            row["recent_rescues_7d"] = values.get("recent_rescues_7d", row.get("recent_rescues_7d"))
+            candidates.append(row)
+        dynamic_params = RankingParameters(
+            shrinkage_k=params.shrinkage_k,
+            minimum_speed_sample=params.minimum_speed_sample,
+            tie_threshold=params.tie_threshold,
+            speed_p50_weight=params.speed_p50_weight,
+            speed_p90_weight=params.speed_p90_weight,
+            winsor_lower=params.winsor_lower,
+            winsor_upper=params.winsor_upper,
+        )
+        return select_v2_winner(
+            lead_row, candidates, team=dict(dynamic_team or team), branch=branch,
+            selection_context_verified=selection_context_verified,
+            admin_user_ids=RM_ADMIN_EXCLUDED_USER_IDS, params=dynamic_params,
+        )
     if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE}:
         return _rm_selection(lead_row, state, rm_history, scenario=R2_ROLLING_SHARE, low_policy=L1_LOW_NEEDS_PLUS_5, team=team, params=params)
     if branch == REGION_JPC_MARIA_HERNAN:
@@ -1831,6 +2073,7 @@ async def run_sla_reassignment_worker_iteration(
     """
     started = time.perf_counter()
     result = SLAWorkerIterationResult(status="disabled")
+    performance_snapshot_was_injected = performance_snapshot is not None
     if committed_events is not None and not isinstance(committed_events, list):
         committed_events = [dict(event) for event in committed_events]
     execution_mode = str(execution_mode or "shadow").strip().lower()
@@ -1842,6 +2085,14 @@ async def run_sla_reassignment_worker_iteration(
         return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
     if not bool(_cfg("CRM_SLA_REASSIGNMENT_WORKER_ENABLED", False)):
         result.status = "disabled"
+        result.duration_ms = (time.perf_counter() - started) * 1000.0
+        return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
+    try:
+        policy_version = _configured_policy_version()
+    except ValueError:
+        result.status = "fatal_configuration_error"
+        result.errors += 1
+        result.error_codes.append("POLICY_VERSION_CONFIGURATION_INVALID")
         result.duration_ms = (time.perf_counter() - started) * 1000.0
         return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
     if execution_mode == "shadow":
@@ -1941,7 +2192,11 @@ async def run_sla_reassignment_worker_iteration(
             expiration = _cycle_only_pre_cutover_expiration(cycle, now=as_of, cutover=cutover)
             if expiration is not None:
                 cycle_only_pre_cutover[_text(cycle.get("assignment_cycle_id"))] = expiration
-        if context is None:
+        if context is None and policy_version == DYNAMIC_POLICY_VERSION and not cycles:
+            # The normal scans and quarantine checks have completed; with no
+            # cycle there is no batch context to join or score.
+            context = {}
+        elif context is None:
             if db is None:
                 from .storage import get_async_db
                 db = get_async_db()
@@ -1950,27 +2205,95 @@ async def run_sla_reassignment_worker_iteration(
                 [cycle for cycle in cycles if _text(cycle.get("assignment_cycle_id")) not in cycle_only_pre_cutover],
                 read_instrumentation=read_instrumentation,
             )
+        v2_prefetched_cycles: dict[str, dict[str, Any]] = {}
+        v2_potentially_processable = policy_version != DYNAMIC_POLICY_VERSION
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            v2_potentially_processable = False
+            for cycle in cycles:
+                cycle_id = _text(cycle.get("assignment_cycle_id"))
+                lead, lookup_status = _resolve_lead_from_context(context, cycle.get("lead_id"))
+                cached: dict[str, Any] = {"lead": lead, "lead_lookup_status": lookup_status}
+                if not lead:
+                    if cycle_id not in cycle_only_pre_cutover:
+                        # Keep the existing orphan/error-recovery path intact.
+                        v2_potentially_processable = True
+                    v2_prefetched_cycles[cycle_id] = cached
+                    continue
+                try:
+                    expiration = canonical_expiration_recheck(cycle, lead, now=as_of)
+                    events = (context.get("events_by_lead") or {}).get(_text(cycle.get("lead_id")), [])
+                    results = (context.get("results_by_cycle") or {}).get(cycle_id, [])
+                    protection = _management_protection(cycle, lead, events, results, breach_at=expiration.breach_at)
+                    cached.update(expiration=expiration, protection=protection)
+                    v2_prefetched_cycles[cycle_id] = cached
+                    stop_before_breach = bool(
+                        protection.current_stop_at
+                        and expiration.breach_at
+                        and protection.current_stop_at <= expiration.breach_at
+                    )
+                    admin_hold_until = _utc(cycle.get("administrative_hold_until"))
+                    admin_supervisor_lock = (
+                        _text(cycle.get("administrative_assignment_mode")).upper() == "SUPERVISOR_LOCK"
+                    )
+                    admin_protected = admin_supervisor_lock or (
+                        admin_hold_until is not None and admin_hold_until > as_of
+                    )
+                    if (
+                        expiration.started_at and expiration.expired and expiration.breach_at
+                        and expiration.breach_at >= cutover
+                        and not stop_before_breach and not protection.protected
+                        and not admin_protected
+                    ):
+                        v2_potentially_processable = True
+                except Exception:
+                    # Fall through to the existing per-cycle error handling.
+                    v2_potentially_processable = True
+                    v2_prefetched_cycles[cycle_id] = cached
+        skip_v2_metrics = policy_version == DYNAMIC_POLICY_VERSION and not v2_potentially_processable
         if performance_snapshot is None:
-            try:
+            if skip_v2_metrics:
+                # No cycle can reach ranking; keep diagnostic processing and
+                # shadow recovery, but avoid historical/live metric rebuilds.
+                performance_snapshot = {
+                    "candidates": [], "team": {}, "users_by_id": {},
+                    "records_by_cycle": {}, "properties": {}, "catalog": {},
+                    "capacity_snapshot_complete": False,
+                    "performance_snapshot_version": "",
+                    "capacity_snapshot_at": "", "live_capacity_snapshot_id": "",
+                    "live_capacity_variant": "SKIPPED_NO_PROCESSABLE_CYCLES",
+                    "docs_examined": 0, "read_ms": 0.0,
+                }
+            else:
+                try:
                     performance_snapshot = await _default_performance_snapshot(
-                        as_of, db=db, performance_cache=performance_cache,
+                        as_of, policy_version=policy_version, db=db, performance_cache=performance_cache,
                         read_instrumentation=read_instrumentation,
                         shadow_live_capacity=True,
                     )
-            except Exception:
-                result.status = "snapshot_unavailable"
-                result.errors += 1
-                result.error_codes.append("SNAPSHOT_UNAVAILABLE")
-                result.duration_ms = (time.perf_counter() - started) * 1000.0
-                logger.error("%s outcome=SNAPSHOT_UNAVAILABLE", WORKER_LOG_PREFIX)
-                return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
+                except Exception:
+                    result.status = "snapshot_unavailable"
+                    result.errors += 1
+                    result.error_codes.append("SNAPSHOT_UNAVAILABLE")
+                    result.duration_ms = (time.perf_counter() - started) * 1000.0
+                    logger.error("%s outcome=SNAPSHOT_UNAVAILABLE", WORKER_LOG_PREFIX)
+                    return {"status": result.status, "iteration": result.to_dict(), "evaluations": [], "decisions": []}
         snapshot = dict(performance_snapshot)
         params = RescueParameters(performance_window_days=PERFORMANCE_WINDOW_DAYS)
         team = _normalise_team(snapshot)
         all_candidates = list(snapshot.get("candidates") or [])
+        dynamic_team = dict(snapshot.get("team") or {})
+        dynamic_snapshot_verified = bool(
+            (snapshot.get("performance_snapshot_version") or snapshot.get("snapshot_id"))
+            and (snapshot.get("capacity_snapshot_at") or snapshot.get("live_capacity_snapshot_id"))
+            and isinstance(snapshot.get("team"), Mapping)
+            and isinstance(snapshot.get("candidates"), list)
+            and _capacity_snapshot_verified_for_policy(snapshot, all_candidates, policy_version)
+        )
         maria_id = next((_text(row.get("user_id")) for row in all_candidates if _identity(row.get("identity_key") or row.get("executive_key")) == "maria paz galleguillos"), None)
         hernan_id = next((_text(row.get("user_id")) for row in all_candidates if _identity(row.get("identity_key") or row.get("executive_key")) == "hernan castro"), None)
-        if db is None and context is not None:
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            tier1_balance_state = None
+        elif db is None and context is not None:
             tier1_balance_state = {
                 "window_size": TIER1_BALANCE_WINDOW_SIZE,
                 "events": [], "counts": {}, "last_assignment_at": {},
@@ -1983,7 +2306,27 @@ async def run_sla_reassignment_worker_iteration(
                 events=committed_events,
                 read_instrumentation=read_instrumentation,
             )
-        if shadow_state_mode and db is None:
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            if skip_v2_metrics:
+                rescue_events = []
+            elif committed_events is not None:
+                rescue_events = [
+                    dict(row) for row in committed_events
+                    if _text(row.get("policy_version")) in {POLICY_VERSION, DYNAMIC_POLICY_VERSION}
+                ]
+            elif db is not None:
+                rescue_events = await _load_committed_events(
+                    db, policy_versions=(POLICY_VERSION, DYNAMIC_POLICY_VERSION),
+                    since=as_of - timedelta(days=7), until=as_of,
+                    read_instrumentation=read_instrumentation,
+                )
+            else:
+                rescue_events = []
+            state_version = _json_version(rescue_events)
+            rm_state = {"history": [], "recent_history": [], "received_counts": {}, "committed_total": 0, "distribution_state_version": state_version, "events": [], "source": "v2_recent_rescue_load"}
+            jpc_state = {"counts": {}, "committed_total": 0, "observed_share": {}, "distribution_state_version": state_version, "events": [], "source": "v2_recent_rescue_load"}
+            recent_rescues = _recent_rescue_counts(rescue_events, as_of=as_of)
+        elif shadow_state_mode and db is None:
             # Unit/replay callers may inject the complete scan context without
             # a database.  Production startup always supplies the guarded DB;
             # the injected path starts from an empty prospective state.
@@ -2003,11 +2346,15 @@ async def run_sla_reassignment_worker_iteration(
                 maria_user_id=maria_id, hernan_user_id=hernan_id,
                 read_instrumentation=read_instrumentation,
             )
+            recent_rescues = Counter()
         jpc_state["maria_received"] = jpc_state.get("counts", {}).get(_text(maria_id), 0) if maria_id else 0
         jpc_state["hernan_received"] = jpc_state.get("counts", {}).get(_text(hernan_id), 0) if hernan_id else 0
         committed_counts = Counter(rm_state.get("received_counts") or {})
         committed_counts.update(jpc_state.get("counts") or {})
         shadow_state = _initial_candidate_state(all_candidates, committed_counts, tier1_balance_state)
+        if policy_version == DYNAMIC_POLICY_VERSION:
+            for user_id, values in shadow_state.items():
+                values["recent_rescues_7d"] = float(recent_rescues.get(user_id, 0))
         rm_history = list(rm_state.get("history") or [])
         jpc_counts = Counter(jpc_state.get("counts") or {})
         future_jpc_count = 0
@@ -2015,16 +2362,21 @@ async def run_sla_reassignment_worker_iteration(
         protection_by_cycle: dict[str, ManagementProtection] = {}
         existing_shadow = await load_existing_shadow_documents(
             db, [_text(row.get("assignment_cycle_id")) for row in cycles],
+            policy_version=policy_version,
             read_instrumentation=read_instrumentation,
-        ) if db is not None and execution_mode == "shadow" else {}
+        ) if db is not None and execution_mode == "shadow" and cycles else {}
         for cycle in cycles:
-            lead, lead_lookup_status = _resolve_lead_from_context(context, cycle.get("lead_id"))
+            prefetched = v2_prefetched_cycles.get(_text(cycle.get("assignment_cycle_id")), {})
+            lead = prefetched.get("lead") if policy_version == DYNAMIC_POLICY_VERSION else None
+            lead_lookup_status = prefetched.get("lead_lookup_status") if policy_version == DYNAMIC_POLICY_VERSION else None
+            if policy_version != DYNAMIC_POLICY_VERSION or not prefetched:
+                lead, lead_lookup_status = _resolve_lead_from_context(context, cycle.get("lead_id"))
             if lead:
                 try:
-                    exp = canonical_expiration_recheck(cycle, lead, now=as_of)
+                    exp = prefetched.get("expiration") or canonical_expiration_recheck(cycle, lead, now=as_of)
                     events = (context.get("events_by_lead") or {}).get(_text(cycle.get("lead_id")), [])
                     results = (context.get("results_by_cycle") or {}).get(_text(cycle.get("assignment_cycle_id")), [])
-                    protection = _management_protection(cycle, lead, events, results, breach_at=exp.breach_at)
+                    protection = prefetched.get("protection") or _management_protection(cycle, lead, events, results, breach_at=exp.breach_at)
                     row = _policy_row(cycle, lead, snapshot, state_counts=_state_counts(shadow_state))
                     lead_rows.append((row, cycle, exp, protection, _owner_cycle_issue(cycle, lead, (context.get("active_cycles_by_lead") or {}).get(_text(cycle.get("lead_id")), [cycle]), snapshot.get("users_by_id") or {})))
                     protection_by_cycle[_text(cycle.get("assignment_cycle_id"))] = protection
@@ -2069,12 +2421,12 @@ async def run_sla_reassignment_worker_iteration(
         evaluations: list[dict[str, Any]] = []
         decisions: list[dict[str, Any]] = []
         perf_version = _text(snapshot.get("performance_snapshot_version"))
-        dist_version = sha256((_text(rm_state.get("distribution_state_version")) + _text(jpc_state.get("distribution_state_version")) + _text(tier1_balance_state.get("state_version"))).encode("utf-8")).hexdigest()
+        dist_version = sha256((_text(rm_state.get("distribution_state_version")) + _text(jpc_state.get("distribution_state_version")) + _text((tier1_balance_state or {}).get("state_version"))).encode("utf-8")).hexdigest()
         for lead_row, cycle, exp, protection, owner_status in ordered:
             try:
                 lead_id = _text(cycle.get("lead_id"))
                 cycle_id = _text(cycle.get("assignment_cycle_id"))
-                decision_id = generate_decision_id(lead_id, cycle_id, POLICY_VERSION)
+                decision_id = generate_decision_id(lead_id, cycle_id, policy_version)
                 if owner_status == "PRE_CUTOVER_NO_LEAD":
                     result.canonically_expired += 1
                     result.pre_cutover_skipped += 1
@@ -2123,14 +2475,26 @@ async def run_sla_reassignment_worker_iteration(
                 counts = _state_counts(shadow_state)
                 for candidate in lead_row["rm_candidates"] + lead_row["jpc_candidates"]:
                     candidate["shadow_received_count"] = counts.get(_text(candidate.get("user_id")), 0)
-                selection = _policy_selection(lead_row, cycle, branch=branch, state=shadow_state, rm_history=rm_history, jpc_counts=jpc_counts, jpc_total=max(1, int(jpc_horizon_total or (int(jpc_state.get("committed_total", 0)) + future_jpc_count))), jpc_targets=jpc_targets, team=team, params=params)
+                selection = _policy_selection(
+                    lead_row, cycle, branch=branch, state=shadow_state,
+                    rm_history=rm_history, jpc_counts=jpc_counts,
+                    jpc_total=max(1, int(jpc_horizon_total or (int(jpc_state.get("committed_total", 0)) + future_jpc_count))),
+                    jpc_targets=jpc_targets, team=team, params=params,
+                    policy_version=policy_version, dynamic_team=dynamic_team,
+                    selection_context_verified=(
+                        dynamic_snapshot_verified and owner_status == "OWNER_OK"
+                        and bool(lead_row.get("lead_id")) and bool(lead_row.get("assignment_cycle_id"))
+                        and bool(lead_row.get("owner_user_id"))
+                    ),
+                )
                 winner = selection.get("winner") or {}
                 scored = list(selection.get("scored") or [])
+                selection_scored = list(selection.get("selection_pool") or scored)
                 candidate_ids = tuple(_text(row.get("user_id")) for row in scored if _text(row.get("user_id")))
                 selected_id = _text(winner.get("user_id")) if winner else None
-                score_field = "dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score"
+                score_field = "performance_score" if policy_version == DYNAMIC_POLICY_VERSION else ("dynamic_rescue_score" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "global_rescue_score")
                 selected_score = _number(winner.get(score_field)) if winner else None
-                second_id, second_score = _select_second(scored, selected_id or "", score_field)
+                second_id, second_score = _select_second(selection_scored, selected_id or "", score_field)
                 margin = selected_score - second_score if selected_id and second_score is not None and selected_score is not None else None
                 reason = _text(selection.get("selection_reason")) or ("NO_ELIGIBLE_RESCUER" if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} else "NO_ELIGIBLE_JPC_RESCUER")
                 decision = _make_decision(lead_row, cycle, result=selection, branch=branch, breach_at=exp.breach_at, cutover=cutover, evaluated_at=as_of, params=params)
@@ -2139,11 +2503,18 @@ async def run_sla_reassignment_worker_iteration(
                     result.evaluated += 1
                     result.would_reassign += 1
                     if not already_counted:
-                        if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} or selection.get("candidate_tier") == 2:
-                            rm_history.append(selected_id)
+                        if policy_version == DYNAMIC_POLICY_VERSION:
+                            _update_v2_state(
+                                shadow_state, winner,
+                                source_user_id=_text(lead_row.get("owner_user_id")),
+                                temperature=_text(lead_row.get("temperature")).upper(),
+                            )
                         else:
-                            jpc_counts[selected_id] += 1
-                        _update_state(shadow_state, winner)
+                            if branch in {RM_GLOBAL_RESCUE, REGIONAL_GLOBAL_RESCUE} or selection.get("candidate_tier") == 2:
+                                rm_history.append(selected_id)
+                            else:
+                                jpc_counts[selected_id] += 1
+                            _update_state(shadow_state, winner)
                     decisions.append(decision)
                     logger.info("%s cycle_id=%s lead_id=%s branch=%s outcome=would_reassign target_id=%s decision_id=%s duration_ms=%.2f", WORKER_LOG_PREFIX, cycle_id, lead_id, branch, selected_id, decision_id, (time.perf_counter() - started) * 1000.0)
                 else:
@@ -2154,6 +2525,8 @@ async def run_sla_reassignment_worker_iteration(
                 result.error_codes.append("LEAD_EVALUATION_ERROR")
                 evaluations.append(_shadow_error(cycle, now=as_of, cutover=cutover, reason="LEAD_EVALUATION_ERROR").to_dict())
                 logger.warning("%s cycle_id=%s lead_id=%s outcome=error error_type=%s", WORKER_LOG_PREFIX, _text(cycle.get("assignment_cycle_id")), _text(cycle.get("lead_id")), type(exc).__name__)
+        for evaluation in evaluations:
+            evaluation["policy_version"] = policy_version
         persistence_status = "NOT_ATTEMPTED"
         persistence_writes = 0
         persistence_ms = 0.0
@@ -2170,6 +2543,7 @@ async def run_sla_reassignment_worker_iteration(
                 "scan_mode": scan_mode,
                 "performance_snapshot_version": perf_version, "distribution_state_version": dist_version,
                 "performance_docs_examined": snapshot.get("docs_examined", 0), "performance_read_ms": snapshot.get("read_ms"),
+                "performance_snapshot_skipped": bool(skip_v2_metrics and not performance_snapshot_was_injected),
                 "query_documents_examined": scan_result.get("documents_examined", 0),
                 "shadow_storage_status": "NOT_APPLICABLE", "shadow_storage_writes": 0,
                 "shadow_storage_ms": 0.0, "new_shadow_would_execute": 0,
@@ -2218,6 +2592,7 @@ async def run_sla_reassignment_worker_iteration(
             "scan_mode": scan_mode,
             "performance_snapshot_version": perf_version, "distribution_state_version": dist_version,
             "performance_docs_examined": snapshot.get("docs_examined", 0), "performance_read_ms": snapshot.get("read_ms"),
+            "performance_snapshot_skipped": bool(skip_v2_metrics and not performance_snapshot_was_injected),
             "query_documents_examined": scan_result.get("documents_examined", 0),
             "shadow_state_counts": _state_counts(shadow_state),
             "shadow_storage_status": persistence_status,
@@ -2307,7 +2682,7 @@ def worker_configuration_snapshot() -> dict[str, Any]:
         "shadow_enabled": bool(_cfg("CRM_SLA_REASSIGNMENT_SHADOW_ENABLED", False)),
         "interval_seconds": int(_cfg("CRM_SLA_REASSIGNMENT_WORKER_INTERVAL_SECONDS", 60)),
         "batch_size": int(_cfg("CRM_SLA_REASSIGNMENT_BATCH_SIZE", 25)),
-        "policy_version": POLICY_VERSION,
+        "policy_version": _text(_cfg("CRM_SLA_REASSIGNMENT_POLICY_VERSION", POLICY_VERSION)),
         "cutover_source": "CRM_SLA_REASSIGNMENT_SHADOW_CUTOVER_AT",
         "production_cutover_source": "CRM_SLA_REASSIGNMENT_CUTOVER_AT",
         "shadow_cutover_at": _text(_cfg("CRM_SLA_REASSIGNMENT_SHADOW_CUTOVER_AT", None)) or None,
@@ -2334,7 +2709,7 @@ def validate_worker_configuration() -> dict[str, Any]:
         reassignment_enabled=bool(_cfg("CRM_SLA_REASSIGNMENT_ENABLED", False)),
         shadow_cutover_at=_cfg("CRM_SLA_REASSIGNMENT_SHADOW_CUTOVER_AT", None),
         production_cutover_at=_cfg("CRM_SLA_REASSIGNMENT_CUTOVER_AT", None),
-        policy_version=POLICY_VERSION,
+        policy_version=_text(_cfg("CRM_SLA_REASSIGNMENT_POLICY_VERSION", POLICY_VERSION)),
         security_enabled=bool(_cfg("CRM_SLA_SECURITY_LAYER_ENABLED", False)),
         transaction_gate_enabled=bool(_cfg("CRM_SLA_TRANSACTION_GATE_ENABLED", False)),
     )

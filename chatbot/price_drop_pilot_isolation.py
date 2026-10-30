@@ -42,7 +42,7 @@ FLOOR = re.compile(r"\b(?:en qu[eé] piso|qu[eé] piso|piso (?:est[aá]|queda)|n
 ORIENTATION = re.compile(r"\b(?:orientaci[oó]n|hacia d[oó]nde)\b", re.I)
 POOL = re.compile(r"\b(?:piscinas?)\b", re.I)
 PETS = re.compile(r"\b(?:mascotas?|perros?|gatos?)\b", re.I)
-CONTACT_HUMAN = re.compile(r"\b(?:hablar con (?:un |una )?(?:ejecutiv[oa]|asesor[oa])|que me llame|contacte (?:un |una )?(?:ejecutiv[oa]|asesor[oa]))\b", re.I)
+CONTACT_HUMAN = re.compile(r"\b(?:hablar con (?:un |una )?(?:ejecutiv[oa]|asesor[oa])|que me llame|me puede llamar|me pueden llamar|contacte (?:un |una )?(?:ejecutiv[oa]|asesor[oa]))\b", re.I)
 NEGATE_VISIT = re.compile(r"\b(?:no quiero (?:visitarla|visitar|una visita|agendar|coordinar)|no me interesa una visita)\b", re.I)
 COMMISSION = re.compile(r"\b(?:comisi[oó]n|honorarios|corretaje)\b", re.I)
 VISIT_WHEN = re.compile(
@@ -54,6 +54,7 @@ VISIT_WHEN = re.compile(
 BAD_CLAIM = re.compile(
     r"\b(?:he (?:avisado|notificado|contactado|agendado|registrado|derivado)|"
     r"(?:ya |est[aá] )?(?:agendada|confirmada) la visita|"
+    r"la visita (?:est[aá] |qued[oó] )?(?:confirmada|agendada)|"
     r"el ejecutivo (?:fue notificado|te (?:llamar[aá]|contactar[aá]))|"
     r"lo (?:dejamos|dej[eé]|dejo|qued[oó]) anotado|"
     r"(?:te vamos a llamar|te contactaremos|ya registr[eé]|queda reservada|qued[oó] agendada|"

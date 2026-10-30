@@ -104,8 +104,13 @@ def load_active_context(db: Any, phone: str, message: str, *, now: datetime | No
     sent_at, expires_at = record.get("sent_at"), record.get("expires_at")
     if not isinstance(sent_at, datetime) or not isinstance(expires_at, datetime):
         return None
-    if sent_at.tzinfo is None or expires_at.tzinfo is None:
-        return None
+    # PyMongo defaults to naive UTC BSON datetimes unless tz_aware=True.
+    if sent_at.tzinfo is None:
+        sent_at = sent_at.replace(tzinfo=timezone.utc)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
     if not (sent_at <= now < expires_at):
         return None
     if normalize_phone_strict(record.get("phone_normalized") or "") != normalize_phone_strict(phone):

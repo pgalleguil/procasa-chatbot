@@ -166,6 +166,11 @@ class Config:
     CRM_SLA_REASSIGNMENT_POLICY_VERSION = os.getenv(
         "CRM_SLA_REASSIGNMENT_POLICY_VERSION", "crm_sla_reassignment_v1"
     ).strip() or "crm_sla_reassignment_v1"
+    # Opt-in for a durable weekly V2 score snapshot shared across restarts.
+    # This never affects V1 and never changes CRM leads/cycles/ownership.
+    CRM_SLA_V2_WEEKLY_PERSISTENCE_ENABLED = os.getenv(
+        "CRM_SLA_V2_WEEKLY_PERSISTENCE_ENABLED", "false"
+    ).strip().lower() == "true"
     CRM_SLA_REASSIGNMENT_WORKER_ENABLED = os.getenv(
         "CRM_SLA_REASSIGNMENT_WORKER_ENABLED", "false"
     ).strip().lower() == "true"

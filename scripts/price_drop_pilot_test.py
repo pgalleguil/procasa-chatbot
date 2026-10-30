@@ -24,7 +24,7 @@ from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
 PROPERTY_CODE = "6436"
 OLD_UF = 2790.0
 NEW_UF = 2690.0
-TEST_ID = "20261030-6436-price-drop-pilot-v2"
+TEST_ID = "20261030-6436-price-drop-pilot-v3"
 
 
 def run_test_once(*, send: bool = False) -> int:
@@ -67,15 +67,16 @@ def run_test_once(*, send: bool = False) -> int:
         print("BLOCKED: an attempt for this test was already recorded; no retries")
         return 2
 
+    # A naturally worded customer-facing message. No unverified name, past
+    # contact, stated objections, or claims of a previous consultation.
+    # The test-only allowlist, campaign ID, and CRM isolation stay invisible.
     message = (
-        "SEGUNDA PRUEBA INTERNA PROCASA\n"
-        "Estamos validando respuestas a una rebaja de precio. "
-        "El departamento en VENTA de San Miguel (código 6436) bajó "
-        "de UF 2.790 a UF 2.690.\n"
-        "https://www.procasa.cl/6436\n"
-        "Puedes preguntar por dormitorios, baños, gastos comunes, ofertas o visitas, "
-        "o responder con tus propias palabras. No se notificará a ningún ejecutivo: "
-        "esta conversación es una prueba interna."
+        "¡Hola! ¿Cómo estás? 😊\n\n"
+        "Te escribo de PROCASA porque el departamento de San Miguel bajó "
+        "de precio: de UF 2.790 a UF 2.690.\n\n"
+        "Te dejo el enlace para que lo veas 🏡\n"
+        "https://www.procasa.cl/6436\n\n"
+        "¿Te gustaría saber más o ir a verlo?"
     )
     if not send:
         print("DRY RUN PASSED: isolated recipient and current price verified; no WhatsApp sent")
@@ -92,7 +93,7 @@ def run_test_once(*, send: bool = False) -> int:
         "new_price_uf": NEW_UF,
         "operation": "Venta",
         "channel": "whatsapp",
-        "campaign_version": "price_drop_pilot_v2",
+        "campaign_version": "price_drop_pilot_v3",
         "status": "SENDING",
         "isolation_version": "test_webhook_before_crm_v1",
         "created_at": now,

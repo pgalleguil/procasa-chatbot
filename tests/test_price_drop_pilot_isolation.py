@@ -523,3 +523,23 @@ def test_prior_message_context_does_not_assert_a_visit_without_clear_question(is
     )
     assert "¿Te refieres" in answer
     assert "agend" not in answer.lower()
+
+
+def test_v3_customer_message_is_natural_and_contains_no_unverified_history():
+    """Only factual property and price are included; no invented customer details."""
+    from scripts import price_drop_pilot_test as sender_script
+    source = Path(__file__).resolve().parents[1].joinpath(
+        "scripts/price_drop_pilot_test.py"
+    ).read_text()
+    assert sender_script.TEST_ID.endswith("-v3")
+    assert '"campaign_version": "price_drop_pilot_v3"' in source
+    # Text segments in the message block must not claim facts about the lead.
+    segment = source.split("    message = (", 1)[1].split("    if not send:", 1)[0]
+    for excluded in ("PRUEBA INTERNA", "SEGUNDA PRUEBA", "habías consultado",
+                     "me comentaste", "[Nombre]", "nombre del cliente",
+                     "le enviamos a tu ejecutiv"):
+        assert excluded not in segment
+    for required in ("¡Hola! ¿Cómo estás?", "PROCASA", "San Miguel",
+                     "UF 2.790", "UF 2.690", "procasa.cl/6436",
+                     "¿Te gustaría saber más o ir a verlo?"):
+        assert required in segment

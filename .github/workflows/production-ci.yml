@@ -26,6 +26,7 @@ jobs:
             webhook.py config.py api_crm.py api_captacion.py \
             captacion_management.py captacion_assignment_eligibility.py \
             chatbot/crm_assignment_integrity.py chatbot/crm_sla_live_capacity.py \
+            chatbot/core.py chatbot/price_drop_pilot.py scripts/price_drop_pilot_test.py \
             maintenance/repair_procasa_p0_17252.py maintenance/repair_procasa_p0_6732.py \
             maintenance/repair_procasa_prop360_duplicate_cycles.py \
             maintenance/ensure_crm_cycle_reconciliation_index.py \
@@ -43,6 +44,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: Isolated price-drop WhatsApp pilot
+            tests: tests/test_price_drop_pilot.py
           - suite: Owner campaign price revalidation
             tests: >-
               tests/test_owner_campaign_private_portal.py

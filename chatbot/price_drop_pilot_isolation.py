@@ -54,7 +54,10 @@ VISIT_WHEN = re.compile(
 BAD_CLAIM = re.compile(
     r"\b(?:he (?:avisado|notificado|contactado|agendado|registrado|derivado)|"
     r"(?:ya |est[aá] )?(?:agendada|confirmada) la visita|"
-    r"el ejecutivo (?:fue notificado|te (?:llamar[aá]|contactar[aá])))\b", re.I
+    r"el ejecutivo (?:fue notificado|te (?:llamar[aá]|contactar[aá]))|"
+    r"lo (?:dejamos|dej[eé]|dejo|qued[oó]) anotado|"
+    r"(?:te vamos a llamar|te contactaremos|ya registr[eé]|queda reservada|qued[oó] agendada|"
+    r"le informamos al ejecutivo|avisamos al ejecutivo))\b", re.I
 )
 
 
@@ -283,6 +286,8 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
             answer += (" " if answer else "") + "No tengo confirmado " + (
                 "el resto de esos datos." if found else "ese dato en su ficha."
             )
+        if PRICE.search(clean):
+            answer += f" El precio vigente es UF {new}."
         return answer
     if PETS.search(clean):
         return (f"La ficha del departamento {code} menciona mascotas, pero el reglamento del edificio "
@@ -294,6 +299,10 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
         return ("Puedes pedir hablar con un ejecutivo, pero en esta prueba no se enviará "
                 "ninguna solicitud ni notificación comercial.")
     if VISIT.search(clean):
+        if VISIT_WHEN.search(clean):
+            return (f"Entiendo que quieres evaluar una visita al departamento {code} {clean.lower()}. "
+                    "¿Qué horario te acomodaría? Es una prueba: ninguna visita quedó agendada "
+                    "ni se notificó a un ejecutivo.")
         return (f"Podemos evaluar una visita al departamento {code}, ahora en UF {new}. "
                 "¿Qué día u horario te acomoda? Es una prueba: no se enviará ninguna solicitud a un ejecutivo.")
     if NEGOTIATION.search(clean):

@@ -234,3 +234,54 @@ def test_script_no_longer_looks_up_or_edits_existing_leads():
     assert 'db["leads"]' not in source
     assert '"test_mode": True' in source
     assert "if not args.send:" in source
+
+
+def test_bootstrap_one_shot_is_disabled_by_default():
+    source = Path(__file__).resolve().parents[1].joinpath("webhook.py").read_text()
+    assert 'if str(os.getenv("PRICE_DROP_PILOT_SEND_ON_START", "")).lower()' in source
+    assert 'lambda: run_test_once(send=True)' in source
+
+
+def test_pilot_sender_once_and_never_writes_existing_leads(isolated, monkeypatch):
+    """Dry-run cannot send; the first live call is recorded; second cannot send."""
+    from scripts import price_drop_pilot_test as sender_script
+    db = db_case()
+    test_collection = db["crm_price_drop_pilot_v1"]
+    test_collection.docs = []  # no prior send record
+
+    monkeypatch.setattr(sender_script, "get_db", lambda: db)
+    calls = []
+    def stub_send(phone, text):
+        calls.append((phone, text))
+        return {"success": True, "provider_message_id": "provider-test-sent"}
+    monkeypatch.setattr(sender_script, "send_whatsapp_message_detailed_sync", stub_send)
+
+    assert sender_script.run_test_once(send=False) == 0
+    assert not calls
+    assert not test_collection.docs
+
+    assert sender_script.run_test_once(send=True) == 0
+    assert len(calls) == 1
+    assert test_collection.docs[0]["test_mode"] is True
+    assert "lead_id" not in test_collection.docs[0]
+    assert test_collection.docs[0]["status"] == "SENT"
+    assert load_test_context(db, PHONE)["property_code"] == "6436"
+
+    assert sender_script.run_test_once(send=True) == 2
+    assert len(calls) == 1
+
+
+def test_failed_provider_attempt_does_not_auto_retry(isolated, monkeypatch):
+    from scripts import price_drop_pilot_test as sender_script
+    db = db_case()
+    db["crm_price_drop_pilot_v1"].docs = []
+    monkeypatch.setattr(sender_script, "get_db", lambda: db)
+    calls = []
+    def failed_send(phone, text):
+        calls.append(phone)
+        raise TimeoutError("unknown")
+    monkeypatch.setattr(sender_script, "send_whatsapp_message_detailed_sync", failed_send)
+    assert sender_script.run_test_once(send=True) == 1
+    assert db["crm_price_drop_pilot_v1"].docs[0]["status"] == "DELIVERY_UNKNOWN"
+    assert sender_script.run_test_once(send=True) == 2
+    assert len(calls) == 1

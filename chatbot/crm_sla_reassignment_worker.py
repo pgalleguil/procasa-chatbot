@@ -1377,6 +1377,7 @@ async def _default_performance_snapshot(
     historical = await cache.get_historical(
         now=as_of,
         policy_version=policy_version,
+        force=policy_version == DYNAMIC_POLICY_VERSION and cache.weekly_v2_refresh_due(as_of),
         builder=lambda: build_historical_performance_snapshot(
             db, as_of=as_of, policy_since=policy_start,
             performance_window_days=PERFORMANCE_WINDOW_DAYS,
@@ -1384,6 +1385,11 @@ async def _default_performance_snapshot(
             instrumentation=read_instrumentation,
         ),
     )
+    if policy_version == DYNAMIC_POLICY_VERSION:
+        # Freeze only SLA/management/speed evidence for the commercial week.
+        # Fresh user, property and territory context still refreshes every
+        # five minutes; live capacity remains on its 60-second cache.
+        historical = cache.apply_weekly_v2_scores(historical, now=as_of)
     live = await cache.get_live_capacity(
         now=as_of,
         policy_version=policy_version,
@@ -1436,7 +1442,15 @@ async def _default_performance_snapshot(
     combined["capacity_snapshot_at"] = live.get("generated_at")
     combined["live_capacity_variant"] = live.get("variant") or (A1_NAME if shadow_live_capacity else "CURRENT_REFERENCE")
     combined["source_watermarks"] = dict(historical.get("source_watermarks") or live.get("source_watermarks") or {})
-    combined["performance_snapshot_version"] = historical.get("snapshot_id") or historical.get("performance_snapshot_version")
+    combined["performance_snapshot_version"] = (
+        historical.get("weekly_score_baseline_id")
+        if policy_version == DYNAMIC_POLICY_VERSION
+        else (historical.get("snapshot_id") or historical.get("performance_snapshot_version"))
+    )
+    if policy_version == DYNAMIC_POLICY_VERSION:
+        combined["weekly_score_period_start"] = historical.get("weekly_score_period_start")
+        combined["weekly_score_period_end"] = historical.get("weekly_score_period_end")
+        combined["weekly_score_generated_at"] = historical.get("weekly_score_generated_at")
     combined["performance_cache_stats"] = cache.stats()
     combined["historical_docs_examined"] = historical.get("docs_examined", 0)
     combined["live_capacity_docs_examined"] = live.get("docs_examined", 0)

@@ -16,6 +16,7 @@ import json
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Awaitable, Callable, Mapping
 
 from .crm_sla_snapshot_queries import ReadInstrumentation, find_many
@@ -25,6 +26,26 @@ from .mongo_identity import mongo_id_variants
 HISTORICAL_TTL_CANDIDATES = (60, 120, 300, 600)
 DEFAULT_HISTORICAL_TTL_SECONDS = 300
 DEFAULT_LIVE_CAPACITY_TTL_SECONDS = 60
+WEEKLY_RANKING_POLICY_VERSION = "crm_sla_reassignment_v2"
+WEEKLY_RANKING_TIMEZONE = ZoneInfo("America/Santiago")
+WEEKLY_RANKING_HOUR = 9
+
+
+def weekly_ranking_window(now: Any) -> tuple[datetime, datetime]:
+    """Return the current Chile-local Monday 09:00 scoring interval in UTC."""
+    instant = _utc(now)
+    if instant is None:
+        raise ValueError("weekly_ranking_requires_valid_timestamp")
+    local_now = instant.astimezone(WEEKLY_RANKING_TIMEZONE)
+    monday = local_now.date() - timedelta(days=local_now.weekday())
+    start_local = datetime(monday.year, monday.month, monday.day, WEEKLY_RANKING_HOUR, tzinfo=WEEKLY_RANKING_TIMEZONE)
+    if local_now < start_local:
+        monday -= timedelta(days=7)
+        start_local = datetime(monday.year, monday.month, monday.day, WEEKLY_RANKING_HOUR, tzinfo=WEEKLY_RANKING_TIMEZONE)
+    following = monday + timedelta(days=7)
+    end_local = datetime(following.year, following.month, following.day, WEEKLY_RANKING_HOUR, tzinfo=WEEKLY_RANKING_TIMEZONE)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
 
 
 def _utc(value: Any) -> datetime | None:
@@ -393,6 +414,7 @@ class PerformanceSnapshotCache:
         self.live_capacity_ttl_seconds = int(live_capacity_ttl_seconds)
         self._historical: HistoricalPerformanceSnapshot | None = None
         self._live: LiveCapacitySnapshot | None = None
+        self._weekly_v2_scores: dict[str, Any] | None = None
         self._stats = {"historical_hits": 0, "historical_misses": 0, "live_hits": 0, "live_misses": 0, "historical_refreshes": 0, "live_refreshes": 0}
 
     async def get_historical(self, *, now: Any, builder: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]], policy_version: str, source_watermarks: Mapping[str, Any] | None = None, force: bool = False) -> dict[str, Any]:
@@ -415,6 +437,75 @@ class PerformanceSnapshotCache:
         self._historical = _historical_record(raw, now=current, ttl_seconds=self.historical_ttl_seconds, policy_version=policy_version, source_watermarks=watermarks or {})
         self._stats["historical_refreshes"] += 1
         return self._historical.to_dict()
+
+
+    def weekly_v2_refresh_due(self, now: Any) -> bool:
+        """Require a fresh 60-day historical read at the Monday boundary."""
+        return bool(
+            self._weekly_v2_scores is not None
+            and self._weekly_v2_scores.get("period_start") != weekly_ranking_window(now)[0].isoformat()
+        )
+
+    def apply_weekly_v2_scores(self, historical: Mapping[str, Any], *, now: Any) -> dict[str, Any]:
+        """Freeze ONLY the V2 performance baseline, never user/territory context.
+
+        Historical evidence, current user eligibility and property metadata
+        keep their existing 300-second refresh. A new eligible user absent
+        from the week's baseline is guarded until the next score publication.
+        Live capacity is merged separately by the worker every 60 seconds.
+        """
+        if historical.get("policy_version") != WEEKLY_RANKING_POLICY_VERSION:
+            raise ValueError("weekly_score_baseline_requires_v2")
+        start, end = weekly_ranking_window(now)
+        key = start.isoformat()
+        if self._weekly_v2_scores is None or self._weekly_v2_scores.get("period_start") != key:
+            candidates = historical.get("candidates")
+            team = historical.get("team")
+            if not isinstance(candidates, list) or not isinstance(team, Mapping):
+                raise RuntimeError("weekly_score_source_incomplete")
+            metrics = {
+                str(row.get("user_id")): {
+                    name: copy.deepcopy(row.get(name))
+                    for name in (
+                        "sample_size", "by_temperature",
+                        "sla_compliance_rate", "attention_rate",
+                        "sla_compliance_rate_adjusted", "attention_rate_adjusted",
+                        "p50_first_management_business_minutes",
+                        "p90_first_management_business_minutes",
+                    )
+                }
+                for row in candidates if row.get("user_id")
+            }
+            self._weekly_v2_scores = {
+                "period_start": key,
+                "period_end": end.isoformat(),
+                "generated_at": _iso(now),
+                "baseline_id": str(historical.get("snapshot_id") or historical.get("performance_snapshot_version") or _iso(now)),
+                "metrics": metrics,
+                "team": copy.deepcopy(dict(team)),
+            }
+        baseline = self._weekly_v2_scores
+        output = dict(historical)
+        output["team"] = copy.deepcopy(baseline["team"])
+        output["weekly_score_period_start"] = baseline["period_start"]
+        output["weekly_score_period_end"] = baseline["period_end"]
+        output["weekly_score_generated_at"] = baseline["generated_at"]
+        output["weekly_score_baseline_id"] = baseline["baseline_id"]
+        candidates = []
+        for raw in historical.get("candidates") or []:
+            row = dict(raw)
+            metrics = baseline["metrics"].get(str(row.get("user_id") or ""))
+            if metrics is None:
+                # Never borrow a new executive's current-week history as if
+                # it had been included in the frozen weekly evaluation.
+                row["data_issue"] = True
+                row["weekly_score_unavailable"] = True
+            else:
+                row.update(copy.deepcopy(metrics))
+                row["weekly_score_unavailable"] = False
+            candidates.append(row)
+        output["candidates"] = candidates
+        return output
 
     async def get_live_capacity(self, *, now: Any, builder: Callable[[], Mapping[str, Any] | Awaitable[Mapping[str, Any]]], policy_version: str, source_watermarks: Mapping[str, Any] | None = None, force: bool = False) -> dict[str, Any]:
         current = _utc(now) or datetime.now(timezone.utc)
@@ -440,6 +531,7 @@ class PerformanceSnapshotCache:
     def invalidate(self) -> None:
         self._historical = None
         self._live = None
+        self._weekly_v2_scores = None
 
     def stats(self) -> dict[str, Any]:
         return {**self._stats, "historical_ttl_seconds": self.historical_ttl_seconds, "live_capacity_ttl_seconds": self.live_capacity_ttl_seconds, "historical_snapshot_id": self._historical.snapshot_id if self._historical else None, "live_snapshot_id": self._live.snapshot_id if self._live else None}

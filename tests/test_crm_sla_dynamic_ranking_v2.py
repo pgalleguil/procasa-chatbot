@@ -462,6 +462,104 @@ def test_performance_snapshot_cache_revalidates_policy_and_preserves_ttls():
     assert cache.stats()["live_capacity_ttl_seconds"] == 60
 
 
+
+
+def test_v2_scores_update_weekly_while_context_and_capacity_remain_fresh():
+    import asyncio
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache, weekly_ranking_window
+
+    cache = PerformanceSnapshotCache()
+    calls = {"historical": 0, "live": 0}
+
+    async def hist():
+        calls["historical"] += 1
+        n = calls["historical"]
+        return {
+            "policy_version": "crm_sla_reassignment_v2",
+            "team": {"sample": n, "by_temperature": {"HOT": {"sample_size": n}}},
+            "candidates": [{"user_id": "susana", "active": True, "role": "agente",
+                            "sample_size": n, "by_temperature": {"HOT": {"sample_size": n}}}],
+            "properties": {"5704": {"version": n}},
+        }
+
+    async def live():
+        calls["live"] += 1
+        return {"policy_version": "crm_sla_reassignment_v2",
+                "capacity_metrics": {"check": calls["live"]}}
+
+    async def sample(iso):
+        now = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        historical = await cache.get_historical(
+            now=now, policy_version="crm_sla_reassignment_v2", builder=hist,
+            force=cache.weekly_v2_refresh_due(now),
+        )
+        frozen = cache.apply_weekly_v2_scores(historical, now=now)
+        capacity = await cache.get_live_capacity(
+            now=now, policy_version="crm_sla_reassignment_v2", builder=live,
+        )
+        return frozen, capacity
+
+    before, _ = asyncio.run(sample("2026-10-26T11:59:00Z"))  # 08:59 Chile
+    after, _ = asyncio.run(sample("2026-10-26T12:00:00Z"))   # 09:00 Chile
+    next_day, next_live = asyncio.run(sample("2026-10-27T12:00:00Z"))
+    next_week, _ = asyncio.run(sample("2026-11-02T12:00:00Z"))
+    assert calls == {"historical": 4, "live": 4}
+    assert before["team"]["sample"] == 1
+    assert after["team"]["sample"] == next_day["team"]["sample"] == 2
+    assert next_week["team"]["sample"] == 4
+    assert next_day["candidates"][0]["sample_size"] == 2
+    # Territory/property metadata is NOT frozen with the weekly performance.
+    assert next_day["properties"]["5704"]["version"] == 3
+    assert next_live["capacity_metrics"]["check"] == 3
+    assert after["weekly_score_period_start"] == "2026-10-26T12:00:00+00:00"
+
+    from zoneinfo import ZoneInfo
+    zone = ZoneInfo("America/Santiago")
+    for date in ("2026-04-05T12:00:00Z", "2026-09-06T12:00:00Z"):
+        start, end = weekly_ranking_window(datetime.fromisoformat(date.replace("Z", "+00:00")))
+        assert start.astimezone(zone).weekday() == end.astimezone(zone).weekday() == 0
+        assert start.astimezone(zone).hour == end.astimezone(zone).hour == 9
+
+
+def test_weekly_v2_score_baseline_is_isolated_from_v1_and_new_agent_not_promoted():
+    import asyncio
+    import pytest
+    from chatbot.crm_sla_performance_snapshot import PerformanceSnapshotCache
+
+    cache = PerformanceSnapshotCache()
+    now = datetime(2026, 10, 26, 13, tzinfo=timezone.utc)
+    with pytest.raises(ValueError, match="weekly_score_baseline_requires_v2"):
+        cache.apply_weekly_v2_scores({"policy_version": "crm_sla_reassignment_v1"}, now=now)
+    base = {
+        "policy_version": "crm_sla_reassignment_v2",
+        "team": {"sla_compliance_rate": 0.6},
+        "candidates": [{"user_id": "susana", "active": True, "role": "agente",
+                        "sample_size": 30, "by_temperature": {}}],
+    }
+    first = cache.apply_weekly_v2_scores(base, now=now)
+    updated = {**base, "team": {"sla_compliance_rate": 0.9},
+               "candidates": [
+                   {"user_id": "susana", "active": False, "role": "agente",
+                    "sample_size": 45, "by_temperature": {}},
+                   {"user_id": "new-agent", "active": True, "role": "agente",
+                    "sample_size": 1, "by_temperature": {}},
+               ]}
+    later = cache.apply_weekly_v2_scores(updated, now=now + timedelta(hours=3))
+    assert first["team"]["sla_compliance_rate"] == later["team"]["sla_compliance_rate"] == 0.6
+    assert later["candidates"][0]["sample_size"] == 30
+    assert later["candidates"][0]["active"] is False
+    assert later["candidates"][1]["weekly_score_unavailable"] is True
+    assert later["candidates"][1]["data_issue"] is True
+
+    async def builder():
+        return {"policy_version": "crm_sla_reassignment_v1", "team": {"version": "v1"}}
+    v1 = asyncio.run(cache.get_historical(
+        now=now, policy_version="crm_sla_reassignment_v1", builder=builder,
+    ))
+    assert v1["expires_at"] == (now + timedelta(seconds=300)).isoformat()
+    assert v1["team"]["version"] == "v1"
+
+
 def test_default_snapshot_distinguishes_verified_zero_from_incomplete_capacity(monkeypatch):
     import asyncio
     import chatbot.crm_sla_reassignment_worker as worker

@@ -28,7 +28,7 @@ DECLINE = re.compile(r"^\s*(?:no|no gracias|no me interesa|ya no me interesa|no 
 VISIT = re.compile(r"\b(?:visitar(?:la|lo)?|visitas?|agendar|coordinar|quiero verla|ir a ver|conocerla|ver el departamento)\b", re.I)
 PRICE = re.compile(r"\b(?:precio|cu[aá]nto (?:cuesta|vale|sale)|a cu[aá]nto|rebaja|baj[oó]|uf)\b", re.I)
 NEGOTIATION = re.compile(r"\b(?:ofertas?|negociar|rebajar|aceptan menos|descuento|contraofertas?)\b", re.I)
-YES = re.compile(r"^\s*(?:s[ií]|s[ií],?\s*me interesa|claro|ok|dale|por supuesto|me interesa|perfecto)\s*[.!]?\s*$", re.I)
+YES = re.compile(r"^\s*(?:s[ií](?:,?\s*me interesa)?|claro|ok(?:a|ey)?(?:\s+me interesa)?|dale|por supuesto|me interesa|perfecto|s[ií]\s+claro)\s*[.!]?\s*$", re.I)
 ALTERNATIVE = re.compile(r"\b(?:otra|otras|alternativas|opciones|ñuñoa|nunoa)\b", re.I)
 DETAILS = re.compile(r"\b(?:caracter[ií]sticas|detalles|informaci[oó]n del departamento|ficha)\b", re.I)
 BATHS = re.compile(r"\b(?:ba[ñn]os?|servicios hig[ií]enicos)\b", re.I)
@@ -36,6 +36,15 @@ BEDROOMS = re.compile(r"\b(?:dormitorios?|habitaciones?|piezas?)\b", re.I)
 AREA = re.compile(r"\b(?:superficie|metros|m2|m²|tama[ñn]o)\b", re.I)
 COMMON_EXPENSES = re.compile(r"\b(?:gastos? comunes?|ggcc)\b", re.I)
 STORAGE = re.compile(r"\b(?:bodegas?)\b", re.I)
+PARKING = re.compile(r"\b(?:estacionamientos?|parking)\b", re.I)
+TERRACE = re.compile(r"\b(?:terrazas?)\b", re.I)
+FLOOR = re.compile(r"\b(?:en qu[eé] piso|qu[eé] piso|piso (?:est[aá]|queda)|n[uú]mero de piso)\b", re.I)
+ORIENTATION = re.compile(r"\b(?:orientaci[oó]n|hacia d[oó]nde)\b", re.I)
+POOL = re.compile(r"\b(?:piscinas?)\b", re.I)
+PETS = re.compile(r"\b(?:mascotas?|perros?|gatos?)\b", re.I)
+CONTACT_HUMAN = re.compile(r"\b(?:hablar con (?:un |una )?(?:ejecutiv[oa]|asesor[oa])|que me llame|contacte (?:un |una )?(?:ejecutiv[oa]|asesor[oa]))\b", re.I)
+NEGATE_VISIT = re.compile(r"\b(?:no quiero (?:visitarla|visitar|una visita|agendar|coordinar)|no me interesa una visita)\b", re.I)
+COMMISSION = re.compile(r"\b(?:comisi[oó]n|honorarios|corretaje)\b", re.I)
 VISIT_WHEN = re.compile(
     r"\b(?:pr[oó]ximo mes|mes que viene|siguiente mes|pr[oó]xima semana|"
     r"semana que viene|el (?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|"
@@ -58,10 +67,24 @@ def _verified_property_facts(prop: dict) -> dict:
         value = characteristics.get(key)
         if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 50:
             facts[key] = value
-    for key in ("superficie_total", "superficie_util"):
+    for key in ("superficie_total", "superficie_util", "superficie_terraza"):
         value = _money(characteristics.get(key))
         if value is not None and value <= 100000:
             facts[key] = value
+    for key in ("piso", "ascensores", "ano_construccion"):
+        value = characteristics.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            if (1 <= value <= 200 if key != "ano_construccion" else 1800 <= value <= 2100):
+                facts[key] = value
+    orientation = characteristics.get("orientacion")
+    if isinstance(orientation, str) and 1 <= len(orientation.strip()) <= 60:
+        facts["orientacion"] = orientation.strip()
+    features = characteristics.get("features") or []
+    if isinstance(features, list):
+        for value, field in (("piscina", "piscina"), ("has_terrace", "terraza"),
+                             ("mascotas", "mascotas_ficha")):
+            if value in features:
+                facts[field] = True
     expenses = _money(operation.get("gastos_comunes"))
     if expenses is not None and expenses < 100000000:
         facts["gastos_comunes_clp"] = int(expenses)
@@ -74,10 +97,20 @@ def _formatted_facts(facts: dict) -> str:
         ("banos", "baños"),
         ("superficie_total", "m² totales"),
         ("superficie_util", "m² útiles"),
+        ("superficie_terraza", "m² de terraza"),
         ("bodegas", "bodega(s)"),
+        ("piso", "piso"),
+        ("orientacion", "orientación"),
         ("gastos_comunes_clp", "pesos de gastos comunes"),
     )
-    return ", ".join(f"{facts[key]} {label}" for key, label in labels if key in facts)
+    items = [f"{facts[key]} {label}" for key, label in labels if key in facts]
+    if facts.get("piscina"):
+        items.append("piscina según ficha")
+    if facts.get("terraza"):
+        items.append("terraza según ficha")
+    if facts.get("mascotas_ficha"):
+        items.append("mascotas mencionadas en ficha (reglamento por confirmar)")
+    return ", ".join(items)
 
 
 def is_test_phone(phone: str) -> bool:
@@ -129,7 +162,10 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
          "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1,
          "tipo_operacion.gastos_comunes": 1, "caracteristicas.banos": 1,
          "caracteristicas.dormitorios": 1, "caracteristicas.bodegas": 1,
-         "caracteristicas.superficie_total": 1, "caracteristicas.superficie_util": 1},
+         "caracteristicas.superficie_total": 1, "caracteristicas.superficie_util": 1,
+         "caracteristicas.superficie_terraza": 1, "caracteristicas.piso": 1,
+         "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
+         "caracteristicas.orientacion": 1, "caracteristicas.features": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
@@ -212,9 +248,10 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
                 "Para consultar otra propiedad, debes hacerlo fuera del modo de prueba.")
     if DECLINE.search(clean):
         return "Entendido, gracias por responder. No insistiremos en esta propiedad."
+    if NEGATE_VISIT.search(clean):
+        return (f"De acuerdo, no coordinaremos visitas al departamento {code}. "
+                "Si prefieres, puedes consultar características o el precio sin compromiso.")
     facts = ctx.get("property_facts") or {}
-    # Short date replies belong to the question about a possible visit,
-    # not to a new lead or a confirmed appointment.
     previous = (history or [])[-1].get("bot_text", "") if history else ""
     if VISIT_WHEN.search(clean) and re.search(r"d[ií]a|horario|semana", previous, re.I):
         return (f"Entiendo, considerarías visitar el departamento {code} {clean.lower()}. "
@@ -224,18 +261,38 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
         return (f"El departamento {code} está en venta a UF {new}. "
                 f"Su ficha informa: {_formatted_facts(facts)}. "
                 "¿Hay alguna característica que quieras conocer con más detalle?")
-    specific = (
-        (BATHS, "banos", "baños"),
-        (BEDROOMS, "dormitorios", "dormitorios"),
-        (COMMON_EXPENSES, "gastos_comunes_clp", "pesos de gastos comunes mensuales"),
-        (AREA, "superficie_total", "m² totales"),
-        (STORAGE, "bodegas", "bodega(s)"),
+    # Multiple questions in one message should yield all verified attributes.
+    checks = (
+        (BATHS, "banos", lambda v: f"{v} baños"),
+        (BEDROOMS, "dormitorios", lambda v: f"{v} dormitorios"),
+        (COMMON_EXPENSES, "gastos_comunes_clp", lambda v: f"${v:,.0f}".replace(",", ".") + " de gastos comunes mensuales"),
+        (AREA, "superficie_total", lambda v: f"{v:g} m² totales"),
+        (STORAGE, "bodegas", lambda v: f"{v} bodega(s)"),
+        (PARKING, "estacionamientos", lambda v: f"{v} estacionamiento(s)"),
+        (TERRACE, "superficie_terraza", lambda v: f"{v:g} m² de terraza"),
+        (FLOOR, "piso", lambda v: f"piso {v}"),
+        (ORIENTATION, "orientacion", lambda v: f"orientación {v}"),
+        (POOL, "piscina", lambda v: "piscina informada en la ficha"),
     )
-    for pattern, field, unit in specific:
-        if pattern.search(clean):
-            if field in facts:
-                return f"Según la ficha vigente, el departamento {code} tiene {facts[field]} {unit}."
-            return f"No tengo confirmado ese dato en la ficha del departamento {code}."
+    asked = [(key, formatter) for pattern, key, formatter in checks if pattern.search(clean)]
+    if asked:
+        found = [format_value(facts[key]) for key, format_value in asked if key in facts]
+        missing = [key for key, _ in asked if key not in facts]
+        answer = (f"Según la ficha vigente del departamento {code}: " + ", ".join(found) + ".") if found else ""
+        if missing:
+            answer += (" " if answer else "") + "No tengo confirmado " + (
+                "el resto de esos datos." if found else "ese dato en su ficha."
+            )
+        return answer
+    if PETS.search(clean):
+        return (f"La ficha del departamento {code} menciona mascotas, pero el reglamento del edificio "
+                "y sus condiciones deben confirmarse." if facts.get("mascotas_ficha") else
+                f"No tengo confirmadas las reglas sobre mascotas del departamento {code}.")
+    if COMMISSION.search(clean):
+        return "No tengo confirmados los honorarios de corretaje para esta operación."
+    if CONTACT_HUMAN.search(clean):
+        return ("Puedes pedir hablar con un ejecutivo, pero en esta prueba no se enviará "
+                "ninguna solicitud ni notificación comercial.")
     if VISIT.search(clean):
         return (f"Podemos evaluar una visita al departamento {code}, ahora en UF {new}. "
                 "¿Qué día u horario te acomoda? Es una prueba: no se enviará ninguna solicitud a un ejecutivo.")

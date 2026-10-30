@@ -44,6 +44,7 @@ def record(lead_id="lead-1", **changes):
     now = datetime.now(timezone.utc)
     result = {
         "_id": "price-drop-test-1",
+        "phone_normalized": "+56977770000",
         "status": "SENT",
         "provider_message_id": "provider-123",
         "lead_id": lead_id,
@@ -109,6 +110,7 @@ def test_valid_delivered_context_for_short_yes(allowed):
     {"operation": "Arriendo"},
     {"old_price_uf": 2600},
     {"new_price_uf": 5100},
+    {"phone_normalized": "+56977770001"},
 ])
 def test_bad_campaign_record_rejected(changes):
     assert not validate_record(record(**changes), sale(), "lead-1")
@@ -139,3 +141,18 @@ def test_current_campaign_property_explicitly_named_is_permitted(allowed):
 def test_other_ref_filter_does_not_interpret_price_as_property_code():
     assert not _other_property_referenced("¿Bajó de UF 2790 a 2690?", "6436")
     assert _other_property_referenced("código 6500", "6436")
+
+
+def test_expired_context_rejected(allowed):
+    db = fake_db(campaign=record(expires_at=datetime.now(timezone.utc) - timedelta(hours=1)))
+    assert load_active_context(db, "+56977770000", "sí") is None
+
+
+def test_not_yet_sent_context_rejected(allowed):
+    db = fake_db(campaign=record(sent_at=datetime.now(timezone.utc) + timedelta(hours=1)))
+    assert load_active_context(db, "+56977770000", "sí") is None
+
+
+def test_short_other_code_rejected(allowed):
+    db = fake_db()
+    assert load_active_context(db, "+56977770000", "6500") is None

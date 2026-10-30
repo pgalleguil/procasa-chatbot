@@ -160,3 +160,12 @@ def test_short_other_code_rejected(allowed):
 def test_campaign_recipient_mismatch_rejected(allowed):
     db = fake_db(campaign=record(phone_normalized="+56977770001"))
     assert load_active_context(db, "+56977770000", "sí") is None
+
+
+def test_pymongo_naive_utc_dates_are_supported(allowed):
+    now = datetime.now(timezone.utc)
+    db = fake_db(campaign=record(
+        sent_at=(now - timedelta(minutes=5)).replace(tzinfo=None),
+        expires_at=(now + timedelta(hours=1)).replace(tzinfo=None),
+    ))
+    assert load_active_context(db, "+56977770000", "Sí")["property_code"] == "6436"

@@ -304,7 +304,7 @@ def test_prop360_real_features_are_included_in_verified_context(isolated):
     }
     assert "2 baños" in build_test_reply("¿Cuántos baños tiene?", ctx)
     assert "2 dormitorios" in build_test_reply("¿Cuántos dormitorios tiene?", ctx)
-    assert "85000" in build_test_reply("¿Cuánto son los gastos comunes?", ctx)
+    assert "85.000" in build_test_reply("¿Cuánto son los gastos comunes?", ctx)
     assert "65" in build_test_reply("¿Cuántos metros cuadrados?", ctx)
     assert "bodega" in build_test_reply("¿Tiene bodega?", ctx)
     features = build_test_reply("¿Cuáles son sus características?", ctx)
@@ -364,3 +364,162 @@ def test_trusted_facts_flow_through_isolated_inbound_not_crm(isolated):
     assert result["status"] == "test_reply_sent"
     assert "2 baños" in calls[0][1]
     assert len(db["crm_price_drop_pilot_test_turns_v1"].docs) == 1
+
+
+
+# Realistic conversations / hostile inputs (all simulated: no real provider).
+def _full_pilot_db():
+    db = db_case()
+    p = db["universo_cartera_prop360"].docs[0]
+    p["caracteristicas"] = {
+        "banos": 2, "dormitorios": 2, "bodegas": 1,
+        "superficie_total": 65, "superficie_util": 60,
+        "superficie_terraza": 5, "piso": 6, "ascensores": 2,
+        "ano_construccion": 2002, "orientacion": "Sur-Poniente",
+        "estacionamientos": None,
+        "features": ["piscina", "has_terrace", "mascotas"],
+    }
+    p["tipo_operacion"]["gastos_comunes"] = 85000
+    return db
+
+
+@pytest.mark.parametrize("message,expected", [
+    ("hola", "6436"),
+    ("Sí, me interesa", "6436"),
+    ("sí", "6436"),
+    ("oka me interesa", "6436"),
+    ("okey me interesa", "6436"),
+    ("me interesa", "6436"),
+    ("¿Cuánto cuesta?", "2.690"),
+    ("¿Bajó a UF 2690?", "2.690"),
+    ("¿Cuántos baños tiene?", "2 baños"),
+    ("¿Tiene 2 baños?", "2 baños"),
+    ("¿Cuántos dormitorios?", "2 dormitorios"),
+    ("¿Cuántos baños y dormitorios?", "2 dormitorios"),
+    ("¿Qué superficie tiene?", "65 m² totales"),
+    ("¿Cuántos metros cuadrados?", "65 m² totales"),
+    ("¿Tiene terraza?", "5 m² de terraza"),
+    ("¿En qué piso está?", "piso 6"),
+    ("¿Cuál es la orientación?", "Sur-Poniente"),
+    ("¿Cuáles son los gastos comunes?", "85.000"),
+    ("¿Tiene bodega?", "1 bodega"),
+    ("¿Tiene piscina?", "piscina"),
+    ("¿Aceptan mascotas?", "reglamento"),
+    ("¿Tiene estacionamiento?", "No tengo confirmado"),
+    ("¿Cuánto cuesta y cuántos baños tiene?", "2.690"),
+    ("¿Cuáles son sus características?", "2 baños"),
+    ("Quiero visitarla", "¿Qué día"),
+    ("¿Puedo visitar el próximo mes?", "¿Qué horario"),
+    ("Quiero hacer una oferta", "oferta"),
+    ("¿Aceptan ofertas?", "oferta"),
+    ("¿Se puede negociar?", "oferta"),
+    ("¿Cuánto es la comisión?", "No tengo confirmados"),
+    ("Quiero hablar con un ejecutivo", "no se enviará"),
+    ("¿Me puede llamar una ejecutiva?", "no se enviará"),
+    ("No me interesa", "No insistiremos"),
+    ("No quiero visitar", "no coordinaremos"),
+    ("¿Tienen otra en Ñuñoa?", "otras"),
+    ("Quiero información del código 6500", "6436"),
+    ("6500", "6436"),
+    ("https://www.procasa.cl/6500", "6436"),
+])
+def test_simulate_37_customer_questions_without_real_sends(isolated, message, expected):
+    db = _full_pilot_db()
+    sender, calls = sender_spy()
+    def fake_model(q, context, history):
+        assert context["property_code"] == "6436"
+        return f"Hola, te ayudo con el departamento 6436. ¿Qué deseas conocer?"
+    result = process_test_inbound(
+        db, PHONE, "sim:" + message, message, sender=sender, llm=fake_model
+    )
+    assert result == {"status": "test_reply_sent"}
+    assert len(calls) == 1
+    assert expected.casefold() in calls[0][1].casefold()
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1"
+    }
+
+
+def test_simulate_full_multi_turn_conversion_without_crm(isolated):
+    db = _full_pilot_db()
+    sender, calls = sender_spy()
+    transcript = [
+        ("hola", "6436"),
+        ("cuales son sus caracteristicas?", "2 baños"),
+        ("pero quiero saber cuantos baños tiene", "2 baños"),
+        ("¿cuánto cuesta ahora?", "2.690"),
+        ("oka me interesa", "más información o prefieres coordinar"),
+        ("quiero visitarla", "¿Qué día"),
+        ("el proximo mes", "no se ha agendado"),
+        ("el martes", "¿Tienes un día"),
+        ("por la tarde", "no se ha agendado"),
+        ("¿aceptan ofertas?", "oferta"),
+    ]
+    for i, (message, fragment) in enumerate(transcript):
+        result = process_test_inbound(
+            db, PHONE, "transcript:" + str(i), message, sender=sender,
+            llm=lambda q, c, h: "¡Hola! ¿Qué más quieres saber del departamento 6436?"
+        )
+        assert result == {"status": "test_reply_sent"}
+        assert fragment.casefold() in calls[-1][1].casefold()
+    assert len(calls) == len(transcript)
+    turns = db["crm_price_drop_pilot_test_turns_v1"].docs
+    assert len(turns) == len(transcript)
+    assert all(t["status"] == "SENT" for t in turns)
+    assert all(t["campaign_id"] == "test:6436" for t in turns)
+
+
+def test_simulate_opt_out_does_not_send_or_fall_into_crm(isolated):
+    db = _full_pilot_db()
+    sender, calls = sender_spy()
+    assert process_test_inbound(db, PHONE, "optout", "No me escriban más", sender=sender) == {
+        "status": "test_stopped"
+    }
+    assert not calls
+    assert process_test_inbound(db, PHONE, "afteroptout", "sí", sender=sender) == {
+        "status": "test_not_active"
+    }
+    assert not calls
+
+
+@pytest.mark.parametrize("bad_reply", [
+    "He notificado al ejecutivo y te llamará.",
+    "Lo dejamos anotado para el martes.",
+    "La visita está confirmada.",
+    "Te contactaremos mañana.",
+    "Queda reservada la visita.",
+])
+def test_simulated_llm_fabricated_commercial_actions_are_blocked(isolated, bad_reply):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    answer = build_test_reply("¿Tiene conserjería?", ctx,
+                              llm=lambda *_: bad_reply)
+    assert "Esta es una prueba interna" in answer
+    assert "no notificaremos" in answer
+
+
+def test_simulation_response_fails_closed_on_stale_price_and_unavailable_sale(isolated):
+    for prop in (db_case(price=2800), db_case(active=False)):
+        sender, calls = sender_spy()
+        result = process_test_inbound(prop, PHONE, "wrong-sale", "¿Cuántos baños?", sender=sender)
+        assert result["status"] == "test_not_active"
+        assert calls == []
+
+
+def test_same_provider_message_id_is_never_answered_twice(isolated):
+    db = _full_pilot_db()
+    sender, calls = sender_spy()
+    assert process_test_inbound(db, PHONE, "same", "Quiero visitarla", sender=sender)["status"] == "test_reply_sent"
+    assert process_test_inbound(db, PHONE, "same", "Quiero visitarla", sender=sender)["status"] == "duplicate_suppressed"
+    assert len(calls) == 1
+
+
+def test_prior_message_context_does_not_assert_a_visit_without_clear_question(isolated):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    answer = build_test_reply(
+        "el próximo mes", ctx,
+        history=[{"bot_text": "¿Quieres más información o prefieres coordinar una visita?"}],
+        llm=lambda *_: "¿Te refieres a recibir información o quieres visitar el próximo mes?",
+    )
+    assert "¿Te refieres" in answer
+    assert "agend" not in answer.lower()

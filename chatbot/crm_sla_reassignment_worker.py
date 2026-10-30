@@ -1386,10 +1386,14 @@ async def _default_performance_snapshot(
         ),
     )
     if policy_version == DYNAMIC_POLICY_VERSION:
-        # Freeze only SLA/management/speed evidence for the commercial week.
-        # Fresh user, property and territory context still refreshes every
-        # five minutes; live capacity remains on its 60-second cache.
-        historical = cache.apply_weekly_v2_scores(historical, now=as_of)
+        # Freeze only score evidence. Keep user, territory and property
+        # context fresh; live capacity has a separate 60-second cache.
+        if bool(_cfg("CRM_SLA_V2_WEEKLY_PERSISTENCE_ENABLED", False)):
+            historical = await cache.load_or_publish_weekly_v2_scores(
+                db, historical, now=as_of,
+            )
+        else:
+            historical = cache.apply_weekly_v2_scores(historical, now=as_of)
     live = await cache.get_live_capacity(
         now=as_of,
         policy_version=policy_version,

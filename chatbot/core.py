@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime
 
 from config import Config
+from .price_drop_pilot import load_active_context, context_instruction
 from .storage import (
     guardar_mensaje, 
     obtener_conversacion, 
@@ -405,6 +406,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     conversation_id = lead_doc_full.get("conversation_id") or prospecto_actual.get("conversation_id")
     if not conversation_id:
         conversation_id = await _run_sync(ensure_conversation_id, phone)
+
+    # Opt-in, single-phone campaign context. Read-only and fail-closed.
+    # Do not let a failed campaign lookup affect normal customer conversations.
+    pilot_context = None
+    try:
+        pilot_context = await _run_sync(load_active_context, db, phone, original_message)
+    except Exception:
+        logger.exception("[PRICE_DROP_PILOT] Optional context lookup failed")
 
     async def _persist_generated_outbound(response: str, metadata: dict, *, intent: str | None = None,
                                           lead_doc: dict | None = None) -> str:
@@ -834,6 +843,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             if property_reference.get("status") == "resolved":
                 candidatos_propiedad.extend(explicit_international_codes)
         else:
+            # An accepted pilot message can anchor short replies even when a
+            # previously existing prospecto.codigo points to another property.
+            if pilot_context:
+                candidatos_propiedad.append(pilot_context["property_code"])
             # Código ya conocido del prospecto
             if prospecto_actual.get("codigo"):
                 candidatos_propiedad.append(prospecto_actual.get("codigo"))
@@ -1405,6 +1418,11 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             El cliente no quedó conforme con la propiedad y no pidió alternativas explícitamente.
             Responde brevemente ofreciendo buscar opciones que se ajusten mejor. No envíes propiedades todavía.
             """)
+
+    # Campaign context is authoritative only for the verified pilot property.
+    # Another explicit customer link/code must never inherit campaign context.
+    if pilot_context and str(codigo_detectado or "") == pilot_context["property_code"]:
+        system_parts.append(context_instruction(pilot_context))
 
     # Insertar Contexto Dinámico al final del System Prompt
     if system_parts:

@@ -1372,6 +1372,9 @@ async def _default_performance_snapshot(
             policy_version=policy_version,
             instrumentation=read_instrumentation,
         ),
+        # V2 reviews the historical score on Chile-local Mondays at 09:00;
+        # live capacity (below) continues refreshing every 60 seconds.
+        weekly_schedule=policy_version == DYNAMIC_POLICY_VERSION,
     )
     live = await cache.get_live_capacity(
         now=as_of,

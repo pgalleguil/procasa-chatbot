@@ -233,7 +233,8 @@ def test_script_no_longer_looks_up_or_edits_existing_leads():
     source = Path(__file__).resolve().parents[1].joinpath("scripts/price_drop_pilot_test.py").read_text()
     assert 'db["leads"]' not in source
     assert '"test_mode": True' in source
-    assert "if not args.send:" in source
+    assert "if not send:" in source
+    assert "return run_test_once(send=args.send)" in source
 
 
 def test_bootstrap_one_shot_is_disabled_by_default():

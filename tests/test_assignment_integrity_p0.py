@@ -434,6 +434,73 @@ def test_integrity_audit_requires_a_matching_sla_decision_ledger_row():
     assert _valid_transfer_transition(before, after, db=db)
 
 
+
+def test_multihop_sla_transfer_validates_immutable_incoming_decision_after_next_rescue():
+    db = mongomock.MongoClient().incident
+    before = {"assignment_cycle_id": "cycle-original", "assigned_to_user_id": "u1"}
+    intermediate = {
+        "assignment_cycle_id": "sla-reassignment:decision-in",
+        "assigned_to_user_id": "u2",
+        "assigned_by": "sla_reassignment",
+        "reason": "lead_created",
+        # A second rescue overwrites this field with the OUTGOING decision.
+        "reassignment_decision_id": "decision-out",
+    }
+    db["crm_sla_reassignment_audit_v1"].insert_one({
+        "_id": "decision-in", "decision_id": "decision-in",
+        "event_type": "SLA_REASSIGNMENT_COMMITTED",
+        "source_cycle_id": "cycle-original",
+        "new_cycle_id": "sla-reassignment:decision-in",
+    })
+    assert _valid_transfer_transition(before, intermediate, db=db)
+    # The outgoing decision is not sufficient proof for an unrelated transfer.
+    assert not _valid_transfer_transition(
+        {"assignment_cycle_id": "different-source", "assigned_to_user_id": "u1"},
+        intermediate, db=db,
+    )
+
+
+def test_non_hot_digest_then_hot_escalation_is_not_a_duplicate_delivery():
+    db = mongomock.MongoClient().incident
+    cycle = {
+        "assignment_cycle_id": "cycle-hot-escalated",
+        "assigned_to_user_id": "erika",
+        "property_code": "6459",
+    }
+    db["crm_notifications_v1"].insert_many([
+        {
+            "_id": "digest-1", "state": "sent",
+            "assignment_cycle_ids": ["cycle-hot-escalated"],
+            "digest_type": "non_hot_digest_v1",
+            "recipient_user_id": "erika",
+        },
+        {
+            "_id": "hot-1", "state": "sent",
+            "assignment_cycle_id": "cycle-hot-escalated",
+            "notification_type": "lead_assignment_hot",
+            "recipient_user_id": "erika",
+        },
+    ])
+    assert not any(
+        finding["issue_code"] == "duplicate_delivered_notifications_for_assignment_cycle"
+        for finding in _notification_findings(db, "lead-6459", [cycle])
+    )
+
+    # Two deliveries of the same HOT notification category remain an alert.
+    db["crm_notifications_v1"].insert_one({
+        "_id": "hot-2", "state": "sent",
+        "assignment_cycle_id": "cycle-hot-escalated",
+        "notification_type": "lead_assignment_hot",
+        "recipient_user_id": "erika",
+    })
+    issues = _notification_findings(db, "lead-6459", [cycle])
+    duplicates = [finding for finding in issues if
+                  finding["issue_code"] == "duplicate_delivered_notifications_for_assignment_cycle"]
+    assert len(duplicates) == 1
+    assert duplicates[0]["notification_kind"] == "lead_assignment_hot"
+    assert duplicates[0]["notification_ids"] == ["hot-1", "hot-2"]
+
+
 def test_integrity_audit_flags_delivered_notification_to_wrong_owner():
     db = mongomock.MongoClient().incident
     cycle = {

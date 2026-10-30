@@ -4228,6 +4228,29 @@ async def webhook(
         return JSONResponse({"status": "invalid phone"}, status_code=200)
     phone = normalized_contact_phone
 
+    # Isolated price-drop test: intercept this exact phone BEFORE log_event,
+    # commercial intake, the chatbot response queue and all CRM/SLA mutations.
+    # When enabled, even an inactive/expired test stays fail-closed instead of
+    # falling through to production. Every other phone is unchanged.
+    from chatbot.price_drop_pilot_isolation import is_test_phone, process_test_inbound
+    if is_test_phone(phone):
+        if from_me:
+            return JSONResponse({"ok": True, "status": "test_outbound_ignored"}, status_code=200)
+        if not provider_message_id:
+            return JSONResponse({"ok": True, "status": "test_missing_provider_id"}, status_code=200)
+        from chatbot.storage import get_db as _test_db
+        try:
+            test_result = await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: process_test_inbound(
+                    _test_db(), phone, str(provider_message_id), text,
+                ),
+            )
+        except Exception:
+            logger.exception("[PRICE_DROP_TEST] isolated inbound failed; never fall through to CRM")
+            raise HTTPException(status_code=503, detail="Isolated test processing unavailable")
+        return JSONResponse({"ok": True, **test_result}, status_code=200)
+
     logger.info(f"[WHATSAPP] {'[HUMANO]' if from_me else '[CLIENTE]'} Mensaje en {phone}: {text}")
     try:
         from chatbot.storage import log_event, EventType, get_db as _sync_db

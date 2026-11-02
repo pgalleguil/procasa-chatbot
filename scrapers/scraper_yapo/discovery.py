@@ -588,7 +588,8 @@ class _YapoClientPagination:
                 """expected => {
                     const nav = document.querySelector('nav[aria-label*="pagin" i]');
                     const current = nav && nav.querySelector('[aria-current="page"]');
-                    const label = current && (current.getAttribute('aria-label') || current.textContent || '');
+                    if (!current) return false;
+                    const label = current.getAttribute('aria-label') || current.textContent || '';
                     const match = label.match(/\\d+/);
                     return match && Number(match[0]) === expected;
                 }""",

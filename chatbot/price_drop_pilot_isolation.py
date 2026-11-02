@@ -463,7 +463,7 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
             address = facts.get("calle_publicada")
             ref = facts.get("direccion_referencial")
             if address:
-                position = f"dirección publicada: {address}"
+                position = f"queda en {address}"
                 if facts.get("comuna"):
                     position += f", {facts['comuna']}"
                 if ref:
@@ -475,12 +475,12 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
                 found.append(f"ubicación: {facts.get('comuna', 'San Miguel')}; dirección exacta no confirmada")
         if GRILL.search(clean):
             if facts.get("parrillas_ficha"):
-                found.append("parrillas mencionadas en la ficha; cantidad y condiciones de uso de quinchos por confirmar")
+                found.append("hay parrillas mencionadas en la ficha; cantidad y condiciones de uso de quinchos por confirmar")
             else:
                 found.append("no hay confirmación de quinchos o parrillas en la ficha")
         # Answers are short and customer-facing, not an inventory export.
         if found:
-            answer = "Sí, " + ", ".join(found) + "."
+            answer = ("" if found[0].startswith("no hay confirmación") else "Sí, ") + ", ".join(found) + "."
         else:
             answer = ""
         if missing:

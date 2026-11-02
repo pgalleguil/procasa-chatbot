@@ -22,14 +22,26 @@ except ImportError:  # direct script execution
     from config import AppConfig
     from proxy_manager import ProxyChoice, ProxyManager
 
-BLOCK_PATTERNS = (
+# HTTP 403/429 responses are rejected explicitly below. These HTML markers are
+# reserved for challenge pages returned with HTTP 200; generic words such as
+# "blocked" and "forbidden" are intentionally not searched across source HTML
+# because they commonly occur in scripts, styles, and resource URLs.
+BLOCK_VISIBLE_PATTERNS = (
     "verify you are human",
-    "cf-chl-captcha",
     "captcha challenge",
     "access denied",
-    "forbidden",
+    "access forbidden",
     "too many requests",
+    "your request has been blocked",
+    "your request was blocked",
     "blocked",
+    "forbidden",
+)
+
+BLOCK_HTML_MARKERS = (
+    "cf-chl-captcha",
+    "/cdn-cgi/challenge-platform/",
+    "cf-browser-verification",
 )
 
 HTML_HINTS = (
@@ -67,15 +79,24 @@ def _load_removed_patterns() -> list[str]:
 
 
 def validate_html(html: str) -> dict[str, Any]:
-    text = re.sub(r"\s+", " ", html or "").strip().lower()
-    if len(text) < 200:
+    source = html or ""
+    normalized_source = re.sub(r"\s+", " ", source).strip().lower()
+    if len(normalized_source) < 200:
         return {"status": "INVALID", "reason": "too_short"}
     removed_patterns = _load_removed_patterns()
-    if any(pattern.lower() in text for pattern in removed_patterns):
+    if any(pattern.lower() in normalized_source for pattern in removed_patterns):
         return {"status": "LISTING_REMOVED", "reason": "listing_removed_text"}
-    if any(pattern in text for pattern in BLOCK_PATTERNS):
+
+    # Check known challenge markup in the source, then inspect rendered text
+    # without script/style content for human-facing block messages.
+    if any(marker in normalized_source for marker in BLOCK_HTML_MARKERS):
         return {"status": "BLOCKED", "reason": "strong_block_signal"}
-    if not any(pattern in text for pattern in HTML_HINTS):
+    visible_source = re.sub(r"(?is)<(script|style|noscript)\b[^>]*>.*?</\1\s*>", " ", source)
+    visible_text = re.sub(r"(?s)<[^>]+>", " ", visible_source)
+    visible_text = re.sub(r"\s+", " ", visible_text).strip().lower()
+    if any(pattern in visible_text for pattern in BLOCK_VISIBLE_PATTERNS):
+        return {"status": "BLOCKED", "reason": "strong_block_signal"}
+    if not any(pattern in normalized_source for pattern in HTML_HINTS):
         return {"status": "INVALID", "reason": "not_html"}
     return {"status": "OK", "reason": "valid_html"}
 
@@ -145,7 +166,12 @@ def download_html(
         response.raise_for_status()
         html = response.text
         validation = validate_html(html)
-        if validation["status"] != "BLOCKED":
+        if validation["status"] == "BLOCKED":
+            # Keep the exact response in the batch directory for post-run
+            # inspection, while leaving the canonical cache absent so a later
+            # run is still allowed to retry the URL.
+            html_path.with_suffix(".blocked.html").write_text(html, encoding="utf-8")
+        else:
             html_path.write_text(html, encoding="utf-8")
         return DownloadResult(
             url=url,

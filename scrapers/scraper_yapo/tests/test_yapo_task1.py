@@ -89,6 +89,32 @@ def test_valid_proxy_is_the_only_transport(monkeypatch, tmp_path):
     assert captured == [("https://www.yapo.cl/test", False, {"http": "http://proxy.test:9000", "https": "http://proxy.test:9000"})]
 
 
+def test_blocked_response_is_preserved_in_batch_sidecar(monkeypatch, tmp_path):
+    blocked_html = _html("Access denied captcha challenge")
+    response = SimpleNamespace(status_code=200, text=blocked_html, raise_for_status=lambda: None)
+
+    class Session:
+        trust_env = True
+
+        def get(self, url, **kwargs):
+            return response
+
+    monkeypatch.setattr(downloader.requests, "Session", Session)
+    monkeypatch.setattr(downloader.time, "sleep", lambda _: None)
+    config_value = AppConfig(html_dumps_dir=tmp_path)
+    result = downloader.download_html(
+        "https://www.yapo.cl/searchresult/test",
+        config_value,
+        ProxyManager(["proxy.test:9000"]),
+        batch_id="blocked-evidence",
+    )
+    assert result.validation_status == "BLOCKED"
+    assert not result.html_path.exists()
+    sidecar = result.html_path.with_suffix(".blocked.html")
+    assert sidecar.exists()
+    assert sidecar.read_text(encoding="utf-8") == blocked_html
+
+
 def test_discovery_follows_html_pagination_until_verified_end(monkeypatch):
     pages = {
         "https://www.yapo.cl/searchresult/test": _html(_listing("12345678") + '<a rel="next" href="?o=2">Siguiente</a>'),
@@ -101,6 +127,41 @@ def test_discovery_follows_html_pagination_until_verified_end(monkeypatch):
     assert [row["page_number"] for row in rows] == [1, 2]
     assert report["pagination_complete"] is True
     assert len(report["pages"]) == 2
+
+
+def test_pagination_follows_explicit_data_url_control(monkeypatch):
+    first = "https://www.yapo.cl/searchresult/test"
+    second = "https://www.yapo.cl/searchresult/test?o=2"
+    pages = {
+        first: _html(_listing("12345678") + '<nav aria-label="Paginación"><button data-next-url="?o=2">Siguiente</button></nav>'),
+        second: _html(_listing("12345679") + '<nav aria-label="Paginación"><span aria-current="page">2</span><span data-total-pages="2"></span></nav>'),
+    }
+    monkeypatch.setattr(discovery.ProxyManager, "from_config", lambda _: ProxyManager(["proxy.test:9000"]))
+    monkeypatch.setattr(discovery, "download_html", lambda url, *args, **kwargs: _download(url, pages[url]))
+    report = {}
+    rows = discovery.discover_listing_urls([first], report=report)
+    assert [row["page_number"] for row in rows] == [1, 2]
+    assert report["pages"][0]["pagination_evidence"] == "next_control"
+    assert report["pagination_complete"] is True
+
+
+def test_pagination_follows_explicit_embedded_json_url():
+    first = "https://www.yapo.cl/searchresult/test"
+    html = _html(_listing("12345678") + '''<script type="application/json">
+    {"pagination":{"currentPage":1,"totalPages":2,"nextUrl":"?o=2"}}
+    </script>''')
+    next_url, terminal, evidence = discovery._pagination_state(html, first)
+    assert next_url == "https://www.yapo.cl/searchresult/test?o=2"
+    assert terminal is False
+    assert evidence == "embedded_next_url"
+
+
+def test_numeric_pagination_without_explicit_next_url_stays_incomplete():
+    html = _html(_listing("12345678") + '<nav class="pagination"><span aria-current="page">1</span><span data-total-pages="2"></span></nav>')
+    next_url, terminal, evidence = discovery._pagination_state(html, "https://www.yapo.cl/searchresult/test")
+    assert next_url is None
+    assert terminal is False
+    assert evidence == "pagination_end_not_explicitly_verified"
 
 
 def test_duplicate_only_intermediate_page_does_not_stop(monkeypatch):

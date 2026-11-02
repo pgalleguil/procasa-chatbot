@@ -837,3 +837,103 @@ def test_v4_llm_cannot_send_truncated_sentence(monkeypatch, isolated):
     answer = build_test_reply("¿Tiene conserjería?", ctx)
     assert "Sí, te recomiendo ver" not in answer
     assert "no notificaremos" in answer
+
+
+def test_v5_customer_introduction_is_remembered_without_touching_crm(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "name-1", "Hola, soy Camila", sender=send
+    )["status"] == "test_reply_sent"
+    assert "Camila" in calls[-1][1]
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    assert campaign["customer_first_name"] == "Camila"
+    assert campaign["customer_first_name_source"] == "customer_message"
+    # Earlier customer name leaves the 12-turn history window, but persists
+    # ONLY in the isolated campaign and can still be recalled reliably.
+    for i in range(15):
+        assert process_test_inbound(
+            db, PHONE, "name-filler-" + str(i), "¿Tiene terraza?", sender=send,
+        )["status"] == "test_reply_sent"
+    assert process_test_inbound(
+        db, PHONE, "name-recall", "¿Cómo me llamo?", sender=send,
+    )["status"] == "test_reply_sent"
+    assert "Camila" in calls[-1][1]
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+def test_v5_name_in_combined_introduction_does_not_swallow_property_question(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    outcome = process_test_inbound(
+        db, PHONE, "name-and-baths",
+        "Hola, soy María José, ¿cuántos baños tiene?", sender=send,
+        llm=lambda *_: (_ for _ in ()).throw(AssertionError(
+            "Confirmed property facts must remain deterministic"
+        )),
+    )
+    assert outcome["status"] == "test_reply_sent"
+    assert "María José" in calls[-1][1]
+    assert "2 baños" in calls[-1][1]
+    assert db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"] == "María José"
+
+
+def test_v5_uses_name_sparingly_and_accepts_explicit_correction(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    for key, msg in [
+        ("n-1", "Me llamo Juan Pablo"),
+        ("n-2", "¿Tiene terraza?"),
+        ("n-3", "¿Cuántos baños tiene?"),
+        ("n-4", "Quiero visitarla"),
+    ]:
+        assert process_test_inbound(db, PHONE, key, msg, sender=send)["status"] == "test_reply_sent"
+    assert calls[-1][1].count("Juan Pablo") <= 1
+    assert "Juan Pablo" in calls[-1][1]
+    assert process_test_inbound(
+        db, PHONE, "n-5", "No, me llamo Andrés", sender=send
+    )["status"] == "test_reply_sent"
+    assert db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"] == "Andrés"
+    assert process_test_inbound(
+        db, PHONE, "n-6", "¿Recuerdas mi nombre?", sender=send
+    )["status"] == "test_reply_sent"
+    assert "Andrés" in calls[-1][1]
+    assert "Juan Pablo" not in calls[-1][1]
+
+
+def test_v5_never_assumes_someone_elses_name_or_occupation(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    for key, msg in [
+        ("other-name", "Mi esposa se llama Patricia"),
+        ("non-name", "Soy interesado"),
+        ("wrong-name", "Hola, soy de PROCASA"),
+    ]:
+        assert process_test_inbound(
+            db, PHONE, key, msg, sender=send,
+            llm=lambda *_: "Gracias por escribir.",
+        )["status"] == "test_reply_sent"
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    assert "customer_first_name" not in campaign
+    assert process_test_inbound(
+        db, PHONE, "unknown-name", "¿Cuál es mi nombre?", sender=send
+    )["status"] == "test_reply_sent"
+    assert "no me has indicado tu nombre" in calls[-1][1]
+
+
+def test_v5_duplicate_name_event_does_not_update_campaign_again(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "intro-duplicate", "Soy Daniela", sender=send
+    )["status"] == "test_reply_sent"
+    first_updates = len(db["crm_price_drop_pilot_v1"].calls)
+    assert process_test_inbound(
+        db, PHONE, "intro-duplicate", "Soy Valentina", sender=send
+    ) == {"status": "duplicate_suppressed"}
+    assert db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"] == "Daniela"
+    assert len(db["crm_price_drop_pilot_v1"].calls) == first_updates
+    assert len(calls) == 1

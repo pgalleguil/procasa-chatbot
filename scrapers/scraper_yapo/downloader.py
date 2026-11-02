@@ -46,6 +46,11 @@ HTML_HINTS = (
     "<html",
     "<!doctype html",
 )
+LISTING_DETAIL_HREF_RE = re.compile(
+    r"(?:href|data-href)\s*=\s*['\"][^'\"]*?/bienes-raices-(?:venta|alquiler)-"
+    r"[^'\"<>\s]*?/\D*\d{6,}(?:[/?#][^'\"<>\s]*)?['\"]",
+    re.I,
+)
 
 
 @dataclass(slots=True)
@@ -76,6 +81,10 @@ def _load_removed_patterns() -> list[str]:
     return [str(item) for item in rule_sets.get("listing_removed_patterns", []) if str(item).strip()]
 
 
+def _has_listing_detail_evidence(source: str) -> bool:
+    return bool(LISTING_DETAIL_HREF_RE.search(source or ""))
+
+
 def validate_html(html: str) -> dict[str, Any]:
     source = html or ""
     normalized_source = re.sub(r"\s+", " ", source).strip().lower()
@@ -85,11 +94,16 @@ def validate_html(html: str) -> dict[str, Any]:
     if any(pattern.lower() in normalized_source for pattern in removed_patterns):
         return {"status": "LISTING_REMOVED", "reason": "listing_removed_text"}
 
-    # Check known challenge markup in the source, then inspect rendered text
-    # without script/style content for human-facing block messages.
-    if any(marker in normalized_source for marker in BLOCK_HTML_MARKERS):
-        return {"status": "BLOCKED", "reason": "strong_block_signal"}
+    # Inspect rendered markup/text without script/style content for human-facing
+    # block messages. Normal Yapo pages can reference the Cloudflare challenge
+    # platform from an ordinary application script, so a raw source marker is
+    # only blocking when the page does not also contain listing evidence.
     visible_source = re.sub(r"(?is)<(script|style|noscript)\b[^>]*>.*?</\1\s*>", " ", source)
+    visible_normalized = re.sub(r"\s+", " ", visible_source).strip().lower()
+    raw_block_signal = any(marker in normalized_source for marker in BLOCK_HTML_MARKERS)
+    visible_block_signal = any(marker in visible_normalized for marker in BLOCK_HTML_MARKERS)
+    if visible_block_signal or (raw_block_signal and not _has_listing_detail_evidence(source)):
+        return {"status": "BLOCKED", "reason": "strong_block_signal"}
     visible_text = re.sub(r"(?s)<[^>]+>", " ", visible_source)
     visible_text = re.sub(r"\s+", " ", visible_text).strip().lower()
     if any(pattern in visible_text for pattern in BLOCK_VISIBLE_PATTERNS):

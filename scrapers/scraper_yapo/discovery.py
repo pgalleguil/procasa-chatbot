@@ -198,6 +198,24 @@ def _node_label(node: Any) -> str:
     return " ".join(value for value in values if value).strip().lower()
 
 
+def _fold_pagination_label(value: str) -> str:
+    return unicodedata.normalize("NFKD", value or "").encode("ascii", "ignore").decode().lower()
+
+
+def _node_is_next_control(node: Any, *, allow_arrows: bool = False) -> bool:
+    text = _fold_pagination_label(node.get_text(" ", strip=True))
+    exact_labels = {"next", "next page", "siguiente", "pagina siguiente", "proxima", "proximo"}
+    if text in exact_labels:
+        return True
+    if allow_arrows and text in {"›", "»", ">"}:
+        return True
+    attributes = " ".join(
+        str(node.get(attribute) or "")
+        for attribute in ("aria-label", "title", "data-testid", "class", "id")
+    )
+    return bool(_NEXT_LABEL_RE.search(_fold_pagination_label(attributes)))
+
+
 def _pagination_containers(soup: BeautifulSoup) -> list[Any]:
     return soup.select(
         'nav[aria-label*="pagin" i], nav[aria-label*="page" i], '
@@ -235,18 +253,37 @@ def _embedded_pagination_values(html: str) -> tuple[list[str], int | None, int |
         elif compact in _TOTAL_PAGE_KEY_NAMES and isinstance(value, int) and not isinstance(value, bool):
             total_pages = value
 
+    candidates: list[str] = []
     for script in soup.find_all("script"):
         raw = script.string or script.get_text()
         if not raw or not raw.strip():
             continue
         candidate = raw.strip()
-        if not candidate.startswith(("{", "[")):
-            continue
-        try:
-            payload = json.loads(candidate)
-        except (TypeError, ValueError):
-            continue
-        walk(payload)
+        candidates.append(candidate)
+        for encoded in re.findall(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)', candidate, re.S):
+            try:
+                candidates.append(str(json.loads(encoded)))
+            except (TypeError, ValueError):
+                continue
+
+    for candidate in candidates:
+        if candidate.startswith(("{", "[")):
+            try:
+                walk(json.loads(candidate))
+            except (TypeError, ValueError):
+                pass
+        for metadata in re.findall(r'"metadata"\s*:\s*\{([^{}]*)\}', candidate, re.I):
+            current_match = re.search(r'"page"\s*:\s*(\d+)', metadata, re.I)
+            total_match = re.search(r'"totalPages"\s*:\s*(\d+)', metadata, re.I)
+            if current_match:
+                current_page = int(current_match.group(1))
+            if total_match:
+                total_pages = int(total_match.group(1))
+        for next_value in re.findall(
+            r'"(?:nextUrl|next_url|nextHref|nextLink)"\s*:\s*"([^"\\]+)', candidate, re.I
+        ):
+            if _looks_like_url(next_value):
+                next_urls.append(next_value)
     return next_urls, current_page, total_pages
 
 
@@ -257,7 +294,7 @@ def _pagination_metadata(soup: BeautifulSoup, html: str) -> tuple[int | None, in
     disabled_next = False
 
     for container in containers:
-        for node in container.find_all(True):
+        for node in [container, *container.find_all(True)]:
             for attribute in ("data-current-page", "data-page-current", "aria-current"):
                 value = str(node.get(attribute) or "")
                 match = re.fullmatch(r"\s*(\d+)\s*", value)
@@ -273,7 +310,7 @@ def _pagination_metadata(soup: BeautifulSoup, html: str) -> tuple[int | None, in
                 match = re.search(r"\b(\d+)\b", text)
                 if match:
                     current_page = int(match.group(1))
-            if _NEXT_LABEL_RE.search(_node_label(node)) and _node_is_disabled(node):
+            if _node_is_next_control(node, allow_arrows=True) and _node_is_disabled(node):
                 disabled_next = True
 
         if current_page is None:
@@ -308,13 +345,13 @@ def _pagination_state(html: str, page_url: str) -> tuple[str | None, bool, str]:
                 return next_url, False, "next_link"
 
     containers = _pagination_containers(soup)
+    next_control_without_url = False
     for container in containers:
         for node in container.find_all(["a", "button"]):
             if _node_is_disabled(node):
                 continue
-            label = _node_label(node)
-            is_next_label = bool(_NEXT_LABEL_RE.search(label) or label.strip() in {"›", "»", ">"})
-            if is_next_label:
+            if _node_is_next_control(node, allow_arrows=True):
+                next_control_without_url = True
                 next_url = _explicit_pagination_url(node, page_url)
                 if next_url:
                     return next_url, False, "next_control"
@@ -325,8 +362,8 @@ def _pagination_state(html: str, page_url: str) -> tuple[str | None, bool, str]:
     for node in soup.find_all(["a", "button"]):
         if _node_is_disabled(node):
             continue
-        label = _node_label(node)
-        if _NEXT_LABEL_RE.search(label):
+        if _node_is_next_control(node):
+            next_control_without_url = True
             next_url = _explicit_pagination_url(node, page_url)
             if next_url:
                 return next_url, False, "next_label"
@@ -364,6 +401,8 @@ def _pagination_state(html: str, page_url: str) -> tuple[str | None, bool, str]:
         return None, True, "explicit_total_pages_reached"
     if disabled_next:
         return None, True, "explicit_disabled_next_control"
+    if next_control_without_url:
+        return None, False, "pagination_control_without_explicit_url"
     if containers:
         return None, False, "pagination_end_not_explicitly_verified"
     text = soup.get_text(" ", strip=True).lower()

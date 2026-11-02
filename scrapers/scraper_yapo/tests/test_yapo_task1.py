@@ -200,6 +200,29 @@ def test_http_server_error_saves_private_body(monkeypatch, tmp_path):
     assert diagnostic.read_text(encoding="utf-8") == response.text
 
 
+def test_real_windows_page1_html_has_ads_and_js_pagination_without_false_block():
+    page_path = (
+        Path(__file__).resolve().parents[1]
+        / "html_dumps"
+        / "owner_hunt_20261102_191911_3501"
+        / "838f80574bf34b7f5178d15955c2f5cd.blocked.html"
+    )
+    if not page_path.is_file():
+        pytest.skip("HTML real de Windows no disponible fuera de este entorno")
+    page_url = "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/region-metropolitana-maipu"
+    html = page_path.read_text(encoding="utf-8", errors="replace")
+    assert downloader.validate_html(html) == {"status": "OK", "reason": "valid_html"}
+    records, _, duplicates = discovery._extract_listing_urls_detailed(html, page_url)
+    assert len(records) == 20
+    assert duplicates == 0
+    assert records[0]["url"].endswith("/32747511")
+    assert discovery._pagination_state(html, page_url) == (
+        None,
+        False,
+        "pagination_control_without_explicit_url",
+    )
+
+
 def test_discovery_follows_html_pagination_until_verified_end(monkeypatch):
     pages = {
         "https://www.yapo.cl/searchresult/test": _html(_listing("12345678") + '<a rel="next" href="?o=2">Siguiente</a>'),

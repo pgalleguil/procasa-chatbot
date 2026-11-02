@@ -191,6 +191,11 @@ def classify_with_deepseek(
     config: AppConfig,
     description_bundle: dict[str, Any] | None = None,
 ) -> DeepSeekResult | None:
+    # This API path stays closed regardless of DEEPSEEK_ENABLED in the
+    # environment; this task is limited to extraction/discovery validation.
+    raise RuntimeError("DeepSeek está desactivado para el scraper Yapo.")
+
+    # Retained implementation below for a future explicitly authorized task.
     if not config.deepseek_enabled:
         return None
     if "pro" in config.deepseek_model.lower():

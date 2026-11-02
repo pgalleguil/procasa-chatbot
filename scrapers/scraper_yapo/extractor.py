@@ -99,7 +99,7 @@ def _publicador_visible(soup: Any) -> str:
     return _jsonld_name(soup)
 
 
-def _description_from_soup(soup: Any) -> tuple[str, str]:
+def _description_from_soup(soup: Any) -> tuple[str, str, str]:
     selectors = [
         (".d3-property-about__text", "d3_property_about_text"),
         ("[data-qa='description']", "data_qa_description"),
@@ -113,11 +113,13 @@ def _description_from_soup(soup: Any) -> tuple[str, str]:
         if node:
             text = node.get_text(" ", strip=True)
             if text:
-                return re.sub(r"\s+", " ", text).strip(), source
+                return re.sub(r"\s+", " ", text).strip(), source, ""
     meta_desc = soup.find("meta", attrs={"property": "og:description"}) or soup.find("meta", attrs={"name": "description"})
     if meta_desc and meta_desc.get("content"):
-        return str(meta_desc["content"]).strip(), "meta_description"
-    return "", ""
+        # Meta description is commonly a short search snippet. Keep it as a
+        # separate diagnostic value; never report it as the listing's full text.
+        return "", "missing_full_description", str(meta_desc["content"]).strip()
+    return "", "missing_full_description", ""
 
 
 def _is_source_truncated(description: str, source: str, soup: Any) -> bool:
@@ -145,6 +147,7 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
             "price": "",
             "description": text,
             "descripcion": text,
+            "description_summary": "",
             "descripcion_len": len(text),
             "descripcion_source": "html_text_fallback",
             "descripcion_is_truncated": False,
@@ -171,10 +174,7 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
             title = meta_title["content"].strip()
 
     price = _first_text(soup, ["[data-qa='price']", ".d3-property-info__price", ".d3-property-insight__attribute-value", ".price", ".item-price", "strong.price", "span.price"])
-    description, description_source = _description_from_soup(soup)
-    if not description:
-        description = _strip_html(html)
-        description_source = "html_text_fallback"
+    description, description_source, description_summary = _description_from_soup(soup)
 
     seller_name = _first_text(soup, [".seller", ".user", ".profile", "[data-qa='seller-name']", "[data-qa='user-name']"])
     seller_text = _strip_html(" ".join(node.get_text(" ", strip=True) for node in soup.select(".seller, .user, .profile")))
@@ -254,7 +254,7 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
     canonical = soup.find("link", attrs={"rel": "canonical"})
     canonical_url = canonical.get("href", "").strip() if canonical else source_url
 
-    descripcion_is_truncated = _is_source_truncated(description, description_source, soup)
+    descripcion_is_truncated = bool(description_summary) or _is_source_truncated(description, description_source, soup)
 
     return {
         "source_url": source_url,
@@ -262,6 +262,7 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
         "price": price,
         "description": description,
         "descripcion": description,
+        "description_summary": description_summary,
         "descripcion_len": len(description),
         "descripcion_source": description_source,
         "descripcion_is_truncated": descripcion_is_truncated,

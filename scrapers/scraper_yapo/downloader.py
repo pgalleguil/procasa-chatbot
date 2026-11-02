@@ -3,11 +3,10 @@
 import hashlib
 import json
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 try:
     import requests  # type: ignore
@@ -119,15 +118,28 @@ def download_html(
         )
 
     proxy = proxy_manager.next_proxy() if proxy_manager and proxy_manager.has_proxies() else None
+    if proxy is None:
+        raise RuntimeError("YAPO_PROXY_REQUIRED: no se realiza una conexión directa.")
     headers = _headers(config)
     timeout = config.request_timeout_seconds
 
     if requests is not None:
-        response = requests.get(url, headers=headers, proxies=_requests_proxies(proxy), timeout=timeout)
+        # The caller walks pages serially; a short fixed pause keeps the pilot
+        # at one in-flight Yapo request with a moderate request cadence.
+        time.sleep(1.0)
+        session = requests.Session()
+        session.trust_env = False
+        try:
+            response = session.get(url, headers=headers, proxies=_requests_proxies(proxy), timeout=timeout)
+        except Exception as exc:
+            raise RuntimeError(f"YAPO_PROXY_REQUEST_FAILED: {type(exc).__name__}") from None
+        if response.status_code in {403, 429}:
+            raise RuntimeError(f"YAPO_BLOCKED: HTTP {response.status_code}; solicitudes detenidas.")
         response.raise_for_status()
         html = response.text
-        html_path.write_text(html, encoding="utf-8")
         validation = validate_html(html)
+        if validation["status"] != "BLOCKED":
+            html_path.write_text(html, encoding="utf-8")
         return DownloadResult(
             url=url,
             html=html,
@@ -139,23 +151,6 @@ def download_html(
             blocked=validation["status"] == "BLOCKED",
         )
 
-    request = Request(url, headers=headers, method="GET")
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            html = response.read().decode("utf-8", errors="replace")
-            status_code = getattr(response, "status", None)
-    except (HTTPError, URLError) as exc:
-        raise RuntimeError(f"Failed to download {url}: {exc}") from exc
-
-    html_path.write_text(html, encoding="utf-8")
-    validation = validate_html(html)
-    return DownloadResult(
-        url=url,
-        html=html,
-        status_code=status_code,
-        fetch_source="urllib",
-        html_path=html_path,
-        validation_status=validation["status"],
-        validation_reason=validation["reason"],
-        blocked=validation["status"] == "BLOCKED",
-    )
+    # urllib has no safe proxy configuration here. Fail closed rather than
+    # silently bypassing the configured proxy.
+    raise RuntimeError("YAPO_PROXY_TRANSPORT_UNAVAILABLE: requests is required for proxy-only access.")

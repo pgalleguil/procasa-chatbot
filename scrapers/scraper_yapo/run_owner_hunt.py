@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from classifier_rules import (
     build_deepseek_context,
@@ -18,7 +19,6 @@ from classifier_rules import (
     is_removed_listing,
 )
 from config import AppConfig, get_config
-from deepseek_classifier import build_description_for_llm, classify_with_deepseek
 from discovery import discover_listing_urls
 from downloader import download_html
 from export_reports import export_batch_reports
@@ -26,6 +26,7 @@ from extractor import extract_listing_fields
 from enrich import _enrich_property_fields
 from mongo_store import MongoStore
 from proxy_manager import ProxyManager
+from pilot import run_pilot
 
 
 def _utcnow() -> str:
@@ -82,8 +83,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     discover = subparsers.add_parser("discover", help="Discover listing URLs")
     discover.add_argument("--start-url", action="append", default=[], help="Starting Yapo search URL")
-    discover.add_argument("--max-pages", type=int, default=10, help="Maximum pages to scan")
-    discover.add_argument("--max-urls", type=int, default=1000, help="Maximum URLs to collect")
+    discover.add_argument("--max-pages", type=int, default=None, help="Optional safety ceiling; a capped run is reported incomplete")
+    discover.add_argument("--max-urls", type=int, default=None, help="Optional safety ceiling; a capped run is reported incomplete")
     discover.add_argument("--until-end", action="store_true", help="Keep walking pages until the end")
     discover.add_argument("--batch-id", default="", help="Optional batch identifier")
     discover.add_argument("--dry-run", action="store_true", help="Keep discovery local only")
@@ -99,8 +100,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run_full = subparsers.add_parser("run-full", help="Discover and process in one step")
     run_full.add_argument("--start-url", action="append", default=[], help="Starting Yapo search URL")
-    run_full.add_argument("--max-pages", type=int, default=10, help="Maximum pages to scan")
-    run_full.add_argument("--max-urls", type=int, default=1000, help="Maximum URLs to collect")
+    run_full.add_argument("--max-pages", type=int, default=None, help="Optional safety ceiling; a capped run is reported incomplete")
+    run_full.add_argument("--max-urls", type=int, default=None, help="Optional safety ceiling; a capped run is reported incomplete")
     run_full.add_argument("--until-end", action="store_true", help="Keep walking pages until the end")
     run_full.add_argument("--batch-id", default="", help="Optional batch identifier")
     run_full.add_argument("--limit", type=int, default=100, help="Max records to process")
@@ -112,6 +113,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     export = subparsers.add_parser("export", help="Export CSV and summary for a batch")
     export.add_argument("--batch-id", required=True, help="Batch identifier")
+
+    pilot = subparsers.add_parser("pilot", help="Read-only Yapo Maipú sale-house pilot (3,000–6,000 UF)")
+    pilot.add_argument("--start-url", required=True, help="Yapo search URL with confirmed Maipú, sale and house filters")
+    pilot.add_argument("--batch-id", default="", help="Optional batch identifier")
 
     return parser
 
@@ -143,9 +148,9 @@ def _finalize_local_classification(extracted: dict[str, Any], rule_context: dict
 
     company_ctx = company_shape_in_publisher_fields(extracted)
     return {
-        "state": "INCONCLUSIVE",
+        "state": "INCIERTO",
         "confidence": 0.25,
-        "reason": "No obvious evidence; DeepSeek should decide.",
+        "reason": "Evidencia insuficiente para una clasificación segura; requiere revisión.",
         "evidence": rule_context.get("owner_signal_evidence", []) or rule_context.get("weak_broker_evidence", []),
         "source": "rules_json",
         **company_ctx,
@@ -172,61 +177,9 @@ def _process_single_record(
     if mongo_store is not None:
         extracted["publisher_profile_context"] = mongo_store.publisher_profile_context(extracted)
 
-    description_bundle = build_description_for_llm(
-        extracted.get("descripcion", extracted.get("description", "")),
-        max_chars=config.deepseek_description_max_chars,
-        head_chars=config.deepseek_description_head_chars,
-        tail_chars=config.deepseek_description_tail_chars,
-        snippet_radius=config.deepseek_description_snippet_radius,
-    )
-
     rule_context = build_rule_context(extracted)
-    classification: dict[str, Any]
-    llm_result = None
-
-    obvious = classify_obvious_broker(extracted)
-    removed = is_removed_listing(extracted)
-    if removed:
-        classification = removed
-    elif obvious:
-        classification = obvious
-    else:
-        if no_llm:
-            classification = _finalize_local_classification(extracted, rule_context)
-        else:
-            try:
-                llm_result = classify_with_deepseek(extracted, rule_context, config, description_bundle=description_bundle)
-            except Exception as exc:
-                llm_result = None
-                classification = _finalize_local_classification(extracted, rule_context)
-                classification["llm_error"] = str(exc)
-            else:
-                if llm_result is not None and hasattr(llm_result, "state"):
-                    classification = {
-                        "state": llm_result.state,
-                        "confidence": llm_result.confidence,
-                        "reason": llm_result.reason,
-                        "evidence": llm_result.evidence,
-                        "source": "deepseek",
-                        "deepseek_status": llm_result.status,
-                        "deepseek_raw": llm_result.raw,
-                        "deepseek_structured_evidence": llm_result.structured_evidence,
-                        "deepseek_structured_evidence_status": llm_result.status,
-                        "prompt_version": llm_result.prompt_version,
-                        "trace": {
-                            "deepseek_raw": llm_result.raw,
-                            "deepseek_message_content": llm_result.message_content,
-                            "deepseek_reasoning_content": llm_result.reasoning_content,
-                            "deepseek_payload": llm_result.payload,
-                        },
-                    }
-                else:
-                    classification = _finalize_local_classification(extracted, rule_context)
-
-    if classification.get("state") == "INCIERTO" and llm_result is None and not no_llm:
-        fallback = _finalize_local_classification(extracted, rule_context)
-        if fallback.get("state") != "INCIERTO":
-            classification = fallback
+    # DeepSeek is deliberately not imported or called in any CLI path.
+    classification = _finalize_local_classification(extracted, rule_context)
 
     combined = {
         **record,
@@ -238,10 +191,10 @@ def _process_single_record(
         "rule_context": rule_context,
         "deepseek_context": build_deepseek_context(extracted),
         "classification": classification,
-        "llm_description_original_len": description_bundle["original_len"],
-        "llm_description_sent_len": description_bundle["sent_len"],
-        "llm_description_truncated": description_bundle["truncated_for_llm"],
-        "llm_description_strategy": description_bundle["strategy"],
+        "llm_description_original_len": len(extracted.get("descripcion", extracted.get("description", ""))),
+        "llm_description_sent_len": 0,
+        "llm_description_truncated": False,
+        "llm_description_strategy": "deepseek_disabled",
         "processed_at": _utcnow(),
         "scrape_stage": (
             "ad_removed"
@@ -420,6 +373,10 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_run_full(args, config)
     if args.command == "export":
         return _cmd_export(args, config)
+    if args.command == "pilot":
+        result = run_pilot(args.start_url, config, batch_id=args.batch_id or None)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
     raise RuntimeError(f"Unknown command: {args.command}")
 
 

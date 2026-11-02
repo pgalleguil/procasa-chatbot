@@ -95,7 +95,9 @@ class AppConfig:
     deepseek_base_url: str = field(default_factory=lambda: os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
     # Modelo único de producción: no permitir overrides heredados a Pro.
     deepseek_model: str = DEEPSEEK_FLASH_MODEL
-    deepseek_enabled: bool = field(default_factory=lambda: _env_bool("DEEPSEEK_ENABLED", True))
+    # API adjudication is intentionally disabled for this scraper until an
+    # explicit later task re-enables it; environment flags cannot override it.
+    deepseek_enabled: bool = False
     deepseek_timeout_seconds: int = field(default_factory=lambda: _env_int("DEEPSEEK_TIMEOUT_SECONDS", 12))
     deepseek_max_tokens: int = field(default_factory=lambda: _env_int("DEEPSEEK_MAX_TOKENS", 500))
     deepseek_thinking: bool = field(default_factory=lambda: _env_bool("DEEPSEEK_THINKING", False))

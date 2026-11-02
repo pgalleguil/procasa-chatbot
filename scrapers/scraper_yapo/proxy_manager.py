@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from itertools import cycle
 from typing import Iterable
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from config import AppConfig
 
@@ -21,20 +21,26 @@ class ProxyChoice:
 
 class ProxyManager:
     def __init__(self, proxies: Iterable[str] | None = None):
-        cleaned = [self.normalize_proxy_url(proxy) for proxy in (proxies or []) if proxy and proxy.strip()]
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for proxy in proxies or []:
+            if not proxy or not str(proxy).strip():
+                continue
+            normalized = self.normalize_proxy_url(str(proxy))
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                cleaned.append(normalized)
         self._proxies = cleaned
         self._cycle = cycle(self._proxies) if self._proxies else None
 
     @classmethod
     def from_config(cls, config: AppConfig) -> "ProxyManager":
-        proxies: list[str] = []
-        if config.proxy_url:
-            proxies.append(config.proxy_url)
-        proxies.extend(config.proxy_urls)
-        for proxy in load_proxies_from_env():
-            if proxy not in proxies:
-                proxies.append(proxy)
-        return cls(proxies)
+        config_proxies = [config.proxy_url, *config.proxy_urls]
+        username = os.getenv("PROXY_USER", "")
+        password = os.getenv("PROXY_PASS", "")
+        if username and password:
+            config_proxies = [_add_proxy_auth(value, username, password) for value in config_proxies if value]
+        return cls([*config_proxies, *load_proxies_from_env()])
 
     def has_proxies(self) -> bool:
         return bool(self._proxies)
@@ -46,10 +52,19 @@ class ProxyManager:
 
     @staticmethod
     def normalize_proxy_url(proxy_url: str) -> str:
-        parsed = urlparse(proxy_url)
-        if parsed.scheme:
-            return proxy_url
-        return f"http://{proxy_url}"
+        raw = proxy_url.strip()
+        if not raw:
+            return ""
+        candidate = raw if "://" in raw else f"http://{raw}"
+        try:
+            parsed = urlparse(candidate)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                return ""
+            if parsed.port is not None and not (1 <= parsed.port <= 65535):
+                return ""
+        except ValueError:
+            return ""
+        return candidate.rstrip("/")
 
 
 def load_proxies(config: AppConfig) -> list[str]:
@@ -62,8 +77,18 @@ def _split_proxy_values(value: str) -> list[str]:
     return [p.strip() for p in re.split(r"[,\n;\s]+", value) if p.strip()]
 
 
+def _add_proxy_auth(proxy: str, username: str, password: str) -> str:
+    if "@" in proxy or not username or not password:
+        return proxy
+    if "://" in proxy:
+        scheme, endpoint = proxy.split("://", 1)
+        return f"{scheme}://{quote(username, safe='')}:{quote(password, safe='')}@{endpoint}"
+    return f"{quote(username, safe='')}:{quote(password, safe='')}@{proxy}"
+
+
 def load_proxies_from_env() -> list[str]:
     raw_values = [
+        os.getenv("PROXY_URL", ""),
         os.getenv("YAPO_PROXY_URLS", ""),
         os.getenv("PROXY_URLS", ""),
     ]
@@ -72,27 +97,17 @@ def load_proxies_from_env() -> list[str]:
     proxy_user = os.getenv("PROXY_USER", "")
     proxy_pass = os.getenv("PROXY_PASS", "")
 
-    if proxies_env:
-        legacy = []
-        for p in _split_proxy_values(proxies_env):
-            if proxy_user and proxy_pass and "@" not in p:
-                if "://" in p:
-                    scheme, rest = p.split("://", 1)
-                    p = f"{scheme}://{proxy_user}:{proxy_pass}@{rest}"
-                else:
-                    p = f"{proxy_user}:{proxy_pass}@{p}"
-            legacy.append(p)
-        raw_values.append(",".join(legacy))
+    raw_values.append(proxies_env)
 
     seen = set()
     proxies = []
 
     for raw in raw_values:
         for proxy in _split_proxy_values(raw):
-            if "://" not in proxy:
-                proxy = f"http://{proxy}"
-
-            if proxy not in seen:
+            if proxy_user and proxy_pass:
+                proxy = _add_proxy_auth(proxy, proxy_user, proxy_pass)
+            proxy = ProxyManager.normalize_proxy_url(proxy)
+            if proxy and proxy not in seen:
                 seen.add(proxy)
                 proxies.append(proxy)
 
@@ -100,7 +115,7 @@ def load_proxies_from_env() -> list[str]:
 
 
 def get_proxy_for_attempt(attempt: int) -> str | None:
-    proxies = [None, *load_proxies_from_env()]
+    proxies = load_proxies_from_env()
     if not proxies:
         return None
     return proxies[min(max(attempt, 0), len(proxies) - 1)]

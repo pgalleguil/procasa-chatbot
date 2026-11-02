@@ -5,19 +5,19 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
 try:
     from .classifier_rules import load_rule_sets
     from .config import AppConfig
-    from .downloader import download_html, html_path_for_url, validate_html
+    from .downloader import DownloadResult, download_html, html_path_for_url, validate_html
     from .proxy_manager import ProxyManager
 except ImportError:  # direct script execution
     from classifier_rules import load_rule_sets
     from config import AppConfig
-    from downloader import download_html, html_path_for_url, validate_html
+    from downloader import DownloadResult, download_html, html_path_for_url, validate_html
     from proxy_manager import ProxyManager
 
 
@@ -204,16 +204,21 @@ def _fold_pagination_label(value: str) -> str:
 
 def _node_is_next_control(node: Any, *, allow_arrows: bool = False) -> bool:
     text = _fold_pagination_label(node.get_text(" ", strip=True))
+    attributes = " ".join(
+        str(node.get(attribute) or "")
+        for attribute in ("aria-label", "title", "data-testid", "class", "id")
+    )
+    folded_attributes = _fold_pagination_label(attributes)
+    if re.search(r"\b(?:next|previous)\s+slide\b", text) or re.search(
+        r"\b(?:next|previous)\s+slide\b", folded_attributes
+    ):
+        return False
     exact_labels = {"next", "next page", "siguiente", "pagina siguiente", "proxima", "proximo"}
     if text in exact_labels:
         return True
     if allow_arrows and text in {"›", "»", ">"}:
         return True
-    attributes = " ".join(
-        str(node.get(attribute) or "")
-        for attribute in ("aria-label", "title", "data-testid", "class", "id")
-    )
-    return bool(_NEXT_LABEL_RE.search(_fold_pagination_label(attributes)))
+    return bool(_NEXT_LABEL_RE.search(folded_attributes))
 
 
 def _pagination_containers(soup: BeautifulSoup) -> list[Any]:
@@ -413,6 +418,226 @@ def _pagination_state(html: str, page_url: str) -> tuple[str | None, bool, str]:
     return None, False, "pagination_metadata_missing"
 
 
+_YAPO_PAGINATION_NAV_SELECTOR = 'nav[aria-label*="pagin" i]'
+_YAPO_NEXT_BUTTON_SELECTOR = (
+    f'{_YAPO_PAGINATION_NAV_SELECTOR} button[aria-label*="siguiente" i], '
+    f'{_YAPO_PAGINATION_NAV_SELECTOR} button[aria-label="next" i], '
+    f'{_YAPO_PAGINATION_NAV_SELECTOR} button[aria-label*="next page" i]'
+)
+
+
+def _has_client_side_pagination(html: str) -> bool:
+    """Return true only for an enabled next button inside Yapo's pager nav."""
+    soup = BeautifulSoup(html, "html.parser")
+    for nav in soup.select(_YAPO_PAGINATION_NAV_SELECTOR):
+        for button in nav.find_all("button"):
+            if _node_is_disabled(button):
+                continue
+            if _node_is_next_control(button):
+                return True
+    return False
+
+
+def _playwright_proxy_config(proxy_url: str) -> dict[str, str]:
+    parsed = urlparse(proxy_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise RuntimeError("YAPO_PROXY_INVALID: FlashProxy no tiene un endpoint compatible.")
+    server = f"{parsed.scheme}://{parsed.hostname}:{parsed.port or (443 if parsed.scheme == 'https' else 80)}"
+    result = {"server": server}
+    if parsed.username is not None:
+        result["username"] = unquote(parsed.username)
+    if parsed.password is not None:
+        result["password"] = unquote(parsed.password)
+    return result
+
+
+class _YapoClientPagination:
+    """Drive Yapo's real React pager without constructing an undocumented URL."""
+
+    def __init__(
+        self,
+        page_url: str,
+        page_html: str,
+        config: AppConfig,
+        proxy_manager: ProxyManager,
+    ) -> None:
+        proxy = proxy_manager.next_proxy() if proxy_manager.has_proxies() else None
+        if proxy is None:
+            raise RuntimeError("YAPO_PROXY_REQUIRED: la paginación JavaScript exige FlashProxy.")
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover - depends on Windows runtime setup
+            raise RuntimeError("YAPO_PLAYWRIGHT_REQUIRED: instale las dependencias del scraper.") from exc
+
+        self._start_url = _normalize_url(page_url)
+        self._initial_html = page_html
+        self._config = config
+        self._request_events: list[dict[str, str]] = []
+        self._initial_html_served = False
+        self._timeout_ms = max(10, int(config.request_timeout_seconds)) * 1000
+        self._playwright = sync_playwright().start()
+        proxy_config = _playwright_proxy_config(proxy.url)
+        try:
+            self._browser = self._playwright.chromium.launch(
+                headless=True,
+                channel="chrome",
+                proxy=proxy_config,
+            )
+        except Exception as exc:  # pragma: no cover - depends on installed Windows Chrome
+            self._playwright.stop()
+            raise RuntimeError(f"YAPO_PLAYWRIGHT_LAUNCH_FAILED: {type(exc).__name__}.") from None
+
+        self._context = self._browser.new_context(
+            user_agent=config.user_agent,
+            locale="es-CL",
+            java_script_enabled=True,
+        )
+        self._page = self._context.new_page()
+        self._page.on("request", self._record_request)
+        self._page.route("**/*", self._route_request)
+        try:
+            self._page.goto(
+                self._start_url,
+                wait_until="domcontentloaded",
+                timeout=self._timeout_ms,
+            )
+            self._page.locator(_YAPO_PAGINATION_NAV_SELECTOR).first.wait_for(
+                state="attached",
+                timeout=self._timeout_ms,
+            )
+            self._wait_for_network_quiet()
+            if self._current_page_number() != 1:
+                raise RuntimeError("YAPO_PAGINATION_INITIAL_PAGE_MISMATCH")
+        except Exception as exc:
+            self.close()
+            if isinstance(exc, RuntimeError) and str(exc).startswith("YAPO_"):
+                raise
+            raise RuntimeError(f"YAPO_PAGINATION_BROWSER_INIT_FAILED: {type(exc).__name__}.") from None
+
+    def _route_request(self, route: Any) -> None:
+        request = route.request
+        parsed = urlparse(request.url)
+        host = (parsed.hostname or "").lower()
+        if host != "yapo.cl" and not host.endswith(".yapo.cl"):
+            route.abort()
+            return
+        if request.resource_type in {"image", "media", "font"}:
+            route.abort()
+            return
+        if (
+            not self._initial_html_served
+            and request.is_navigation_request()
+            and _normalize_url(request.url) == self._start_url
+        ):
+            self._initial_html_served = True
+            route.fulfill(
+                status=200,
+                content_type="text/html; charset=utf-8",
+                body=self._initial_html,
+            )
+            return
+        route.continue_()
+
+    def _record_request(self, request: Any) -> None:
+        parsed = urlparse(request.url)
+        host = (parsed.hostname or "").lower()
+        if host == "yapo.cl" or host.endswith(".yapo.cl"):
+            # Store the request that the page itself made; proxy credentials are
+            # not part of browser request URLs and are never logged here.
+            self._request_events.append({
+                "method": request.method,
+                "url": _normalize_url(request.url),
+                "resource_type": request.resource_type,
+            })
+
+    def _current_page_number(self) -> int | None:
+        current = self._page.locator(
+            f'{_YAPO_PAGINATION_NAV_SELECTOR} [aria-current="page"]'
+        ).first
+        if current.count() == 0:
+            return None
+        label = current.get_attribute("aria-label") or current.inner_text()
+        match = re.search(r"\d+", label or "")
+        return int(match.group(0)) if match else None
+
+    def _wait_for_network_quiet(self) -> None:
+        try:
+            self._page.wait_for_load_state("networkidle", timeout=5_000)
+        except Exception:
+            # Yapo may keep analytics open; page-number and listing checks below
+            # are the completion signal for each transition.
+            pass
+
+    def advance(self, expected_page: int) -> dict[str, Any]:
+        button = self._page.locator(_YAPO_NEXT_BUTTON_SELECTOR).first
+        if button.count() == 0:
+            return {"terminal": False, "evidence": "client_next_button_missing"}
+        if button.is_disabled() or (button.get_attribute("aria-disabled") or "").lower() == "true":
+            return {"terminal": True, "evidence": "explicit_disabled_next_control"}
+
+        previous_page = self._current_page_number()
+        if previous_page is None or expected_page != previous_page + 1:
+            raise RuntimeError("YAPO_PAGINATION_CURRENT_PAGE_UNVERIFIED")
+        previous_html = self._page.content()
+        previous_records, _, _ = _extract_listing_urls_detailed(previous_html, self._page.url)
+        previous_ids = {item["url"] for item in previous_records}
+        request_offset = len(self._request_events)
+        try:
+            button.click(timeout=self._timeout_ms)
+            self._page.wait_for_function(
+                """expected => {
+                    const nav = document.querySelector('nav[aria-label*="pagin" i]');
+                    const current = nav && nav.querySelector('[aria-current="page"]');
+                    const label = current && (current.getAttribute('aria-label') || current.textContent || '');
+                    const match = label.match(/\\d+/);
+                    return match && Number(match[0]) === expected;
+                }""",
+                arg=expected_page,
+                timeout=self._timeout_ms,
+            )
+            self._wait_for_network_quiet()
+        except Exception as exc:
+            raise RuntimeError(f"YAPO_PAGINATION_CLICK_FAILED: {type(exc).__name__}.") from None
+
+        html = self._page.content()
+        current_page = self._current_page_number()
+        if current_page != expected_page:
+            raise RuntimeError("YAPO_PAGINATION_PAGE_NUMBER_MISMATCH")
+        records, _, _ = _extract_listing_urls_detailed(html, self._page.url)
+        if not records or {item["url"] for item in records} == previous_ids:
+            raise RuntimeError("YAPO_PAGINATION_LISTINGS_DID_NOT_CHANGE")
+
+        observed = self._request_events[request_offset:]
+        return {
+            "terminal": False,
+            "evidence": "client_side_button_click",
+            "url": _normalize_url(self._page.url),
+            "html": html,
+            "request_urls": [
+                {"method": item["method"], "url": item["url"]}
+                for item in observed
+                if item["resource_type"] in {"document", "fetch", "xhr"}
+            ][:10],
+            "page_number": current_page,
+        }
+
+    def close(self) -> None:
+        browser = getattr(self, "_browser", None)
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                pass
+            self._browser = None
+        playwright = getattr(self, "_playwright", None)
+        if playwright is not None:
+            try:
+                playwright.stop()
+            except Exception:
+                pass
+            self._playwright = None
+
+
 def discover_listing_urls(
     start_urls: list[str],
     max_pages: int | None = None,
@@ -432,7 +657,7 @@ def discover_listing_urls(
     seen_urls: set[str] = set()
     target_norm = {_norm_commune(value) for value in (target_communes or []) if value}
     report = report if report is not None else {}
-    report.update({"pages": [], "pagination_complete": True, "pagination_cause": "", "errors": [], "proxy_requests": 0, "request_attempts": 0, "successful_downloads": 0, "cache_responses": 0})
+    report.update({"pages": [], "pagination_complete": True, "pagination_cause": "", "errors": [], "proxy_requests": 0, "request_attempts": 0, "successful_downloads": 0, "cache_responses": 0, "pagination_requests": []})
     if not start_urls:
         start_urls = build_default_start_urls(config)
 
@@ -445,8 +670,10 @@ def discover_listing_urls(
             break
         page_number = 1
         visited_page_urls: set[str] = set()
+        browser_navigator: _YapoClientPagination | None = None
+        pending_browser_page: dict[str, Any] | None = None
         while True:
-            if current_url in visited_page_urls:
+            if current_url in visited_page_urls and pending_browser_page is None:
                 report["pagination_complete"] = False
                 report["pagination_cause"] = "pagination_url_cycle"
                 break
@@ -455,23 +682,49 @@ def discover_listing_urls(
                 report["pagination_complete"] = False
                 report["pagination_cause"] = "safety_max_pages_reached"
                 break
-            try:
-                cache_exists = html_path_for_url(current_url, config, batch_id=batch_id).exists()
-                if not cache_exists and proxy_manager.has_proxies():
-                    report["request_attempts"] += 1
-                download = download_html(current_url, config, proxy_manager, batch_id=batch_id)
-            except Exception as exc:
-                message = str(exc)
-                report["pages"].append({"page_number": page_number, "url": current_url, "status": "blocked" if "BLOCKED" in message else "error", "listing_count": None, "duplicate_count": None, "error": message})
-                report["errors"].append(message)
-                report["pagination_complete"] = False
-                report["pagination_cause"] = "blocked_or_download_error"
-                break
+            if pending_browser_page is not None:
+                browser_page = pending_browser_page
+                pending_browser_page = None
+                cache_key_url = browser_page["url"]
+                if cache_key_url == current_url:
+                    # The UI may paginate without changing location. This suffix
+                    # is only a local cache identity; it is never requested.
+                    cache_key_url = f"{current_url}#yapo-client-page={page_number}"
+                html_path = html_path_for_url(cache_key_url, config, batch_id=batch_id)
+                html_path.parent.mkdir(parents=True, exist_ok=True)
+                if not html_path.exists():
+                    html_path.write_text(browser_page["html"], encoding="utf-8")
+                validation = validate_html(browser_page["html"])
+                download = DownloadResult(
+                    url=browser_page["url"],
+                    html=browser_page["html"],
+                    status_code=200,
+                    fetch_source="playwright_proxy",
+                    html_path=html_path,
+                    validation_status=validation["status"],
+                    validation_reason=validation["reason"],
+                )
+                report["proxy_requests"] += max(1, len(browser_page.get("request_urls") or []))
+                report["request_attempts"] += max(1, len(browser_page.get("request_urls") or []))
+            else:
+                try:
+                    cache_exists = html_path_for_url(current_url, config, batch_id=batch_id).exists()
+                    if not cache_exists and proxy_manager.has_proxies():
+                        report["request_attempts"] += 1
+                    download = download_html(current_url, config, proxy_manager, batch_id=batch_id)
+                except Exception as exc:
+                    message = str(exc)
+                    report["pages"].append({"page_number": page_number, "url": current_url, "status": "blocked" if "BLOCKED" in message else "error", "listing_count": None, "duplicate_count": None, "error": message})
+                    report["errors"].append(message)
+                    report["pagination_complete"] = False
+                    report["pagination_cause"] = "blocked_or_download_error"
+                    break
             if download.fetch_source == "cache":
                 report["cache_responses"] += 1
-            elif download.fetch_source == "requests_proxy":
+            elif download.fetch_source in {"requests_proxy", "playwright_proxy"}:
                 report["successful_downloads"] += 1
-                report["proxy_requests"] += 1
+                if download.fetch_source == "requests_proxy":
+                    report["proxy_requests"] += 1
             validation = validate_html(download.html)
             if validation["status"] in {"INVALID", "BLOCKED", "LISTING_REMOVED"}:
                 report["pages"].append({
@@ -509,6 +762,8 @@ def discover_listing_urls(
                     report["pages"].append({"page_number": page_number, "url": current_url, "status": "complete", "listing_count": len(page_records), "duplicate_count": duplicate_count, "new_count": page_new, "anchors_total": anchors_total})
                     report["pagination_complete"] = False
                     report["pagination_cause"] = "safety_max_urls_reached"
+                    if browser_navigator is not None:
+                        browser_navigator.close()
                     return discovered
             report["pages"].append({"page_number": page_number, "url": current_url, "status": "complete" if page_records else "empty", "listing_count": len(page_records), "duplicate_count": duplicate_count, "new_count": page_new, "anchors_total": anchors_total})
             next_url, terminal_verified, evidence = _pagination_state(download.html, current_url)
@@ -529,9 +784,55 @@ def discover_listing_urls(
             if terminal_verified:
                 report["pagination_cause"] = evidence
                 break
+            if evidence == "pagination_control_without_explicit_url" and _has_client_side_pagination(download.html):
+                if max_pages is not None and page_number >= max_pages:
+                    report["pagination_complete"] = False
+                    report["pagination_cause"] = "safety_max_pages_reached"
+                    break
+                try:
+                    if browser_navigator is None:
+                        browser_navigator = _YapoClientPagination(
+                            current_url,
+                            download.html,
+                            config,
+                            proxy_manager,
+                        )
+                    browser_page = browser_navigator.advance(page_number + 1)
+                except Exception as exc:
+                    report["pagination_complete"] = False
+                    report["pagination_cause"] = "client_side_pagination_error"
+                    report["errors"].append(str(exc))
+                    break
+                if browser_page.get("terminal"):
+                    report["pages"][-1]["pagination_evidence"] = browser_page.get("evidence", "explicit_disabled_next_control")
+                    report["pagination_cause"] = str(browser_page.get("evidence") or "explicit_disabled_next_control")
+                    break
+                if not browser_page.get("html") or browser_page.get("page_number") != page_number + 1:
+                    report["pagination_complete"] = False
+                    report["pagination_cause"] = str(browser_page.get("evidence") or "client_side_page_unverified")
+                    break
+                browser_next_url = _normalize_url(str(browser_page.get("url") or current_url))
+                if urlparse(browser_next_url).hostname not in {"www.yapo.cl", "yapo.cl"}:
+                    report["pagination_complete"] = False
+                    report["pagination_cause"] = "unauthorized_pagination_domain"
+                    report["errors"].append("client-side pagination left the authorized Yapo domain")
+                    break
+                if browser_next_url != current_url and browser_next_url in visited_page_urls:
+                    report["pagination_complete"] = False
+                    report["pagination_cause"] = "pagination_url_cycle"
+                    break
+                report["pages"][-1]["pagination_evidence"] = str(browser_page.get("evidence") or "client_side_button_click")
+                report["pages"][-1]["pagination_request_urls"] = browser_page.get("request_urls") or []
+                report["pagination_requests"].extend(browser_page.get("request_urls") or [])
+                current_url = browser_next_url
+                pending_browser_page = browser_page
+                page_number += 1
+                continue
             report["pagination_complete"] = False
             report["pagination_cause"] = evidence
             break
+        if browser_navigator is not None:
+            browser_navigator.close()
     if not report["pagination_cause"]:
         report["pagination_cause"] = "verified_end"
     return discovered

@@ -22,7 +22,6 @@ os.environ["DEEPSEEK_ENABLED"] = "false"
 os.environ["DEEPSEEK_API_KEY"] = ""
 
 from scrapers.scraper_yapo.config import AppConfig
-from scrapers.scraper_yapo.diagnose_proxy import diagnose_proxy
 from scrapers.scraper_yapo.mongo_store import MongoStore
 from scrapers.scraper_yapo.pilot import run_pilot
 from scrapers.scraper_yapo.proxy_manager import ProxyManager
@@ -132,23 +131,13 @@ def run() -> int:
         print("ERROR: no hay proxies configurados; no se permite conexi\u00f3n directa.")
         return 2
 
-    print("Comprobando DNS, TCP y solicitud controlada mediante el proxy configurado...")
-    proxy_report = diagnose_proxy(config)
-    if proxy_report.get("result_category") != "OK":
-        category = str(proxy_report.get("result_category") or "UNKNOWN")
-        report_name = str(proxy_report.get("report_file") or "")
-        print(f"ERROR: preflight del proxy fall\u00f3 ({category}); no se solicit\u00f3 ninguna p\u00e1gina de Yapo.")
-        if report_name:
-            print(f"Diagn\u00f3stico sanitizado: {config.reports_dir / report_name}")
-        return 2
-
     # Guard against an accidental future write being added to the pilot path.
     def deny_mongo_write(*_args: Any, **_kwargs: Any) -> None:
         raise RuntimeError("Escritura MongoDB bloqueada por ejecutar_maipu.py.")
 
     MongoStore.upsert_listing = deny_mongo_write  # type: ignore[method-assign]
 
-    print("Proxy disponible. Recorriendo todas las p\u00e1ginas de la b\u00fasqueda de Maip\u00fa...")
+    print("FlashProxy configurado. Recorriendo todas las p\u00e1ginas de la b\u00fasqueda de Maip\u00fa...")
     summary = run_pilot(START_URL, config)
     pages = summary.get("pages_visited") or 0
     complete = bool(summary.get("pagination_complete"))
@@ -235,4 +224,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -216,11 +216,96 @@ def test_real_windows_page1_html_has_ads_and_js_pagination_without_false_block()
     assert len(records) == 20
     assert duplicates == 0
     assert records[0]["url"].endswith("/32747511")
+    soup = discovery.BeautifulSoup(html, "html.parser")
+    search_next_buttons = soup.select(discovery._YAPO_NEXT_BUTTON_SELECTOR)
+    assert len(search_next_buttons) == 1
+    assert search_next_buttons[0].get("aria-label", "").lower().endswith("siguiente")
+    assert any(button.get_text(" ", strip=True) == "Next slide" for button in soup.find_all("button"))
+    assert discovery._has_client_side_pagination(html)
     assert discovery._pagination_state(html, page_url) == (
         None,
         False,
         "pagination_control_without_explicit_url",
     )
+
+
+def test_gallery_next_slide_is_not_search_pagination():
+    html = _html('<div class="carousel"><button aria-label="Next slide">Next slide</button></div>')
+    assert not discovery._has_client_side_pagination(html)
+    assert discovery._pagination_state(html, "https://www.yapo.cl/searchresult/test") == (
+        None,
+        False,
+        "pagination_metadata_missing",
+    )
+
+
+def test_real_windows_page1_advances_with_observed_browser_pagination(monkeypatch, tmp_path):
+    page_path = (
+        Path(__file__).resolve().parents[1]
+        / "html_dumps"
+        / "owner_hunt_20261102_191911_3501"
+        / "838f80574bf34b7f5178d15955c2f5cd.blocked.html"
+    )
+    if not page_path.is_file():
+        pytest.skip("HTML real de Windows no disponible fuera de este entorno")
+    first_url = "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/region-metropolitana-maipu"
+    second_url = "https://www.yapo.cl/searchresult/test?observed=2"
+    first_html = page_path.read_text(encoding="utf-8", errors="replace")
+    second_html = _html(
+        _listing("12345678")
+        + '<nav aria-label="Paginaci\ufffdn"><button aria-current="page">2</button>'
+        + '<span data-total-pages="2"></span>'
+        + '<button disabled aria-disabled="true" aria-label="P\ufffdgina siguiente">Siguiente</button></nav>'
+    )
+    request_evidence = [{"method": "GET", "url": "https://www.yapo.cl/searchresult/test?observed=2"}]
+
+    class FakeBrowserPagination:
+        def __init__(self, page_url, page_html, config, proxy_manager):
+            assert page_url == first_url
+            assert page_html == first_html
+            self.closed = False
+
+        def advance(self, expected_page):
+            assert expected_page == 2
+            return {
+                "terminal": False,
+                "evidence": "client_side_button_click",
+                "url": second_url,
+                "html": second_html,
+                "request_urls": request_evidence,
+                "page_number": 2,
+            }
+
+        def close(self):
+            self.closed = True
+
+    browser_instances = []
+
+    def make_browser(*args, **kwargs):
+        browser = FakeBrowserPagination(*args, **kwargs)
+        browser_instances.append(browser)
+        return browser
+
+    monkeypatch.setattr(discovery, "_YapoClientPagination", make_browser)
+    monkeypatch.setattr(discovery.ProxyManager, "from_config", lambda _: ProxyManager(["proxy.test:9000"]))
+    monkeypatch.setattr(discovery, "download_html", lambda url, *args, **kwargs: _download(url, first_html))
+    config_value = AppConfig(html_dumps_dir=tmp_path)
+    report = {}
+    rows = discovery.discover_listing_urls(
+        [first_url],
+        report=report,
+        config=config_value,
+        proxy_manager=ProxyManager(["proxy.test:9000"]),
+        batch_id="real-page1-browser-transition",
+    )
+
+    assert len(rows) == 21
+    assert {row["page_number"] for row in rows} == {1, 2}
+    assert report["pagination_complete"] is True
+    assert report["pagination_cause"] == "explicit_total_pages_reached"
+    assert report["pages"][0]["pagination_evidence"] == "client_side_button_click"
+    assert report["pages"][0]["pagination_request_urls"] == request_evidence
+    assert browser_instances[0].closed is True
 
 
 def test_discovery_follows_html_pagination_until_verified_end(monkeypatch):

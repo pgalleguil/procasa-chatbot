@@ -3,3 +3,4 @@ beautifulsoup4
 pymongo
 python-dotenv
 curl_cffi
+playwright

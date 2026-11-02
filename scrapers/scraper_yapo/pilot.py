@@ -1,1 +1,351 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíëxN‹Z–‹­¦ëeŠw¬Õ™É½´}}™ÕÑÕÉ•}|¥µÁ½ÉÐ…¹¹½Ñ…Ñ¥½¹Ì()¥µÁ½ÉÐ©Í½¸)¥µÁ½ÉÐÉ”)¥µÁ½ÉÐÍåÌ)™É½´‘…Ñ•Ñ¥µ”¥µÁ½ÉÐ‘…Ñ•Ñ¥µ”°Ñ¥µ•é½¹”)™É½´Á…Ñ¡±¥ˆ¥µÁ½ÉÐA…Ñ )™É½´ÑåÁ¥¹œ¥µÁ½ÉÐ¹ä)™É½´ÕÉ±±¥ˆ¹Á…ÉÍ”¥µÁ½ÉÐÁ…ÉÍ•}ÅÌ°ÕÉ±Á…ÉÍ”()}MIAI}%H€ôA…Ñ ¡}}™¥±•}|¤¹É•Í½±Ù” ¤¹Á…É•¹Ð)ÍåÌ¹Á…Ñ ¹¥¹Í•ÉÐ À°ÍÑÈ¡}MIAI}%H¹Á…É•¹Ð¹Á…É•¹Ð¤¤)ÍåÌ¹Á…Ñ ¹¥¹Í•ÉÐ À°ÍÑÈ¡}MIAI}%H¹Á…É•¹Ð¤¤()ÑÉäè(€€€™É½´€¹±…ÍÍ¥™¥•É}ÉÕ±•Ì¥µÁ½ÉÐ±…ÍÍ¥™å}Ý¥Ñ¡}ÉÕ±•Ì(€€€™É½´€¹½¹™¥œ¥µÁ½ÉÐÁÁ½¹™¥œ(€€€™É½´€¹‘¥Í½Ù•Éä¥µÁ½ÉÐ}¹½Éµ}½µµÕ¹”°‘¥Í½Ù•É}±¥ÍÑ¥¹}ÕÉ±Ì°¹½Éµ…±¥é•}å…Á½}ÕÉ°(€€€™É½´€¹‘½Ý¹±½…‘•È¥µÁ½ÉÐ‘½Ý¹±½…‘}¡Ñµ°°¡Ñµ±}Á…Ñ¡}™½É}ÕÉ°°Ù…±¥‘…Ñ•}¡Ñµ°(€€€™É½´€¹•áÑÉ…Ñ½È¥µÁ½ÉÐ•áÑÉ…Ñ}±¥ÍÑ¥¹}™¥•±‘Ì(€€€™É½´€¹µ½¹½}ÍÑ½É”¥µÁ½ÉÐ5½¹½MÑ½É”(€€€™É½´€¹ÁÉ½áå}µ…¹…•È¥µÁ½ÉÐAÉ½áå5…¹…•È)•á•ÁÐ%µÁ½ÉÑÉÉ½Èè€€Œ‘¥É•ÐÍÉ¥ÁÐ•á•ÕÑ¥½¸(€€€™É½´ÍÉ…Á•ÉÌ¹ÍÉ…Á•É}å…Á¼¹±…ÍÍ¥™¥•É}ÉÕ±•Ì¥µÁ½ÉÐ±…ÍÍ¥™å}Ý¥Ñ¡}ÉÕ±•Ì(€€€™É½´ÍÉ…Á•ÉÌ¹ÍÉ…Á•É}å…Á¼¹½¹™¥œ¥µÁ½ÉÐÁÁ½¹™¥œ(€€€™É½´ÍÉ…Á•ÉÌ¹ÍÉ…Á•É}å…Á¼¹‘¥Í½Ù•Éä¥µÁ½ÉÐ}¹½Éµ}½µµÕ¹”°‘¥Í½Ù•É}±¥ÍÑ¥¹}ÕÉ±Ì°¹½Éµ…±¥é•}å…Á½}ÕÉ°(€€€™É½´ÍÉ…Á•ÉÌ¹ÍÉ…Á•É}å…Á¼¹‘½Ý¹±½…‘•È¥µÁ½ÉÐ‘½Ý¹±½…‘}¡Ñµ°°¡Ñµ±}Á…Ñ¡}™½É}ÕÉ°°Ù…±¥‘…Ñ•}¡Ñµ°(€€€™É½´ÍÉ…Á•ÉÌ¹ÍÉ…Á•É}å…Á¼¹•áÑÉ…Ñ½È¥µÁ½ÉÐ•áÑÉ…Ñ}±¥ÍÑ¥¹}™¥•±‘Ì(€€€™É½´ÍÉ…Á•ÉÌ¹ÍÉ…Á•É}å…Á¼¹µ½¹½}ÍÑ½É”¥µÁ½ÉÐ5½¹½MÑ½É”(€€€™É½´ÍÉ…Á•ÉÌ¹ÍÉ…Á•É}å…Á¼¹ÁÉ½áå}µ…¹…•È¥µÁ½ÉÐAÉ½áå5…¹…•È(()A%1=Q}M=A€ôì‰Á½ÉÑ…°ˆè€‰e…Á¼¹°ˆ°€‰½Á•É…Ñ¥½¸ˆè€‰Ù•¹Ñ„ˆ°€‰ÁÉ½Á•ÉÑå}ÑåÁ”ˆè€‰…Í„ˆ°€‰½µµÕ¹”ˆè€‰5…¥Ãèˆ°€‰ÁÉ¥•}Õ™}µ¥¸ˆè€ÌÀÀÀ°€‰ÁÉ¥•}Õ™}µ…àˆè€ØÀÀÁô(()‘•˜}±¥ÍÑ¥¹}¥¡ÕÉ°èÍÑÈ¤€´øÍÑÈè(€€€µ…Ñ €ôÉ”¹Í•…É ¡Èˆ¼¡q‘ìØ±ô¤ üél¼üuð¤ˆ°ÕÉ°¤(€€€É•ÑÕÉ¸µ…Ñ ¹É½ÕÀ Ä¤¥˜µ…Ñ •±Í”€ˆˆ(()‘•˜}Í½Á•}ÕÉ±}¥Í}Ù…±¥¡ÕÉ°èÍÑÈ¤€´øÑÕÁ±•m‰½½°°ÍÑÉtè(€€€Á…ÉÍ•€ôÕÉ±Á…ÉÍ”¡ÕÉ°¤(€€€ÅÕ•Éä€ôÁ…ÉÍ•}ÅÌ¡Á…ÉÍ•¹ÅÕ•Éä¤(€€€Å}Ù…±Õ”€ô€ˆ€ˆ¹©½¥¸¡ÅÕ•Éä¹•Ð ‰Äˆ°mt¤¤¹±½Ý•È ¤(€€€É•¥½¸€ô€ˆ€ˆ¹©½¥¸¡ÅÕ•Éä¹•Ð ‰É•¥½¹Í±Õœˆ°mt¤¤¹±½Ý•È ¤(€€€¥˜Á…ÉÍ•¹¡½ÍÑ¹…µ”¹½Ð¥¸ì‰ÝÝÜ¹å…Á¼¹°ˆ°€‰å…Á¼¹°‰ôè(€€€€€€€É•ÑÕÉ¸…±Í”°€‰ÍÑ…ÉÑ}ÕÉ±}¹½}•Í}å…Á¼ˆ(€€€¥˜¹½ÐÁ…ÉÍ•¹Á…Ñ ¹ÍÑ…ÉÑÍÝ¥Ñ  ˆ½Í•…É¡É•ÍÕ±Ð½‰¥•¹•ÌµÉ…¥•ÌµÙ•¹Ñ„µ‘”µÁÉ½Á¥•‘…‘•Ìˆ¤è(€€€€€€€É•ÑÕÉ¸…±Í”°€‰ÉÕÑ…}¹½}½¹™¥Éµ…}‰ÕÍÅÕ•‘…}‘•}Ù•¹Ñ„ˆ(€€€¥˜€‰…Í…Ìˆ¹½Ð¥¸Å}Ù…±Õ”½È€‰‰¥•¹•ÌµÉ…¥•ÌµÙ•¹Ñ„µ‘”µÁÉ½Á¥•‘…‘•Ìµ…Í…Ìˆ¹½Ð¥¸Å}Ù…±Õ”è(€€€€€€€É•ÑÕÉ¸…±Í”°€‰™¥±ÑÉ½}…Í…}¹½}½¹™¥Éµ…‘½}•¹}Äˆ(€€€¥˜€‰µ…¥ÁÔˆ¹½Ð¥¸É•¥½¸è(€€€€€€€É•ÑÕÉ¸…±Í”°€‰½µÕ¹…}µ…¥ÁÕ}¹½}½¹™¥Éµ…‘…}•¹}É•¥½¹Í±Õœˆ(€€€É•ÑÕÉ¸QÉÕ”°€‰½Á•É…Ñ¥½¹}¡½ÕÍ•}½µµÕ¹•}™¥±Ñ•ÉÍ}ÁÉ•Í•¹Ðˆ(()‘•˜}ÁÉ¥•}¥¹}Õ˜¡É…ÜèÍÑÈ¤€´ø™±½…Ðð9½¹”è(€€€¥˜¹½ÐÉ…Ü½È¹½ÐÉ”¹Í•…É ¡È‰q‰Uqˆˆ°É…Ü°É”¹$¤è(€€€€€€€É•ÑÕÉ¸9½¹”(€€€µ…Ñ €ôÉ”¹Í•…É ¡Èˆ üéUqÌ¨¤ü¡mq¹t¬ üè±q¬¤ü¥qÌ©Uüˆ°É…Ü°É”¹$¤(€€€¥˜¹½Ðµ…Ñ è(€€€€€€€µ…Ñ €ôÉ”¹Í•…É ¡È‰UqÌ¨¡mq¹t¬ üè±q¬¤ü¤ˆ°É…Ü°É”¹$¤(€€€¥˜¹½Ðµ…Ñ è(€€€€€€€É•ÑÕÉ¸9½¹”(€€€ÑÉäè(€€€€€€€É•ÑÕÉ¸™±½…Ð¡µ…Ñ ¹É½ÕÀ Ä¤¹É•Á±…” ˆ¸ˆ°€ˆˆ¤¹É•Á±…” ˆ°ˆ°€ˆ¸ˆ¤¤(€€€•á•ÁÐY…±Õ•ÉÉ½Èè(€€€€€€€É•ÑÕÉ¸9½¹”(()‘•˜}½µµÕ¹•}Ù…±¥‘…Ñ¥½¸¡Ù…±Õ”èÍÑÈ°‘¥Í½Ù•Éå}Ù…±Õ”èÍÑÈ€ô€ˆˆ°‘•Ñ…¥±}ÍÑ…ÑÕÌèÍÑÈ€ô€ˆˆ¤€´øÍÑÈè(€€€€ˆˆ‰Y…±¥‘…Ñ”‘•Ñ…¥°•Ù¥‘•¹”…¹ÕÍ”‘¥Í½Ù•Éä±½…Ñ¥½¸½¹±äÑ¼‘•Ñ•Ð½¹™±¥Ð¸ˆˆˆ(€€€¥˜‘•Ñ…¥±}ÍÑ…ÑÕÌ€ôô€‰Á•¹‘¥¹}…µ‰¥Õ½ÕÌˆè(€€€€€€€É•ÑÕÉ¸€‰Á•¹‘¥¹}…µ‰¥Õ½ÕÌˆ(€€€¹½Éµ…±¥é•€ô}¹½Éµ}½µµÕ¹”¡Ù…±Õ”½È€ˆˆ¤(€€€¥˜¹½Ð¹½Éµ…±¥é•è(€€€€€€€É•ÑÕÉ¸€‰Á•¹‘¥¹œˆ(€€€¥˜¹½Éµ…±¥é•¥¸ì‰µ…¥ÁÔˆ°€‰µ…¥ÁÔµÉ•¥½¸µµ•ÑÉ½Á½±¥Ñ…¹„ˆ°€‰µ…¥ÁÔµÉ•¥½¸µµ•ÑÉ½Á½±¥Ñ…¹„µ‘”µÍ…¹Ñ¥…¼‰ôè(€€€€€€€‘•Ñ…¥±}É•ÍÕ±Ð€ô€‰½¹™¥Éµ•‘}µ…¥ÁÔˆ(€€€•±¥˜¹½Éµ…±¥é•¹ÍÑ…ÉÑÍÝ¥Ñ  ‰µ…¥ÁÔ´ˆ¤è(€€€€€€€É•ÑÕÉ¸€‰Á•¹‘¥¹}…µ‰¥Õ½ÕÌˆ(€€€•±Í”è(€€€€€€€‘•Ñ…¥±}É•ÍÕ±Ð€ô€‰½¹™¥Éµ•‘}½Ñ¡•É}½µµÕ¹”ˆ((€€€‘¥Í½Ù•É•€ô}¹½Éµ}½µµÕ¹”¡‘¥Í½Ù•Éå}Ù…±Õ”½È€ˆˆ¤(€€€™½ÈÍÕ™™¥à¥¸€ ˆµÉ•¥½¸µµ•ÑÉ½Á½±¥Ñ…¹„µ‘”µÍ…¹Ñ¥…¼ˆ°€ˆµÉ•¥½¸µµ•ÑÉ½Á½±¥Ñ…¹„ˆ¤è(€€€€€€€¥˜‘¥Í½Ù•É•¹•¹‘ÍÝ¥Ñ ¡ÍÕ™™¥à¤è(€€€€€€€€€€€‘¥Í½Ù•É•€ô‘¥Í½Ù•É•‘lèµ±•¸¡ÍÕ™™¥à¥t(€€€€€€€€€€€‰É•…¬(€€€¥˜‘¥Í½Ù•É•è(€€€€€€€‘•Ñ…¥±}­•ä€ô¹½Éµ…±¥é•(€€€€€€€™½ÈÍÕ™™¥à¥¸€ ˆµÉ•¥½¸µµ•ÑÉ½Á½±¥Ñ…¹„µ‘”µÍ…¹Ñ¥…¼ˆ°€ˆµÉ•¥½¸µµ•ÑÉ½Á½±¥Ñ…¹„ˆ¤è(€€€€€€€€€€€¥˜‘•Ñ…¥±}­•ä¹•¹‘ÍÝ¥Ñ ¡ÍÕ™™¥à¤è(€€€€€€€€€€€€€€€‘•Ñ…¥±}­•ä€ô‘•Ñ…¥±}­•ålèµ±•¸¡ÍÕ™™¥à¥t(€€€€€€€€€€€€€€€‰É•…¬(€€€€€€€¥˜‘¥Í½Ù•É•€„ô‘•Ñ…¥±}­•äè(€€€€€€€€€€€¥˜€ˆ´ˆ¥¸‘¥Í½Ù•É•…¹‘•Ñ…¥±}­•ä¥¸‘¥Í½Ù•É•¹ÍÁ±¥Ð ˆ´ˆ¤è(€€€€€€€€€€€€€€€É•ÑÕÉ¸‘•Ñ…¥±}É•ÍÕ±Ð(€€€€€€€€€€€É•ÑÕÉ¸€‰Á•¹‘¥¹}…µ‰¥Õ½ÕÌˆ(€€€É•ÑÕÉ¸‘•Ñ…¥±}É•ÍÕ±Ð(()‘•˜}µ…Ñ¡•Í}Á¥±½Ñ}ÁÉ½Á•ÉÑå}™¥±Ñ•ÉÌ (€€€½µµÕ¹•}ÍÑ…ÑÕÌèÍÑÈ°½Á•É…Ñ¥½¸èÍÑÈ°ÁÉ½Á•ÉÑå}ÑåÁ”èÍÑÈ°É…Ý}ÁÉ¥”èÍÑÈ°(¤€´ø‰½½°è(€€€ÁÉ¥•}Õ˜€ô}ÁÉ¥•}¥¹}Õ˜¡É…Ý}ÁÉ¥”¤(€€€É•ÑÕÉ¸€ (€€€€€€€½µµÕ¹•}ÍÑ…ÑÕÌ€ôô€‰½¹™¥Éµ•‘}µ…¥ÁÔˆ(€€€€€€€…¹½Á•É…Ñ¥½¸€ôô€‰Ù•¹Ñ„ˆ(€€€€€€€…¹ÁÉ½Á•ÉÑå}ÑåÁ”€ôô€‰…Í„ˆ(€€€€€€€…¹ÁÉ¥•}Õ˜¥Ì¹½Ð9½¹”(€€€€€€€…¹€ÌÀÀÀ€ðôÁÉ¥•}Õ˜€ðô€ØÀÀÀ(€€€€¤(()‘•˜}ÝÉ¥Ñ•}©Í½¸¡Á…Ñ èA…Ñ °‘…Ñ„è¹ä¤€´ø9½¹”è(€€€Á…Ñ ¹Á…É•¹Ð¹µ­‘¥È¡Á…É•¹ÑÌõQÉÕ”°•á¥ÍÑ}½¬õQÉÕ”¤(€€€Á…Ñ ¹ÝÉ¥Ñ•}Ñ•áÐ¡©Í½¸¹‘ÕµÁÌ¡‘…Ñ„°•¹ÍÕÉ•}…Í¥¤õ…±Í”°¥¹‘•¹ÐôÈ¤°•¹½‘¥¹œô‰ÕÑ˜´àˆ¤(()‘•˜ÉÕ¹}Á¥±½Ð¡ÍÑ…ÉÑ}ÕÉ°èÍÑÈ°½¹™¥œèÁÁ½¹™¥œð9½¹”€ô9½¹”°€¨°‰…Ñ¡}¥èÍÑÈð9½¹”€ô9½¹”¤€´ø‘¥ÑmÍÑÈ°¹åtè(€€€½¹™¥œ€ô½¹™¥œ½ÈÁÁ½¹™¥œ ¤(€€€½¹™¥œ¹•¹ÍÕÉ•}±…å½ÕÐ ¤(€€€‰…Ñ¡}¥€ô‰…Ñ¡}¥½È½¹™¥œ¹•¹•É…Ñ•}‰…Ñ¡}¥ ¤(€€€Ñ¥µ•ÍÑ…µÀ€ô‘…Ñ•Ñ¥µ”¹¹½Ü¡Ñ¥µ•é½¹”¹ÕÑŒ¤¹ÍÑÉ™Ñ¥µ” ˆ•d•´•‘P• •4•M|•™hˆ¤(€€€ÍÕµµ…Éäè‘¥ÑmÍÑÈ°¹åt€ôì(€€€€€€€€‰Í½Á”ˆèA%1=Q}M=A¹½Áä ¤°€‰‰…Ñ¡}¥ˆè‰…Ñ¡}¥°€‰Á…•Í}Ù¥Í¥Ñ•ˆè€À°(€€€€€€€€‰Á…•Í}½µÁ±•Ñ”ˆè€À°€‰Á…•Í}¹½Ñ}Ù•É¥™¥•ˆè€À°(€€€€€€€€‰ÁÉ¥•}™¥±Ñ•É}µ½‘”ˆè€‰±½…±}½¹±å}™É½µ}•áÁ±¥¥Ñ}Õ™}ÁÉ¥”ì¹½}±Á}½¹Ù•ÉÍ¥½¸ˆ°(€€€€€€€€‰Á…¥¹…Ñ¥½¹}½µÁ±•Ñ”ˆè…±Í”°€‰Á…¥¹…Ñ¥½¹}…ÕÍ”ˆè€‰¹½Ñ}ÍÑ…ÉÑ•ˆ°(€€€€€€€€‰…‘Í}‘¥Í½Ù•É•ˆè€À°€‰‰…Ñ¡}‘ÕÁ±¥…Ñ•Ìˆè€À°€‰µ½¹½}•á¥ÍÑ¥¹œˆè€À°(€€€€€€€€‰¹•Ý}…‘Ìˆè€À°€‰™¥±Ñ•É}µ…Ñ¡•Ìˆè€À°€‰Á•¹‘¥¹}ÁÉ¥•}Ù…±¥‘…Ñ¥½¸ˆè€À°(€€€€€€€€‰Á•¹‘¥¹}½µµÕ¹•}Ù…±¥‘…Ñ¥½¸ˆè€À°€‰½µµÕ¹•}Ù…±¥‘…Ñ¥½¹}½Õ¹ÑÌˆèíô°(€€€€€€€€‰ÁÉ•±¥µ¥¹…Éå}±…ÍÍ¥™¥…Ñ¥½¹}½Õ¹ÑÌˆèíô°€‰•áÑÉ…Ñ¥½¹}•ÉÉ½É}½Õ¹ÑÌˆèíô°(€€€€€€€€‰¥¹Ù…±¥‘}½É}É•µ½Ù•‘}…‘Ìˆè€À°€‰É•ÅÕ•ÍÑ}…ÑÑ•µÁÑÌˆè€À°(€€€€€€€€‰ÍÕ•ÍÍ™Õ±}‘½Ý¹±½…‘Ìˆè€À°€‰…¡•}É•ÍÁ½¹Í•Ìˆè€À°(€€€€€€€€‰•ÉÉ½ÉÍ}½É}‰±½­Ìˆèmt°€‰ÁÉ½áå}É•ÅÕ•ÍÑÌˆè€À°€‰‘••ÁÍ••­}…±±Ìˆè€À°(€€€€€€€€‰µ½¹½}ÝÉ¥Ñ•Ìˆè€À°€‰µ½¹½}‘•‘ÕÁ}Ù•É¥™¥•ˆè…±Í”°(€€€€€€€€‰µ½¹½}‘•‘ÕÁ}ÍÑ…ÑÕÌˆè€‰¹½Ñ}…ÑÑ•µÁÑ•ˆ°€‰Í•…É¡}™¥±Ñ•ÉÍ}Ù•É¥™¥•ˆè…±Í”°(€€€ô(€€€…Õ‘¥Ðè±¥ÍÑm‘¥ÑmÍÑÈ°¹åut€ômt(€€€Ù…±¥‘}Í½Á”°Í½Á•}É•…Í½¸€ô}Í½Á•}ÕÉ±}¥Í}Ù…±¥¡ÍÑ…ÉÑ}ÕÉ°¤(€€€¥˜¹½ÐÙ…±¥‘}Í½Á”è(€€€€€€€ÍÕµµ…Éål‰•ÉÉ½ÉÍ}½É}‰±½­Ì‰t¹…ÁÁ•¹¡˜‰Í•…É¡}Í½Á•}Õ¹Ù•É¥™¥•éíÍ½Á•}É•…Í½¹ôˆ¤(€€€€€€€ÍÕµµ…Éål‰Á…¥¹…Ñ¥½¹}…ÕÍ”‰t€ô€‰Í•…É¡}Í½Á•}Õ¹Ù•É¥™¥•ˆ(€€€•±Í”è(€€€€€€€ÁÉ½áå}µ…¹…•È€ôAÉ½áå5…¹…•È¹™É½µ}½¹™¥œ¡½¹™¥œ¤(€€€€€€€¥˜¹½ÐÁÉ½áå}µ…¹…•È¹¡…Í}ÁÉ½á¥•Ì ¤è(€€€€€€€€€€€ÍÕµµ…Éål‰•ÉÉ½ÉÍ}½É}‰±½­Ì‰t¹…ÁÁ•¹ ‰ÁÉ½áå}Õ¹…Ù…¥±…‰±”ì‘¥É•Ð¹•ÑÝ½É¬…•ÍÌ‰±½­•ˆ¤(€€€€€€€€€€€ÍÕµµ…Éål‰Á…¥¹…Ñ¥½¹}…ÕÍ”‰t€ô€‰ÁÉ½áå}Õ¹…Ù…¥±…‰±”ˆ(€€€€€€€•±Í”è(€€€€€€€€€€€‘¥Í½Ù•Éå}É•Á½ÉÐè‘¥ÑmÍÑÈ°¹åt€ôíô(€€€€€€€€€€€É•½É‘Ì€ô‘¥Í½Ù•É}±¥ÍÑ¥¹}ÕÉ±Ì¡mÍÑ…ÉÑ}ÕÉ±t°µ…á}Á…•Ìõ9½¹”°µ…á}ÕÉ±Ìõ9½¹”°Õ¹Ñ¥±}•¹õQÉÕ”°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€‰…Ñ¡}¥õ‰…Ñ¡}¥°Ñ…É•Ñ}½µµÕ¹•Ìõl‰5…¥Ãè‰t°É•Á½ÉÐõ‘¥Í½Ù•Éå}É•Á½ÉÐ°(€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€½¹™¥œõ½¹™¥œ°ÁÉ½áå}µ…¹…•ÈõÁÉ½áå}µ…¹…•È¤(€€€€€€€€€€€ÍÕµµ…Éål‰Í•…É¡}™¥±Ñ•ÉÍ}Ù•É¥™¥•‰t€ô‰½½°¡É•½É‘Ì¤…¹…±° (€€€€€€€€€€€€€€€€ˆ½‰¥•¹•ÌµÉ…¥•ÌµÙ•¹Ñ„µ‘”µÁÉ½Á¥•‘…‘•Ìµ…Í…Ì¼ˆ¥¸ÍÑÈ¡É½Ü¹•Ð ‰ÕÉ°ˆ¤½È€ˆˆ¤¹±½Ý•È ¤(€€€€€€€€€€€€€€€™½ÈÉ½Ü¥¸É•½É‘Ì(€€€€€€€€€€€€¤(€€€€€€€€€€€ÍÕµµ…Éål‰Á…•Í}Ù¥Í¥Ñ•‰t€ô±•¸¡‘¥Í½Ù•Éå}É•Á½ÉÐ¹•Ð ‰Á…•Ìˆ°mt¤¤(€€€€€€€€€€€ÍÕµµ…Éål‰Á…¥¹…Ñ¥½¹}½µÁ±•Ñ”‰t€ô‰½½°¡‘¥Í½Ù•Éå}É•Á½ÉÐ¹•Ð ‰Á…¥¹…Ñ¥½¹}½µÁ±•Ñ”ˆ¤¤(€€€€€€€€€€€ÍÕµµ…Éål‰Á…¥¹…Ñ¥½¹}…ÕÍ”‰t€ô‘¥Í½Ù•Éå}É•Á½ÉÐ¹•Ð ‰Á…¥¹…Ñ¥½¹}…ÕÍ”ˆ°€‰Õ¹­¹½Ý¸ˆ¤(€€€€€€€€€€€ÍÕµµ…Éål‰Á…•}±½œ‰t€ô‘¥Í½Ù•Éå}É•Á½ÉÐ¹•Ð ‰Á…•Ìˆ°mt¤(€€€€€€€€€€€ÍÕµµ…Éål‰Á…•Í}½µÁ±•Ñ”‰t€ôÍÕ´ (ƒ^5âÚ$z{-®éÜj×V6÷&B–âæWu÷&V6÷&G3 ¢G'“ ¢66†VEö&Vf÷&RÒ‡FÖÅ÷F…öf÷%÷W&Â‡&V6÷&E²'W&Â%ÒÂ6öæf–rÂ&F6…ö–CÖ&F6…ö–B’æW†—7G2‚¢–bæ÷B66†VEö&Vf÷&RæB&÷‡•öÖævW"æ†5÷&÷†–W2‚“ ¢7VÖÖ'•²'&WVW7EöGFV×G2%Ò³Ò¢F÷væÆöFVBÒF÷væÆöEö‡FÖÂ‡&V6÷&E²'W&Â%ÒÂ6öæf–rÂ&÷‡•öÖævW"Â&F6…ö–CÖ&F6…ö–B¢–bF÷væÆöFVBæfWF6…÷6÷W&6RÓÒ&66†R# ¢7VÖÖ'•²&66†U÷&W7öç6W2%Ò³Ò¢VÆ–bF÷væÆöFVBæfWF6…÷6÷W&6RÓÒ'&WVW7G5÷&÷‡’# ¢7VÖÖ'•²'7V66W76gVÅöF÷væÆöG2%Ò³Ò¢7VÖÖ'•²'&÷‡•÷&WVW7G2%Ò³Ò¢fÆ–FF–öâÒfÆ–FFUö‡FÖÂ†F÷væÆöFVBæ‡FÖÂ¢–bF÷væÆöFVBæ&Æö6¶VB÷"fÆ–FF–öå²'7FGW2%ÒÓÒ$$Äô4´TB# ¢7VÖÖ'•²&W'&÷'5ö÷%ö&Æö6·2%ÒæVæB†b&Æ—7F–æuö&Æö6¶VC§·&V6÷&E²vÆ—7F–æuö–Bu×Ò"¢'&V°¢–bfÆ–FF–öå²'7FGW2%Ò–â²$”ådÄ”B"Â$Ä•5D”äuõ$TÔõdTB'Ó ¢7VÖÖ'•²&–çfÆ–Eö÷%÷&VÖ÷fVEöG2%Ò³Ò¢7VÖÖ'•²&W'&÷'5ö÷%ö&Æö6·2%ÒæVæB†b&Æ—7F–æuö–çfÆ–Eö÷%÷&VÖ÷fVC§·&V6÷&E²vÆ—7F–æuö–Bu×Ó§·fÆ–FF–öå²w7FGW2u×Ò"¢6öçF–çVP¢W‡G&7FVBÒW‡G&7EöÆ—7F–æuöf–VÆG2†F÷væÆöFVBæ‡FÖÂÂ6÷W&6U÷W&Ã×&V6÷&E²'W&Â%Ò¢W†6WBW†6WF–öâ2W†3 ¢7VÖÖ'•²&W'&÷'5ö÷%ö&Æö6·2%ÒæVæB†b&FWF–ÅöW'&÷#§·&V6÷&E²vÆ—7F–æuö–Bu×Ó§·G—R†W†2’åõöæÖUõ÷Ò"¢–bç’†Ö&¶W"–â7G"†W†2’f÷"Ö&¶W"–â‚$$Äô4´TB"Â%”õõ$õ…•õ$UTU5Eôd”ÄTB"Â%”õõ$õ…•ôUD…óCr"’“ ¢'&V°¢6öçF–çVP¢F—FÆRÒW‡G&7FVBævWB‚'F—FÆR"Â""¢FW67&—F–öâÒW‡G&7FVBævWB‚&FW67&—F–öâ"ÂW‡G&7FVBævWB‚&FW67&—6–öâ"Â""’¢&u÷&–6RÒ7G"†W‡G&7FVBævWB‚'&–6R"’÷"""¢&–6U÷VbÒ÷&–6Uö–å÷Vb‡&u÷&–6R¢6ö×VæÒW‡G&7FVBævWB‚&6ö×Væ"’÷"" ¢6öÖ×VæUöWf–FVæ6RÒW‡G&7FVBævWB‚&6ö×VæöWf–FVæ6R"’÷"²'7FGW2#¢'VæF–ær'Ð¢FW'&—F÷'•÷fÆ–FF–öâÒö6öÖ×VæU÷fÆ–FF–öâ€¢6ö×VæÀ¢&V6÷&BævWB‚&F—66÷fW'•ö6ö×Væ"Â""’À¢7G"†6öÖ×VæUöWf–FVæ6RævWB‚'7FGW2"’÷"'VæF–ær"’À¢¢÷W&F–öâÒ'fVçF"–b'fVçF"–â&V6÷&E²'W&Â%ÒæÆ÷vW"‚’VÇ6R" ¢&÷W'G•÷G—RÒ&66"–b&66"–â&V6÷&E²'W&Â%ÒæÆ÷vW"‚’VÇ6R" ¢Æö6ÅöÖF6‚ÒöÖF6†W5÷–Æ÷E÷&÷W'G•öf–ÇFW'2€¢FW'&—F÷'•÷fÆ–FF–öâÂ÷W&F–öâÂ&÷W'G•÷G—RÂ&u÷&–6P¢¢–b&–6U÷Vb—2æöæS ¢7VÖÖ'•²'VæF–æu÷&–6U÷fÆ–FF–öâ%Ò³Ò¢–bÆö6ÅöÖF6ƒ ¢7VÖÖ'•²&f–ÇFW%öÖF6†W2%Ò³Ò¢6Æ76–f–6F–öâÒ6Æ76–g•÷v—F…÷'VÆW2†W‡G&7FVB¢–b6Æ76–f–6F–öâævWB‚'7FFR"’ÓÒ$”ä4ôä4ÅU4•dR# ¢6Æ76–f–6F–öâÒ²¢¦6Æ76–f–6F–öâÂ'7FFR#¢$”ä4”U%Dò"Â'&V6öâ#¢$Wf–FVæ6––ç7Vf–6–VçFS²6Æ6–f–66œ;6â&VÆ–Ö–æ"VæF–VçFRFR&Wf—6œ;6ââ'Ð¢VF—BæVæB‡°¢&Æ—7F–æuö–B#¢&V6÷&E²&Æ—7F–æuö–B%ÒÂ'W&Â#¢&V6÷&E²'W&Â%ÒÀ¢&F—66÷fW&VE÷vR#¢&V6÷&BævWB‚'vUöçVÖ&W""’Â'F—FÆR#¢F—FÆRÀ¢&FW67&—F–öâ#¢FW67&—F–öâÂ&6ö×Væ#¢6ö×VæÀ¢&F—66÷fW'•ö6ö×Væ#¢&V6÷&BævWB‚&F—66÷fW'•ö6ö×Væ"Â""’À¢&6ö×Væ÷6÷W&6R#¢W‡G&7FVBævWB‚&6ö×Væ÷6÷W&6R"Â""’À¢&6ö×VæöFWF–ÅöWf–FVæ6R#¢6öÖ×VæUöWf–FVæ6RÀ¢'fÆ–F6–öåö6ö×Væ#¢FW'&—F÷'•÷fÆ–FF–öâÀ¢&FW67&—F–öå÷7VÖÖ'’#¢W‡G&7FVBævWB‚&FW67&—F–öå÷7VÖÖ'’"Â""’À¢'F—õ÷&÷–VFB#¢&÷W'G•÷G—RÂ&÷W&6–öâ#¢÷W&F–öâÀ¢'&V6–õ÷&r#¢&u÷&–6RÂ'&V6–õ÷Vb#¢&–6U÷VbÀ¢'&V6–õ÷fÆ–F6–öâ#¢'VæF–VçFU÷6–å÷fÆ÷%÷Ve÷fW&–f–6Fò"–b&–6U÷Vb—2æöæRVÇ6R'&V6–õ÷Veöö'6W'fFò"À¢'V&Æ–6F÷%÷f—6–&ÆR#¢W‡G&7FVBævWB‚'V&Æ–6F÷%÷f—6–&ÆR"Â""’À¢'F—õöçVæ6–çFR#¢W‡G&7FVBævWB‚'6VÆÆW%÷G—R"Â""’À¢&Æövò#¢W‡G&7FVBævWB‚&6öçF7EöÆövõöÇB"Â""’À¢'W&f–Â#¢W‡G&7FVBævWB‚'6VÆÆW%÷&öf–ÆUö–B"Â""’À¢&6Æ6–f–66–öå÷&VÆ–Ö–æ"#¢6Æ76–f–6F–öâÀ¢&Wf–FVæ6–#¢6Æ76–f–6F–öâævWB‚&Wf–FVæ6R"ÂµÒ’À¢'&ö&ÆVÖ5öW‡G&66–öâ#¢öW‡G&7F–öåö—77VW2†W‡G&7FVB’À¢&f–ÇFW%öÖF6‚#¢Æö6ÅöÖF6‚À¢Ò¢7VÖÖ'•²&6ÆÇ5÷FõöFVW6VV²%ÒÒ ¢7VÖÖ'•²&Ööævõ÷w&—FW2%ÒÒ ¢vUöÆörÒ7VÖÖ'’ævWB‚'vUöÆör"ÂµÒ¢†5÷'6VE÷vRÒç’‡vRævWB‚'7FGW2"’–â²&6ö×ÆWFR"Â&V×G’'Òf÷"vR–âvUöÆör¢7VÖÖ'•²&6öÖÖW&6–Å÷&W7VÇEöf–Æ&ÆR%ÒÒ&ööÂ††5÷'6VE÷vRæB7VÖÖ'•²'v–æF–öåö6ö×ÆWFR%ÒæB7VÖÖ'•²'6V&6…öf–ÇFW'5÷fW&–f–VB%Ò¢–bæ÷B7VÖÖ'•²&ÖöævõöFVGW÷fW&–f–VB%ÒæB7VÖÖ'’ævWB‚&æWuöG2"“ ¢7VÖÖ'•²&ÖöævõöW†—7F–ær%ÒÒæöæP¢7VÖÖ'•²&æWuöG2%ÒÒæöæP¢–bæ÷B†5÷'6VE÷vS ¢f÷"¶W’–â€¢&G5öF—66÷fW&VB"Â&&F6…öGWÆ–6FW2"Â&ÖöævõöW†—7F–ær"Â&æWuöG2"Â&f–ÇFW%öÖF6†W2"À¢'VæF–æu÷&–6U÷fÆ–FF–öâ"Â&–çfÆ–Eö÷%÷&VÖ÷fVEöG2"Â'vW5ö6ö×ÆWFR"Â'vW5öæ÷E÷fW&–f–VB"À¢'VæF–æuö6öÖ×VæU÷fÆ–FF–öâ"Â&6öÖ×VæU÷fÆ–FF–öåö6÷VçG2"À¢'&VÆ–Ö–æ'•ö6Æ76–f–6F–öåö6÷VçG2"Â&W‡G&7F–öåöW'&÷%ö6÷VçG2"À¢“ ¢7VÖÖ'•¶¶W•ÒÒæöæP¢7VÖÖ'•²'VæF–æuö6öÖ×VæU÷fÆ–FF–öâ%ÒÒ7VÒ€¢7G"†—FVÒævWB‚'fÆ–F6–öåö6ö×Væ"Â""’’ç7F'G7v—F‚‚'VæF–ær"’f÷"—FVÒ–âVF—@¢¢f÷"—FVÒ–âVF—C ¢6öÖ×VæU÷7FGW2Ò7G"†—FVÒævWB‚'fÆ–F6–öåö6ö×Væ"’÷"'VæF–ær"¢7VÖÖ'•²&6öÖ×VæU÷fÆ–FF–öåö6÷VçG2%Õ¶6öÖ×VæU÷7FGW5ÒÒ7VÖÖ'•²&6öÖ×VæU÷fÆ–FF–öåö6÷VçG2%ÒævWB†6öÖ×VæU÷7FGW2Â’²¢6Æ76–f–6F–öå÷7FFRÒ7G"‚†—FVÒævWB‚&6Æ6–f–66–öå÷&VÆ–Ö–æ""’÷"·Ò’ævWB‚'7FFR"’÷"'Væf–Æ&ÆR"¢7VÖÖ'•²'&VÆ–Ö–æ'•ö6Æ76–f–6F–öåö6÷VçG2%Õ¶6Æ76–f–6F–öå÷7FFUÒÒ7VÖÖ'•²'&VÆ–Ö–æ'•ö6Æ76–f–6F–öåö6÷VçG2%ÒævWB†6Æ76–f–6F–öå÷7FFRÂ’²¢f÷"—77VR–â—FVÒævWB‚'&ö&ÆVÖ5öW‡G&66–öâ"ÂµÒ“ ¢7VÖÖ'•²&W‡G&7F–öåöW'&÷%ö6÷VçG2%Õ¶—77VUÒÒ7VÖÖ'•²&W‡G&7F–öåöW'&÷%ö6÷VçG2%ÒævWB†—77VRÂ’²¢7VÖÖ'•÷F‚Ò6öæf–rç&W÷'G5öF—"òb'–õöÖ—U÷–Æ÷E÷7VÖÖ'•÷·F–ÖW7F×Òæ§6öâ ¢VF—E÷F‚Ò6öæf–rç&W÷'G5öF—"òb'–õöÖ—U÷–Æ÷EöVF—E÷·F–ÖW7F×Òæ§6öâ ¢÷w&—FUö§6öâ‡7VÖÖ'•÷F‚Â7VÖÖ'’¢÷w&—FUö§6öâ†VF—E÷F‚ÂVF—B¢7VÖÖ'•²'7VÖÖ'•÷&W÷'B%ÒÒ7G"‡7VÖÖ'•÷F‚¢7VÖÖ'•²&VF—E÷&W÷'B%ÒÒ7G"†VF—E÷F‚¢&WGW&â7VÖÖ'  ¦FVböW‡G&7F–öåö—77VW2†W‡G&7FVC¢F–7E·7G"Âç•Ò’ÓâÆ—7E·7G%Ó ¢—77VW3¢Æ—7E·7G%ÒÒµÐ¢FW67&—F–öâÒ7G"†W‡G&7FVBævWB‚&FW67&—F–öâ"’÷"W‡G&7FVBævWB‚&FW67&—6–öâ"’÷"""¢–bæ÷BW‡G&7FVBævWB‚'F—FÆR"“ ¢—77VW2æVæB‚'F—FÆUöÖ—76–ær"¢–bæ÷BFW67&—F–öâæBW‡G&7FVBævWB‚&FW67&—F–öå÷7VÖÖ'’"“ ¢—77VW2æVæB‚&gVÆÅöFW67&—F–öåöÖ—76–æs¶ÖWF÷7VÖÖ'•÷6W&FR"¢VÆ–bæ÷BFW67&—F–öã ¢—77VW2æVæB‚&gVÆÅöFW67&—F–öåöÖ—76–ær"¢–bW‡G&7FVBævWB‚&FW67&—6–öåö—5÷G'Væ6FVB"“ ¢—77VW2æVæB‚&FW67&—F–öåöÖ&¶VE÷G'Væ6FVB"¢–bæ÷BW‡G&7FVBævWB‚'&–6R"“ ¢—77VW2æVæB‚'&–6UöÖ—76–ær"¢–bæ÷B†W‡G&7FVBævWB‚&6ö×VæöWf–FVæ6R"’÷"·Ò’ævWB‚'7FGW2"’–â²&6öæf—&ÖVEöFWF–Â'Ó ¢—77VW2æVæB‚&FWF–Åö6öÖ×VæUöæ÷Eö6öæf—&ÖVB"¢&WGW&â—77VW0
+from __future__ import annotations
+
+import json
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs, urlparse
+
+_SCRAPER_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(_SCRAPER_DIR.parent.parent))
+sys.path.insert(0, str(_SCRAPER_DIR.parent))
+
+try:
+    from .classifier_rules import classify_with_rules
+    from .config import AppConfig
+    from .discovery import _norm_commune, discover_listing_urls, normalize_yapo_url
+    from .downloader import download_html, html_path_for_url, validate_html
+    from .extractor import extract_listing_fields
+    from .mongo_store import MongoStore
+    from .proxy_manager import ProxyManager
+except ImportError:  # direct script execution
+    from scrapers.scraper_yapo.classifier_rules import classify_with_rules
+    from scrapers.scraper_yapo.config import AppConfig
+    from scrapers.scraper_yapo.discovery import _norm_commune, discover_listing_urls, normalize_yapo_url
+    from scrapers.scraper_yapo.downloader import download_html, html_path_for_url, validate_html
+    from scrapers.scraper_yapo.extractor import extract_listing_fields
+    from scrapers.scraper_yapo.mongo_store import MongoStore
+    from scrapers.scraper_yapo.proxy_manager import ProxyManager
+
+
+PILOT_SCOPE = {"portal": "Yapo.cl", "operation": "venta", "property_type": "casa", "commune": "MaipÃº", "price_uf_min": 3000, "price_uf_max": 6000}
+
+
+def _listing_id(url: str) -> str:
+    match = re.search(r"/(\d{6,})(?:[/?#]|$)", url)
+    return match.group(1) if match else ""
+
+
+def _scope_url_is_valid(url: str) -> tuple[bool, str]:
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    q_value = " ".join(query.get("q", [])).lower()
+    region = " ".join(query.get("regionslug", [])).lower()
+    if parsed.hostname not in {"www.yapo.cl", "yapo.cl"}:
+        return False, "start_url_no_es_yapo"
+    if not parsed.path.startswith("/searchresult/bienes-raices-venta-de-propiedades"):
+        return False, "ruta_no_confirma_busqueda_de_venta"
+    if "casas" not in q_value or "bienes-raices-venta-de-propiedades-casas" not in q_value:
+        return False, "filtro_casa_no_confirmado_en_q"
+    if "maipu" not in region:
+        return False, "comuna_maipu_no_confirmada_en_regionslug"
+    return True, "operation_house_commune_filters_present"
+
+
+def _price_in_uf(raw: str) -> float | None:
+    if not raw or not re.search(r"\bUF\b", raw, re.I):
+        return None
+    match = re.search(r"(?:UF\s*)?([\d.]+(?:,\d+)?)\s*UF?", raw, re.I)
+    if not match:
+        match = re.search(r"UF\s*([\d.]+(?:,\d+)?)", raw, re.I)
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(".", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _commune_validation(value: str, discovery_value: str = "", detail_status: str = "") -> str:
+    """Validate detail evidence and use discovery location only to detect conflict."""
+    if detail_status == "pending_ambiguous":
+        return "pending_ambiguous"
+    normalized = _norm_commune(value or "")
+    if not normalized:
+        return "pending"
+    if normalized in {"maipu", "maipu-region-metropolitana", "maipu-region-metropolitana-de-santiago"}:
+        detail_result = "confirmed_maipu"
+    elif normalized.startswith("maipu-"):
+        return "pending_ambiguous"
+    else:
+        detail_result = "confirmed_other_commune"
+
+    discovered = _norm_commune(discovery_value or "")
+    for suffix in ("-region-metropolitana-de-santiago", "-region-metropolitana"):
+        if discovered.endswith(suffix):
+            discovered = discovered[:-len(suffix)]
+            break
+    if discovered:
+        detail_key = normalized
+        for suffix in ("-region-metropolitana-de-santiago", "-region-metropolitana"):
+            if detail_key.endswith(suffix):
+                detail_key = detail_key[:-len(suffix)]
+                break
+        if discovered != detail_key:
+            if "-" in discovered and detail_key in discovered.split("-"):
+                return detail_result
+            return "pending_ambiguous"
+    return detail_result
+
+
+def _matches_pilot_property_filters(
+    commune_status: str, operation: str, property_type: str, raw_price: str,
+) -> bool:
+    price_uf = _price_in_uf(raw_price)
+    return (
+        commune_status == "confirmed_maipu"
+        and operation == "venta"
+        and property_type == "casa"
+        and price_uf is not None
+        and 3000 <= price_uf <= 6000
+    )
+
+
+def _write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str | None = None) -> dict[str, Any]:
+    config = config or AppConfig()
+    config.ensure_layout()
+    batch_id = batch_id or config.generate_batch_id()
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+    summary: dict[str, Any] = {
+        "scope": PILOT_SCOPE.copy(), "batch_id": batch_id, "pages_visited": 0,
+        "pages_complete": 0, "pages_not_verified": 0,
+        "price_filter_mode": "local_only_from_explicit_uf_price; no_clp_conversion",
+        "pagination_complete": False, "pagination_cause": "not_started",
+        "ads_discovered": 0, "batch_duplicates": 0, "mongo_existing": 0,
+        "new_ads": 0, "filter_matches": 0, "pending_price_validation": 0,
+        "pending_commune_validation": 0, "commune_validation_counts": {},
+        "preliminary_classification_counts": {}, "extraction_error_counts": {},
+        "invalid_or_removed_ads": 0, "request_attempts": 0,
+        "successful_downloads": 0, "cache_responses": 0,
+        "errors_or_blocks": [], "proxy_requests": 0, "deepseek_calls": 0,
+        "mongo_writes": 0, "mongo_dedup_verified": False,
+        "mongo_dedup_status": "not_attempted", "search_filters_verified": False,
+    }
+    audit: list[dict[str, Any]] = []
+    valid_scope, scope_reason = _scope_url_is_valid(start_url)
+    if not valid_scope:
+        summary["errors_or_blocks"].append(f"search_scope_unverified:{scope_reason}")
+        summary["pagination_cause"] = "search_scope_unverified"
+    else:
+        proxy_manager = ProxyManager.from_config(config)
+        if not proxy_manager.has_proxies():
+            summary["errors_or_blocks"].append("proxy_unavailable; direct network access blocked")
+            summary["pagination_cause"] = "proxy_unavailable"
+        else:
+            discovery_report: dict[str, Any] = {}
+            records = discover_listing_urls([start_url], max_pages=None, max_urls=None, until_end=True,
+                                            batch_id=batch_id, target_communes=["MaipÃº"], report=discovery_report,
+                                            config=config, proxy_manager=proxy_manager)
+            summary["search_filters_verified"] = bool(records) and all(
+                "/bienes-raices-venta-de-propiedades-casas/" in str(row.get("url") or "").lower()
+                for row in records
+            )
+            summary["pages_visited"] = len(discovery_report.get("pages", []))
+            summary["pagination_complete"] = bool(discovery_report.get("pagination_complete"))
+            summary["pagination_cause"] = discovery_report.get("pagination_cause", "unknown")
+            summary["page_log"] = discovery_report.get("pages", [])
+            summary["pages_complete"] = sum(
+                page.get("status") in {"complete", "empty"} for page in summary["page_log"]
+            )
+            summary["pages_not_verified"] = sum(
+                page.get("status") not in {"complete", "empty"} for page in summary["page_log"]
+            )
+            parsed_pages = [page for page in discovery_report.get("pages", []) if page.get("status") in {"complete", "empty"}]
+            summary["ads_discovered"] = sum(int(page.get("listing_count", 0)) for page in parsed_pages) if parsed_pages else None
+            summary["proxy_requests"] += int(discovery_report.get("proxy_requests", 0))
+            summary["request_attempts"] += int(discovery_report.get("request_attempts", 0))
+            summary["successful_downloads"] += int(discovery_report.get("successful_downloads", 0))
+            summary["cache_responses"] += int(discovery_report.get("cache_responses", 0))
+            summary["errors_or_blocks"].extend(discovery_report.get("errors", []))
+            if not summary["pagination_complete"]:
+                summary["errors_or_blocks"].append("pilot_details_skipped_until_all_pages_are_verified")
+                records = []
+            if not summary["search_filters_verified"]:
+                summary["errors_or_blocks"].append("pilot_details_skipped_until_search_filters_are_verified")
+                records = []
+            unique: list[dict[str, Any]] = []
+            seen_ids: set[str] = set()
+            seen_urls: set[str] = set()
+            summary["batch_duplicates"] = sum(int(page.get("duplicate_count", 0)) for page in parsed_pages) if parsed_pages else None
+            for record in records:
+                normalized_url = normalize_yapo_url(record.get("url", ""))
+                if "/bienes-raices-venta-de-propiedades-casas/" not in normalized_url.lower():
+                    summary["errors_or_blocks"].append("out_of_scope_result_skipped_before_detail")
+                    continue
+                listing_id = _listing_id(normalized_url)
+                if normalized_url in seen_urls or (listing_id and listing_id in seen_ids):
+                    summary["batch_duplicates"] += 1
+                    continue
+                seen_urls.add(normalized_url)
+                if listing_id:
+                    seen_ids.add(listing_id)
+                unique.append({**record, "url": normalized_url, "listing_id": listing_id})
+            try:
+                if not config.mongo_uri:
+                    raise RuntimeError("MONGO_URI no configurado")
+                ids = [str(row["listing_id"]) for row in unique if row["listing_id"]]
+                urls = [str(value) for row in unique for value in (row.get("url"), row.get("canonical_url")) if value]
+                if not ids and not urls:
+                    existing_ids = set()
+                    existing_urls = set()
+                    summary["mongo_dedup_status"] = "not_attempted_no_discovered_ids"
+                else:
+                    store = MongoStore(config)
+                    existing_ids = store.existing_listing_ids(ids)
+                    existing_urls = store.existing_listing_urls(urls)
+                    summary["mongo_dedup_verified"] = True
+                    summary["mongo_dedup_status"] = "verified_read_only"
+            except Exception as exc:
+                existing_ids = set()
+                existing_urls = set()
+                summary["mongo_dedup_status"] = "unverified_unavailable"
+                summary["errors_or_blocks"].append(f"mongo_dedup_unverified:{type(exc).__name__}")
+            new_records = [
+                row for row in unique
+                if summary["mongo_dedup_verified"]
+                and row["listing_id"] not in existing_ids
+                and normalize_yapo_url(row["url"]) not in existing_urls
+            ]
+            summary["mongo_existing"] = len(unique) - len(new_records) if summary["mongo_dedup_verified"] else 0
+            summary["new_ads"] = len(new_records)
+            if unique and not summary["mongo_dedup_verified"]:
+                summary["mongo_existing"] = None
+                summary["new_ads"] = None
+            # If Mongo is unavailable, do not treat records as new or download their details.
+            for record in new_records:
+                try:
+                    cached_before = html_path_for_url(record["url"], config, batch_id=batch_id).exists()
+                    if not cached_before and proxy_manager.has_proxies():
+                        summary["request_attempts"] += 1
+                    downloaded = download_html(record["url"], config, proxy_manager, batch_id=batch_id)
+                    if downloaded.fetch_source == "cache":
+                        summary["cache_responses"] += 1
+                    elif downloaded.fetch_source == "requests_proxy":
+                        summary["successful_downloads"] += 1
+                        summary["proxy_requests"] += 1
+                    validation = validate_html(downloaded.html)
+                    if downloaded.blocked or validation["status"] == "BLOCKED":
+                        summary["errors_or_blocks"].append(f"listing_blocked:{record['listing_id']}")
+                        break
+                    if validation["status"] in {"INVALID", "LISTING_REMOVED"}:
+                        summary["invalid_or_removed_ads"] += 1
+                        summary["errors_or_blocks"].append(f"listing_invalid_or_removed:{record['listing_id']}:{validation['status']}")
+                        continue
+                    extracted = extract_listing_fields(downloaded.html, source_url=record["url"])
+                except Exception as exc:
+                    summary["errors_or_blocks"].append(f"detail_error:{record['listing_id']}:{type(exc).__name__}")
+                    if any(marker in str(exc) for marker in ("BLOCKED", "YAPO_PROXY_REQUEST_FAILED", "YAPO_PROXY_AUTH_407")):
+                        break
+                    continue
+                title = extracted.get("title", "")
+                description = extracted.get("description", extracted.get("descripcion", ""))
+                raw_price = str(extracted.get("price") or "")
+                price_uf = _price_in_uf(raw_price)
+                comuna = extracted.get("comuna") or ""
+                commune_evidence = extracted.get("comuna_evidence") or {"status": "pending"}
+                territory_validation = _commune_validation(
+                    comuna,
+                    record.get("discovery_comuna", ""),
+                    str(commune_evidence.get("status") or "pending"),
+                )
+                operation = "venta" if "venta" in record["url"].lower() else ""
+                property_type = "casa" if "casa" in record["url"].lower() else ""
+                local_match = _matches_pilot_property_filters(
+                    territory_validation, operation, property_type, raw_price
+                )
+                if price_uf is None:
+                    summary["pending_price_validation"] += 1
+                if local_match:
+                    summary["filter_matches"] += 1
+                classification = classify_with_rules(extracted)
+                if classification.get("state") == "INCONCLUSIVE":
+                    classification = {**classification, "state": "INCIERTO", "reason": "Evidencia insuficiente; clasificaciÃ³n preliminar pendiente de revisiÃ³n."}
+                audit.append({
+                    "listing_id": record["listing_id"], "url": record["url"],
+                    "discovered_page": record.get("page_number"), "title": title,
+                    "description": description, "comuna": comuna,
+                    "discovery_comuna": record.get("discovery_comuna", ""),
+                    "comuna_source": extracted.get("comuna_source", ""),
+                    "comuna_detail_evidence": commune_evidence,
+                    "validacion_comuna": territory_validation,
+                    "description_summary": extracted.get("description_summary", ""),
+                    "tipo_propiedad": property_type, "operacion": operation,
+                    "precio_raw": raw_price, "precio_uf": price_uf,
+                    "precio_validacion": "pendiente_sin_valor_uf_verificado" if price_uf is None else "precio_uf_observado",
+                    "publicador_visible": extracted.get("publicador_visible", ""),
+                    "tipo_anunciante": extracted.get("seller_type", ""),
+                    "logo": extracted.get("contact_logo_alt", ""),
+                    "perfil": extracted.get("seller_profile_id", ""),
+                    "clasificacion_preliminar": classification,
+                    "evidencia": classification.get("evidence", []),
+                    "problemas_extraccion": _extraction_issues(extracted),
+                    "filter_match": local_match,
+                })
+    summary["calls_to_deepseek"] = 0
+    summary["mongo_writes"] = 0
+    page_log = summary.get("page_log", [])
+    has_parsed_page = any(page.get("status") in {"complete", "empty"} for page in page_log)
+    summary["commercial_result_available"] = bool(has_parsed_page and summary["pagination_complete"] and summary["search_filters_verified"])
+    if not summary["mongo_dedup_verified"] and summary.get("new_ads"):
+        summary["mongo_existing"] = None
+        summary["new_ads"] = None
+    if not has_parsed_page:
+        for key in (
+            "ads_discovered", "batch_duplicates", "mongo_existing", "new_ads", "filter_matches",
+            "pending_price_validation", "invalid_or_removed_ads", "pages_complete", "pages_not_verified",
+            "pending_commune_validation", "commune_validation_counts",
+            "preliminary_classification_counts", "extraction_error_counts",
+        ):
+            summary[key] = None
+    summary["pending_commune_validation"] = sum(
+        str(item.get("validacion_comuna", "")).startswith("pending") for item in audit
+    )
+    for item in audit:
+        commune_status = str(item.get("validacion_comuna") or "pending")
+        summary["commune_validation_counts"][commune_status] = summary["commune_validation_counts"].get(commune_status, 0) + 1
+        classification_state = str((item.get("clasificacion_preliminar") or {}).get("state") or "unavailable")
+        summary["preliminary_classification_counts"][classification_state] = summary["preliminary_classification_counts"].get(classification_state, 0) + 1
+        for issue in item.get("problemas_extraccion", []):
+            summary["extraction_error_counts"][issue] = summary["extraction_error_counts"].get(issue, 0) + 1
+    summary_path = config.reports_dir / f"yapo_maipu_pilot_summary_{timestamp}.json"
+    audit_path = config.reports_dir / f"yapo_maipu_pilot_audit_{timestamp}.json"
+    _write_json(summary_path, summary)
+    _write_json(audit_path, audit)
+    summary["summary_report"] = str(summary_path)
+    summary["audit_report"] = str(audit_path)
+    return summary
+
+
+def _extraction_issues(extracted: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    description = str(extracted.get("description") or extracted.get("descripcion") or "")
+    if not extracted.get("title"):
+        issues.append("title_missing")
+    if not description and extracted.get("description_summary"):
+        issues.append("full_description_missing;meta_summary_separate")
+    elif not description:
+        issues.append("full_description_missing")
+    if extracted.get("descripcion_is_truncated"):
+        issues.append("description_marked_truncated")
+    if not extracted.get("price"):
+        issues.append("price_missing")
+    if not (extracted.get("comuna_evidence") or {}).get("status") in {"confirmed_detail"}:
+        issues.append("detail_commune_not_confirmed")
+    return issues

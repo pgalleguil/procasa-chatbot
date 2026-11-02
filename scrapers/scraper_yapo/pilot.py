@@ -15,7 +15,7 @@ sys.path.insert(0, str(_SCRAPER_DIR.parent))
 try:
     from .classifier_rules import classify_with_rules
     from .config import AppConfig
-    from .discovery import discover_listing_urls, normalize_yapo_url
+    from .discovery import _norm_commune, discover_listing_urls, normalize_yapo_url
     from .downloader import download_html, html_path_for_url, validate_html
     from .extractor import extract_listing_fields
     from .mongo_store import MongoStore
@@ -23,7 +23,7 @@ try:
 except ImportError:  # direct script execution
     from classifier_rules import classify_with_rules
     from config import AppConfig
-    from discovery import discover_listing_urls, normalize_yapo_url
+    from discovery import _norm_commune, discover_listing_urls, normalize_yapo_url
     from downloader import download_html, html_path_for_url, validate_html
     from extractor import extract_listing_fields
     from mongo_store import MongoStore
@@ -68,6 +68,18 @@ def _price_in_uf(raw: str) -> float | None:
         return None
 
 
+def _commune_validation(value: str) -> str:
+    """Validate with detail-page evidence; never infer a missing commune."""
+    normalized = _norm_commune(value or "")
+    if not normalized:
+        return "pending"
+    if normalized == "maipu" or normalized.startswith("maipu-region-metropolitana"):
+        return "confirmed_maipu"
+    if normalized.startswith("maipu-"):
+        return "pending_ambiguous"
+    return "confirmed_other_commune"
+
+
 def _write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -106,8 +118,7 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                                             batch_id=batch_id, target_communes=["Maipú"], report=discovery_report,
                                             config=config, proxy_manager=proxy_manager)
             summary["search_filters_verified"] = bool(records) and all(
-                "maipu" in str(row.get("discovery_comuna") or "").lower().replace("ú", "u")
-                and "/bienes-raices-venta-de-propiedades-casas/" in str(row.get("url") or "").lower()
+                "/bienes-raices-venta-de-propiedades-casas/" in str(row.get("url") or "").lower()
                 for row in records
             )
             summary["pages_visited"] = len(discovery_report.get("pages", []))
@@ -205,11 +216,12 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                 description = extracted.get("description", extracted.get("descripcion", ""))
                 raw_price = str(extracted.get("price") or "")
                 price_uf = _price_in_uf(raw_price)
-                comuna = extracted.get("comuna") or record.get("discovery_comuna") or ""
+                comuna = extracted.get("comuna") or ""
+                territory_validation = _commune_validation(comuna)
                 operation = "venta" if "venta" in record["url"].lower() else ""
                 property_type = "casa" if "casa" in record["url"].lower() else ""
                 local_match = (
-                    "maipu" in comuna.lower().replace("ú", "u")
+                    territory_validation == "confirmed_maipu"
                     and operation == "venta" and property_type == "casa"
                     and price_uf is not None and 3000 <= price_uf <= 6000
                 )
@@ -224,6 +236,8 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                     "listing_id": record["listing_id"], "url": record["url"],
                     "discovered_page": record.get("page_number"), "title": title,
                     "description": description, "comuna": comuna,
+                    "discovery_comuna": record.get("discovery_comuna", ""),
+                    "validacion_comuna": territory_validation,
                     "description_summary": extracted.get("description_summary", ""),
                     "tipo_propiedad": property_type, "operacion": operation,
                     "precio_raw": raw_price, "precio_uf": price_uf,

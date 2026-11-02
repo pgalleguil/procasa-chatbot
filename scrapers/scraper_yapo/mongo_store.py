@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import re
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -153,28 +154,70 @@ class MongoStore:
         if not value:
             return ""
         parsed = urlparse(value)
-        if not parsed.scheme or parsed.hostname not in {"www.yapo.cl", "yapo.cl"}:
+        if parsed.scheme.lower() not in {"http", "https"} or (parsed.hostname or "").lower() not in {"www.yapo.cl", "yapo.cl"}:
             return ""
+        path = parsed.path.rstrip("/") or "/"
         query = sorted(
             (key, val) for key, val in parse_qsl(parsed.query, keep_blank_values=True)
             if not key.lower().startswith("utm_") and key.lower() not in {"clid", "gclid", "fbclid"}
         )
-        return urlunparse(parsed._replace(netloc="www.yapo.cl", query=urlencode(query), fragment=""))
+        return urlunparse(parsed._replace(scheme="https", netloc="www.yapo.cl", path=path, query=urlencode(query), fragment=""))
+
+    @staticmethod
+    def _listing_id_from_url(url: str) -> str:
+        match = re.search(r"/(\d{6,})(?:/|$)", urlparse(url).path)
+        return match.group(1) if match else ""
 
     def existing_listing_urls(self, listing_urls: list[str]) -> set[str]:
-        """Read-only exact URL match across source and canonical URL fields."""
+        """Read-only URL match across historical formatting variants.
+
+        Mongo receives selective exact and anchored-path predicates rather than a
+        collection scan. Returned values are normalized again before acceptance.
+        """
         clean = list(dict.fromkeys(self.normalize_listing_url(value) for value in listing_urls))
         clean = [value for value in clean if value]
         if not clean:
             return set()
-        query = {"$or": [{field: {"$in": clean}} for field in ("url", "source_url", "canonical_url")]}
+        requested_by_id = {
+            self._listing_id_from_url(value): value
+            for value in clean if self._listing_id_from_url(value)
+        }
+        exact_candidates: set[str] = set(clean)
+        path_patterns = []
+        for value in clean:
+            parsed = urlparse(value)
+            path = parsed.path.rstrip("/") or "/"
+            escaped_path = re.escape(path)
+            path_patterns.append({"$regex": rf"^https?://(?:www\.)?yapo\.cl{escaped_path}/?(?:\?[^#]*)?$", "$options": "i"})
+            listing_id = MongoStore._listing_id_from_url(value)
+            if listing_id:
+                path_patterns.append({
+                    "$regex": rf"^https?://(?:www\.)?yapo\.cl/(?:[^?#]*/)?{re.escape(listing_id)}/?(?:\?[^#]*)?$",
+                    "$options": "i",
+                })
+            for scheme in ("https", "http"):
+                for host in ("www.yapo.cl", "yapo.cl"):
+                    for slash in ("", "/"):
+                        exact_candidates.add(urlunparse(parsed._replace(scheme=scheme, netloc=host, path=path + slash)))
+        fields = ("url", "source_url", "canonical_url")
+        clauses = []
+        for field in fields:
+            clauses.append({field: {"$in": sorted(exact_candidates)}})
+            clauses.extend({field: pattern} for pattern in path_patterns)
+        query = {"$or": clauses}
         projection = {"url": 1, "source_url": 1, "canonical_url": 1, "_id": 0}
         matches: set[str] = set()
         for doc in self.collection().find(query, projection):
             for field in ("url", "source_url", "canonical_url"):
-                normalized = self.normalize_listing_url(str(doc.get(field) or ""))
+                stored = str(doc.get(field) or "")
+                normalized = self.normalize_listing_url(stored)
+                stored_id = self._listing_id_from_url(stored)
+                if stored_id and stored_id in requested_by_id:
+                    matches.add(requested_by_id[stored_id])
                 if normalized in clean:
-                    matches.add(normalized)
+                    requested_id = self._listing_id_from_url(normalized)
+                    if not requested_id or not stored_id or requested_id == stored_id:
+                        matches.add(normalized)
         return matches
 
     def write_many(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:

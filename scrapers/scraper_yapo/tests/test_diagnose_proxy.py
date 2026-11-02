@@ -28,7 +28,6 @@ def clear_proxy_env(monkeypatch):
         (ConnectionRefusedError(10061, "connection refused"), "CONNECTION_REFUSED"),
         (TimeoutError("operation timed out"), "TIMEOUT"),
         (ssl.SSLError("TLS handshake failed"), "TLS"),
-        (RuntimeError("HTTP 407 proxy authentication required"), "AUTH_HTTP_407"),
         (RuntimeError("unclassified transport failure"), "OTHER"),
     ],
 )
@@ -45,7 +44,8 @@ def test_http_status_categories(status, category):
 
 
 def test_invalid_proxy_url_is_reported_as_format_error(clear_proxy_env, tmp_path):
-    report = diagnose_proxy(AppConfig(proxy_url="http://bad host", reports_dir=tmp_path), report_dir=tmp_path)
+    report = diagnose_proxy(AppConfig(proxy_url="http://bad host", reports_dir=tmp_path), report_dir=tmp_path,
+                            dns_resolver=lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 443))])
     assert report["result_category"] == "INVALID_FORMAT"
     assert report["invalid_proxy_input_count"] == 1
     assert report["failure_origin"] == "configuration_or_normalization"
@@ -62,7 +62,7 @@ def test_dns_failure_skips_tcp_and_http(clear_proxy_env, tmp_path):
         dns_resolver=dns, tcp_connector=lambda *a, **k: tcp_calls.append(a),
         http_get=lambda *a: http_calls.append(a),
     )
-    assert report["result_category"] == "DNS"
+    assert report["result_category"] == "RUNTIME_DNS_FAILURE"
     assert tcp_calls == [] and http_calls == []
 
 
@@ -105,7 +105,7 @@ def test_controlled_http_categories_and_sanitized_report(clear_proxy_env, tmp_pa
         tcp_connector=lambda *a, **k: Socket(), http_get=http_get,
     )
     assert report["result_category"] == category
-    saved = Path(report["report_path"]).read_text(encoding="utf-8")
+    saved = (tmp_path / report["report_file"]).read_text(encoding="utf-8")
     assert "do-not-print-user" not in saved
     assert "do-not-print-password" not in saved
     assert report["credentials_logged"] is False
@@ -115,8 +115,9 @@ def test_report_records_variable_presence_only(clear_proxy_env, tmp_path, monkey
     monkeypatch.setenv("PROXY_URL", "proxy.test:8080")
     monkeypatch.setenv("PROXY_USER", "secret-user")
     monkeypatch.setenv("PROXY_PASS", "secret-pass")
-    report = diagnose_proxy(AppConfig(reports_dir=tmp_path), report_dir=tmp_path)
-    saved = Path(report["report_path"]).read_text(encoding="utf-8")
+    report = diagnose_proxy(AppConfig(reports_dir=tmp_path), report_dir=tmp_path,
+                            dns_resolver=lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 443))])
+    saved = (tmp_path / report["report_file"]).read_text(encoding="utf-8")
     assert report["environment_variables_configured"]["PROXY_URL"] is True
     assert report["environment_variables_configured"]["PROXY_PASS"] is True
     assert "secret-user" not in saved and "secret-pass" not in saved
@@ -161,7 +162,7 @@ def test_diagnostic_separates_transport_format_from_proxy_environment(clear_prox
         dns_resolver=lambda *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8080))],
         tcp_connector=lambda *a, **k: Socket(), http_get=http_get,
     )
-    saved = Path(report["report_path"]).read_text(encoding="utf-8")
+    saved = (tmp_path / report["report_file"]).read_text(encoding="utf-8")
     assert report["result_category"] == category
     assert report["failure_origin"] == origin
     assert "sensitive proxy detail" not in saved

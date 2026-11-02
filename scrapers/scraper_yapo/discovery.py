@@ -70,6 +70,22 @@ def _norm_commune(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text).strip("-")
 
 
+def _discovery_commune_evidence(value: str, target_communes: set[str]) -> str:
+    """A listing-card location is advisory; compound or missing values stay pending."""
+    value = (value or "").strip()
+    if not value:
+        return "pending_missing"
+    normalized = _norm_commune(value)
+    for target in target_communes:
+        if normalized == target:
+            return "possible_match"
+        if normalized.startswith(target + "-"):
+            return "pending_compound"
+    if "," in value or "/" in value or "|" in value:
+        return "pending_compound"
+    return "clear_other_commune"
+
+
 def _extract_listing_urls_detailed(html: str, page_url: str) -> tuple[list[dict[str, str]], int, int]:
     soup = BeautifulSoup(html, "html.parser")
     anchors = soup.find_all("a", href=True)
@@ -225,9 +241,14 @@ def discover_listing_urls(
                     duplicate_count += 1
                     continue
                 seen_urls.add(url)
-                if target_norm and _norm_commune(item.get("discovery_comuna", "")) not in target_norm:
-                    continue
-                discovered.append({**item, "url": url, "source_search_url": start_url, "source_page_url": current_url, "page_number": page_number, "discovered_at": _utcnow(), "batch_id": batch_id})
+                discovery_record = dict(item)
+                if target_norm:
+                    discovery_record["discovery_commune_evidence"] = _discovery_commune_evidence(
+                        item.get("discovery_comuna", ""), target_norm
+                    )
+                # Do not discard on card location. The detail page is the source
+                # used by the pilot to confirm the commune or leave it pending.
+                discovered.append({**discovery_record, "url": url, "source_search_url": start_url, "source_page_url": current_url, "page_number": page_number, "discovered_at": _utcnow(), "batch_id": batch_id})
                 page_new += 1
                 if max_urls is not None and len(discovered) >= max_urls:
                     report["pages"].append({"page_number": page_number, "url": current_url, "status": "complete", "listing_count": len(page_records), "duplicate_count": duplicate_count, "new_count": page_new, "anchors_total": anchors_total})

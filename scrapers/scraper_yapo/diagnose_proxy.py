@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import socket
 import ssl
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -18,7 +20,7 @@ except ImportError:  # direct script execution
 
 
 ENV_KEYS = ("PROXY_URL", "PROXY_URLS", "YAPO_PROXY_URLS", "PROXIES", "PROXY_USER", "PROXY_PASS")
-ALLOWED_TEST_URL = "https://www.yapo.cl/robots.txt"
+ALLOWED_TEST_URL = "https://example.com/"
 DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
@@ -36,16 +38,18 @@ def _exception_chain(exc: BaseException) -> list[BaseException]:
 def classify_error(exc: BaseException) -> str:
     chain = _exception_chain(exc)
     type_names = {type(item).__name__.lower() for item in chain}
-    safe_text = " ".join(str(item)[:300].lower() for item in chain)
+    # Never persist exception text: requests errors can contain authenticated proxy URLs.
+    safe_text = " ".join(type(item).__name__.lower() for item in chain)
+    safe_text += " " + " ".join(str(getattr(item, "errno", "")) for item in chain)
     if any(name in type_names for name in ("gaierror", "name or service not known")) or "getaddrinfo failed" in safe_text or "name resolution" in safe_text:
         return "DNS"
-    if "407" in safe_text or "proxy authentication required" in safe_text:
+    if any(getattr(item, "status_code", None) == 407 for item in chain):
         return "AUTH_HTTP_407"
     if any(issubclass(type(item), ssl.SSLError) for item in chain):
         return "TLS"
     if any(isinstance(item, (TimeoutError, socket.timeout)) for item in chain) or "timed out" in safe_text:
         return "TIMEOUT"
-    if any(isinstance(item, ConnectionRefusedError) for item in chain) or "connection refused" in safe_text or "winerror 10061" in safe_text:
+    if any(isinstance(item, ConnectionRefusedError) for item in chain) or "10061" in safe_text:
         return "CONNECTION_REFUSED"
     try:
         import requests
@@ -159,6 +163,7 @@ def diagnose_proxy(
     tcp_connector: Callable[..., Any] = socket.create_connection,
     http_get: Callable[[str, str, float], int] | None = None,
     timeout_seconds: float = 5.0,
+    source_commit: str | None = None,
 ) -> dict[str, Any]:
     config = config or AppConfig()
     manager = ProxyManager.from_config(config)
@@ -171,6 +176,18 @@ def diagnose_proxy(
         raw_inputs.extend(_split_proxy_values(os.getenv(key, "")))
     invalid_input_count = sum(not ProxyManager.normalize_proxy_url(value) for value in raw_inputs)
 
+    runtime_info = {
+        "operating_system": platform.system(),
+        "os_release": platform.release(),
+        "python_version": platform.python_version(),
+        "checked_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        dns_resolver("example.com", 443, type=socket.SOCK_STREAM)
+        general_dns = {"status": "resolved", "error_category": None}
+    except Exception as exc:
+        general_dns = {"status": "failed", "error_category": classify_error(exc)}
+
     for index, proxy_url in enumerate(proxies, start=1):
         result = _safe_proxy_record(proxy_url, index, env_user, env_pass)
         proxy_results.append(result)
@@ -181,17 +198,21 @@ def diagnose_proxy(
         try:
             dns_resolver(parsed.hostname, parsed.port or DEFAULT_PORTS[parsed.scheme], type=socket.SOCK_STREAM)
             result["dns"] = "resolved"
-        except BaseException as exc:
+        except Exception as exc:
             result["dns"] = "failed"
             result["error_category"] = classify_error(exc)
             result["failure_detail"] = _safe_failure_detail(exc)
+            result["diagnostic_category"] = (
+                "RUNTIME_DNS_FAILURE" if general_dns["status"] == "failed"
+                else "PROXY_HOST_DNS_FAILURE"
+            )
             continue
         port = parsed.port or DEFAULT_PORTS[parsed.scheme]
         try:
             connection = tcp_connector((parsed.hostname, port), timeout=timeout_seconds)
             connection.close()
             result["tcp"] = "connected"
-        except BaseException as exc:
+        except Exception as exc:
             result["tcp"] = "failed"
             result["error_category"] = classify_error(exc)
             result["failure_detail"] = _safe_failure_detail(exc)
@@ -202,57 +223,77 @@ def diagnose_proxy(
                 try:
                     with ssl.create_default_context().wrap_socket(raw_socket, server_hostname=parsed.hostname):
                         pass
-                except BaseException:
+                except Exception:
                     raw_socket.close()
                     raise
                 result["tls_to_proxy"] = "ok"
-            except BaseException as exc:
+            except Exception as exc:
                 result["tls_to_proxy"] = "failed"
                 result["error_category"] = classify_error(exc)
                 result["failure_detail"] = _safe_failure_detail(exc)
 
-    active_result = next((item for item in proxy_results if item["syntax_valid"]), None)
+        # Probe every syntactically valid, reachable proxy independently. The request
+        # always goes through this proxy to the fixed non-Yapo test destination.
+        if result["tcp"] == "connected" and result["tls_to_proxy"] != "failed":
+            request = http_get or _proxy_http_get
+            try:
+                status = request(proxy_url, ALLOWED_TEST_URL, timeout_seconds)
+                result["http_status"] = status
+                result["http_category"] = classify_http_status(status)
+                result["authentication"] = (
+                    "accepted" if result["auth_present"] and result["http_category"] == "OK"
+                    else "rejected" if result["http_category"] == "AUTH_HTTP_407"
+                    else "not_confirmed"
+                )
+            except Exception as exc:
+                category = classify_error(exc)
+                result["http_category"] = category
+                result["error_category"] = category
+                result["failure_detail"] = _safe_failure_detail(exc)
+                result["authentication"] = "rejected" if category == "AUTH_HTTP_407" else "not_confirmed"
+
+    active_result = next((item for item in proxy_results if item.get("http_category") == "OK"), None)
+    first_valid = next((item for item in proxy_results if item["syntax_valid"]), None)
     if not proxies and raw_inputs:
         overall = "INVALID_FORMAT"
         origin = "configuration_or_normalization"
     elif not proxies:
         overall = "NO_PROXY_CONFIGURED"
         origin = "configuration"
-    elif active_result is None:
+    elif first_valid is None:
         overall = "INVALID_FORMAT"
         origin = "configuration_or_normalization"
-    elif active_result.get("dns") != "resolved":
-        overall = active_result.get("error_category", "DNS")
-        origin = "proxy_host_configuration_or_dns_runtime"
-    elif active_result.get("tcp") != "connected":
-        overall = active_result.get("error_category", "OTHER")
+    elif general_dns["status"] == "failed":
+        overall = "RUNTIME_DNS_FAILURE"
+        origin = "runtime_dns"
+    elif active_result is not None:
+        overall = "OK"
+        origin = "none"
+    elif any(item.get("diagnostic_category") == "PROXY_HOST_DNS_FAILURE" for item in proxy_results):
+        overall = "PROXY_HOST_DNS_FAILURE"
+        origin = "proxy_host_configuration_or_provider_dns"
+    elif any(item.get("http_category") == "AUTH_HTTP_407" for item in proxy_results):
+        overall = "AUTH_HTTP_407"
+        origin = "proxy_authentication_configuration_or_provider"
+    elif any(item.get("tls_to_proxy") == "failed" or item.get("http_category") == "TLS" for item in proxy_results):
+        overall = "TLS"
         origin = "environment_or_provider"
-    elif active_result.get("tls_to_proxy") == "failed":
-        overall = active_result.get("error_category", "TLS")
+    elif any(item.get("tcp") == "failed" for item in proxy_results):
+        overall = next(item.get("error_category", "CONNECTION_REFUSED") for item in proxy_results if item.get("tcp") == "failed")
         origin = "environment_or_provider"
     else:
-        request = http_get or _proxy_http_get
-        try:
-            status = request(manager._proxies[active_result["proxy_index"] - 1], ALLOWED_TEST_URL, timeout_seconds)
-            active_result["http_status"] = status
-            active_result["http_category"] = classify_http_status(status)
-            overall = active_result["http_category"]
-            origin = "destination_policy" if overall == "DESTINATION_BLOCKED" else "environment_or_provider" if overall != "OK" else "none"
-        except BaseException as exc:
-            category = classify_error(exc)
-            active_result["http_category"] = category
-            active_result["error_category"] = category
-            active_result["failure_detail"] = _safe_failure_detail(exc)
-            overall = category
-            origin = (
-                "code_defect_or_proxy_format" if category == "INVALID_FORMAT"
-                else "configuration_or_provider" if category == "AUTH_HTTP_407"
-                else "environment_or_provider" if category in {"DNS", "CONNECTION_REFUSED", "TIMEOUT", "TLS", "PROXY_ERROR_UNCLASSIFIED"}
-                else "unclassified_runtime_or_environment"
-            )
+        overall = next((item.get("http_category") for item in proxy_results if item.get("http_category") not in {None, "not_attempted"}), "OTHER")
+        origin = (
+            "destination_policy" if overall == "DESTINATION_BLOCKED"
+            else "code_defect_or_proxy_format" if overall == "INVALID_FORMAT"
+            else "environment_or_provider"
+        )
 
     report: dict[str, Any] = {
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "runtime": runtime_info,
+        "source_commit": source_commit or os.getenv("YAPO_SOURCE_COMMIT") or None,
+        "general_dns_control": general_dns,
         "destination": ALLOWED_TEST_URL,
         "environment_variables_configured": variables,
         "configured_proxy_input_count": len(raw_inputs),
@@ -274,10 +315,10 @@ def diagnose_proxy(
     }
     target_dir = report_dir or config.reports_dir
     target_dir.mkdir(parents=True, exist_ok=True)
-    name = datetime.now(timezone.utc).strftime("diagnose_proxy_%Y%m%dT%H%M%SZ.json")
+    name = datetime.now(timezone.utc).strftime("diagnose_proxy_%Y%m%dT%H%M%S_%fZ.json")
+    report["report_file"] = name
     path = target_dir / name
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    report["report_path"] = str(path)
     return report
 
 

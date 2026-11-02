@@ -42,6 +42,16 @@ def _first_text(soup: Any, selectors: list[str]) -> str:
     return ""
 
 
+def _first_text_with_source(soup: Any, selectors: list[str]) -> tuple[str, str]:
+    for selector in selectors:
+        node = soup.select_one(selector)
+        if node:
+            text = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+            if text:
+                return text, selector
+    return "", ""
+
+
 def _jsonld_seller_name(soup: Any) -> tuple[str, str]:
     """Return a name only when JSON-LD links it explicitly to ``seller``."""
     def seller_name(value: Any) -> str:
@@ -162,7 +172,7 @@ def _publicador_visible(scopes: list[Any]) -> tuple[str, str]:
     return _scoped_first_text(scopes, candidates)
 
 
-def _description_from_soup(soup: Any) -> tuple[str, str, str]:
+def _description_from_soup(soup: Any) -> tuple[str, str, str, list[dict[str, Any]]]:
     selectors = [
         (".d3-property-about__text", "d3_property_about_text"),
         ("[data-qa='description']", "data_qa_description"),
@@ -171,18 +181,34 @@ def _description_from_soup(soup: Any) -> tuple[str, str, str]:
         ("#description", "id_description"),
         ("article", "article"),
     ]
+    candidates: list[tuple[int, str, str]] = []
+    article_candidates: list[tuple[int, str, str]] = []
+    seen_text: set[str] = set()
     for selector, source in selectors:
-        node = soup.select_one(selector)
-        if node:
-            text = node.get_text(" ", strip=True)
-            if text:
-                return re.sub(r"\s+", " ", text).strip(), source, ""
+        for node in soup.select(selector):
+            text = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+            if text and text not in seen_text:
+                item = (len(text), text, source)
+                (article_candidates if source == "article" else candidates).append(item)
+                seen_text.add(text)
+    if not candidates:
+        candidates = article_candidates
+    if candidates:
+        # Some Yapo templates include a short teaser and a full expanded body.
+        # Keep the longest actual description node and record candidate sources.
+        _, full_text, full_source = max(candidates, key=lambda item: item[0])
+        return full_text, full_source, "", [
+            {"source": source, "length": length}
+            for length, _text, source in sorted(candidates, reverse=True)
+        ]
     meta_desc = soup.find("meta", attrs={"property": "og:description"}) or soup.find("meta", attrs={"name": "description"})
     if meta_desc and meta_desc.get("content"):
         # Meta description is commonly a short search snippet. Keep it as a
         # separate diagnostic value; never report it as the listing's full text.
-        return "", "missing_full_description", str(meta_desc["content"]).strip()
-    return "", "missing_full_description", ""
+        return "", "missing_full_description", str(meta_desc["content"]).strip(), [
+            {"source": "meta_description", "length": len(str(meta_desc["content"]).strip()), "role": "summary_only"}
+        ]
+    return "", "missing_full_description", "", []
 
 
 def _is_source_truncated(description: str, source: str, soup: Any) -> bool:
@@ -322,12 +348,24 @@ def extract_listing_commune(soup: Any, attributes: dict[str, Any]) -> dict[str, 
     return {"comuna": "", "comuna_source": "", "comuna_evidence": {"status": "pending"}}
 
 
-def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
+def extract_listing_fields(
+    html: str, source_url: str = "", *, parser: str = "html.parser",
+    include_images: bool = True, include_listing_details: bool = True,
+) -> dict[str, Any]:
     if BeautifulSoup is None:
         text = _strip_html(html)
+        title_match = re.search(r"<h1\b[^>]*>(.*?)</h1>|<title\b[^>]*>(.*?)</title>", html, flags=re.I | re.S)
+        title = _strip_html(next((group for group in title_match.groups() if group), "")) if title_match else ""
+        if not title:
+            meta_title = re.search(r"<meta\b[^>]*(?:property|name)=[\"'](?:og:title|title)[\"'][^>]*content=[\"']([^\"']*)[\"']", html, flags=re.I | re.S)
+            title = unescape(meta_title.group(1)).strip() if meta_title else ""
+        title = title or ""
         return {
             "source_url": source_url,
-            "title": text[:120],
+            "title": title,
+            "title_source": "html_heading_or_title" if title else "missing",
+            "title_original_len": len(title),
+            "title_is_truncated": False,
             "price": "",
             "description": text,
             "descripcion": text,
@@ -335,6 +373,8 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
             "descripcion_len": len(text),
             "descripcion_source": "html_text_fallback",
             "descripcion_is_truncated": False,
+            "description_truncation_reason": "",
+            "description_sources": [],
             "publicador_visible": "",
             "contact_name": "",
             "contact_logo_alt": "",
@@ -354,15 +394,16 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
             "publisher_field_provenance": {},
         }
 
-    soup = BeautifulSoup(html, "html.parser")  # type: ignore[misc]
-    title = _first_text(soup, ["h1", ".d3-property-details__title", "[data-qa='title']", "title"])
+    soup = BeautifulSoup(html, parser)  # type: ignore[misc]
+    title, title_source = _first_text_with_source(soup, ["h1", ".d3-property-details__title", "[data-qa='title']", "title"])
     if not title:
         meta_title = soup.find("meta", attrs={"property": "og:title"}) or soup.find("meta", attrs={"name": "title"})
         if meta_title and meta_title.get("content"):
             title = meta_title["content"].strip()
+            title_source = "meta_title"
 
     price = _first_text(soup, ["[data-qa='price']", ".d3-property-info__price", ".d3-property-insight__attribute-value", ".price", ".item-price", "strong.price", "span.price"])
-    description, description_source, description_summary = _description_from_soup(soup)
+    description, description_source, description_summary, description_sources = _description_from_soup(soup)
 
     publisher_scopes = _publisher_scopes(soup)
     seller_name, seller_name_selector = _scoped_first_text(
@@ -418,44 +459,48 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
             provenance[field] = {"status": "confirmed", "source": source, "relationship": "publisher"}
 
     images: list[str] = []
-    for img in soup.select("img"):
-        for attr in ("src", "data-src", "data-original", "data-lazy"):
-            value = img.get(attr)
-            if value:
-                full = urljoin(source_url or "", value)
-                if full not in images:
-                    images.append(full)
+    if include_images:
+        for img in soup.select("img"):
+            for attr in ("src", "data-src", "data-original", "data-lazy"):
+                value = img.get(attr)
+                if value:
+                    full = urljoin(source_url or "", value)
+                    if full not in images:
+                        images.append(full)
 
     attributes: dict[str, str] = {}
-    for node in soup.select("table tr, li, [data-qa]"):
-        text = node.get_text(" ", strip=True)
-        if ":" not in text:
-            continue
-        key, value = text.split(":", 1)
-        key = re.sub(r"\s+", " ", key).strip().lower()
-        value = re.sub(r"\s+", " ", value).strip()
-        if key and value and key not in attributes:
-            attributes[key] = value
-    for node in soup.select(".d3-property-insight__attribute-details"):
-        key_node = node.select_one("dt")
-        value_node = node.select_one("dd")
-        if key_node and value_node:
-            key = re.sub(r"\s+", " ", key_node.get_text(" ", strip=True)).strip().lower()
-            value = re.sub(r"\s+", " ", value_node.get_text(" ", strip=True)).strip()
-            if key and value:
-                attributes.setdefault(key, value)
-    for node in soup.select(".d3-property-details__detail-label"):
-        value_node = node.select_one(".d3-property-details__detail")
-        if value_node:
-            whole = node.get_text(" ", strip=True)
-            value = value_node.get_text(" ", strip=True)
-            key = whole[:whole.find(value)].strip().lower() if value in whole else ""
-            if key and value:
-                attributes.setdefault(key, value)
+    if include_listing_details:
+        for node in soup.select("table tr, li, [data-qa]"):
+            text = node.get_text(" ", strip=True)
+            if ":" not in text:
+                continue
+            key, value = text.split(":", 1)
+            key = re.sub(r"\s+", " ", key).strip().lower()
+            value = re.sub(r"\s+", " ", value).strip()
+            if key and value and key not in attributes:
+                attributes[key] = value
+        for node in soup.select(".d3-property-insight__attribute-details"):
+            key_node = node.select_one("dt")
+            value_node = node.select_one("dd")
+            if key_node and value_node:
+                key = re.sub(r"\s+", " ", key_node.get_text(" ", strip=True)).strip().lower()
+                value = re.sub(r"\s+", " ", value_node.get_text(" ", strip=True)).strip()
+                if key and value:
+                    attributes.setdefault(key, value)
+        for node in soup.select(".d3-property-details__detail-label"):
+            value_node = node.select_one(".d3-property-details__detail")
+            if value_node:
+                whole = node.get_text(" ", strip=True)
+                value = value_node.get_text(" ", strip=True)
+                key = whole[:whole.find(value)].strip().lower() if value in whole else ""
+                if key and value:
+                    attributes.setdefault(key, value)
 
-    commune = extract_listing_commune(soup, attributes)
+    commune = extract_listing_commune(soup, attributes) if include_listing_details else {
+        "comuna": "", "comuna_source": "", "comuna_evidence": {"status": "pending"},
+    }
 
-    body_text = soup.get_text(" ", strip=True)
+    body_text = soup.get_text(" ", strip=True) if include_listing_details else ""
     canonical = soup.find("link", attrs={"rel": "canonical"})
     canonical_url = canonical.get("href", "").strip() if canonical else source_url
 
@@ -464,6 +509,9 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
     return {
         "source_url": source_url,
         "title": title,
+        "title_source": title_source or "missing",
+        "title_original_len": len(title),
+        "title_is_truncated": any(hint in title.lower() for hint in DESCRIPTION_TRUNCATION_HINTS),
         "price": price,
         "description": description,
         "descripcion": description,
@@ -471,6 +519,11 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
         "descripcion_len": len(description),
         "descripcion_source": description_source,
         "descripcion_is_truncated": descripcion_is_truncated,
+        "description_truncation_reason": (
+            "summary_only" if not description and description_summary else
+            "portal_truncation_marker_or_expand_control" if descripcion_is_truncated else ""
+        ),
+        "description_sources": description_sources,
         "publicador_visible": publicador_visible,
         "contact_name": contact_name,
         "contact_logo_alt": contact_logo_alt,

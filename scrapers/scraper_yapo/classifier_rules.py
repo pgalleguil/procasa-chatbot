@@ -166,6 +166,12 @@ def _publisher_field_is_confirmed(extracted: dict[str, Any], field: str) -> bool
     )
 
 
+def _publisher_field_source(extracted: dict[str, Any], field: str) -> str:
+    provenance = extracted.get("publisher_field_provenance") or {}
+    item = provenance.get(field) if isinstance(provenance, dict) else None
+    return str(item.get("source") or "") if isinstance(item, dict) else ""
+
+
 def _confirmed_identity_values(extracted: dict[str, Any]) -> dict[str, str]:
     return {
         field: value
@@ -293,6 +299,7 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
         and "profesional" in badges
         and _publisher_field_is_confirmed(extracted, "seller_type")
         and _publisher_field_is_confirmed(extracted, "contact_badges_text")
+        and _publisher_field_source(extracted, "seller_type") != "publisher_scoped_badge"
     ):
         return {
             "state": "CORREDOR_SEGURO",

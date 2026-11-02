@@ -93,6 +93,14 @@ def test_professional_account_overrides_direct_deal_title():
     assert result["source"] == "structural_rules"
 
 
+def test_single_professional_badge_is_not_counted_twice_as_safe_evidence():
+    fields = extract_listing_fields(_publisher_html(
+        "<span class='badge'>Cuenta profesional</span>"
+    ))
+    assert fields["seller_type"] == "PROFESIONAL"
+    assert rules.classify_obvious_broker(fields) is None
+
+
 def test_inmobiliaria_in_description_does_not_identify_advertiser():
     fields = extract_listing_fields(_publisher_html(
         "<span class='seller-name'>María Pérez</span>",

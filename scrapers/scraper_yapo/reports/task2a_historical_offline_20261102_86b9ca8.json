@@ -25,12 +25,9 @@
         "description_length": 1298
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -42,8 +39,8 @@
         "title_present": true,
         "description_length": 1298
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "00481910a8a1defb",
@@ -67,10 +64,10 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "seller_jsonld_name:RE/MAX",
+          "contact_logo_alt:RE/MAX"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -108,10 +105,11 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:houm",
+          "contact_name:houm",
+          "publicador_visible:houm"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -178,11 +176,12 @@
         "description_length": 866
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -195,8 +194,8 @@
         "title_present": true,
         "description_length": 866
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "006aacca6fc93c09",
@@ -219,12 +218,9 @@
         "description_length": 1810
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -235,8 +231,8 @@
         "title_present": true,
         "description_length": 1810
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "006e644e219af723",
@@ -259,12 +255,9 @@
         "description_length": 627
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -276,8 +269,8 @@
         "title_present": true,
         "description_length": 627
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "008d381471b4c740",
@@ -300,11 +293,12 @@
         "description_length": 1269
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -317,8 +311,8 @@
         "title_present": true,
         "description_length": 1269
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "00a4e01c7cc45b1f",
@@ -372,12 +366,9 @@
         "description_length": 1796
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -389,8 +380,8 @@
         "title_present": true,
         "description_length": 1796
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "00dc96664080956a",
@@ -414,10 +405,10 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "seller_jsonld_name:RE/MAX",
+          "contact_logo_alt:RE/MAX"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -455,10 +446,11 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:houm",
+          "contact_name:houm",
+          "publicador_visible:houm"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -494,12 +486,9 @@
         "description_length": 1731
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -511,8 +500,8 @@
         "title_present": true,
         "description_length": 1731
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "00ecf72137bc6492",
@@ -535,12 +524,9 @@
         "description_length": 869
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -551,8 +537,8 @@
         "title_present": true,
         "description_length": 869
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "00ef04e4b4c35737",
@@ -575,12 +561,9 @@
         "description_length": 1143
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -592,8 +575,8 @@
         "title_present": true,
         "description_length": 1143
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "01082632153a85ea",
@@ -616,12 +599,9 @@
         "description_length": 376
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -632,8 +612,8 @@
         "title_present": true,
         "description_length": 376
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "010e979198eafbe5",
@@ -688,10 +668,10 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "seller_jsonld_name:RE/MAX",
+          "contact_logo_alt:RE/MAX"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -728,12 +708,9 @@
         "description_length": 949
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -744,8 +721,8 @@
         "title_present": true,
         "description_length": 949
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "0144c988c34a3ad4",
@@ -769,10 +746,11 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:fuenzalida",
+          "contact_name:fuenzalida",
+          "publicador_visible:fuenzalida"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -809,12 +787,9 @@
         "description_length": 1130
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -825,8 +800,8 @@
         "title_present": true,
         "description_length": 1130
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "0160dd815b6ecfe6",
@@ -972,12 +947,9 @@
         "description_length": 0
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -989,8 +961,8 @@
         "title_present": true,
         "description_length": 0
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "01811f76d0dc2a3c",
@@ -1013,11 +985,17 @@
         "description_length": 814
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria",
+          "contact_name:gestión inmobiliaria",
+          "contact_name:gestion inmobiliaria",
+          "contact_name:inmobiliaria",
+          "publicador_visible:gestión inmobiliaria",
+          "publicador_visible:gestion inmobiliaria"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -1030,8 +1008,8 @@
         "title_present": true,
         "description_length": 814
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "01817d74e4be0f10",
@@ -1055,10 +1033,11 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:houm",
+          "contact_name:houm",
+          "publicador_visible:houm"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -1094,12 +1073,9 @@
         "description_length": 980
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -1110,8 +1086,8 @@
         "title_present": true,
         "description_length": 980
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "019d22759441de2e",
@@ -1134,12 +1110,9 @@
         "description_length": 1067
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -1150,8 +1123,8 @@
         "title_present": true,
         "description_length": 1067
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "01a25ac596307624",
@@ -1175,10 +1148,11 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:fuenzalida",
+          "contact_name:fuenzalida",
+          "publicador_visible:fuenzalida"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -1241,12 +1215,9 @@
         "description_length": 945
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -1257,8 +1228,8 @@
         "title_present": true,
         "description_length": 945
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "01dede5fdce8eb98",
@@ -1411,10 +1382,11 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:fuenzalida",
+          "contact_name:fuenzalida",
+          "publicador_visible:fuenzalida"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -1512,12 +1484,9 @@
         "description_length": 862
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional verificado profesional verificado"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -1529,8 +1498,8 @@
         "title_present": true,
         "description_length": 862
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "023c1c30a2b9914a",
@@ -1553,11 +1522,12 @@
         "description_length": 906
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -1570,8 +1540,8 @@
         "title_present": true,
         "description_length": 906
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "0246b271455ee3ce",
@@ -1594,12 +1564,9 @@
         "description_length": 559
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -1610,8 +1577,8 @@
         "title_present": true,
         "description_length": 559
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "024e0c76aaeb47d0",
@@ -1634,12 +1601,9 @@
         "description_length": 1064
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -1651,8 +1615,8 @@
         "title_present": true,
         "description_length": 1064
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "024eb05f21fe26a4",
@@ -1676,10 +1640,11 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:fuenzalida",
+          "contact_name:fuenzalida",
+          "publicador_visible:fuenzalida"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -1716,12 +1681,9 @@
         "description_length": 1139
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
-        "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
-        ],
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
         "identity_fields_redacted": [
           "publicador_visible",
           "contact_name",
@@ -1733,8 +1695,8 @@
         "title_present": true,
         "description_length": 1139
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "0251fd11ad24838f",
@@ -1789,10 +1751,10 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "seller_jsonld_name:RE/MAX",
+          "contact_logo_alt:RE/MAX"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -1829,11 +1791,12 @@
         "description_length": 734
       },
       "new": {
-        "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -1846,8 +1809,8 @@
         "title_present": true,
         "description_length": 734
       },
-      "changed": false,
-      "human_review": false
+      "changed": true,
+      "human_review": true
     },
     {
       "case_id": "0272d388625d1eea",
@@ -1871,10 +1834,11 @@
       },
       "new": {
         "state": "CORREDOR_SEGURO",
-        "rule": "structural_rules",
+        "rule": "rules_json",
         "evidence": [
-          "seller_type:profesional",
-          "contact_badges_text:profesional profesional"
+          "contact_logo_alt:houm",
+          "contact_name:houm",
+          "publicador_visible:houm"
         ],
         "identity_fields_redacted": [
           "publicador_visible",
@@ -1896,12 +1860,13 @@
       "INCIERTO": 13
     },
     "new_states": {
-      "CORREDOR_SEGURO": 37,
-      "INCIERTO": 13
+      "INCIERTO": 31,
+      "CORREDOR_SEGURO": 14,
+      "CORREDOR_PROBABLE": 5
     },
-    "changed_state_count": 0,
-    "human_review_count": 13,
+    "changed_state_count": 23,
+    "human_review_count": 36,
     "errors": 0,
-    "interpretation": "Offline sample only; counts are not accuracy, precision, or coverage estimates. No state changed in the sampled cases."
+    "interpretation": "Offline sample only; changed cases are flagged for human review. Counts are not accuracy, precision, or coverage estimates."
   }
 }

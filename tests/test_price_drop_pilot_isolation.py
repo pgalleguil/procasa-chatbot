@@ -456,7 +456,7 @@ def test_simulate_full_multi_turn_conversion_without_crm(isolated):
         ("cuales son sus caracteristicas?", "2 baños"),
         ("pero quiero saber cuantos baños tiene", "2 baños"),
         ("¿cuánto cuesta ahora?", "2.690"),
-        ("oka me interesa", "más información o prefieres coordinar"),
+        ("oka me interesa", "¿Te gustaría saber algo en particular o ir a verlo?"),
         ("quiero visitarla", "¿Qué día"),
         ("el proximo mes", "¿Tienes algún día"),
         ("el martes", "¿Te acomoda más en la mañana"),
@@ -608,7 +608,7 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
 
 def test_natural_v3_sender_text_avoids_invented_historic_lead_contact():
     from scripts import price_drop_pilot_test as sender
-    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v3"
+    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v4"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
     ).read_text()
@@ -616,7 +616,7 @@ def test_natural_v3_sender_text_avoids_invented_historic_lead_contact():
     for expected in (
         "¡Hola! ¿Cómo estás?", "PROCASA", "San Miguel",
         "UF 2.790", "UF 2.690", "https://www.procasa.cl/6436",
-        "¿Te gustaría saber más o ir a verlo?",
+        "¿Te gustaría saber algo más o ir a verlo?",
     ):
         assert expected in message_source
     for prohibited in (
@@ -626,7 +626,7 @@ def test_natural_v3_sender_text_avoids_invented_historic_lead_contact():
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v3"' in source
+    assert '"campaign_version": "price_drop_pilot_v4"' in source
     assert 'if not is_test_phone(phone)' in source
 
 
@@ -764,3 +764,74 @@ def test_intermediate_unrelated_property_question_ends_visit_thread(isolated):
     assert build_test_reply(
         "Qué?", ctx, history, llm=lambda *_: "¿Quieres que lo aclare?"
     ) == "¿Quieres que lo aclare?"
+
+
+
+def test_v4_responds_in_short_natural_whatsapp_without_reintroducing_ourselves(isolated):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    first = build_test_reply("Hola", ctx, [])
+    followup = build_test_reply("hola", ctx, [
+        {"customer_text": "Hola", "bot_text": first},
+        {"customer_text": "Tiene terraza?", "bot_text": "Sí, tiene 5 m² de terraza."},
+    ])
+    assert "bajó" in first and "2.690" in first
+    assert "6436" in first and "6436" in followup
+    assert "Soy de PROCASA" not in followup
+    assert "¡Hola de nuevo!" in followup
+    assert first.count("¿") == 1
+
+
+def test_v4_direct_property_answer_not_long_form_or_repetitive(isolated):
+    db = _full_pilot_db()
+    ctx = load_test_context(db, PHONE)
+    reply = build_test_reply("¿Tiene terraza?", ctx)
+    assert reply.startswith("Sí, ")
+    assert "5 m² de terraza" in reply
+    assert "Según la ficha vigente del departamento" not in reply
+    assert "UF 2.690" not in reply
+    assert len(reply) < 160
+
+
+def test_v4_guarded_llm_uses_same_commercial_style_and_price_drop_context(monkeypatch, isolated):
+    import sys
+    from types import SimpleNamespace
+    from chatbot import price_drop_pilot_isolation as pilot
+    seen = []
+    def fake_create(**kwargs):
+        seen.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="¿Te gustaría que te cuente un poco más?"),
+            finish_reason="stop"
+        )])
+    fake_client = SimpleNamespace(chat=SimpleNamespace(
+        completions=SimpleNamespace(create=fake_create)))
+    monkeypatch.setitem(sys.modules, "chatbot.grok_client", SimpleNamespace(client=fake_client))
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    history = [{"customer_text": "Me interesa", "bot_text": "¡Qué bueno!"}]
+    output = pilot._llm_answer("¿Cómo es el sector?", ctx, history)
+    assert output == "¿Te gustaría que te cuente un poco más?"
+    sys = seen[0]["messages"][0]["content"]
+    assert "asistente comercial habitual" in sys
+    assert "rebaja de precio" in sys
+    assert "2.790" in sys and "2.690" in sys
+    assert "no repitas saludos" in sys
+    assert "NO se escriben leads ni CRM" in sys
+    assert seen[0]["messages"][-2]["role"] == "assistant"
+    assert seen[0]["messages"][-1]["content"] == "¿Cómo es el sector?"
+
+
+def test_v4_llm_cannot_send_truncated_sentence(monkeypatch, isolated):
+    import sys
+    from types import SimpleNamespace
+    from chatbot import price_drop_pilot_isolation as pilot
+    def clipped(**kwargs):
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="Sí, te recomiendo ver"), finish_reason="length"
+        )])
+    fake_client = SimpleNamespace(chat=SimpleNamespace(
+        completions=SimpleNamespace(create=clipped)))
+    monkeypatch.setitem(sys.modules, "chatbot.grok_client", SimpleNamespace(client=fake_client))
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    answer = build_test_reply("¿Tiene conserjería?", ctx)
+    assert "Sí, te recomiendo ver" not in answer
+    assert "no notificaremos" in answer

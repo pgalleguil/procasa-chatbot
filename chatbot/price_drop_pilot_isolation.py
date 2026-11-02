@@ -357,26 +357,38 @@ def _llm_answer(message: str, ctx: dict, history: list[dict]) -> str:
     old = _format_uf(ctx["old_price_uf"])
     facts = _formatted_facts(ctx.get("property_facts") or {})
     sys = (
-        "Eres el asistente de PROCASA, en una PRUEBA INTERNA por WhatsApp. "
-        f"La propiedad es un departamento en VENTA en San Miguel, código {code}. "
-        f"Precio anterior UF {old}, precio ACTUAL UF {price}. "
-        f"Datos contrastados con Prop360: {facts or 'sin atributos adicionales confirmados'}. "
-        "Usa exclusivamente estos hechos. No inventes otros atributos, disponibilidad "
-        "de visitas, financiamiento ni otras propiedades. "
-        "Responde en español natural, breve, como el chatbot comercial, con contexto del mensaje previo. "
-        "Responde cualquier pregunta libre de forma coherente; si no sabes, dilo. "
-        "Un 'sí' genérico significa interés, nunca visita confirmada. "
-        "Si desea visitar, pregunta qué día u horario le acomoda sin confirmarlo. "
-        "No solicites teléfono, RUT, nombre ni correo. "
-        "CRÍTICO: ESTA PRUEBA NO ACTUALIZA CRM, NO ASIGNA LEADS Y NO AVISA A EJECUTIVOS. "
-        "Nunca afirmes que se notificó a un ejecutivo, se agendó una visita, se guardó interés "
-        "comercial o que alguien contactará al cliente. "
-        "Si preguntan por ofertas, indica que un ejecutivo podría evaluarlas, pero no fue informado. "
-        "Si rechaza, despídete sin insistir. "
-        "Evita mencionar detalles internos salvo que el usuario pregunte."
+        "Eres una ejecutiva virtual de PROCASA en WhatsApp. Atiendes con el estilo "
+        "del asistente comercial habitual: cálida, cercana, precisa y genuina, "
+        "en español chileno profesional sin chilenismos forzados. "
+        "Es una continuación de una comunicación informativa por rebaja de precio, "
+        "NO el primer contacto; nunca pidas de nuevo un enlace, código o teléfono. "
+        f"Propiedad: departamento en venta de San Miguel, código {code}. "
+        f"Precio ANTERIOR UF {old}; precio VIGENTE UF {price}, rebaja confirmada. "
+        f"ÚNICOS datos verificados en Prop360: {facts or 'sin atributos adicionales confirmados'}. "
+        "Prioriza lo que la persona acaba de preguntar y el historial previo; "
+        "no repitas saludos, el código, la rebaja ni una lista de características "
+        "en cada respuesta. Responde normalmente en 1-3 frases y máximo 100 palabras, "
+        "sin encabezados, sin bullets innecesarios y sin terminar frases a medias. "
+        "Puedes usar un emoji ocasional, no en todos los mensajes. "
+        "Si hay un dato verificado, dilo directamente y con naturalidad. "
+        "Si falta, dilo con honestidad y ofrece confirmarlo más adelante; "
+        "no supongas dirección, quinchos, instalaciones, disponibilidad, "
+        "financiamiento, ofertas ni otros inmuebles. "
+        "No atribuyas al cliente nombres, comentarios ni conversaciones que no figuren "
+        "expresamente en el historial confiable. "
+        "Un 'sí' ambiguo indica interés general, NO una confirmación de visita. "
+        "Para visitas, pregunta solo el dato temporal faltante y recuerda los ya dichos. "
+        "Nunca confirmes un horario, agenda, reserva, contacto ni aviso a un ejecutivo. "
+        "IMPORTANTE: este teléfono es una prueba aislada y NO se escriben leads ni CRM, "
+        "NO se notifica ejecutivos, NO se agenda visita, NO se inicia gestión comercial. "
+        "No expliques la infraestructura ni menciones que es una prueba salvo cuando "
+        "sea necesario aclarar expresamente que una acción no ha sido realizada. "
+        "Si solicita que lo contacten, responde claramente que aún no se ha solicitado "
+        "contacto. Si rechaza, respeta su decisión sin insistir. "
+        "No solicites RUT, nombre, correo, teléfono ni otros datos personales."
     )
     messages = [{"role": "system", "content": sys}]
-    for item in history[-6:]:
+    for item in history[-10:]:
         if item.get("customer_text"):
             messages.append({"role": "user", "content": str(item["customer_text"])[:700]})
         if item.get("bot_text"):
@@ -385,10 +397,18 @@ def _llm_answer(message: str, ctx: dict, history: list[dict]) -> str:
     reply = client.chat.completions.create(
         model=Config.DEEPSEEK_MODEL_FAST, messages=messages,
         temperature=Config.DEEPSEEK_TEMPERATURE,
-        max_tokens=min(int(Config.DEEPSEEK_MAX_TOKENS_FAST), 300),
+        max_tokens=min(int(Config.DEEPSEEK_MAX_TOKENS_FAST), 550),
         timeout=Config.DEEPSEEK_TIMEOUT_FAST,
     )
-    return str(reply.choices[0].message.content or "").strip()
+    candidate = reply.choices[0]
+    # Avoid sending the incomplete sentence observed in the November 2 test.
+    if getattr(candidate, "finish_reason", None) == "length":
+        logger.warning("[PRICE_DROP_TEST] model reply truncated at token limit")
+        return ""
+    answer = str(candidate.message.content or "").strip()
+    if not answer or (len(answer) > 1200):
+        return ""
+    return answer
 
 
 def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
@@ -414,8 +434,10 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
     if visit_reply is not None:
         return visit_reply
     if _GREETING.fullmatch(clean):
-        return (f"¡Hola! 😊 Soy de PROCASA. ¿Qué te gustaría saber del "
-                f"departamento {code} en San Miguel?")
+        if history:
+            return f"¡Hola de nuevo! 😊 ¿Qué más te gustaría saber del departamento {code}?"
+        return (f"¡Hola! 😊 Te cuento del departamento {code} de San Miguel, "
+                f"que bajó a UF {new}. ¿Qué te gustaría saber?")
     if DETAILS.search(clean) and facts:
         return (f"El departamento {code} está en venta a UF {new}. "
                 f"Su ficha informa: {_formatted_facts(facts)}. "
@@ -441,7 +463,7 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
             address = facts.get("calle_publicada")
             ref = facts.get("direccion_referencial")
             if address:
-                position = f"dirección publicada: {address}"
+                position = f"queda en {address}"
                 if facts.get("comuna"):
                     position += f", {facts['comuna']}"
                 if ref:
@@ -453,10 +475,14 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
                 found.append(f"ubicación: {facts.get('comuna', 'San Miguel')}; dirección exacta no confirmada")
         if GRILL.search(clean):
             if facts.get("parrillas_ficha"):
-                found.append("parrillas mencionadas en la ficha; cantidad y condiciones de uso de quinchos por confirmar")
+                found.append("hay parrillas mencionadas en la ficha; cantidad y condiciones de uso de quinchos por confirmar")
             else:
                 found.append("no hay confirmación de quinchos o parrillas en la ficha")
-        answer = (f"Según la ficha vigente del departamento {code}: " + ", ".join(found) + ".") if found else ""
+        # Answers are short and customer-facing, not an inventory export.
+        if found:
+            answer = ("" if found[0].startswith("no hay confirmación") else "Sí, ") + ", ".join(found) + "."
+        else:
+            answer = ""
         if missing:
             answer += (" " if answer else "") + "No tengo confirmado " + (
                 "el resto de esos datos." if found else "ese dato en su ficha."
@@ -478,25 +504,26 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
                 "ninguna solicitud ni notificación comercial.")
     if VISIT.search(clean):
         if VISIT_WHEN.search(clean):
-            return (f"Entiendo que quieres evaluar una visita al departamento {code} {clean.lower()}. "
-                    "¿Qué horario te acomodaría? Es una prueba: ninguna visita quedó agendada "
-                    "ni se notificó a un ejecutivo.")
-        return (f"Podemos evaluar una visita al departamento {code}, ahora en UF {new}. "
-                "¿Qué día u horario te acomoda? Es una prueba: no se enviará ninguna solicitud a un ejecutivo.")
+            return (f"¡Claro! ¿Qué horario te acomodaría para conocer el departamento {code}? "
+                    "Aún no hay una visita agendada ni avisamos a un ejecutivo.")
+        return (f"¡Claro! ¿Qué día te acomodaría para visitar el departamento {code}? "
+                "Por ahora no hay una visita agendada ni hemos avisado a un ejecutivo.")
     if NEGOTIATION.search(clean):
-        return (f"El valor publicado del departamento {code} es UF {new}. "
-                "Una oferta tendría que revisarla un ejecutivo, pero en esta prueba no la notificaremos ni registraremos.")
+        return (f"El valor publicado es UF {new}. Puedes proponer una oferta, "
+                "pero tendría que revisarla un ejecutivo. Desde esta conversación "
+                "de prueba todavía no podemos enviársela.")
     if PRICE.search(clean):
-        return f"El departamento {code} bajó de UF {old} a UF {new}. ¿Quieres más información o prefieres coordinar una visita?"
+        return (f"Sí, ahora está en UF {new}; antes costaba UF {old}. "
+                "¿Te interesa saber algo más del departamento?")
     if YES.search(clean):
-        return (f"¡Perfecto! Hablamos del departamento {code} en San Miguel, "
-                f"que ahora está en UF {new}. ¿Quieres más información o prefieres coordinar una visita?")
+        return (f"¡Qué bueno! 😊 Es el departamento {code} de San Miguel, "
+                f"que ahora está en UF {new}. ¿Te gustaría saber algo en particular o ir a verlo?")
     if ALTERNATIVE.search(clean):
         return ("Podemos buscar otras alternativas, pero esta prueba solo está conectada "
                 f"al departamento {code}. No enviaré una consulta a ejecutivos.")
     try:
         reply = (llm or _llm_answer)(clean, ctx, history or [])
-        if not reply or BAD_CLAIM.search(reply) or len(reply) > 1800:
+        if not reply or BAD_CLAIM.search(reply) or len(reply) > 1200:
             return _safe_fallback(ctx)
         return reply
     except Exception:

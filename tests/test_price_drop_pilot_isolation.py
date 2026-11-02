@@ -793,9 +793,9 @@ def test_v4_direct_property_answer_not_long_form_or_repetitive(isolated):
 
 
 def test_v4_guarded_llm_uses_same_commercial_style_and_price_drop_context(monkeypatch, isolated):
+    import sys
     from types import SimpleNamespace
     from chatbot import price_drop_pilot_isolation as pilot
-    from chatbot import grok_client
     seen = []
     def fake_create(**kwargs):
         seen.append(kwargs)
@@ -803,7 +803,9 @@ def test_v4_guarded_llm_uses_same_commercial_style_and_price_drop_context(monkey
             message=SimpleNamespace(content="¿Te gustaría que te cuente un poco más?"),
             finish_reason="stop"
         )])
-    monkeypatch.setattr(grok_client.client.chat.completions, "create", fake_create)
+    fake_client = SimpleNamespace(chat=SimpleNamespace(
+        completions=SimpleNamespace(create=fake_create)))
+    monkeypatch.setitem(sys.modules, "chatbot.grok_client", SimpleNamespace(client=fake_client))
     ctx = load_test_context(_full_pilot_db(), PHONE)
     history = [{"customer_text": "Me interesa", "bot_text": "¡Qué bueno!"}]
     output = pilot._llm_answer("¿Cómo es el sector?", ctx, history)
@@ -819,14 +821,16 @@ def test_v4_guarded_llm_uses_same_commercial_style_and_price_drop_context(monkey
 
 
 def test_v4_llm_cannot_send_truncated_sentence(monkeypatch, isolated):
+    import sys
     from types import SimpleNamespace
     from chatbot import price_drop_pilot_isolation as pilot
-    from chatbot import grok_client
     def clipped(**kwargs):
         return SimpleNamespace(choices=[SimpleNamespace(
             message=SimpleNamespace(content="Sí, te recomiendo ver"), finish_reason="length"
         )])
-    monkeypatch.setattr(grok_client.client.chat.completions, "create", clipped)
+    fake_client = SimpleNamespace(chat=SimpleNamespace(
+        completions=SimpleNamespace(create=clipped)))
+    monkeypatch.setitem(sys.modules, "chatbot.grok_client", SimpleNamespace(client=fake_client))
     ctx = load_test_context(_full_pilot_db(), PHONE)
     answer = build_test_reply("¿Tiene conserjería?", ctx)
     assert "Sí, te recomiendo ver" not in answer

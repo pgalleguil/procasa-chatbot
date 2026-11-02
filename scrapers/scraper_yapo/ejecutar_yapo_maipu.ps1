@@ -200,8 +200,10 @@ except Exception as exc:
     $env:GIT_CONFIG_VALUE_0 = $SelectedProxy
 
     Write-Host '2/5 Descargando en una carpeta temporal independiente el commit autorizado...'
-    $CloneOutput = @(& git clone --depth 1 --single-branch --branch $Branch $RepoUrl $Clone 2>&1)
+    $CloneOutput = @(& git clone --depth 20 --filter=blob:none --no-checkout --single-branch --branch $Branch $RepoUrl $Clone 2>&1)
     if ($LASTEXITCODE -ne 0) { Stop-Run 'No se pudo descargar la rama por el proxy validado. No se ha usado conexi�n directa.' }
+    $CheckoutOutput = @(& git -C $Clone checkout --detach $ExpectedCommit 2>&1)
+    if ($LASTEXITCODE -ne 0) { Stop-Run 'El commit autorizado no est� dentro del historial descargado de la rama.' }
     $Commit = (& git -C $Clone rev-parse HEAD 2>$null).Trim()
     if ($LASTEXITCODE -ne 0 -or $Commit -ne $ExpectedCommit) {
         Stop-Run ('El checkout no coincide con el commit autorizado. Esperado: ' + $ExpectedCommit + '; obtenido: ' + $Commit)

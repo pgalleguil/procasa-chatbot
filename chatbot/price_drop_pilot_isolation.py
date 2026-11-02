@@ -59,7 +59,7 @@ BAD_CLAIM = re.compile(
     r"el ejecutivo (?:fue notificado|te (?:llamar[aá]|contactar[aá]))|"
     r"lo (?:dejamos|dej[eé]|dejo|qued[oó]) anotado|"
     r"(?:te vamos a llamar|te contactaremos|ya registr[eé]|queda reservada|qued[oó] agendada|"
-    r"le informamos al ejecutivo|avisamos al ejecutivo))\b", re.I
+    r"le informamos al ejecutivo|avisamos al ejecutivo|queda registrado|quedo registrado|lo registramos|anot[eé] tu preferencia))\b", re.I
 )
 
 
@@ -136,7 +136,7 @@ def _visit_reply(message: str, ctx: dict, history: list[dict]) -> str | None:
     previous_bot = str(history[-1].get("bot_text") or "") if history else ""
     bot_prompt = bool(_VISIT_PROMPT.search(_plain(previous_bot))
                       and re.search(r"visita|conocerlo|verla|departamento", _plain(previous_bot)))
-    active = direct_visit or anchored or (bool(recent) and bot_prompt)
+    active = direct_visit or anchored or (bool(current) and bot_prompt)
     if not active:
         return None
     current = _visit_parts(message)

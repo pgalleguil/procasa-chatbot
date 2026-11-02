@@ -156,10 +156,33 @@ def run() -> int:
     discovered = summary.get("ads_discovered")
 
     if not complete:
+        cause = str(summary.get("pagination_cause") or "unknown")
+        first_page = next(
+            (item for item in summary.get("page_log", [])
+             if item.get("page_number") == 1),
+            {},
+        )
         print(
             "ERROR: la paginaci\u00f3n no se verific\u00f3 hasta el final; "
             f"no se export\u00f3 el CSV. P\u00e1ginas visitadas: {pages}."
         )
+        print(f"CAUSA DE PAGINACI\u00d3N: {cause}")
+        print(
+            "P\u00c1GINA 1: "
+            f"estado={first_page.get('status', 'no_registrada')}, "
+            f"enlaces_encontrados={first_page.get('listing_count')}, "
+            f"enlaces_nuevos={first_page.get('new_count')}, "
+            f"enlaces_duplicados={first_page.get('duplicate_count')}, "
+            f"anchors_html={first_page.get('anchors_total')}, "
+            f"validacion={first_page.get('validation', 'no_aplica')}"
+        )
+        print(
+            "RED: "
+            f"descargas_proxy={summary.get('successful_downloads', 0)}, "
+            f"cache={summary.get('cache_responses', 0)}, "
+            f"solicitudes_intentadas={summary.get('request_attempts', 0)}"
+        )
+        print(f"HTML LOCAL: {config.html_dumps_dir / str(summary.get('batch_id') or '')}")
         print(f"Resumen: {summary.get('summary_report', '')}")
         return 3
     if discovered not in (0, None) and not dedup_verified:

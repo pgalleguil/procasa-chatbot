@@ -241,6 +241,7 @@ def test_same_yapo_id_with_historical_slug_change_is_deduplicated():
         ("Maipú", "confirmed_maipu"),
         ("Maipu", "confirmed_maipu"),
         ("Maipú, Región Metropolitana", "confirmed_maipu"),
+        ("Maipú, Región Metropolitana, Pudahuel", "pending_ambiguous"),
         ("", "pending"),
         ("Maipú / Pudahuel", "pending_ambiguous"),
         ("Talca", "confirmed_other_commune"),

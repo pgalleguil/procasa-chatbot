@@ -73,7 +73,7 @@ def _commune_validation(value: str) -> str:
     normalized = _norm_commune(value or "")
     if not normalized:
         return "pending"
-    if normalized == "maipu" or normalized.startswith("maipu-region-metropolitana"):
+    if normalized in {"maipu", "maipu-region-metropolitana", "maipu-region-metropolitana-de-santiago"}:
         return "confirmed_maipu"
     if normalized.startswith("maipu-"):
         return "pending_ambiguous"

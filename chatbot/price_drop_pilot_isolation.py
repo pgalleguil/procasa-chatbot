@@ -507,17 +507,18 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
     if NEGATE_VISIT.search(clean):
         return (f"De acuerdo, no coordinaremos visitas al departamento {code}. "
                 "Si prefieres, puedes consultar características o el precio sin compromiso.")
+    # "No, me llamo Andrés" is a name correction, not a rejection.
+    introduction, only_introduction = _customer_introduction(clean)
+    if introduction and only_introduction:
+        return (f"¡Mucho gusto, {introduction}! 😊 "
+                "¿Qué te gustaría saber del departamento?")
     if DECLINE.search(clean):
         return "Entendido, gracias por responder. No insistiremos en esta propiedad."
     facts = ctx.get("property_facts") or {}
-    introduction, only_introduction = _customer_introduction(clean)
     if _NAME_QUESTION.search(_plain(clean)):
         name = ctx.get("customer_first_name") or introduction
         return (f"Me dijiste que te llamas {name} 😊." if name
                 else "Todavía no me has indicado tu nombre.")
-    if introduction and only_introduction:
-        return (f"¡Mucho gusto, {introduction}! 😊 "
-                "¿Qué te gustaría saber del departamento?")
     # Visit preference is reconstructed from customer turns, never written to CRM.
     visit_reply = _visit_reply(clean, ctx, history or [])
     if visit_reply is not None:

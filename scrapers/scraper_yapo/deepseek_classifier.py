@@ -10,8 +10,12 @@ try:
 except Exception:  # pragma: no cover
     requests = None  # type: ignore
 
-from classifier_rules import load_rule_sets, normalize_text
-from config import AppConfig
+try:
+    from .classifier_rules import load_rule_sets, normalize_text
+    from .config import AppConfig
+except ImportError:  # direct script execution
+    from classifier_rules import load_rule_sets, normalize_text
+    from config import AppConfig
 
 
 @dataclass(slots=True)

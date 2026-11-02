@@ -1,0 +1,1 @@
+"""Modular Yapo scraper package."""

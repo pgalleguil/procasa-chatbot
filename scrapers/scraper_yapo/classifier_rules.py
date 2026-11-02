@@ -6,7 +6,10 @@ import unicodedata
 from functools import lru_cache
 from typing import Any, Iterable
 
-from config import DATA_DIR
+try:
+    from .config import DATA_DIR
+except ImportError:  # direct script execution
+    from config import DATA_DIR
 
 
 STRONG_PUBLISHER_FIELDS = (

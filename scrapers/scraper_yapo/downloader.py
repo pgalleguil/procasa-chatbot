@@ -13,9 +13,14 @@ try:
 except Exception:  # pragma: no cover
     requests = None  # type: ignore
 
-from classifier_rules import load_rule_sets
-from config import AppConfig
-from proxy_manager import ProxyChoice, ProxyManager
+try:
+    from .classifier_rules import load_rule_sets
+    from .config import AppConfig
+    from .proxy_manager import ProxyChoice, ProxyManager
+except ImportError:  # direct script execution
+    from classifier_rules import load_rule_sets
+    from config import AppConfig
+    from proxy_manager import ProxyChoice, ProxyManager
 
 BLOCK_PATTERNS = (
     "verify you are human",
@@ -133,7 +138,9 @@ def download_html(
             response = session.get(url, headers=headers, proxies=_requests_proxies(proxy), timeout=timeout)
         except Exception as exc:
             raise RuntimeError(f"YAPO_PROXY_REQUEST_FAILED: {type(exc).__name__}") from None
-        if response.status_code in {403, 429}:
+        if response.status_code == 407:
+            raise RuntimeError("YAPO_PROXY_AUTH_407: autenticación HTTP del proxy rechazada.")
+        if response.status_code in {401, 403, 429, 451}:
             raise RuntimeError(f"YAPO_BLOCKED: HTTP {response.status_code}; solicitudes detenidas.")
         response.raise_for_status()
         html = response.text

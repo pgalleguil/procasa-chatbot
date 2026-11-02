@@ -8,17 +8,13 @@ assignment_ready. These tests pin down both fixes.
 import sys
 from pathlib import Path
 
-# scraper_yapo/classifier_rules needs scraper_yapo first on path (its config
-# defines DATA_DIR); owner_probability and eligibility live at repo root and
-# are appended so they never shadow scraper_yapo packages.
-_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_ROOT))
-if str(_ROOT.parent) not in sys.path:
-    sys.path.append(str(_ROOT.parent))
+# Keep the Yapo package and root CRM modules under distinct import names.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_REPO_ROOT))
 
 import owner_probability  # noqa: E402
 from captacion_assignment_eligibility import assignment_eligibility  # noqa: E402
-from classifier_rules import (  # noqa: E402
+from scrapers.scraper_yapo.classifier_rules import (  # noqa: E402
     classify_obvious_broker,
     validate_classification_rules,
 )
@@ -90,6 +86,6 @@ def test_owner_probability_gate_keeps_corredor_not_assignable():
     assert cls["state"] == "CORREDOR_SEGURO"
     assert cls["assignment_ready"] is False
     assert cls["exclude_from_assignment"] is True
-    assert "BROKER_CONFIRMED" in (cls.get("assignment_block_reasons") or [])
+    assert "PROFESSIONAL_HARD_VETO" in (cls.get("assignment_block_reasons") or [])
     eligible, _ = assignment_eligibility(doc)
     assert eligible is False

@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import os
 import re
+import ipaddress
 from dataclasses import dataclass
 from itertools import cycle
 from typing import Iterable
 from urllib.parse import quote, urlparse
 
-from config import AppConfig
+try:
+    from .config import AppConfig
+except ImportError:  # direct script execution
+    from config import AppConfig
 
 
 @dataclass(slots=True)
@@ -60,7 +64,23 @@ class ProxyManager:
             parsed = urlparse(candidate)
             if parsed.scheme not in {"http", "https"} or not parsed.hostname:
                 return ""
+            host = parsed.hostname
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:
+                try:
+                    host = host.encode("idna").decode("ascii")
+                except UnicodeError:
+                    return ""
+                if len(host) > 253 or not re.fullmatch(r"(?i)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", host):
+                    return ""
+                if any(not label or len(label) > 63 or label.startswith("-") or label.endswith("-") for label in host.split(".")):
+                    return ""
             if parsed.port is not None and not (1 <= parsed.port <= 65535):
+                return ""
+            if (parsed.username is None) != (parsed.password is None):
+                return ""
+            if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
                 return ""
         except ValueError:
             return ""

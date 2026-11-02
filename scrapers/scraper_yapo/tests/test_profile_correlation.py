@@ -1,6 +1,11 @@
 from types import SimpleNamespace
+from pathlib import Path
+import sys
 
-from mongo_store import MongoStore
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_REPO_ROOT))
+
+from scrapers.scraper_yapo.mongo_store import MongoStore
 
 
 class FakeCollection:

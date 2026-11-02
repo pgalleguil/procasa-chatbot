@@ -8,10 +8,16 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
-from classifier_rules import load_rule_sets
-from config import AppConfig
-from downloader import download_html, validate_html
-from proxy_manager import ProxyManager
+try:
+    from .classifier_rules import load_rule_sets
+    from .config import AppConfig
+    from .downloader import download_html, html_path_for_url, validate_html
+    from .proxy_manager import ProxyManager
+except ImportError:  # direct script execution
+    from classifier_rules import load_rule_sets
+    from config import AppConfig
+    from downloader import download_html, html_path_for_url, validate_html
+    from proxy_manager import ProxyManager
 
 
 def _utcnow() -> str:
@@ -46,6 +52,8 @@ def is_listing_detail_url(url: str) -> bool:
     if "/searchresult/" in low:
         return False
     parsed = urlparse(url)
+    if parsed.hostname and parsed.hostname not in {"www.yapo.cl", "yapo.cl"}:
+        return False
     return bool(re.search(r"/\d{6,}$", parsed.path.rstrip("/")))
 
 
@@ -121,12 +129,20 @@ def _pagination_state(html: str, page_url: str) -> tuple[str | None, bool, str]:
         pager = BeautifulSoup(" ".join(str(node) for node in pager_nodes), "html.parser")
         current = pager.select_one('[aria-current="page"], .active, .current')
         current_match = re.search(r"\d+", current.get_text(" ", strip=True)) if current else None
-        linked_pages = [int(m.group()) for a in pager.find_all("a", href=True) if (m := re.search(r"\d+", a.get_text(" ", strip=True)))]
-        if current_match and linked_pages and int(current_match.group()) >= max(linked_pages):
-            return None, True, "current_page_is_last_numbered_page"
-        if current_match and not linked_pages and not pager.select('a[aria-label*="last" i], a[title*="last" i], a[class*=last]'):
-            return None, True, "single_page_pagination_control"
-        return None, False, "pagination_control_without_verifiable_end"
+        total_pages = pager.select_one("[data-total-pages], [data-page-count]")
+        if current_match and total_pages:
+            total = total_pages.get("data-total-pages") or total_pages.get("data-page-count")
+            if str(total).isdigit() and int(current_match.group()) == int(total):
+                return None, True, "explicit_total_pages_reached"
+        last_links = pager.select('a[rel~="last"][href], a[aria-label*="last" i][href], a[title*="last" i][href], a[class*=last][href]')
+        if current_match and last_links:
+            last_url = _normalize_url(urljoin(page_url, str(last_links[-1]["href"])))
+            if last_url == _normalize_url(page_url):
+                return None, True, "explicit_last_page_link_matches_current"
+        disabled_next = pager.select('[rel~="next"][aria-disabled="true"], [rel~="next"].disabled, .next.disabled, .pagination-next[aria-disabled="true"]')
+        if current_match and disabled_next:
+            return None, True, "explicit_disabled_next_control"
+        return None, False, "pagination_end_not_explicitly_verified"
     text = soup.get_text(" ", strip=True).lower()
     empty_markers = ("no se encontraron resultados", "no hay resultados", "sin resultados", "no results found")
     has_listings = bool(_extract_listing_urls(html, page_url)[0])
@@ -143,21 +159,28 @@ def discover_listing_urls(
     batch_id: str | None = None,
     target_communes: list[str] | None = None,
     report: dict[str, Any] | None = None,
+    config: AppConfig | None = None,
+    proxy_manager: ProxyManager | None = None,
 ) -> list[dict]:
-    config = AppConfig()
+    config = config or AppConfig()
     config.ensure_layout()
-    proxy_manager = ProxyManager.from_config(config)
+    proxy_manager = proxy_manager or ProxyManager.from_config(config)
     batch_id = batch_id or config.generate_batch_id()
     discovered: list[dict] = []
     seen_urls: set[str] = set()
     target_norm = {_norm_commune(value) for value in (target_communes or []) if value}
     report = report if report is not None else {}
-    report.update({"pages": [], "pagination_complete": True, "pagination_cause": "", "errors": [], "proxy_requests": 0})
+    report.update({"pages": [], "pagination_complete": True, "pagination_cause": "", "errors": [], "proxy_requests": 0, "request_attempts": 0, "successful_downloads": 0, "cache_responses": 0})
     if not start_urls:
         start_urls = build_default_start_urls(config)
 
     for start_url in start_urls:
         current_url = _normalize_url(start_url)
+        if urlparse(current_url).hostname not in {"www.yapo.cl", "yapo.cl"}:
+            report["pagination_complete"] = False
+            report["pagination_cause"] = "unauthorized_start_domain"
+            report["errors"].append("unauthorized Yapo start domain")
+            break
         page_number = 1
         visited_page_urls: set[str] = set()
         while True:
@@ -171,20 +194,25 @@ def discover_listing_urls(
                 report["pagination_cause"] = "safety_max_pages_reached"
                 break
             try:
+                cache_exists = html_path_for_url(current_url, config, batch_id=batch_id).exists()
+                if not cache_exists and proxy_manager.has_proxies():
+                    report["request_attempts"] += 1
                 download = download_html(current_url, config, proxy_manager, batch_id=batch_id)
             except Exception as exc:
                 message = str(exc)
-                if proxy_manager.has_proxies() and "YAPO_PROXY_REQUEST_FAILED" in message:
-                    report["proxy_requests"] += 1
-                report["pages"].append({"page_number": page_number, "url": current_url, "status": "blocked" if "BLOCKED" in message else "error", "listing_count": 0, "duplicate_count": 0, "error": message})
+                report["pages"].append({"page_number": page_number, "url": current_url, "status": "blocked" if "BLOCKED" in message else "error", "listing_count": None, "duplicate_count": None, "error": message})
                 report["errors"].append(message)
                 report["pagination_complete"] = False
                 report["pagination_cause"] = "blocked_or_download_error"
                 break
-            report["proxy_requests"] += int(download.fetch_source == "requests_proxy")
+            if download.fetch_source == "cache":
+                report["cache_responses"] += 1
+            elif download.fetch_source == "requests_proxy":
+                report["successful_downloads"] += 1
+                report["proxy_requests"] += 1
             validation = validate_html(download.html)
             if validation["status"] in {"INVALID", "BLOCKED", "LISTING_REMOVED"}:
-                report["pages"].append({"page_number": page_number, "url": current_url, "status": "blocked" if validation["status"] == "BLOCKED" else "invalid", "listing_count": 0, "duplicate_count": 0, "validation": validation["status"]})
+                report["pages"].append({"page_number": page_number, "url": current_url, "status": "blocked" if validation["status"] == "BLOCKED" else "invalid", "listing_count": None, "duplicate_count": None, "validation": validation["status"]})
                 report["pagination_complete"] = False
                 report["pagination_cause"] = f"html_{validation['status'].lower()}"
                 break
@@ -209,6 +237,11 @@ def discover_listing_urls(
             report["pages"].append({"page_number": page_number, "url": current_url, "status": "complete" if page_records else "empty", "listing_count": len(page_records), "duplicate_count": duplicate_count, "new_count": page_new, "anchors_total": anchors_total})
             next_url, terminal_verified, evidence = _pagination_state(download.html, current_url)
             if next_url:
+                if urlparse(next_url).hostname not in {"www.yapo.cl", "yapo.cl"}:
+                    report["pagination_complete"] = False
+                    report["pagination_cause"] = "unauthorized_pagination_domain"
+                    report["errors"].append("pagination link outside authorized Yapo domains")
+                    break
                 if next_url in visited_page_urls:
                     report["pagination_complete"] = False
                     report["pagination_cause"] = "pagination_url_cycle"

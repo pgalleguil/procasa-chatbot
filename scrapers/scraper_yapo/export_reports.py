@@ -6,7 +6,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from config import AppConfig
+try:
+    from .config import AppConfig
+except ImportError:  # direct script execution
+    from config import AppConfig
 
 
 def _flatten_record(record: dict[str, Any]) -> dict[str, Any]:

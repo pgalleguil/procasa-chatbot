@@ -11,22 +11,34 @@ from typing import Any
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-from classifier_rules import (
-    build_deepseek_context,
-    build_rule_context,
-    classify_obvious_broker,
-    company_shape_in_publisher_fields,
-    is_removed_listing,
-)
-from config import AppConfig, get_config
-from discovery import discover_listing_urls
-from downloader import download_html
-from export_reports import export_batch_reports
-from extractor import extract_listing_fields
-from enrich import _enrich_property_fields
-from mongo_store import MongoStore
-from proxy_manager import ProxyManager
-from pilot import run_pilot
+try:
+    from .classifier_rules import (
+        build_deepseek_context, build_rule_context, classify_obvious_broker,
+        company_shape_in_publisher_fields, is_removed_listing,
+    )
+    from .config import AppConfig, get_config
+    from .discovery import discover_listing_urls
+    from .downloader import download_html
+    from .export_reports import export_batch_reports
+    from .extractor import extract_listing_fields
+    from .enrich import _enrich_property_fields
+    from .mongo_store import MongoStore
+    from .proxy_manager import ProxyManager
+    from .pilot import run_pilot
+except ImportError:  # direct execution from scrapers/scraper_yapo
+    from scrapers.scraper_yapo.classifier_rules import (
+        build_deepseek_context, build_rule_context, classify_obvious_broker,
+        company_shape_in_publisher_fields, is_removed_listing,
+    )
+    from scrapers.scraper_yapo.config import AppConfig, get_config
+    from scrapers.scraper_yapo.discovery import discover_listing_urls
+    from scrapers.scraper_yapo.downloader import download_html
+    from scrapers.scraper_yapo.export_reports import export_batch_reports
+    from scrapers.scraper_yapo.extractor import extract_listing_fields
+    from scrapers.scraper_yapo.enrich import _enrich_property_fields
+    from scrapers.scraper_yapo.mongo_store import MongoStore
+    from scrapers.scraper_yapo.proxy_manager import ProxyManager
+    from scrapers.scraper_yapo.pilot import run_pilot
 
 
 def _utcnow() -> str:

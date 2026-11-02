@@ -1,5 +1,11 @@
-from discovery import _extract_listing_urls, _norm_commune
-from downloader import validate_html
+from pathlib import Path
+import sys
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_REPO_ROOT))
+
+from scrapers.scraper_yapo.discovery import _extract_listing_urls, _norm_commune
+from scrapers.scraper_yapo.downloader import validate_html
 
 
 HTML = """<!doctype html><html><body>

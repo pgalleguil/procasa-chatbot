@@ -1,0 +1,52 @@
+{
+  "scope": {
+    "portal": "Yapo.cl",
+    "operation": "venta",
+    "property_type": "casa",
+    "commune": "Maipú",
+    "price_uf_min": 3000,
+    "price_uf_max": 6000
+  },
+  "batch_id": "yapo_maipu_3000_6000uf_20261102",
+  "pages_visited": 1,
+  "pagination_complete": false,
+  "pagination_cause": "blocked_or_download_error",
+  "ads_discovered": null,
+  "batch_duplicates": null,
+  "mongo_existing": null,
+  "new_ads": null,
+  "filter_matches": null,
+  "pending_price_validation": null,
+  "errors_or_blocks": [
+    "YAPO_PROXY_REQUEST_FAILED: ProxyError"
+  ],
+  "proxy_requests": 0,
+  "deepseek_calls": 0,
+  "mongo_writes": 0,
+  "mongo_dedup_verified": false,
+  "page_log": [
+    {
+      "page_number": 1,
+      "url": "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas",
+      "status": "error",
+      "listing_count": null,
+      "duplicate_count": null,
+      "error": "YAPO_PROXY_REQUEST_FAILED: ProxyError",
+      "error_category": "DNS confirmed by diagnostic follow-up"
+    }
+  ],
+  "calls_to_deepseek": 0,
+  "mongo_dedup_status": "not_attempted_no_discovered_ids",
+  "search_filters_verified": false,
+  "summary_report": "scrapers/scraper_yapo/reports/yapo_maipu_pilot_summary_20261102T131954Z.json",
+  "audit_report": "scrapers/scraper_yapo/reports/yapo_maipu_pilot_audit_20261102T131954Z.json",
+  "price_filter_mode": "local_only_from_explicit_uf_price; no_clp_conversion",
+  "invalid_or_removed_ads": null,
+  "commercial_result_available": false,
+  "pilot_retry_performed": false,
+  "pilot_retry_skipped_reason": "proxy DNS resolution failed (WSAHOST_NOT_FOUND 11001)",
+  "request_attempts": 1,
+  "successful_downloads": 0,
+  "cache_responses": 0,
+  "proxy_diagnostic_report": "scrapers/scraper_yapo/reports/diagnose_proxy_20261102T134242Z.json"
+}

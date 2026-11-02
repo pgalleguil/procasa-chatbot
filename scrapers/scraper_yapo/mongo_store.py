@@ -3,8 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from config import AppConfig
+try:
+    from .config import AppConfig
+except ImportError:  # direct script execution
+    from config import AppConfig
 try:
     from owner_probability import apply_owner_probability_to_document
 except ImportError:  # direct execution from scraper/
@@ -135,13 +139,43 @@ class MongoStore:
         }
 
     def existing_listing_ids(self, listing_ids: list[str]) -> set[str]:
-        clean = [str(value) for value in listing_ids if str(value).strip()]
+        clean = list(dict.fromkeys(str(value).strip() for value in listing_ids if str(value).strip()))
         if not clean:
             return set()
         return {
             str(doc.get("listing_id"))
             for doc in self.collection().find({"listing_id": {"$in": clean}}, {"listing_id": 1, "_id": 0})
         }
+
+    @staticmethod
+    def normalize_listing_url(url: str) -> str:
+        value = str(url or "").strip()
+        if not value:
+            return ""
+        parsed = urlparse(value)
+        if not parsed.scheme or parsed.hostname not in {"www.yapo.cl", "yapo.cl"}:
+            return ""
+        query = sorted(
+            (key, val) for key, val in parse_qsl(parsed.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_") and key.lower() not in {"clid", "gclid", "fbclid"}
+        )
+        return urlunparse(parsed._replace(netloc="www.yapo.cl", query=urlencode(query), fragment=""))
+
+    def existing_listing_urls(self, listing_urls: list[str]) -> set[str]:
+        """Read-only exact URL match across source and canonical URL fields."""
+        clean = list(dict.fromkeys(self.normalize_listing_url(value) for value in listing_urls))
+        clean = [value for value in clean if value]
+        if not clean:
+            return set()
+        query = {"$or": [{field: {"$in": clean}} for field in ("url", "source_url", "canonical_url")]}
+        projection = {"url": 1, "source_url": 1, "canonical_url": 1, "_id": 0}
+        matches: set[str] = set()
+        for doc in self.collection().find(query, projection):
+            for field in ("url", "source_url", "canonical_url"):
+                normalized = self.normalize_listing_url(str(doc.get(field) or ""))
+                if normalized in clean:
+                    matches.add(normalized)
+        return matches
 
     def write_many(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         results = []

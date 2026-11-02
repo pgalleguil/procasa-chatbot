@@ -112,7 +112,7 @@ def _write_new_ads_csv(records: list[dict[str, Any]], output_dir: Path) -> Path:
 def _load_audit(summary: dict[str, Any]) -> list[dict[str, Any]]:
     audit_path = Path(str(summary.get("audit_report") or ""))
     if not audit_path.is_file():
-        raise RuntimeError("No se encontr� el reporte local de avisos nuevos.")
+        raise RuntimeError("No se encontr\u00f3 el reporte local de avisos nuevos.")
     payload = json.loads(audit_path.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
         raise RuntimeError("El reporte local de avisos tiene un formato inesperado.")
@@ -124,12 +124,12 @@ def run() -> int:
     config.ensure_layout()
 
     if not config.mongo_uri:
-        print("ERROR: falta MONGO_URI; no se consult� Yapo ni se marcaron avisos como nuevos.")
+        print("ERROR: falta MONGO_URI; no se consult\u00f3 Yapo ni se marcaron avisos como nuevos.")
         return 2
 
     proxy_manager = ProxyManager.from_config(config)
     if not proxy_manager.has_proxies():
-        print("ERROR: no hay proxies configurados; no se permite conexi�n directa.")
+        print("ERROR: no hay proxies configurados; no se permite conexi\u00f3n directa.")
         return 2
 
     print("Comprobando DNS, TCP y solicitud controlada mediante el proxy configurado...")
@@ -137,9 +137,9 @@ def run() -> int:
     if proxy_report.get("result_category") != "OK":
         category = str(proxy_report.get("result_category") or "UNKNOWN")
         report_name = str(proxy_report.get("report_file") or "")
-        print(f"ERROR: preflight del proxy fall� ({category}); no se solicit� ninguna p�gina de Yapo.")
+        print(f"ERROR: preflight del proxy fall\u00f3 ({category}); no se solicit\u00f3 ninguna p\u00e1gina de Yapo.")
         if report_name:
-            print(f"Diagn�stico sanitizado: {config.reports_dir / report_name}")
+            print(f"Diagn\u00f3stico sanitizado: {config.reports_dir / report_name}")
         return 2
 
     # Guard against an accidental future write being added to the pilot path.
@@ -148,7 +148,7 @@ def run() -> int:
 
     MongoStore.upsert_listing = deny_mongo_write  # type: ignore[method-assign]
 
-    print("Proxy disponible. Recorriendo todas las p�ginas de la b�squeda de Maip�...")
+    print("Proxy disponible. Recorriendo todas las p\u00e1ginas de la b\u00fasqueda de Maip\u00fa...")
     summary = run_pilot(START_URL, config)
     pages = summary.get("pages_visited") or 0
     complete = bool(summary.get("pagination_complete"))
@@ -157,21 +157,21 @@ def run() -> int:
 
     if not complete:
         print(
-            "ERROR: la paginaci�n no se verific� hasta el final; "
-            f"no se export� el CSV. P�ginas visitadas: {pages}."
+            "ERROR: la paginaci\u00f3n no se verific\u00f3 hasta el final; "
+            f"no se export\u00f3 el CSV. P\u00e1ginas visitadas: {pages}."
         )
         print(f"Resumen: {summary.get('summary_report', '')}")
         return 3
     if discovered not in (0, None) and not dedup_verified:
-        print("ERROR: MongoDB no verific� la deduplicaci�n; no se export� el CSV.")
+        print("ERROR: MongoDB no verific\u00f3 la deduplicaci\u00f3n; no se export\u00f3 el CSV.")
         print(f"Resumen: {summary.get('summary_report', '')}")
         return 4
     if discovered is None:
-        print("ERROR: no hay conteo verificable de avisos; no se export� el CSV.")
+        print("ERROR: no hay conteo verificable de avisos; no se export\u00f3 el CSV.")
         print(f"Resumen: {summary.get('summary_report', '')}")
         return 4
     if discovered and not summary.get("search_filters_verified"):
-        print("ERROR: los filtros del resultado no pudieron verificarse; no se export� el CSV.")
+        print("ERROR: los filtros del resultado no pudieron verificarse; no se export\u00f3 el CSV.")
         print(f"Resumen: {summary.get('summary_report', '')}")
         return 5
 
@@ -202,8 +202,8 @@ def run() -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Barrido local completo de casas en venta en Maip�; "
-            "deduplicaci�n MongoDB de solo lectura y CSV privado."
+            "Barrido local completo de casas en venta en Maip\u00fa; "
+            "deduplicaci\u00f3n MongoDB de solo lectura y CSV privado."
         )
     )
     parser.parse_args(argv)

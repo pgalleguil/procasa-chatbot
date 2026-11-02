@@ -21,6 +21,12 @@
       "provenance": ["previous known_broker_brands.json", "tests/test_broker_regression.py PROurbe logo regression"]
     },
     {
+      "canonical_brands": ["RE/MAX", "ProUrbe", "Engel & Völkers"],
+      "aliases": ["REMAX", "PRO URBE", "Engel Volkers"],
+      "action": "added explicit normalized aliases; matching records the alias that matched",
+      "provenance": ["previous known_broker_brands.json spelling variants", "tests/test_broker_regression.py RE/MAX and PROurbe regressions"]
+    },
+    {
       "previous_forms": ["TOCTOC", "Portal Inmobiliario", "Chilepropiedades", "GoPlaceIt", "EasyProp"],
       "action": "moved to portal_platforms; these names alone do not identify the advertiser as a broker",
       "provenance": ["previous known_broker_brands.json", "portal/platform names already present in the Yapo project catalog"]

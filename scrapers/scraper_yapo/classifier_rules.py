@@ -64,6 +64,9 @@ def load_rule_sets() -> dict[str, Any]:
             continue
         if isinstance(data, dict):
             values = data.get(key, [])
+            if name == "known_broker_brands":
+                aliases = data.get("brand_aliases", {})
+                sets["known_broker_brand_aliases"] = aliases if isinstance(aliases, dict) else {}
         elif isinstance(data, list):
             values = data
         else:
@@ -215,8 +218,16 @@ def is_removed_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
 
 def known_broker_brand_in_strong_fields(extracted: dict[str, Any]) -> dict[str, Any] | None:
     validate_classification_rules(raise_on_error=True)
-    brands = load_rule_sets()["known_broker_brands"]
-    evidence = _confirmed_identity_evidence(extracted, brands)
+    rules = load_rule_sets()
+    brands = rules["known_broker_brands"]
+    aliases = rules.get("known_broker_brand_aliases") or {}
+    evidence: list[str] = []
+    for field, value in _confirmed_identity_values(extracted).items():
+        for brand in brands:
+            variants = [brand, *(aliases.get(brand) or [])]
+            for variant in variants:
+                if _phrase_matches(value, str(variant)):
+                    evidence.append(f"{field}:{brand}|matched_variant:{variant}")
     if not evidence:
         return None
     return {
@@ -294,13 +305,20 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
     validate_classification_rules(raise_on_error=True)
     seller_type = normalize_text(str(extracted.get("seller_type") or ""))
     badges = normalize_text(str(extracted.get("contact_badges_text") or ""))
-    if (
+    professional_type = (
         seller_type in {"profesional", "empresa", "agente", "corredor"}
-        and "profesional" in badges
         and _publisher_field_is_confirmed(extracted, "seller_type")
+    )
+    professional_badge = (
+        "profesional" in badges
         and _publisher_field_is_confirmed(extracted, "contact_badges_text")
+    )
+    independent_professional_evidence = (
+        professional_type
+        and professional_badge
         and _publisher_field_source(extracted, "seller_type") != "publisher_scoped_badge"
-    ):
+    )
+    if independent_professional_evidence:
         return {
             "state": "CORREDOR_SEGURO",
             "confidence": 0.99,
@@ -308,10 +326,20 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
             "evidence": [f"seller_type:{seller_type}", f"contact_badges_text:{badges}"],
             "source": "structural_rules",
         }
-
     brand = known_broker_brand_in_strong_fields(extracted)
     if brand:
         return brand
+    if professional_type or professional_badge:
+        return {
+            "state": "CORREDOR_PROBABLE",
+            "confidence": 0.85,
+            "reason": "Una señal profesional confirmada está vinculada al bloque del publicador, sin corroboración independiente.",
+            "evidence": [
+                *( [f"seller_type:{seller_type}"] if professional_type else [] ),
+                *( ["contact_badges_text:profesional"] if professional_badge else [] ),
+            ],
+            "source": "structural_rules",
+        }
 
     hard = hard_broker_terms_in_strong_fields(extracted)
     if hard:
@@ -367,9 +395,9 @@ def classify_with_rules(extracted: dict[str, Any]) -> dict[str, Any]:
 
     company = company_shape_in_publisher_fields(extracted)
     return {
-        "state": "INCONCLUSIVE",
+        "state": "INCIERTO",
         "confidence": 0.35 if company["company_like_suspected"] else 0.2,
-        "reason": "Rules are only providing context here; DeepSeek should decide.",
+        "reason": "Evidence is insufficient for a commercial classification; manual review is pending.",
         "evidence": company["company_like_evidence"],
         "source": "rules_json",
         **company,

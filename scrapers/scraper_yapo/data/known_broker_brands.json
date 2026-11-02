@@ -12,6 +12,11 @@
     "capitalizarme",
     "ProUrbe"
   ],
+  "brand_aliases": {
+    "RE/MAX": ["REMAX"],
+    "ProUrbe": ["PRO URBE"],
+    "Engel & Völkers": ["Engel Volkers"]
+  },
   "portal_platforms": [
     "TOCTOC",
     "Portal Inmobiliario",

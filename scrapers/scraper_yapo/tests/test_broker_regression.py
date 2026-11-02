@@ -97,3 +97,22 @@ def test_owner_probability_gate_keeps_corredor_not_assignable():
     assert "PROFESSIONAL_HARD_VETO" in (cls.get("assignment_block_reasons") or [])
     eligible, _ = assignment_eligibility(doc)
     assert eligible is False
+
+
+def test_owner_probability_gate_keeps_corredor_probable_not_assignable():
+    doc = {
+        "listing_id": "99999999",
+        "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/test/99999999",
+        "origen": "yapo",
+        "classification": {
+            "state": "CORREDOR_PROBABLE",
+            "source": "structural_rules",
+            "confidence": 0.85,
+            "evidence": ["contact_badges_text:profesional"],
+        },
+    }
+    owner_probability.apply_owner_probability_to_document(doc)
+    assert doc["classification"]["state"] == "CORREDOR_PROBABLE"
+    assert doc["classification"]["assignment_ready"] is False
+    eligible, _ = assignment_eligibility(doc)
+    assert eligible is False

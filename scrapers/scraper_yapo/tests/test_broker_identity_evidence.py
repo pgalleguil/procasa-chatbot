@@ -93,11 +93,36 @@ def test_professional_account_overrides_direct_deal_title():
     assert result["source"] == "structural_rules"
 
 
-def test_single_professional_badge_is_not_counted_twice_as_safe_evidence():
+def test_single_professional_badge_is_probable_not_safe_evidence():
     fields = extract_listing_fields(_publisher_html(
         "<span class='badge'>Cuenta profesional</span>"
     ))
     assert fields["seller_type"] == "PROFESIONAL"
+    result = rules.classify_obvious_broker(fields)
+    assert result["state"] == "CORREDOR_PROBABLE"
+
+
+def test_single_explicit_professional_type_is_probable_not_safe_evidence():
+    fields = extract_listing_fields(_publisher_html(
+        "<span class='seller-type'>Profesional</span>"
+    ))
+    result = rules.classify_obvious_broker(fields)
+    assert result["state"] == "CORREDOR_PROBABLE"
+
+
+def test_two_independent_professional_fields_are_safe():
+    fields = extract_listing_fields(_publisher_html(
+        "<span class='seller-type'>Profesional</span><span class='badge'>Cuenta profesional</span>"
+    ))
+    result = rules.classify_obvious_broker(fields)
+    assert result["state"] == "CORREDOR_SEGURO"
+
+
+def test_professional_badge_outside_publisher_is_not_evidence():
+    fields = extract_listing_fields(_publisher_html(
+        "<span class='seller-name'>María Pérez</span>",
+        "<span class='badge'>Cuenta profesional</span>",
+    ))
     assert rules.classify_obvious_broker(fields) is None
 
 
@@ -114,10 +139,20 @@ def test_repeated_hard_term_does_not_become_safe_broker():
     assert result["state"] == "CORREDOR_PROBABLE"
 
 
-@pytest.mark.parametrize("brand", ["RE/MAX", "RE MAX - CENTRAL", "re/max central"])
-def test_verified_remax_variants_match_equivalently(brand):
+@pytest.mark.parametrize("brand,matched", [
+    ("RE/MAX", "RE/MAX"),
+    ("RE MAX", "RE/MAX"),
+    ("REMAX", "REMAX"),
+    ("REMAX CENTRAL", "REMAX"),
+    ("ProUrbe", "ProUrbe"),
+    ("PRO URBE", "PRO URBE"),
+    ("Engel & Völkers", "Engel & Völkers"),
+    ("Engel Volkers", "Engel Volkers"),
+])
+def test_verified_brand_variants_match_equivalently_and_record_alias(brand, matched):
     result = rules.classify_obvious_broker(_confirmed(contact_logo_alt=brand))
     assert result["state"] == "CORREDOR_SEGURO"
+    assert any(f"matched_variant:{matched}" in item for item in result["evidence"])
 
 
 @pytest.mark.parametrize("name", ["XREMAX", "Remaximo", "PROurbeX", "PROURBEX"])
@@ -160,3 +195,4 @@ def test_correlated_profile_with_confirmed_commercial_identity_stays_safe():
 def test_identity_rules_never_upgrade_missing_evidence_to_owner():
     result = rules.classify_obvious_broker({"title": "Casa trato directo", "description": "Sin comisión"})
     assert result is None
+    assert rules.classify_with_rules({"title": "Casa trato directo", "description": "Sin comisión"})["state"] == "INCIERTO"

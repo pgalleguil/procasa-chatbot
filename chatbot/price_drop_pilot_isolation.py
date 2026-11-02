@@ -46,7 +46,7 @@ PETS = re.compile(r"\b(?:mascotas?|perros?|gatos?)\b", re.I)
 CONTACT_HUMAN = re.compile(r"\b(?:hablar con (?:un |una )?(?:ejecutiv[oa]|asesor[oa])|que me llame|me puede llamar|me pueden llamar|contacte (?:un |una )?(?:ejecutiv[oa]|asesor[oa]))\b", re.I)
 NEGATE_VISIT = re.compile(r"\b(?:no quiero (?:visitarla|visitar|visita|una visita|agendar|coordinar)|no me interesa una visita)\b", re.I)
 COMMISSION = re.compile(r"\b(?:comisi[oó]n|honorarios|corretaje)\b", re.I)
-ADDRESS = re.compile(r"\b(?:d[oó]nde (?:queda|est[aá]|se ubica|se encuentra)|ubicaci[oó]n|direcci[oó]n|calle|en qu[eé] parte)\b", re.I)
+ADDRESS = re.compile(r"\b(?:d[oó]nde (?:queda|quedaba|est[aá]|se ubica|se encuentra)|ubicaci[oó]n|direcci[oó]n|calle|en qu[eé] parte)\b", re.I)
 GRILL = re.compile(r"\b(?:quinchos?|parrillas?|asados?)\b", re.I)
 VISIT_WHEN = re.compile(
     r"\b(?:pr[oó]ximo mes|mes que viene|siguiente mes|pr[oó]xima semana|"

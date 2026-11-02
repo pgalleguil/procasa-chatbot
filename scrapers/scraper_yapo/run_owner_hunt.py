@@ -12,10 +12,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 try:
-    from .classifier_rules import (
-        build_deepseek_context, build_rule_context, classify_obvious_broker,
-        company_shape_in_publisher_fields, is_removed_listing,
-    )
+    from .classifier_rules import build_deepseek_context, build_rule_context, classify_yapo_listing
     from .config import AppConfig, get_config
     from .discovery import discover_listing_urls
     from .downloader import download_html
@@ -26,10 +23,7 @@ try:
     from .proxy_manager import ProxyManager
     from .pilot import run_pilot
 except ImportError:  # direct execution from scrapers/scraper_yapo
-    from scrapers.scraper_yapo.classifier_rules import (
-        build_deepseek_context, build_rule_context, classify_obvious_broker,
-        company_shape_in_publisher_fields, is_removed_listing,
-    )
+    from scrapers.scraper_yapo.classifier_rules import build_deepseek_context, build_rule_context, classify_yapo_listing
     from scrapers.scraper_yapo.config import AppConfig, get_config
     from scrapers.scraper_yapo.discovery import discover_listing_urls
     from scrapers.scraper_yapo.downloader import download_html
@@ -149,24 +143,9 @@ def _save_discovery_batch(config: AppConfig, records: list[dict[str, Any]], batc
     return path
 
 
-def _finalize_local_classification(extracted: dict[str, Any], rule_context: dict[str, Any]) -> dict[str, Any]:
-    removed = is_removed_listing(extracted)
-    if removed:
-        return removed
-
-    obvious = classify_obvious_broker(extracted)
-    if obvious:
-        return obvious
-
-    company_ctx = company_shape_in_publisher_fields(extracted)
-    return {
-        "state": "INCIERTO",
-        "confidence": 0.25,
-        "reason": "Evidencia insuficiente para una clasificación segura; requiere revisión.",
-        "evidence": rule_context.get("owner_signal_evidence", []) or rule_context.get("weak_broker_evidence", []),
-        "source": "rules_json",
-        **company_ctx,
-    }
+def _finalize_local_classification(extracted: dict[str, Any], rule_context: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Compatibility wrapper around the single deterministic classifier."""
+    return classify_yapo_listing(extracted)
 
 
 def _process_single_record(
@@ -186,7 +165,7 @@ def _process_single_record(
     extracted = _enrich_property_fields(extracted, url, config.uf_valor_clp, config.uf_fecha)
     extracted["html_validation_status"] = download.validation_status
     extracted["html_validation_reason"] = download.validation_reason
-    if mongo_store is not None:
+    if mongo_store is not None and download.validation_status == "OK":
         extracted["publisher_profile_context"] = mongo_store.publisher_profile_context(extracted)
 
     rule_context = build_rule_context(extracted)
@@ -217,8 +196,9 @@ def _process_single_record(
         ),
     }
 
-    from captacion_assignment_eligibility import mark_assignment_readiness
-    mark_assignment_readiness(combined)
+    if classification is not None:
+        from captacion_assignment_eligibility import mark_assignment_readiness
+        mark_assignment_readiness(combined)
 
     if write_db and mongo_store is not None:
         mongo_store.upsert_listing(combined)

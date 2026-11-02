@@ -606,28 +606,63 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
 
 
 
-def test_natural_v3_sender_text_avoids_invented_historic_lead_contact():
+def test_v5_personal_followup_is_explicitly_simulated_on_allowlisted_phone():
     from scripts import price_drop_pilot_test as sender
-    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v4"
+    from chatbot.price_drop_pilot_copy import build_price_drop_followup
+    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v5"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
     ).read_text()
-    message_source = source.split("    message = (", 1)[1].split("    if not send:", 1)[0]
-    for expected in (
-        "¡Hola! ¿Cómo estás?", "PROCASA", "San Miguel",
-        "UF 2.790", "UF 2.690", "https://www.procasa.cl/6436",
-        "¿Te gustaría saber algo más o ir a verlo?",
-    ):
-        assert expected in message_source
-    for prohibited in (
-        "PRUEBA INTERNA", "habías consultado", "me comentaste",
-        "te acordarás", "la otra vez conversamos", "[Nombre]",
-        "Se notificará", "le avisaremos al ejecutivo",
-    ):
-        assert prohibited not in message_source
+    assert "prior_inquiry_verified=True" in source
+    assert "SIMULATED" in source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v4"' in source
+    assert '"campaign_version": "price_drop_pilot_v5"' in source
     assert 'if not is_test_phone(phone)' in source
+    assert "leads" not in source.split("    # A REAL campaign")[1].split("    if not send:")[0].replace("no lead", "")
+    db = _full_pilot_db()
+    prop = db["universo_cartera_prop360"].docs[0]
+    message = build_price_drop_followup(
+        code="6436", commune="San Miguel", old_uf=2790, new_uf=2690,
+        property_doc=prop, prior_inquiry_verified=True,
+    )
+    for expected in (
+        "¡Hola! ¿Cómo estás?", "PROCASA", "hace un tiempo nos consultaste",
+        "San Miguel", "UF 2.790", "UF 2.690", "100 UF menos",
+        "2 dormitorios", "2 baños", "terraza",
+        "https://www.procasa.cl/6436", "¿Todavía estás buscando departamento?",
+    ):
+        assert expected in message
+    for prohibited in (
+        "PRUEBA INTERNA", "me comentaste", "dijiste que era caro",
+        "la otra vez conversamos", "[Nombre]", "Ya agendé", "Se notificará",
+    ):
+        assert prohibited not in message
+
+
+def test_v5_does_not_invent_prior_inquiry_or_unverified_features():
+    from chatbot.price_drop_pilot_copy import build_price_drop_followup
+    result = build_price_drop_followup(
+        code="6436", commune="San Miguel", old_uf=2790, new_uf=2690,
+        property_doc={"caracteristicas": {"dormitorios": 2, "banos": None}},
+        prior_inquiry_verified=False,
+    )
+    assert "nos consultaste" not in result
+    assert "para contarte una novedad" in result
+    assert "2 baños" not in result
+    assert "terraza" not in result
+    assert "100 UF menos" in result
+
+
+@pytest.mark.parametrize("old,new", [
+    (2690, 2690), (2500, 2690), (2790, 1999), (2790, 5001),
+])
+def test_v5_rejects_ineligible_or_inconsistent_price(old, new):
+    from chatbot.price_drop_pilot_copy import build_price_drop_followup
+    with pytest.raises(ValueError):
+        build_price_drop_followup(
+            code="6436", commune="San Miguel", old_uf=old, new_uf=new,
+            property_doc={}, prior_inquiry_verified=True,
+        )
 
 
 def test_v3_sender_dry_run_never_calls_provider_or_creates_campaign(isolated, monkeypatch):

@@ -78,11 +78,80 @@ _VISIT_AFFIRM = re.compile(r"^\s*(?:si+|sip|claro|correcto|ok|okay|dale)[.!?\s]*
 _VISIT_CONTACT = re.compile(r"\b(?:me contactaran|me llamaran|me van a contactar|me van a llamar|se comunicaran conmigo)\b")
 _VISIT_FOLLOWUP = re.compile(r"\b(?:ya te respondi|ya te dije|te acabo de decir|ya lo dije|te dije)\b")
 _VISIT_PROMPT = re.compile(r"\b(?:que dia|que horario|dia u horario|dia o horario|a que hora|horario te|dia te)\b")
+# Only introductions from the customer: never mine names of relatives or agents.
+_NAME_INTRO = re.compile(
+    r"^\s*(?:(?:hola|holi|buenas|buenos d[ií]as|buenas tardes)[\s,!¡.:-]+|no[,;]\s*)?"
+    r"(?:yo\s+)?(?:me llamo|mi nombre es|soy|habla)\s+"
+    r"([a-záéíóúüñ]{2,24})(?:\s+([a-záéíóúüñ]{2,24}))?",
+    re.I,
+)
+_NAME_QUESTION = re.compile(
+    r"\b(?:como me llamo|cual es mi nombre|recuerdas mi nombre|te acuerdas de mi nombre)\b"
+)
+_NAME_NONPERSON = {
+    "de", "del", "el", "la", "un", "una", "cliente", "comprador",
+    "compradora", "interesado", "interesada", "propietario", "propietaria",
+    "quien", "persona", "nuevo", "nueva", "bien", "alguien",
+}
+_COMPOUND_FIRST_NAMES = {
+    "maria": {"jose", "paz", "isabel", "fernanda"},
+    "juan": {"pablo", "carlos", "jose"},
+    "jose": {"luis", "miguel", "antonio"},
+    "ana": {"maria", "paula", "sofia"},
+}
 
 
 def _plain(text: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", str(text or "").casefold())
                    if not unicodedata.combining(c))
+
+
+def _valid_first_name(name: str) -> bool:
+    return bool(re.fullmatch(r"[a-záéíóúüñ]{2,24}(?: [a-záéíóúüñ]{2,24})?", name, re.I)
+                and _plain(name.split()[0]) not in _NAME_NONPERSON)
+
+
+def _customer_introduction(message: str) -> tuple[str | None, bool]:
+    """Return first name only when the CUSTOMER explicitly introduces themself."""
+    match = _NAME_INTRO.match(str(message or ""))
+    if not match:
+        return None, False
+    first, second = match.group(1), match.group(2)
+    if not _valid_first_name(first):
+        return None, False
+    name = first[0].upper() + first[1:].lower()
+    if second and _plain(first) in _COMPOUND_FIRST_NAMES:
+        if _plain(second) in _COMPOUND_FIRST_NAMES[_plain(first)]:
+            name += " " + second[0].upper() + second[1:].lower()
+    remainder = str(message or "")[match.end():].strip(" \t\r\n,;.!?¡¿")
+    # The optional second token might be a surname or the word 'y'.
+    return name, not remainder or remainder == "y"
+
+
+def _personalize_reply(reply: str, message: str, ctx: dict,
+                       history: list[dict]) -> str:
+    """Use a confirmed name occasionally, never in every short reply."""
+    name = ctx.get("customer_first_name")
+    if not name or not _valid_first_name(name) or DECLINE.search(message):
+        return reply
+    if re.search(r"\b" + re.escape(name) + r"\b", reply, re.I):
+        return reply
+    introduced, _ = _customer_introduction(message)
+    if not introduced and any(re.search(r"\b" + re.escape(name) + r"\b",
+                                        str(t.get("bot_text") or ""), re.I)
+                              for t in history[-2:]):
+        return reply
+    for start, replacement in (
+        ("¡Hola de nuevo!", f"¡Hola de nuevo, {name}!"),
+        ("¡Hola!", f"¡Hola, {name}!"),
+        ("¡Claro!", f"¡Claro, {name}!"),
+        ("¡Qué bueno!", f"¡Qué bueno, {name}!"),
+        ("Perfecto, ", f"Perfecto, {name}, "),
+        ("Sí, ", f"Sí, {name}, "),
+    ):
+        if reply.startswith(start):
+            return replacement + reply[len(start):]
+    return reply
 
 
 def _visit_parts(message: str) -> dict:
@@ -336,6 +405,13 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
         "property_code": str(campaign["property_code"]),
         "old_price_uf": old, "new_price_uf": new,
         "property_facts": _verified_property_facts(property_doc),
+        "customer_first_name": (
+            campaign.get("customer_first_name")
+            if campaign.get("customer_first_name_source") == "customer_message"
+            and isinstance(campaign.get("customer_first_name"), str)
+            and _valid_first_name(campaign["customer_first_name"])
+            else None
+        ),
     }
 
 
@@ -376,6 +452,11 @@ def _llm_answer(message: str, ctx: dict, history: list[dict]) -> str:
         "financiamiento, ofertas ni otros inmuebles. "
         "No atribuyas al cliente nombres, comentarios ni conversaciones que no figuren "
         "expresamente en el historial confiable. "
+        f"Nombre confirmado por presentación explícita del propio cliente: "
+        f"{ctx.get('customer_first_name') or 'ninguno'}. "
+        "Si existe ese nombre, úsalo con naturalidad en momentos importantes, "
+        "como el saludo o una solicitud de visita, pero nunca en cada mensaje. "
+        "Si no existe, no inventes ni solicites uno. "
         "Un 'sí' ambiguo indica interés general, NO una confirmación de visita. "
         "Para visitas, pregunta solo el dato temporal faltante y recuerda los ya dichos. "
         "Nunca confirmes un horario, agenda, reserva, contacto ni aviso a un ejecutivo. "
@@ -429,6 +510,14 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
     if DECLINE.search(clean):
         return "Entendido, gracias por responder. No insistiremos en esta propiedad."
     facts = ctx.get("property_facts") or {}
+    introduction, only_introduction = _customer_introduction(clean)
+    if _NAME_QUESTION.search(_plain(clean)):
+        name = ctx.get("customer_first_name") or introduction
+        return (f"Me dijiste que te llamas {name} 😊." if name
+                else "Todavía no me has indicado tu nombre.")
+    if introduction and only_introduction:
+        return (f"¡Mucho gusto, {introduction}! 😊 "
+                "¿Qué te gustaría saber del departamento?")
     # Visit preference is reconstructed from customer turns, never written to CRM.
     visit_reply = _visit_reply(clean, ctx, history or [])
     if visit_reply is not None:
@@ -570,7 +659,19 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
         {"customer_text": 1, "bot_text": 1, "created_at": 1},
     ).sort("created_at", -1).limit(12))
     history.reverse()
-    answer = build_test_reply(text, ctx, history, llm=llm)
+    # Save ONLY the customer's explicitly provided first name in this isolated
+    # test campaign, not the production CRM; it outlives the 12-turn window.
+    introduced, _ = _customer_introduction(text)
+    if introduced and introduced != ctx.get("customer_first_name"):
+        db[COLLECTION].update_one({"_id": ctx["campaign_id"], "test_mode": True}, {
+            "$set": {"customer_first_name": introduced,
+                     "customer_first_name_source": "customer_message",
+                     "customer_first_name_updated_at": now}
+        })
+        ctx["customer_first_name"] = introduced
+    answer = _personalize_reply(
+        build_test_reply(text, ctx, history, llm=llm), text, ctx, history
+    )
     if not answer:
         db[TURN_COLLECTION].update_one({"_id": key}, {"$set": {"status": "NO_REPLY"}})
         return {"status": "no_reply"}

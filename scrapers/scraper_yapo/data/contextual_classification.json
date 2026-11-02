@@ -1,0 +1,63 @@
+{
+  "rules": {
+    "direct_deal_phrase": "trato directo",
+    "broker_self_declarations": [
+      "soy corredor de propiedades",
+      "soy corredora de propiedades",
+      "somos corredores de propiedades",
+      "somos corredora de propiedades",
+      "somos una corredora",
+      "corredora ofrece",
+      "corredor ofrece",
+      "asesor inmobiliario ofrece",
+      "asesora inmobiliaria ofrece",
+      "oficina de corretaje ofrece",
+      "servicios de corretaje ofrecemos"
+    ],
+    "broker_third_party_mentions": [
+      "se acepta corredor",
+      "se acepta corredora",
+      "trabajamos con corredor",
+      "trabajamos con corredora",
+      "con corredor externo",
+      "ideal para corredor",
+      "corredores abstenerse",
+      "contactar a su corredor",
+      "contacte a su corredor"
+    ],
+    "broker_negations": [
+      "no soy corredor",
+      "no somos corredor",
+      "no trabajamos con corredor",
+      "sin corredor",
+      "sin comisión de corretaje",
+      "sin comision de corretaje"
+    ],
+    "owner_candidate_signals": [
+      "trato directo",
+      "dueño vende",
+      "dueno vende",
+      "propietario vende",
+      "particular vende",
+      "soy dueño",
+      "soy dueno",
+      "soy propietario",
+      "sin comisión",
+      "sin comision",
+      "vendo mi casa",
+      "vendo mi departamento",
+      "vendo mi propiedad",
+      "directo con el dueño",
+      "directo con propietario"
+    ],
+    "commercial_contradiction_signals": [
+      "comisión de corretaje",
+      "comision de corretaje",
+      "honorarios de corretaje",
+      "gestión inmobiliaria",
+      "gestion inmobiliaria",
+      "asesoría inmobiliaria",
+      "asesoria inmobiliaria"
+    ]
+  }
+}

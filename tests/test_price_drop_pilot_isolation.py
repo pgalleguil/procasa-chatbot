@@ -930,10 +930,10 @@ def test_v5_duplicate_name_event_does_not_update_campaign_again(isolated):
     assert process_test_inbound(
         db, PHONE, "intro-duplicate", "Soy Daniela", sender=send
     )["status"] == "test_reply_sent"
-    first_updates = len(db["crm_price_drop_pilot_v1"].calls)
+    first_updates = sum(op == "update_one" for op, _ in db["crm_price_drop_pilot_v1"].calls)
     assert process_test_inbound(
         db, PHONE, "intro-duplicate", "Soy Valentina", sender=send
     ) == {"status": "duplicate_suppressed"}
     assert db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"] == "Daniela"
-    assert len(db["crm_price_drop_pilot_v1"].calls) == first_updates
+    assert sum(op == "update_one" for op, _ in db["crm_price_drop_pilot_v1"].calls) == first_updates
     assert len(calls) == 1

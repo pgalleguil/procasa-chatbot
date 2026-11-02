@@ -606,27 +606,29 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
 
 
 
-def test_natural_v3_sender_text_avoids_invented_historic_lead_contact():
+def test_v5_sender_reactivation_copy_is_warm_specific_and_historically_grounded():
     from scripts import price_drop_pilot_test as sender
-    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v4"
+    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v5"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
     ).read_text()
     message_source = source.split("    message = (", 1)[1].split("    if not send:", 1)[0]
     for expected in (
-        "¡Hola! ¿Cómo estás?", "PROCASA", "San Miguel",
-        "UF 2.790", "UF 2.690", "https://www.procasa.cl/6436",
-        "¿Te gustaría saber algo más o ir a verlo?",
+        "Hola, ¿cómo estás? Soy de PROCASA", "San Miguel",
+        "UF 2.790", "UF 2.690", "100 UF menos",
+        "https://www.procasa.cl/6436",
+        "¿Cómo lo ves con este nuevo valor?",
     ):
         assert expected in message_source
     for prohibited in (
         "PRUEBA INTERNA", "habías consultado", "me comentaste",
         "te acordarás", "la otra vez conversamos", "[Nombre]",
         "Se notificará", "le avisaremos al ejecutivo",
+        "te interesó la última vez", "te habíamos contactado",
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v4"' in source
+    assert '"campaign_version": "price_drop_pilot_v5"' in source
     assert 'if not is_test_phone(phone)' in source
 
 

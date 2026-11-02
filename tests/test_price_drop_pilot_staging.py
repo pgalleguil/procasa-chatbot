@@ -199,3 +199,50 @@ def test_staging_cli_and_core_do_not_offer_real_send():
     assert '"--send"' not in code
     assert "ready_to_send" in core
     assert "False" in core
+
+
+
+@pytest.mark.parametrize("text,intent,handoff", [
+    ("sí, me interesa", "INTEREST", False),
+    ("¿Cuántos baños tiene?", "ASK_INFO", False),
+    ("Quiero visitar el departamento", "VISIT_REQUEST", True),
+    ("¿Aceptan una oferta?", "OFFER_REQUEST", True),
+    ("Que me llame una ejecutiva", "HUMAN_REQUEST", True),
+    ("No quiero visitar", "NO_VISIT", False),
+    ("No me interesa", "DECLINE", True),
+    ("No me escriban más", "OPT_OUT", True),
+    ("¿Y eso?", "UNRESOLVED", False),
+])
+def test_shadow_followup_does_not_notify_or_mutate_crm(text, intent, handoff):
+    from chatbot.price_drop_pilot_shadow import shadow_reply_decision
+    db = _db([_lead("+56988881111", lead_id="lead-1")])
+    candidate = preview_candidates(db)["review"][0]
+    result = shadow_reply_decision(candidate, text)
+    assert result["status"] == "SHADOW_ONLY"
+    assert result["customer_intent"] == intent
+    assert result["requires_live_handoff_implementation"] is handoff
+    assert result["existing_owner"] == "Mariela Arriagada"
+    assert result["crm_written"] is False
+    assert result["whatsapp_sent"] is False
+    assert result["executive_notified"] is False
+    assert result["visit_booked"] is False
+
+
+def test_shadow_rejects_forged_send_ready_candidate():
+    from chatbot.price_drop_pilot_shadow import shadow_reply_decision
+    fake = {"decision": "SEND_NOW", "current_owner": "Mariela Arriagada",
+            "property_code": "6436", "marketing_consent": "VERIFIED"}
+    response = shadow_reply_decision(fake, "Quiero visitar")
+    assert response == {
+        "status": "BLOCKED_INVALID_PREVIEW",
+        "crm_written": False, "whatsapp_sent": False, "executive_notified": False
+    }
+
+
+def test_shadow_module_cannot_import_production_sender():
+    root = Path(__file__).resolve().parents[1]
+    source = (root / "chatbot" / "price_drop_pilot_shadow.py").read_text()
+    assert "send_whatsapp_message" not in source
+    assert "from .crm_service" not in source
+    assert "db[" not in source
+    assert "insert_one(" not in source

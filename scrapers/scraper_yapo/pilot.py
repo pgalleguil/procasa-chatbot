@@ -48,6 +48,10 @@ def _scope_url_is_valid(url: str) -> tuple[bool, str]:
     region = " ".join(query.get("regionslug", [])).lower()
     if parsed.hostname not in {"www.yapo.cl", "yapo.cl"}:
         return False, "start_url_no_es_yapo"
+    # Current Yapo URL embeds the sale/house/commune filters directly in the path.
+    # The price remains a separate detail-level UF validation in this pilot.
+    if parsed.path.rstrip("/") == "/bienes-raices-venta-de-propiedades-casas/region-metropolitana-maipu":
+        return True, "current_yapo_sale_house_maipu_path"
     if not parsed.path.startswith("/searchresult/bienes-raices-venta-de-propiedades"):
         return False, "ruta_no_confirma_busqueda_de_venta"
     if "casas" not in q_value or "bienes-raices-venta-de-propiedades-casas" not in q_value:

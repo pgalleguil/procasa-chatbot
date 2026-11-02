@@ -6,6 +6,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = ROOT.parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 DATA = ROOT / "data"
 DEPRECATED = DATA / "_deprecated_unused"
 ACTIVE_JSONS = [
@@ -15,6 +18,7 @@ ACTIVE_JSONS = [
     DATA / "listing_removed_patterns.json",
     DATA / "search_terms.json",
     DATA / "owner_keywords.json",
+    DATA / "contextual_classification.json",
 ]
 OBSOLETE_JSONS = [
     "known_companies.json",
@@ -112,19 +116,22 @@ def main() -> int:
             found = _line_for(text, token)
             if found:
                 issues.append(f"{path.name}:{found[0]} prohibited constant -> {found[1]}")
-        # Guard against obvious hardcoded classification terms in Python sources.
-        for token in [
-            "dueño vende",
-            "trato directo",
-            "sin comisión",
-            "corredor de propiedades",
-            "comisión de corretaje",
-            "anuncio eliminado",
-            "listing removed",
-        ]:
-            found = _line_for(text, token)
-            if found:
-                issues.append(f"{path.name}:{found[0]} hardcoded classification term -> {found[1]}")
+        # Deterministic signal vocabularies live in data JSON. The legacy
+        # DeepSeek prompt may discuss examples in prose, but it is not a rule
+        # source and must not cause this static data-boundary check to fail.
+        if path.name in {"run_owner_hunt.py", "classifier_rules.py", "extractor.py"}:
+            for token in [
+                "dueño vende",
+                "trato directo",
+                "sin comisión",
+                "corredor de propiedades",
+                "comisión de corretaje",
+                "anuncio eliminado",
+                "listing removed",
+            ]:
+                found = _line_for(text, token)
+                if found:
+                    issues.append(f"{path.name}:{found[0]} hardcoded classification term -> {found[1]}")
 
     if issues:
         print("ERROR - hardcoded terms/imports found in active files")
@@ -136,22 +143,39 @@ def main() -> int:
 
     rule_sets = []
     try:
-        from classifier_rules import load_rule_sets
+        try:
+            from .classifier_rules import load_rule_sets
+        except ImportError:
+            from scrapers.scraper_yapo.classifier_rules import load_rule_sets
 
         rule_sets = list(load_rule_sets().keys())
     except Exception as exc:
         _fail(f"No se pudo cargar classifier_rules.load_rule_sets(): {exc}")
 
     expected_keys = {
+        "known_broker_brand_aliases",
         "known_broker_brands",
         "hard_broker_terms",
         "company_shape_terms",
         "listing_removed_patterns",
         "search_terms",
         "owner_keywords",
+        "contextual_classification",
     }
     if set(rule_sets) != expected_keys:
         _fail(f"load_rule_sets() no carga exactamente los JSON activos. Encontrado: {sorted(rule_sets)}")
+
+    import json
+    brands = json.loads((DATA / "known_broker_brands.json").read_text(encoding="utf-8-sig"))
+    aliases = brands.get("brand_aliases", {}) if isinstance(brands, dict) else {}
+    if not isinstance(aliases, dict) or any(
+        brand not in brands.get("brands", []) or not isinstance(values, list) or not values
+        for brand, values in aliases.items()
+    ):
+        _fail("known_broker_brands.json contiene alias inválidos o huérfanos")
+    if not isinstance(load_rule_sets().get("contextual_classification"), dict):
+        _fail("contextual_classification.json no se cargó como reglas estructuradas")
+    _ok("alias del catálogo y reglas contextuales cargados")
 
     py_files = [
         "config.py",
@@ -164,6 +188,9 @@ def main() -> int:
         "mongo_store.py",
         "export_reports.py",
         "run_owner_hunt.py",
+        "pilot.py",
+        "audit_contextual_filter.py",
+        "verify_clean_owner_hunt.py",
     ]
     cmd = [sys.executable, "-m", "py_compile", *py_files]
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)

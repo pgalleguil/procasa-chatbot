@@ -322,18 +322,25 @@ def test_missing_facts_are_never_invented(isolated):
 
 def test_short_reply_to_visit_time_preserves_conversation(isolated):
     ctx = {
-        "property_code": "6436",
-        "old_price_uf": 2790,
-        "new_price_uf": 2690,
-        "property_facts": {"banos": 2},
+        "property_code": "6436", "old_price_uf": 2790,
+        "new_price_uf": 2690, "property_facts": {"banos": 2},
     }
     hist = [{"customer_text": "oka me interesa",
              "bot_text": "Si quieres conocerlo, dime qué día u horario te acomodaría para una posible visita."}]
-    for msg in ("el proximo mes", "la próxima semana", "por la tarde"):
-        answer = build_test_reply(msg, ctx, hist, llm=lambda *_: (_ for _ in ()).throw(AssertionError("should not ask model")))
+    cases = (
+        ("el proximo mes", "¿Tienes algún día"),
+        ("la próxima semana", "¿Tienes algún día"),
+        ("por la tarde", "¿Qué día te acomodaría"),
+    )
+    for message, expected in cases:
+        answer = build_test_reply(
+            message, ctx, hist,
+            llm=lambda *_: (_ for _ in ()).throw(AssertionError("should not ask model"))
+        )
         assert "6436" in answer
-        assert "no se ha agendado" in answer
-        assert "¿Tienes un día u horario" in answer
+        assert expected in answer
+        assert "Todavía no hay una visita agendada" in answer
+
 
 
 def test_followup_without_visit_prompt_does_not_infer_a_visit(isolated):
@@ -409,7 +416,7 @@ def _full_pilot_db():
     ("¿Cuánto cuesta y cuántos baños tiene?", "2.690"),
     ("¿Cuáles son sus características?", "2 baños"),
     ("Quiero visitarla", "¿Qué día"),
-    ("¿Puedo visitar el próximo mes?", "¿Qué horario"),
+    ("¿Puedo visitar el próximo mes?", "¿Tienes algún día"),
     ("Quiero hacer una oferta", "oferta"),
     ("¿Aceptan ofertas?", "oferta"),
     ("¿Se puede negociar?", "oferta"),
@@ -451,9 +458,9 @@ def test_simulate_full_multi_turn_conversion_without_crm(isolated):
         ("¿cuánto cuesta ahora?", "2.690"),
         ("oka me interesa", "más información o prefieres coordinar"),
         ("quiero visitarla", "¿Qué día"),
-        ("el proximo mes", "no se ha agendado"),
-        ("el martes", "¿Tienes un día"),
-        ("por la tarde", "no se ha agendado"),
+        ("el proximo mes", "¿Tienes algún día"),
+        ("el martes", "¿Te acomoda más en la mañana"),
+        ("por la tarde", "el martes por la tarde"),
         ("¿aceptan ofertas?", "oferta"),
     ]
     for i, (message, fragment) in enumerate(transcript):
@@ -489,6 +496,7 @@ def test_simulate_opt_out_does_not_send_or_fall_into_crm(isolated):
     "La visita está confirmada.",
     "Te contactaremos mañana.",
     "Queda reservada la visita.",
+    "Queda registrado solo como preferencia tuya.",
 ])
 def test_simulated_llm_fabricated_commercial_actions_are_blocked(isolated, bad_reply):
     ctx = load_test_context(_full_pilot_db(), PHONE)
@@ -523,3 +531,75 @@ def test_prior_message_context_does_not_assert_a_visit_without_clear_question(is
     )
     assert "¿Te refieres" in answer
     assert "agend" not in answer.lower()
+
+
+
+def test_real_november_2_visit_conversation_remembers_day_and_time(isolated):
+    """Reproduce the actual failed seven-message test without any real sends."""
+    db = _full_pilot_db()
+    sender, sent = sender_spy()
+    transcript = [
+        ("hola", "¡Hola!"),
+        ("cuales son sus gastos comunes", "$85.000"),
+        ("cuando se puede ir a visitar la propiedad?", "¿Qué día"),
+        ("prroximo viernes", "el próximo viernes"),
+        ("en la mañana", "el próximo viernes por la mañana"),
+        ("en viernes en la mañana", "el próximo viernes por la mañana"),
+        ("ya te respondi", "el próximo viernes por la mañana"),
+    ]
+    for i, (message, expected) in enumerate(transcript):
+        result = process_test_inbound(
+            db, PHONE, "real-nov-2:" + str(i), message, sender=sender,
+            llm=lambda *_: (_ for _ in ()).throw(AssertionError("LLM unnecessary for these intents"))
+        )
+        assert result["status"] == "test_reply_sent"
+        assert expected in sent[-1][1]
+    assert len(sent) == len(transcript)
+    # No repeated request for an already-provided weekday or daypart.
+    for _, reply in sent[4:]:
+        assert "¿Qué día" not in reply
+        assert "¿Qué horario" not in reply
+        assert "registrado" not in reply.casefold()
+        assert "agendada ni avisamos" in reply
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1"
+    }
+    assert all(r["status"] == "SENT" for r in db["crm_price_drop_pilot_test_turns_v1"].docs)
+
+
+def test_never_infer_visit_from_price_or_property_reply(isolated):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    history = [
+        {"customer_text": "quiero visitarla", "bot_text": "¿Qué día u horario te acomoda para la visita?"},
+        {"customer_text": "¿Cuántos baños tiene?", "bot_text": "Según la ficha: 2 baños."},
+    ]
+    output = build_test_reply(
+        "en la mañana", ctx, history, llm=lambda *_: "¿Te refieres a visitar el departamento?"
+    )
+    assert output == "¿Te refieres a visitar el departamento?"
+
+
+def test_visit_preference_alone_is_never_a_booking(isolated):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    previous = [{"customer_text": "Quiero visitarla", "bot_text": "¿Qué día u horario te acomoda para la visita?"}]
+    assert "¿Te acomoda más en la mañana" in build_test_reply("prroximo viernes", ctx, previous)
+    confirmed = build_test_reply(
+        "en la mañana", ctx, previous + [
+            {"customer_text": "prroximo viernes",
+             "bot_text": "¿Te acomoda más en la mañana o en la tarde? Todavía no hay una visita agendada."}
+        ],
+    )
+    assert "el próximo viernes por la mañana" in confirmed
+    assert "aún no hay una visita agendada" in confirmed
+    assert "confirmada" not in confirmed
+    assert "notificamos" not in confirmed
+
+
+def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    reply = build_test_reply(
+        "¿Hay conserjería?", ctx, llm=lambda *_: "Queda registrado para el viernes."
+    )
+    assert "Queda registrado" not in reply
+    assert "no notificaremos" in reply

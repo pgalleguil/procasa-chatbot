@@ -560,7 +560,7 @@ def test_real_november_2_visit_conversation_remembers_day_and_time(isolated):
         assert "¿Qué día" not in reply
         assert "¿Qué horario" not in reply
         assert "registrado" not in reply.casefold()
-        assert "agendada ni avisamos" in reply
+        assert "agendada ni se notificó" in reply
     assert set(db) == {
         "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
         "crm_price_drop_pilot_test_turns_v1"
@@ -591,7 +591,7 @@ def test_visit_preference_alone_is_never_a_booking(isolated):
         ],
     )
     assert "el próximo viernes por la mañana" in confirmed
-    assert "aún no hay una visita agendada" in confirmed
+    assert "Todavía no hay una visita agendada" in confirmed
     assert "confirmada" not in confirmed
     assert "notificamos" not in confirmed
 
@@ -699,3 +699,68 @@ def test_unverified_quinchos_and_address_are_not_fabricated(isolated):
     )
     assert "San Miguel" in address and "dirección exacta no confirmada" in address
     assert "Séptima Avenida" not in address
+
+
+
+def test_live_november_2_mnana_two_time_options_and_clarification(isolated):
+    """Reproduce the real failure: typo, 9 or 10, repeated day and 'Que? Siii'."""
+    db = _full_pilot_db()
+    sender, sent = sender_spy()
+    exchange = [
+        ("Ok cuandonse puede ir a ver", "¿Qué día"),
+        ("Mñana tipo 9 o 10", "mañana a las 9 o 10"),
+        ("Mñana te dije", "mañana a las 9 o 10"),
+        ("Mañana por tercera vez ye dije", "mañana a las 9 o 10"),
+        ("Que?", "mañana a las 9 o 10"),
+        ("Siii", "mañana a las 9 o 10"),
+        ("Me contactarán?", "no se notifica a ningún ejecutivo"),
+    ]
+    for i, (msg, expected) in enumerate(exchange):
+        result = process_test_inbound(
+            db, PHONE, "visit-nov2-" + str(i), msg,
+            sender=sender,
+            llm=lambda *_: (_ for _ in ()).throw(AssertionError(
+                "Clear visit thread or contact question should not invoke a model"
+            )),
+        )
+        assert result["status"] == "test_reply_sent"
+        assert expected.casefold() in sent[-1][1].casefold()
+    for _, answer in sent[1:6]:
+        assert "¿Qué día" not in answer
+        assert "registrad" not in answer.casefold()
+        assert "agendada" in answer
+        assert "a las 9 o 10" in answer
+    assert len(sent) == len(exchange)
+    assert all(t["status"] == "SENT" for t in db["crm_price_drop_pilot_test_turns_v1"].docs)
+
+
+def test_llm_cannot_claim_that_visit_preference_was_registered(isolated):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    answer = build_test_reply(
+        "¿Hay conserjería?", ctx,
+        llm=lambda *_: "Queda solo registrada tu preferencia."
+    )
+    assert "Queda solo registrada" not in answer
+    assert "no notificaremos" in answer
+
+
+def test_morning_daypart_does_not_erase_an_explicit_tomorrow(isolated):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    history = [{"customer_text": "Quiero visitar la propiedad",
+                "bot_text": "¿Qué día u horario te acomoda para la visita?"}]
+    reply = build_test_reply(
+        "mañana por la mañana", ctx, history,
+        llm=lambda *_: (_ for _ in ()).throw(AssertionError("No model"))
+    )
+    assert "mañana por la mañana" in reply
+
+
+def test_intermediate_unrelated_property_question_ends_visit_thread(isolated):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    history = [
+        {"customer_text": "Quiero visitarla", "bot_text": "¿Qué día te acomoda para la visita?"},
+        {"customer_text": "¿Cuántos dormitorios?", "bot_text": "Tiene 2 dormitorios."},
+    ]
+    assert build_test_reply(
+        "Qué?", ctx, history, llm=lambda *_: "¿Quieres que lo aclare?"
+    ) == "¿Quieres que lo aclare?"

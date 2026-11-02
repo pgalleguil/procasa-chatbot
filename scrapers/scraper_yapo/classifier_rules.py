@@ -20,6 +20,11 @@ STRONG_PUBLISHER_FIELDS = (
     "listing_advertiser",
     "contact_badges_text",
 )
+IDENTITY_FIELDS = frozenset({
+    "publicador_visible", "contact_name", "contact_logo_alt",
+    "listing_advertiser", "seller_jsonld_name",
+})
+_RULE_LOAD_ERRORS: dict[str, str] = {}
 
 WEAK_CONTEXT_FIELDS = (
     "title",
@@ -42,15 +47,20 @@ def load_rule_sets() -> dict[str, Any]:
         "owner_keywords": ("owner_keywords.json", "owner_terms"),
     }
     sets: dict[str, Any] = {}
+    _RULE_LOAD_ERRORS.clear()
     for name, (filename, key) in rule_files.items():
         path = DATA_DIR / filename
         if not path.exists():
             sets[name] = []
+            if name in {"known_broker_brands", "hard_broker_terms", "company_shape_terms"}:
+                _RULE_LOAD_ERRORS[name] = "missing_file"
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8-sig"))
-        except Exception:
+        except Exception as exc:
             sets[name] = []
+            if name in {"known_broker_brands", "hard_broker_terms", "company_shape_terms"}:
+                _RULE_LOAD_ERRORS[name] = f"invalid_json:{type(exc).__name__}"
             continue
         if isinstance(data, dict):
             values = data.get(key, [])
@@ -61,10 +71,12 @@ def load_rule_sets() -> dict[str, Any]:
         if not isinstance(values, list):
             values = []
         sets[name] = [str(item) for item in values if str(item).strip()]
+        if name in {"known_broker_brands", "hard_broker_terms", "company_shape_terms"} and not sets[name]:
+            _RULE_LOAD_ERRORS[name] = "empty_rule_set"
     return sets
 
 
-def validate_classification_rules() -> list[str]:
+def validate_classification_rules(*, raise_on_error: bool = False) -> list[str]:
     """Checks the broker-detection rule sets actually loaded non-empty.
 
     Returns the list of critical sets that came back empty (or [] if OK).
@@ -73,10 +85,13 @@ def validate_classification_rules() -> list[str]:
     team. Every classification run must refuse to proceed when these are empty.
     """
     rs = load_rule_sets()
-    return [
-        name for name in ("known_broker_brands", "hard_broker_terms", "company_shape_terms")
-        if not rs.get(name)
-    ]
+    issues = list(dict.fromkeys(
+        [f"{name}:{reason}" for name, reason in _RULE_LOAD_ERRORS.items()]
+        + [name for name in ("known_broker_brands", "hard_broker_terms", "company_shape_terms") if not rs.get(name)]
+    ))
+    if issues and raise_on_error:
+        raise RuntimeError("Invalid broker classification rule sets: " + ", ".join(issues))
+    return issues
 
 
 @lru_cache(maxsize=4096)
@@ -141,6 +156,44 @@ def _evidence_from_fields(extracted: dict[str, Any], fields: Iterable[str], term
     return evidence
 
 
+def _publisher_field_is_confirmed(extracted: dict[str, Any], field: str) -> bool:
+    provenance = extracted.get("publisher_field_provenance") or {}
+    item = provenance.get(field) if isinstance(provenance, dict) else None
+    return bool(
+        isinstance(item, dict)
+        and item.get("status") == "confirmed"
+        and item.get("relationship") == "publisher"
+    )
+
+
+def _confirmed_identity_values(extracted: dict[str, Any]) -> dict[str, str]:
+    return {
+        field: value
+        for field, value in _field_values(extracted, IDENTITY_FIELDS).items()
+        if value.strip() and _publisher_field_is_confirmed(extracted, field)
+    }
+
+
+def _phrase_matches(value: str, phrase: str) -> bool:
+    """Match complete normalized tokens, allowing spacing/punctuation variants."""
+    value_tokens = normalize_text(value).split()
+    phrase_tokens = normalize_text(phrase).split()
+    if not value_tokens or not phrase_tokens:
+        return False
+    target = "".join(phrase_tokens)
+    width = len(phrase_tokens)
+    return any("".join(value_tokens[i:i + width]) == target for i in range(len(value_tokens) - width + 1))
+
+
+def _confirmed_identity_evidence(extracted: dict[str, Any], terms: Iterable[str]) -> list[str]:
+    evidence = []
+    for field, value in _confirmed_identity_values(extracted).items():
+        for term in terms:
+            if _phrase_matches(value, term):
+                evidence.append(f"{field}:{term}")
+    return evidence
+
+
 def is_removed_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
     status = str(extracted.get("html_validation_status", "") or extracted.get("validation_status", "")).upper()
     if status == "LISTING_REMOVED":
@@ -155,10 +208,9 @@ def is_removed_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def known_broker_brand_in_strong_fields(extracted: dict[str, Any]) -> dict[str, Any] | None:
+    validate_classification_rules(raise_on_error=True)
     brands = load_rule_sets()["known_broker_brands"]
-    if not brands:
-        return None
-    evidence = _evidence_from_fields(extracted, STRONG_PUBLISHER_FIELDS, brands)
+    evidence = _confirmed_identity_evidence(extracted, brands)
     if not evidence:
         return None
     return {
@@ -171,16 +223,14 @@ def known_broker_brand_in_strong_fields(extracted: dict[str, Any]) -> dict[str, 
 
 
 def hard_broker_terms_in_strong_fields(extracted: dict[str, Any]) -> dict[str, Any] | None:
+    validate_classification_rules(raise_on_error=True)
     terms = load_rule_sets()["hard_broker_terms"]
-    if not terms:
-        return None
-    evidence = _evidence_from_fields(extracted, STRONG_PUBLISHER_FIELDS, terms)
+    evidence = _confirmed_identity_evidence(extracted, terms)
     if not evidence:
         return None
-    confidence = 0.95 if len(evidence) > 1 else 0.9
     return {
-        "state": "CORREDOR_PROBABLE" if len(evidence) == 1 else "CORREDOR_SEGURO",
-        "confidence": confidence,
+        "state": "CORREDOR_PROBABLE",
+        "confidence": 0.9,
         "reason": "Hard broker terms found in strong publisher fields.",
         "evidence": evidence[:8],
         "source": "rules_json",
@@ -235,9 +285,15 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
     if removed:
         return removed
 
+    validate_classification_rules(raise_on_error=True)
     seller_type = normalize_text(str(extracted.get("seller_type") or ""))
     badges = normalize_text(str(extracted.get("contact_badges_text") or ""))
-    if seller_type in {"profesional", "empresa", "agente", "corredor"} and "profesional" in badges:
+    if (
+        seller_type in {"profesional", "empresa", "agente", "corredor"}
+        and "profesional" in badges
+        and _publisher_field_is_confirmed(extracted, "seller_type")
+        and _publisher_field_is_confirmed(extracted, "contact_badges_text")
+    ):
         return {
             "state": "CORREDOR_SEGURO",
             "confidence": 0.99,

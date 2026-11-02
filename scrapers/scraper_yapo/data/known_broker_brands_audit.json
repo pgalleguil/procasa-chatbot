@@ -1,0 +1,35 @@
+{
+  "scope": "TAREA 2A first broker filter",
+  "new_brands_added": [],
+  "changes": [
+    {
+      "canonical_brand": "RE/MAX",
+      "previous_forms": ["remax", "re/max", "re max"],
+      "action": "collapsed to one normalized brand",
+      "provenance": ["previous known_broker_brands.json", "tests/test_broker_regression.py RE/MAX listing regression"]
+    },
+    {
+      "canonical_brand": "Engel & Völkers",
+      "previous_forms": ["engel & volkers", "engel volkers"],
+      "action": "collapsed to one normalized brand",
+      "provenance": ["previous known_broker_brands.json"]
+    },
+    {
+      "canonical_brand": "ProUrbe",
+      "previous_forms": ["pro urbe", "proube"],
+      "action": "kept the verified spelling and removed a likely transposition",
+      "provenance": ["previous known_broker_brands.json", "tests/test_broker_regression.py PROurbe logo regression"]
+    },
+    {
+      "previous_forms": ["TOCTOC", "Portal Inmobiliario", "Chilepropiedades", "GoPlaceIt", "EasyProp"],
+      "action": "moved to portal_platforms; these names alone do not identify the advertiser as a broker",
+      "provenance": ["previous known_broker_brands.json", "portal/platform names already present in the Yapo project catalog"]
+    },
+    {
+      "previous_forms": ["enlace inmobiliario"],
+      "action": "removed from broker brand matches as a generic commercial phrase; not promoted to a new brand",
+      "provenance": ["previous known_broker_brands.json"]
+    }
+  ],
+  "verification_note": "No new companies were added. Existing brands were deduplicated or moved based on the role implied by the existing catalog and repository regressions; this is not a complete directory of Chilean brokerages."
+}

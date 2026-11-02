@@ -42,7 +42,16 @@ def _first_text(soup: Any, selectors: list[str]) -> str:
     return ""
 
 
-def _jsonld_name(soup: Any) -> str:
+def _jsonld_seller_name(soup: Any) -> tuple[str, str]:
+    """Return a name only when JSON-LD links it explicitly to ``seller``."""
+    def seller_name(value: Any) -> str:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, dict):
+            name = value.get("name")
+            return name.strip() if isinstance(name, str) else ""
+        return ""
+
     for script in soup.select('script[type="application/ld+json"]'):
         raw = script.string or script.get_text(strip=True)
         if not raw:
@@ -52,36 +61,94 @@ def _jsonld_name(soup: Any) -> str:
         except Exception:
             continue
         nodes = payload if isinstance(payload, list) else [payload]
-        for node in nodes:
+        stack = list(nodes)
+        while stack:
+            node = stack.pop(0)
+            if isinstance(node, list):
+                stack[0:0] = node
+                continue
             if not isinstance(node, dict):
                 continue
-            for key in ("name", "seller", "brand", "publisher"):
-                value = node.get(key)
-                if isinstance(value, str) and value.strip():
-                    return value.strip()
-                if isinstance(value, dict):
-                    nested = value.get("name")
-                    if isinstance(nested, str) and nested.strip():
-                        return nested.strip()
-    return ""
+            for key, value in node.items():
+                if key == "seller":
+                    name = seller_name(value)
+                    if name:
+                        return name, "jsonld_seller_relation"
+                elif key == "offers":
+                    offers = value if isinstance(value, list) else [value]
+                    for offer in offers:
+                        if isinstance(offer, dict):
+                            name = seller_name(offer.get("seller"))
+                            if name:
+                                return name, "jsonld_offer_seller_relation"
+                if isinstance(value, (dict, list)):
+                    stack.append(value)
+    return "", ""
 
 
-def _contact_logo_alt(soup: Any) -> str:
-    for selector in [".contact_logo img[alt]", ".seller img[alt]", ".profile img[alt]", "img[alt*='logo' i]", "img[alt]"]:
-        node = soup.select_one(selector)
-        if node and node.get("alt"):
-            return str(node.get("alt")).strip()
-    return ""
+def _jsonld_name(soup: Any) -> str:
+    """Compatibility wrapper; never returns a property or arbitrary JSON-LD name."""
+    return _jsonld_seller_name(soup)[0]
 
 
-def _contact_badges_text(soup: Any) -> str:
-    nodes = soup.select(".badge, .badges, .seller-badges, .contact-badges, [class*='badge']")
+_PUBLISHER_SCOPE_SELECTORS = (
+    ".contact_info", ".property-contact", ".contact-info", ".seller-profile",
+    ".publisher-profile", ".seller", ".publisher", ".profile",
+    "[data-qa='seller']", "[data-qa='publisher']", "[data-qa='contact']",
+)
+
+
+def _publisher_scopes(soup: Any) -> list[Any]:
+    scopes: list[Any] = []
+    seen: set[int] = set()
+    for selector in _PUBLISHER_SCOPE_SELECTORS:
+        for node in soup.select(selector):
+            if id(node) not in seen:
+                scopes.append(node)
+                seen.add(id(node))
+    for link in soup.select("a[href*='/user/profile/id/']"):
+        parent = link.parent
+        if parent is not None and id(parent) not in seen:
+            scopes.append(parent)
+            seen.add(id(parent))
+    return scopes
+
+
+def _scoped_first_text(scopes: list[Any], selectors: list[str]) -> tuple[str, str]:
+    for selector in selectors:
+        for scope in scopes:
+            node = scope.select_one(selector)
+            if node:
+                value = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+                if value:
+                    return value, selector
+    return "", ""
+
+
+def _contact_logo_alt(scopes: list[Any]) -> tuple[str, str]:
+    for scope in scopes:
+        for node in scope.select("img[alt]"):
+            alt = str(node.get("alt") or "").strip()
+            src = " ".join(str(node.get(key) or "") for key in ("src", "data-src", "data-original", "data-lazy")).lower()
+            classes = " ".join(str(item) for item in (node.get("class") or [])).lower()
+            parent_classes = " ".join(str(item) for item in (getattr(node.parent, "get", lambda *_: [])("class") or []))
+            logo_marker = (
+                "logo" in classes or "logo" in parent_classes.lower()
+                or any(marker in src for marker in ("users/logo", "t_user_logo", "user_logo", "publisher-logo", "seller-logo"))
+            )
+            if alt and logo_marker:
+                return alt, "publisher_scoped_logo"
+    return "", ""
+
+
+def _contact_badges_text(scopes: list[Any]) -> str:
+    nodes = [node for scope in scopes for node in scope.select(".badge, .badges, .seller-badges, .contact-badges, [class*='badge']")]
     values = [node.get_text(" ", strip=True) for node in nodes]
-    values.extend(str(node.get("title")) for node in soup.select(".contact_info img[title], .property-contact img[title]") if node.get("title"))
+    values.extend(str(node.get("title")) for scope in scopes for node in scope.select("img[title]") if node.get("title"))
     return _strip_html(" ".join(values))
 
 
-def _publicador_visible(soup: Any) -> str:
+def _publicador_visible(scopes: list[Any]) -> tuple[str, str]:
     candidates = [
         ".seller-name",
         ".contact-name",
@@ -91,13 +158,8 @@ def _publicador_visible(soup: Any) -> str:
         ".profile-name",
         "[data-qa='seller-name']",
         "[data-qa='user-name']",
-        "[class*='seller']",
-        "[class*='publisher']",
     ]
-    text = _first_text(soup, candidates)
-    if text:
-        return text
-    return _jsonld_name(soup)
+    return _scoped_first_text(scopes, candidates)
 
 
 def _description_from_soup(soup: Any) -> tuple[str, str, str]:
@@ -289,6 +351,7 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
             "comuna_evidence": {"status": "pending"},
             "body_text": text,
             "canonical_url": source_url,
+            "publisher_field_provenance": {},
         }
 
     soup = BeautifulSoup(html, "html.parser")  # type: ignore[misc]
@@ -301,43 +364,58 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
     price = _first_text(soup, ["[data-qa='price']", ".d3-property-info__price", ".d3-property-insight__attribute-value", ".price", ".item-price", "strong.price", "span.price"])
     description, description_source, description_summary = _description_from_soup(soup)
 
-    seller_name = _first_text(soup, [".seller", ".user", ".profile", "[data-qa='seller-name']", "[data-qa='user-name']"])
-    seller_text = _strip_html(" ".join(node.get_text(" ", strip=True) for node in soup.select(".seller, .user, .profile")))
+    publisher_scopes = _publisher_scopes(soup)
+    seller_name, seller_name_selector = _scoped_first_text(
+        publisher_scopes,
+        ["[data-qa='seller-name']", "[data-qa='user-name']", ".seller-name", ".profile-name", ".contact-name", ".contact_name"],
+    )
+    seller_text = _strip_html(" ".join(node.get_text(" ", strip=True) for node in publisher_scopes))
 
-    publicador_visible = _publicador_visible(soup)
-    seller_jsonld_name = _jsonld_name(soup)
-    contact_name = publicador_visible or seller_jsonld_name or seller_name
-    contact_logo_alt = _contact_logo_alt(soup)
-    contact_badges_text = _contact_badges_text(soup)
+    publicador_visible, publicador_selector = _publicador_visible(publisher_scopes)
+    seller_jsonld_name, seller_jsonld_source = _jsonld_seller_name(soup)
+    contact_name = publicador_visible or seller_name or seller_jsonld_name
+    contact_logo_alt, logo_source = _contact_logo_alt(publisher_scopes)
+    contact_badges_text = _contact_badges_text(publisher_scopes)
 
-    seller_type = _first_text(
-        soup,
+    seller_type, seller_type_selector = _scoped_first_text(
+        publisher_scopes,
         [
             ".seller-type",
             ".contact-type",
             ".advertiser-type",
             "[data-qa='seller-type']",
-            "[class*='type']",
         ],
     )
-    listing_advertiser = _first_text(
-        soup,
+    listing_advertiser, advertiser_selector = _scoped_first_text(
+        publisher_scopes,
         [
             ".listing-advertiser",
-            ".advertiser",
-            ".publisher",
-            ".contact-name",
             "[data-qa='listing-advertiser']",
+            "[data-qa='advertiser-name']",
         ],
     )
 
     seller_profile_id = ""
-    profile_link = soup.select_one("a[href*='/user/profile/id/']")
+    profile_link = next((node for scope in publisher_scopes for node in scope.select("a[href*='/user/profile/id/']")), None)
     if profile_link:
         match = re.search(r"/user/profile/id/(\d+)", str(profile_link.get("href") or ""))
         seller_profile_id = match.group(1) if match else ""
     if not seller_type and "profesional" in contact_badges_text.lower():
         seller_type = "PROFESIONAL"
+
+    provenance: dict[str, dict[str, str]] = {}
+    provenance_sources = {
+        "publicador_visible": f"publisher_scope:{publicador_selector}" if publicador_selector else "",
+        "contact_name": "publisher_identity" if publicador_visible or seller_name else seller_jsonld_source,
+        "contact_logo_alt": logo_source,
+        "seller_type": (f"publisher_scope:{seller_type_selector}" if seller_type_selector else "publisher_scoped_badge") if seller_type else "",
+        "listing_advertiser": f"publisher_scope:{advertiser_selector}" if advertiser_selector else "",
+        "seller_jsonld_name": seller_jsonld_source,
+        "contact_badges_text": "publisher_scoped_badge" if contact_badges_text else "",
+    }
+    for field, source in provenance_sources.items():
+        if source and locals().get(field):
+            provenance[field] = {"status": "confirmed", "source": source, "relationship": "publisher"}
 
     images: list[str] = []
     for img in soup.select("img"):
@@ -403,6 +481,8 @@ def extract_listing_fields(html: str, source_url: str = "") -> dict[str, Any]:
         "seller_name": seller_name,
         "seller_text": seller_text,
         "seller_profile_id": seller_profile_id,
+        "seller_profile_url": str(profile_link.get("href") or "") if profile_link else "",
+        "publisher_field_provenance": provenance,
         "images": images,
         "attributes": attributes,
         **commune,

@@ -1,26 +1,22 @@
 {
   "brands": [
-    "remax",
-    "re/max",
-    "re max",
+    "RE/MAX",
     "fuenzalida",
     "procasa",
     "houm",
     "assetplan",
-    "toctoc",
-    "portal inmobiliario",
-    "portalinmobiliario",
-    "chilepropiedades",
-    "goplaceit",
-    "easyprop",
     "property partners",
-    "engel & volkers",
-    "engel volkers",
+    "Engel & Völkers",
     "coldwell banker",
     "urbalia",
-"capitalizarme",
-    "enlace inmobiliario",
-    "pro urbe",
-    "proube"
+    "capitalizarme",
+    "ProUrbe"
+  ],
+  "portal_platforms": [
+    "TOCTOC",
+    "Portal Inmobiliario",
+    "Chilepropiedades",
+    "GoPlaceIt",
+    "EasyProp"
   ]
 }

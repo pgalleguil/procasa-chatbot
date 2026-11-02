@@ -34,6 +34,11 @@ def test_proube_listings_32115174_32114915_are_broker():
             "contact_logo_alt": logo,
             "contact_name": "Maria del Pilar Rojas",
             "publicador_visible": "Maria del Pilar Rojas",
+            "publisher_field_provenance": {
+                "contact_logo_alt": {"status": "confirmed", "source": "test_publisher_logo", "relationship": "publisher"},
+                "contact_name": {"status": "confirmed", "source": "test_publisher_name", "relationship": "publisher"},
+                "publicador_visible": {"status": "confirmed", "source": "test_publisher_name", "relationship": "publisher"},
+            },
         }
         result = classify_obvious_broker(extracted)
         assert result is not None, f"logo {logo!r} no detectado como corredor"
@@ -50,12 +55,15 @@ def test_remax_listing_32589746_is_broker():
         "contact_name": "Carla Pollastri",
         "seller_type": "profesional",
         "seller_name": "Carla Pollastri",
+        "publisher_field_provenance": {
+            "contact_logo_alt": {"status": "confirmed", "source": "test_publisher_logo", "relationship": "publisher"},
+        },
     }
     result = classify_obvious_broker(extracted)
     assert result is not None
     assert result["state"] == "CORREDOR_SEGURO"
     assert result["source"] in {"rules_json", "structural_rules"}
-    assert any("remax" in e or "re max" in e for e in result["evidence"])
+    assert any("re/max" in e.lower() or "re max" in e.lower() for e in result["evidence"])
 
 
 def _remax_doc():

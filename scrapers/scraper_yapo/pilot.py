@@ -68,16 +68,49 @@ def _price_in_uf(raw: str) -> float | None:
         return None
 
 
-def _commune_validation(value: str) -> str:
-    """Validate with detail-page evidence; never infer a missing commune."""
+def _commune_validation(value: str, discovery_value: str = "", detail_status: str = "") -> str:
+    """Validate detail evidence and use discovery location only to detect conflict."""
+    if detail_status == "pending_ambiguous":
+        return "pending_ambiguous"
     normalized = _norm_commune(value or "")
     if not normalized:
         return "pending"
     if normalized in {"maipu", "maipu-region-metropolitana", "maipu-region-metropolitana-de-santiago"}:
-        return "confirmed_maipu"
-    if normalized.startswith("maipu-"):
+        detail_result = "confirmed_maipu"
+    elif normalized.startswith("maipu-"):
         return "pending_ambiguous"
-    return "confirmed_other_commune"
+    else:
+        detail_result = "confirmed_other_commune"
+
+    discovered = _norm_commune(discovery_value or "")
+    for suffix in ("-region-metropolitana-de-santiago", "-region-metropolitana"):
+        if discovered.endswith(suffix):
+            discovered = discovered[:-len(suffix)]
+            break
+    if discovered:
+        detail_key = normalized
+        for suffix in ("-region-metropolitana-de-santiago", "-region-metropolitana"):
+            if detail_key.endswith(suffix):
+                detail_key = detail_key[:-len(suffix)]
+                break
+        if discovered != detail_key:
+            if "-" in discovered and detail_key in discovered.split("-"):
+                return detail_result
+            return "pending_ambiguous"
+    return detail_result
+
+
+def _matches_pilot_property_filters(
+    commune_status: str, operation: str, property_type: str, raw_price: str,
+) -> bool:
+    price_uf = _price_in_uf(raw_price)
+    return (
+        commune_status == "confirmed_maipu"
+        and operation == "venta"
+        and property_type == "casa"
+        and price_uf is not None
+        and 3000 <= price_uf <= 6000
+    )
 
 
 def _write_json(path: Path, data: Any) -> None:
@@ -89,13 +122,16 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
     config = config or AppConfig()
     config.ensure_layout()
     batch_id = batch_id or config.generate_batch_id()
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
     summary: dict[str, Any] = {
         "scope": PILOT_SCOPE.copy(), "batch_id": batch_id, "pages_visited": 0,
+        "pages_complete": 0, "pages_not_verified": 0,
         "price_filter_mode": "local_only_from_explicit_uf_price; no_clp_conversion",
         "pagination_complete": False, "pagination_cause": "not_started",
         "ads_discovered": 0, "batch_duplicates": 0, "mongo_existing": 0,
         "new_ads": 0, "filter_matches": 0, "pending_price_validation": 0,
+        "pending_commune_validation": 0, "commune_validation_counts": {},
+        "preliminary_classification_counts": {}, "extraction_error_counts": {},
         "invalid_or_removed_ads": 0, "request_attempts": 0,
         "successful_downloads": 0, "cache_responses": 0,
         "errors_or_blocks": [], "proxy_requests": 0, "deepseek_calls": 0,
@@ -125,6 +161,12 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
             summary["pagination_complete"] = bool(discovery_report.get("pagination_complete"))
             summary["pagination_cause"] = discovery_report.get("pagination_cause", "unknown")
             summary["page_log"] = discovery_report.get("pages", [])
+            summary["pages_complete"] = sum(
+                page.get("status") in {"complete", "empty"} for page in summary["page_log"]
+            )
+            summary["pages_not_verified"] = sum(
+                page.get("status") not in {"complete", "empty"} for page in summary["page_log"]
+            )
             parsed_pages = [page for page in discovery_report.get("pages", []) if page.get("status") in {"complete", "empty"}]
             summary["ads_discovered"] = sum(int(page.get("listing_count", 0)) for page in parsed_pages) if parsed_pages else None
             summary["proxy_requests"] += int(discovery_report.get("proxy_requests", 0))
@@ -217,13 +259,16 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                 raw_price = str(extracted.get("price") or "")
                 price_uf = _price_in_uf(raw_price)
                 comuna = extracted.get("comuna") or ""
-                territory_validation = _commune_validation(comuna)
+                commune_evidence = extracted.get("comuna_evidence") or {"status": "pending"}
+                territory_validation = _commune_validation(
+                    comuna,
+                    record.get("discovery_comuna", ""),
+                    str(commune_evidence.get("status") or "pending"),
+                )
                 operation = "venta" if "venta" in record["url"].lower() else ""
                 property_type = "casa" if "casa" in record["url"].lower() else ""
-                local_match = (
-                    territory_validation == "confirmed_maipu"
-                    and operation == "venta" and property_type == "casa"
-                    and price_uf is not None and 3000 <= price_uf <= 6000
+                local_match = _matches_pilot_property_filters(
+                    territory_validation, operation, property_type, raw_price
                 )
                 if price_uf is None:
                     summary["pending_price_validation"] += 1
@@ -237,6 +282,8 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                     "discovered_page": record.get("page_number"), "title": title,
                     "description": description, "comuna": comuna,
                     "discovery_comuna": record.get("discovery_comuna", ""),
+                    "comuna_source": extracted.get("comuna_source", ""),
+                    "comuna_detail_evidence": commune_evidence,
                     "validacion_comuna": territory_validation,
                     "description_summary": extracted.get("description_summary", ""),
                     "tipo_propiedad": property_type, "operacion": operation,
@@ -248,12 +295,7 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                     "perfil": extracted.get("seller_profile_id", ""),
                     "clasificacion_preliminar": classification,
                     "evidencia": classification.get("evidence", []),
-                    "problemas_extraccion": (
-                        ["full_description_missing; meta_summary_kept_separately"]
-                        if not description and extracted.get("description_summary")
-                        else ["description_marked_truncated"] if extracted.get("descripcion_is_truncated")
-                        else ["full_description_missing"] if not description else []
-                    ),
+                    "problemas_extraccion": _extraction_issues(extracted),
                     "filter_match": local_match,
                 })
     summary["calls_to_deepseek"] = 0
@@ -265,8 +307,23 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
         summary["mongo_existing"] = None
         summary["new_ads"] = None
     if not has_parsed_page:
-        for key in ("ads_discovered", "batch_duplicates", "mongo_existing", "new_ads", "filter_matches", "pending_price_validation", "invalid_or_removed_ads"):
+        for key in (
+            "ads_discovered", "batch_duplicates", "mongo_existing", "new_ads", "filter_matches",
+            "pending_price_validation", "invalid_or_removed_ads", "pages_complete", "pages_not_verified",
+            "pending_commune_validation", "commune_validation_counts",
+            "preliminary_classification_counts", "extraction_error_counts",
+        ):
             summary[key] = None
+    summary["pending_commune_validation"] = sum(
+        str(item.get("validacion_comuna", "")).startswith("pending") for item in audit
+    )
+    for item in audit:
+        commune_status = str(item.get("validacion_comuna") or "pending")
+        summary["commune_validation_counts"][commune_status] = summary["commune_validation_counts"].get(commune_status, 0) + 1
+        classification_state = str((item.get("clasificacion_preliminar") or {}).get("state") or "unavailable")
+        summary["preliminary_classification_counts"][classification_state] = summary["preliminary_classification_counts"].get(classification_state, 0) + 1
+        for issue in item.get("problemas_extraccion", []):
+            summary["extraction_error_counts"][issue] = summary["extraction_error_counts"].get(issue, 0) + 1
     summary_path = config.reports_dir / f"yapo_maipu_pilot_summary_{timestamp}.json"
     audit_path = config.reports_dir / f"yapo_maipu_pilot_audit_{timestamp}.json"
     _write_json(summary_path, summary)
@@ -274,3 +331,21 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
     summary["summary_report"] = str(summary_path)
     summary["audit_report"] = str(audit_path)
     return summary
+
+
+def _extraction_issues(extracted: dict[str, Any]) -> list[str]:
+    issues: list[str] = []
+    description = str(extracted.get("description") or extracted.get("descripcion") or "")
+    if not extracted.get("title"):
+        issues.append("title_missing")
+    if not description and extracted.get("description_summary"):
+        issues.append("full_description_missing;meta_summary_separate")
+    elif not description:
+        issues.append("full_description_missing")
+    if extracted.get("descripcion_is_truncated"):
+        issues.append("description_marked_truncated")
+    if not extracted.get("price"):
+        issues.append("price_missing")
+    if not (extracted.get("comuna_evidence") or {}).get("status") in {"confirmed_detail"}:
+        issues.append("detail_commune_not_confirmed")
+    return issues

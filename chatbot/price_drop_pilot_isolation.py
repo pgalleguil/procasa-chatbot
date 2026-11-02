@@ -46,6 +46,8 @@ PETS = re.compile(r"\b(?:mascotas?|perros?|gatos?)\b", re.I)
 CONTACT_HUMAN = re.compile(r"\b(?:hablar con (?:un |una )?(?:ejecutiv[oa]|asesor[oa])|que me llame|me puede llamar|me pueden llamar|contacte (?:un |una )?(?:ejecutiv[oa]|asesor[oa]))\b", re.I)
 NEGATE_VISIT = re.compile(r"\b(?:no quiero (?:visitarla|visitar|visita|una visita|agendar|coordinar)|no me interesa una visita)\b", re.I)
 COMMISSION = re.compile(r"\b(?:comisi[oó]n|honorarios|corretaje)\b", re.I)
+ADDRESS = re.compile(r"\b(?:d[oó]nde (?:queda|est[aá]|se ubica|se encuentra)|ubicaci[oó]n|direcci[oó]n|calle|en qu[eé] parte)\b", re.I)
+GRILL = re.compile(r"\b(?:quinchos?|parrillas?|asados?)\b", re.I)
 VISIT_WHEN = re.compile(
     r"\b(?:pr[oó]ximo mes|mes que viene|siguiente mes|pr[oó]xima semana|"
     r"semana que viene|el (?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|"
@@ -200,9 +202,19 @@ def _verified_property_facts(prop: dict) -> dict:
     features = characteristics.get("features") or []
     if isinstance(features, list):
         for value, field in (("piscina", "piscina"), ("has_terrace", "terraza"),
-                             ("mascotas", "mascotas_ficha")):
+                             ("mascotas", "mascotas_ficha"), ("has_grill", "parrillas_ficha")):
             if value in features:
                 facts[field] = True
+    location = prop.get("ubicacion") or {}
+    if isinstance(location, dict):
+        # Prop360's own published street field; never guess missing unit/number.
+        for source, target in (("calle", "calle_publicada"),
+                               ("direccion_referencial", "direccion_referencial"),
+                               ("comuna", "comuna")):
+            value = location.get(source)
+            if (isinstance(value, str) and 2 <= len(value.strip()) <= 120
+                and not any(ch in value for ch in ("\n", "\r", "<", ">"))):
+                facts[target] = value.strip()
     expenses = _money(operation.get("gastos_comunes"))
     if expenses is not None and expenses < 100000000:
         facts["gastos_comunes_clp"] = int(expenses)
@@ -224,6 +236,12 @@ def _formatted_facts(facts: dict) -> str:
     items = [f"{facts[key]} {label}" for key, label in labels if key in facts]
     if facts.get("piscina"):
         items.append("piscina según ficha")
+    if facts.get("parrillas_ficha"):
+        items.append("parrillas mencionadas en ficha (detalles de quinchos por confirmar)")
+    if facts.get("calle_publicada"):
+        items.append(f"dirección publicada: {facts['calle_publicada']}")
+    elif facts.get("direccion_referencial"):
+        items.append(f"referencia de ubicación: {facts['direccion_referencial']}")
     if facts.get("terraza"):
         items.append("terraza según ficha")
     if facts.get("mascotas_ficha"):
@@ -283,7 +301,9 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
          "caracteristicas.superficie_total": 1, "caracteristicas.superficie_util": 1,
          "caracteristicas.superficie_terraza": 1, "caracteristicas.piso": 1,
          "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
-         "caracteristicas.orientacion": 1, "caracteristicas.features": 1},
+         "caracteristicas.orientacion": 1, "caracteristicas.features": 1,
+         "ubicacion.calle": 1, "ubicacion.direccion_referencial": 1,
+         "ubicacion.comuna": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
@@ -395,9 +415,28 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
         (POOL, "piscina", lambda v: "piscina informada en la ficha"),
     )
     asked = [(key, formatter) for pattern, key, formatter in checks if pattern.search(clean)]
-    if asked:
+    if asked or ADDRESS.search(clean) or GRILL.search(clean):
         found = [format_value(facts[key]) for key, format_value in asked if key in facts]
         missing = [key for key, _ in asked if key not in facts]
+        if ADDRESS.search(clean):
+            address = facts.get("calle_publicada")
+            ref = facts.get("direccion_referencial")
+            if address:
+                position = f"dirección publicada: {address}"
+                if facts.get("comuna"):
+                    position += f", {facts['comuna']}"
+                if ref:
+                    position += f" (referencia: {ref})"
+                found.append(position)
+            elif ref:
+                found.append(f"referencia de ubicación: {ref}, {facts.get('comuna', 'San Miguel')}")
+            else:
+                found.append(f"ubicación: {facts.get('comuna', 'San Miguel')}; dirección exacta no confirmada")
+        if GRILL.search(clean):
+            if facts.get("parrillas_ficha"):
+                found.append("parrillas mencionadas en la ficha; cantidad y condiciones de uso de quinchos por confirmar")
+            else:
+                found.append("no hay confirmación de quinchos o parrillas en la ficha")
         answer = (f"Según la ficha vigente del departamento {code}: " + ", ".join(found) + ".") if found else ""
         if missing:
             answer += (" " if answer else "") + "No tengo confirmado " + (

@@ -13,7 +13,7 @@ sys.path.insert(0, str(_SCRAPER_DIR.parent.parent))
 sys.path.insert(0, str(_SCRAPER_DIR.parent))
 
 try:
-    from .classifier_rules import classify_with_rules
+    from .classifier_rules import classify_yapo_listing
     from .config import AppConfig
     from .discovery import _norm_commune, discover_listing_urls, normalize_yapo_url
     from .downloader import download_html, html_path_for_url, validate_html
@@ -21,13 +21,16 @@ try:
     from .mongo_store import MongoStore
     from .proxy_manager import ProxyManager
 except ImportError:  # direct script execution
-    from scrapers.scraper_yapo.classifier_rules import classify_with_rules
+    from scrapers.scraper_yapo.classifier_rules import classify_yapo_listing
     from scrapers.scraper_yapo.config import AppConfig
     from scrapers.scraper_yapo.discovery import _norm_commune, discover_listing_urls, normalize_yapo_url
     from scrapers.scraper_yapo.downloader import download_html, html_path_for_url, validate_html
     from scrapers.scraper_yapo.extractor import extract_listing_fields
     from scrapers.scraper_yapo.mongo_store import MongoStore
     from scrapers.scraper_yapo.proxy_manager import ProxyManager
+
+# Backwards-compatible name used by existing test harnesses and callers.
+classify_with_rules = classify_yapo_listing
 
 
 PILOT_SCOPE = {"portal": "Yapo.cl", "operation": "venta", "property_type": "casa", "commune": "Maipú", "price_uf_min": 3000, "price_uf_max": 6000}
@@ -274,9 +277,13 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                     summary["pending_price_validation"] += 1
                 if local_match:
                     summary["filter_matches"] += 1
-                classification = classify_with_rules(extracted)
-                if classification.get("state") == "INCONCLUSIVE":
-                    classification = {**classification, "state": "INCIERTO", "reason": "Evidencia insuficiente; clasificación preliminar pendiente de revisión."}
+                classification = classify_yapo_listing(extracted)
+                classification = classification or {
+                    "state": "INCIERTO",
+                    "reason": "Clasificación omitida por estado técnico no comercial.",
+                    "evidence": [],
+                    "source": "technical_validation",
+                }
                 audit.append({
                     "listing_id": record["listing_id"], "url": record["url"],
                     "discovered_page": record.get("page_number"), "title": title,

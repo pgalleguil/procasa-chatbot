@@ -136,10 +136,10 @@ def _visit_reply(message: str, ctx: dict, history: list[dict]) -> str | None:
     previous_bot = str(history[-1].get("bot_text") or "") if history else ""
     bot_prompt = bool(_VISIT_PROMPT.search(_plain(previous_bot))
                       and re.search(r"visita|conocerlo|verla|departamento", _plain(previous_bot)))
+    current = _visit_parts(message)
     active = direct_visit or anchored or (bool(current) and bot_prompt)
     if not active:
         return None
-    current = _visit_parts(message)
     if not (direct_visit or current or _VISIT_FOLLOWUP.search(_plain(message))):
         return None
     choice: dict = {}

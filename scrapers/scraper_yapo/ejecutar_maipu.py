@@ -151,11 +151,13 @@ def run() -> int:
              if item.get("page_number") == 1),
             {},
         )
+        page2_request_urls = first_page.get("pagination_request_urls") or []
         print(
             "ERROR: la paginaci\u00f3n no se verific\u00f3 hasta el final; "
             f"no se export\u00f3 el CSV. P\u00e1ginas visitadas: {pages}."
         )
         print(f"CAUSA DE PAGINACI\u00d3N: {cause}")
+        print("PAGE 2 REQUESTS: " + json.dumps(page2_request_urls, ensure_ascii=False))
         print(
             "P\u00c1GINA 1: "
             f"estado={first_page.get('status', 'no_registrada')}, "
@@ -189,11 +191,14 @@ def run() -> int:
 
     new_ads = _load_audit(summary)
     csv_path = _write_new_ads_csv(new_ads, _documents_dir())
+    page_log = summary.get("page_log") or []
+    page2_request_urls = page_log[0].get("pagination_request_urls") or [] if page_log else []
     print(
         json.dumps(
             {
                 "pages_visited": pages,
                 "pagination_complete": complete,
+                "page2_request_urls": page2_request_urls,
                 "ads_discovered": discovered,
                 "batch_duplicates": summary.get("batch_duplicates"),
                 "mongo_existing": summary.get("mongo_existing"),

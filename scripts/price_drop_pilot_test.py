@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from chatbot.phone_utils import normalize_phone_strict
+from chatbot.price_drop_pilot_copy import build_price_drop_followup
 from chatbot.price_drop_pilot import COLLECTION, FLAG, TEST_PHONE
 from chatbot.price_drop_pilot_isolation import is_test_phone
 from chatbot.property_lookup import PROPERTY_COLLECTION_NAME
@@ -24,7 +25,7 @@ from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
 PROPERTY_CODE = "6436"
 OLD_UF = 2790.0
 NEW_UF = 2690.0
-TEST_ID = "20261102-6436-price-drop-pilot-v4"
+TEST_ID = "20261102-6436-price-drop-pilot-v5"
 
 
 def run_test_once(*, send: bool = False) -> int:
@@ -47,7 +48,9 @@ def run_test_once(*, send: bool = False) -> int:
     prop = db[PROPERTY_COLLECTION_NAME].find_one(
         {"codigo": PROPERTY_CODE},
         {"codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
-         "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1},
+         "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1,
+         "caracteristicas.dormitorios": 1, "caracteristicas.banos": 1,
+         "caracteristicas.superficie_terraza": 1, "caracteristicas.features": 1},
     ) or {}
     sale = (prop.get("tipo_operacion") or {})
     current = (sale.get("precio_venta") or {}).get("precio_uf")
@@ -67,16 +70,16 @@ def run_test_once(*, send: bool = False) -> int:
         print("BLOCKED: an attempt for this test was already recorded; no retries")
         return 2
 
-    # A naturally worded customer-facing message. No unverified name, past
-    # contact, stated objections, or claims of a previous consultation.
-    # The test-only allowlist, campaign ID, and CRM isolation stay invisible.
-    message = (
-        "¡Hola! ¿Cómo estás? 😊\n\n"
-        "Te quería contar desde PROCASA que el departamento de San Miguel "
-        "bajó recientemente de UF 2.790 a UF 2.690.\n\n"
-        "Te dejo el enlace para que lo mires:\n"
-        "https://www.procasa.cl/6436\n\n"
-        "¿Te gustaría saber algo más o ir a verlo?"
+    # A REAL campaign may claim a prior inquiry only after verifying a matching
+    # historic conversation and property provenance. Here we are explicitly
+    # SIMULATING that scenario on the one isolated test phone; no lead is read.
+    message = build_price_drop_followup(
+        code=PROPERTY_CODE,
+        commune="San Miguel",  # Verified fixed-property test scenario, 6436.
+        old_uf=OLD_UF,
+        new_uf=NEW_UF,
+        property_doc=prop,
+        prior_inquiry_verified=True,  # SIMULATED; NEVER sourced from test phone.
     )
     if not send:
         print("DRY RUN PASSED: isolated recipient and current price verified; no WhatsApp sent")
@@ -93,7 +96,7 @@ def run_test_once(*, send: bool = False) -> int:
         "new_price_uf": NEW_UF,
         "operation": "Venta",
         "channel": "whatsapp",
-        "campaign_version": "price_drop_pilot_v4",
+        "campaign_version": "price_drop_pilot_v5",
         "status": "SENDING",
         "isolation_version": "test_webhook_before_crm_v1",
         "created_at": now,

@@ -45,6 +45,7 @@ def load_rule_sets() -> dict[str, Any]:
         "listing_removed_patterns": ("listing_removed_patterns.json", "patterns"),
         "search_terms": ("search_terms.json", "search_terms"),
         "owner_keywords": ("owner_keywords.json", "owner_terms"),
+        "contextual_classification": ("contextual_classification.json", "rules"),
     }
     sets: dict[str, Any] = {}
     _RULE_LOAD_ERRORS.clear()
@@ -52,14 +53,14 @@ def load_rule_sets() -> dict[str, Any]:
         path = DATA_DIR / filename
         if not path.exists():
             sets[name] = []
-            if name in {"known_broker_brands", "hard_broker_terms", "company_shape_terms"}:
+            if name in {"known_broker_brands", "hard_broker_terms", "company_shape_terms", "contextual_classification"}:
                 _RULE_LOAD_ERRORS[name] = "missing_file"
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8-sig"))
         except Exception as exc:
             sets[name] = []
-            if name in {"known_broker_brands", "hard_broker_terms", "company_shape_terms"}:
+            if name in {"known_broker_brands", "hard_broker_terms", "company_shape_terms", "contextual_classification"}:
                 _RULE_LOAD_ERRORS[name] = f"invalid_json:{type(exc).__name__}"
             continue
         if isinstance(data, dict):
@@ -67,6 +68,11 @@ def load_rule_sets() -> dict[str, Any]:
             if name == "known_broker_brands":
                 aliases = data.get("brand_aliases", {})
                 sets["known_broker_brand_aliases"] = aliases if isinstance(aliases, dict) else {}
+            if name == "contextual_classification":
+                sets[name] = values if isinstance(values, dict) else {}
+                if not sets[name]:
+                    _RULE_LOAD_ERRORS[name] = "empty_rule_set"
+                continue
         elif isinstance(data, list):
             values = data
         else:
@@ -75,6 +81,8 @@ def load_rule_sets() -> dict[str, Any]:
             values = []
         sets[name] = [str(item) for item in values if str(item).strip()]
         if name in {"known_broker_brands", "hard_broker_terms", "company_shape_terms"} and not sets[name]:
+            _RULE_LOAD_ERRORS[name] = "empty_rule_set"
+        if name == "contextual_classification" and not sets.get(name):
             _RULE_LOAD_ERRORS[name] = "empty_rule_set"
     return sets
 
@@ -90,7 +98,7 @@ def validate_classification_rules(*, raise_on_error: bool = False) -> list[str]:
     rs = load_rule_sets()
     issues = list(dict.fromkeys(
         [f"{name}:{reason}" for name, reason in _RULE_LOAD_ERRORS.items()]
-        + [name for name in ("known_broker_brands", "hard_broker_terms", "company_shape_terms") if not rs.get(name)]
+        + [name for name in ("known_broker_brands", "hard_broker_terms", "company_shape_terms", "contextual_classification") if not rs.get(name)]
     ))
     if issues and raise_on_error:
         raise RuntimeError("Invalid broker classification rule sets: " + ", ".join(issues))
@@ -262,6 +270,52 @@ def detect_owner_signals(extracted: dict[str, Any]) -> list[str]:
     return _search_terms(text, terms)
 
 
+def _context_text(extracted: dict[str, Any]) -> str:
+    return normalize_text(" ".join(str(extracted.get(key) or "") for key in ("title", "description", "descripcion")))
+
+
+def _context_term_hits(text: str, terms: Iterable[str]) -> list[str]:
+    return list(dict.fromkeys(str(term) for term in terms if _phrase_matches(text, str(term))))
+
+
+def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
+    """Extract contextual broker/owner candidates without confirming owner state."""
+    rules = load_rule_sets().get("contextual_classification") or {}
+    text = _context_text(extracted)
+    if not isinstance(rules, dict):
+        rules = {}
+    self_declarations = _context_term_hits(text, rules.get("broker_self_declarations", []))
+    third_party_mentions = _context_term_hits(text, rules.get("broker_third_party_mentions", []))
+    negations = _context_term_hits(text, rules.get("broker_negations", []))
+    owner_candidates = _context_term_hits(text, rules.get("owner_candidate_signals", []))
+    trato_directo_terms = [str(rules.get("direct_deal_phrase") or "")]
+    trato_directo = _context_term_hits(text, trato_directo_terms)
+    commercial_contradictions = _context_term_hits(text, rules.get("commercial_contradiction_signals", []))
+    # A phrase such as "se acepta corredor" or "trabajamos con corredor" refers
+    # to another party and must not be read as the publisher identifying itself.
+    self_declaration_confirmed = bool(self_declarations) and not negations and not any(
+        term in text for term in ("busco corredor", "se acepta corredor", "con corredor", "trabajamos con corredor")
+    )
+    direct_deal = bool(owner_candidates)
+    contradiction = direct_deal and bool(self_declarations or commercial_contradictions or third_party_mentions)
+    trato_directo_contradiction = bool(trato_directo) and bool(
+        self_declarations or commercial_contradictions or third_party_mentions
+    )
+    return {
+        "broker_self_declarations": self_declarations,
+        "broker_third_party_mentions": third_party_mentions,
+        "broker_negations": negations,
+        "owner_signal_candidates": owner_candidates,
+        "commercial_contradiction_signals": commercial_contradictions,
+        "broker_self_declaration_confirmed": self_declaration_confirmed,
+        "direct_deal_candidate": direct_deal,
+        "direct_deal_with_commercial_contradictions": contradiction,
+        "trato_directo_candidate": bool(trato_directo),
+        "trato_directo_with_commercial_contradictions": trato_directo_contradiction,
+        "owner_classification_confirmed": False,
+    }
+
+
 def company_shape_in_publisher_fields(extracted: dict[str, Any]) -> dict[str, Any]:
     terms = load_rule_sets()["company_shape_terms"]
     values = _field_values(extracted, STRONG_PUBLISHER_FIELDS)
@@ -359,6 +413,7 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
 
 def build_deepseek_context(extracted: dict[str, Any]) -> dict[str, Any]:
     context = _all_evidence_context(extracted)
+    contextual = analyze_contextual_signals(extracted)
     return {
         "publicador_visible": extracted.get("publicador_visible", ""),
         "contact_name": extracted.get("contact_name", ""),
@@ -371,7 +426,9 @@ def build_deepseek_context(extracted: dict[str, Any]) -> dict[str, Any]:
         "company_like_evidence": context["company_like_evidence"],
         "known_brand_evidence": context["known_brand_evidence"],
         "hard_broker_evidence": context["hard_broker_evidence"],
-        "owner_signal_evidence": context["owner_signal_evidence"],
+        "owner_signal_evidence": contextual["owner_signal_candidates"],
+        "owner_signal_candidates": contextual["owner_signal_candidates"],
+        "contextual_analysis": contextual,
         "weak_broker_evidence": context["weak_broker_evidence"],
         "publisher_profile_context": extracted.get("publisher_profile_context") or {},
         "descripcion": extracted.get("descripcion", extracted.get("description", "")),
@@ -388,19 +445,59 @@ def build_rule_context(extracted: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def classify_with_rules(extracted: dict[str, Any]) -> dict[str, Any]:
+def classify_with_rules(extracted: dict[str, Any]) -> dict[str, Any] | None:
+    """Compatibility name for the single deterministic Yapo classification path."""
+    return classify_yapo_listing(extracted)
+
+
+def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
+    """Apply identity-first broker rules, then contextual title/description rules."""
+    technical_status = str(extracted.get("html_validation_status") or extracted.get("validation_status") or "").upper()
+    if technical_status in {"BLOCKED", "INVALID"}:
+        # Technical fetch/validation failures are not commercial classifications.
+        return None
     obvious = classify_obvious_broker(extracted)
     if obvious:
-        return obvious
+        if obvious.get("state") == "AD_REMOVED":
+            return obvious
+        contextual = analyze_contextual_signals(extracted)
+        contextual["direct_deal_with_commercial_contradictions"] = bool(
+            contextual["direct_deal_with_commercial_contradictions"]
+            or (contextual["direct_deal_candidate"] and obvious.get("state") in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE"})
+        )
+        contextual["identity_and_owner_signal_conflict"] = bool(
+            contextual["direct_deal_candidate"] and obvious.get("state") in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE"}
+        )
+        if contextual["identity_and_owner_signal_conflict"] and contextual["trato_directo_candidate"]:
+            contextual["trato_directo_with_commercial_contradictions"] = True
+        return {**obvious, "contextual_analysis": contextual,
+                "owner_signal_candidates": contextual["owner_signal_candidates"],
+                "direct_deal_with_commercial_contradictions": contextual["direct_deal_with_commercial_contradictions"]}
+
+    contextual = analyze_contextual_signals(extracted)
+    if contextual["broker_self_declaration_confirmed"]:
+        return {
+            "state": "CORREDOR_PROBABLE", "confidence": 0.72,
+            "reason": "El título o la descripción identifica al anunciante como corredor, sin corroboración independiente de identidad.",
+            "evidence": [f"context_broker_declaration:{term}" for term in contextual["broker_self_declarations"]],
+            "source": "contextual_rules", "contextual_analysis": contextual,
+            "owner_signal_candidates": contextual["owner_signal_candidates"],
+            "direct_deal_with_commercial_contradictions": contextual["direct_deal_with_commercial_contradictions"],
+        }
 
     company = company_shape_in_publisher_fields(extracted)
     return {
         "state": "INCIERTO",
         "confidence": 0.35 if company["company_like_suspected"] else 0.2,
         "reason": "Evidence is insufficient for a commercial classification; manual review is pending.",
-        "evidence": company["company_like_evidence"],
-        "source": "rules_json",
+        "evidence": [*company["company_like_evidence"],
+                     *(f"context_third_party_broker:{term}" for term in contextual["broker_third_party_mentions"]),
+                     *(f"context_broker_negation:{term}" for term in contextual["broker_negations"])],
+        "source": "contextual_rules" if contextual["owner_signal_candidates"] or contextual["broker_third_party_mentions"] else "rules_json",
         **company,
-        "owner_signal_evidence": detect_owner_signals(extracted),
+        "owner_signal_evidence": contextual["owner_signal_candidates"],
+        "owner_signal_candidates": contextual["owner_signal_candidates"],
+        "contextual_analysis": contextual,
+        "direct_deal_with_commercial_contradictions": contextual["direct_deal_with_commercial_contradictions"],
         "weak_broker_evidence": [],
     }

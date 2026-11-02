@@ -46,6 +46,8 @@ PETS = re.compile(r"\b(?:mascotas?|perros?|gatos?)\b", re.I)
 CONTACT_HUMAN = re.compile(r"\b(?:hablar con (?:un |una )?(?:ejecutiv[oa]|asesor[oa])|que me llame|me puede llamar|me pueden llamar|contacte (?:un |una )?(?:ejecutiv[oa]|asesor[oa]))\b", re.I)
 NEGATE_VISIT = re.compile(r"\b(?:no quiero (?:visitarla|visitar|visita|una visita|agendar|coordinar)|no me interesa una visita)\b", re.I)
 COMMISSION = re.compile(r"\b(?:comisi[oó]n|honorarios|corretaje)\b", re.I)
+ADDRESS = re.compile(r"\b(?:d[oó]nde (?:queda|quedaba|est[aá]|se ubica|se encuentra)|ubicaci[oó]n|direcci[oó]n|calle|en qu[eé] parte)\b", re.I)
+GRILL = re.compile(r"\b(?:quinchos?|parrillas?|asados?)\b", re.I)
 VISIT_WHEN = re.compile(
     r"\b(?:pr[oó]ximo mes|mes que viene|siguiente mes|pr[oó]xima semana|"
     r"semana que viene|el (?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|"
@@ -59,7 +61,7 @@ BAD_CLAIM = re.compile(
     r"el ejecutivo (?:fue notificado|te (?:llamar[aá]|contactar[aá]))|"
     r"lo (?:dejamos|dej[eé]|dejo|qued[oó]) anotado|"
     r"(?:te vamos a llamar|te contactaremos|ya registr[eé]|queda reservada|qued[oó] agendada|"
-    r"le informamos al ejecutivo|avisamos al ejecutivo|queda registrado|quedo registrado|lo registramos|anot[eé] tu preferencia))\b", re.I
+    r"le informamos al ejecutivo|avisamos al ejecutivo|queda (?:solo )?registrad[oa]|qued[oó] registrad[oa]|quedo registrado|lo registramos|anot[eé] tu preferencia))\b", re.I
 )
 
 
@@ -70,6 +72,10 @@ _VISIT_MORNING = re.compile(r"\b(?:en|por)\s+la\s+manana\b|\b(?:durante|tipo)\s+
 _VISIT_AFTERNOON = re.compile(r"\b(?:en|por)\s+la\s+tarde\b")
 _VISIT_EVENING = re.compile(r"\b(?:en|por)\s+la\s+noche\b")
 _VISIT_TIME = re.compile(r"\b(?:a\s+las|tipo|cerca\s+de\s+las)\s+([0-2]?\d(?::[0-5]\d)?)\b")
+_VISIT_TWO_TIMES = re.compile(r"\b(?:a\s+las|tipo|cerca\s+de\s+las)\s+([0-2]?\d(?::[0-5]\d)?)\s+(?:o|u)\s+([0-2]?\d(?::[0-5]\d)?)\b")
+_VISIT_CLARIFY = re.compile(r"^\s*(?:que|como|perdon|no entiendo|no cache|a que te refieres)[?.!¿¡\s]*$")
+_VISIT_AFFIRM = re.compile(r"^\s*(?:si+|sip|claro|correcto|ok|okay|dale)[.!?\s]*$")
+_VISIT_CONTACT = re.compile(r"\b(?:me contactaran|me llamaran|me van a contactar|me van a llamar|se comunicaran conmigo)\b")
 _VISIT_FOLLOWUP = re.compile(r"\b(?:ya te respondi|ya te dije|te acabo de decir|ya lo dije|te dije)\b")
 _VISIT_PROMPT = re.compile(r"\b(?:que dia|que horario|dia u horario|dia o horario|a que hora|horario te|dia te)\b")
 
@@ -94,7 +100,9 @@ def _visit_parts(message: str) -> dict:
         )
     elif re.search(r"\bpasado manana\b", plain):
         parts["day"] = "pasado mañana"
-    elif re.search(r"\bmanana\b", plain) and not _VISIT_MORNING.search(plain):
+    elif re.search(r"\b(?:manana|mnana)\b", _VISIT_MORNING.sub("", plain)):
+        # "Mñana" is a common phone-keyboard typo for "mañana". Do not
+        # confuse "por la mañana" (daypart) with the following day.
         parts["day"] = "mañana"
     elif re.search(r"\b(?:proximo mes|mes que viene|siguiente mes)\b", plain):
         parts["period"] = "el próximo mes"
@@ -108,8 +116,11 @@ def _visit_parts(message: str) -> dict:
         parts["time"] = "por la tarde"
     elif _VISIT_EVENING.search(plain):
         parts["time"] = "por la noche"
+    two_times = _VISIT_TWO_TIMES.search(plain)
     clock = _VISIT_TIME.search(plain)
-    if clock:
+    if two_times:
+        parts["time"] = "a las " + two_times.group(1) + " o " + two_times.group(2)
+    elif clock:
         parts["time"] = "a las " + clock.group(1)
     return parts
 
@@ -118,7 +129,7 @@ def _visit_reply(message: str, ctx: dict, history: list[dict]) -> str | None:
     """Use only recent customer turns in the active visit thread; never book."""
     recent = []
     anchored = False
-    for item in reversed(history[-6:]):
+    for item in reversed(history[-12:]):
         prior = str(item.get("customer_text") or "")
         parsed = _visit_parts(prior)
         if NEGATE_VISIT.search(prior) or DECLINE.search(prior) or STOP.search(prior):
@@ -127,7 +138,11 @@ def _visit_reply(message: str, ctx: dict, history: list[dict]) -> str | None:
             recent.append(prior)
             anchored = True
             break
-        if parsed or _VISIT_FOLLOWUP.search(_plain(prior)):
+        prior_plain = _plain(prior)
+        if (parsed or _VISIT_FOLLOWUP.search(prior_plain) or
+            _VISIT_CLARIFY.fullmatch(prior_plain) or
+            _VISIT_AFFIRM.fullmatch(prior_plain) or
+            _VISIT_CONTACT.search(prior_plain)):
             recent.append(prior)
         elif prior:
             break
@@ -140,7 +155,10 @@ def _visit_reply(message: str, ctx: dict, history: list[dict]) -> str | None:
     active = direct_visit or anchored or (bool(current) and bot_prompt)
     if not active:
         return None
-    if not (direct_visit or current or _VISIT_FOLLOWUP.search(_plain(message))):
+    clean_plain = _plain(message)
+    if not (direct_visit or current or _VISIT_FOLLOWUP.search(clean_plain)
+            or _VISIT_CLARIFY.fullmatch(clean_plain)
+            or _VISIT_AFFIRM.fullmatch(clean_plain)):
         return None
     choice: dict = {}
     for turn in reversed(recent):
@@ -160,8 +178,11 @@ def _visit_reply(message: str, ctx: dict, history: list[dict]) -> str | None:
     period = choice.get("period")
     code = ctx["property_code"]
     if day and time:
-        return (f"Perfecto, te acomodaría {day} {time} para conocer el departamento {code} 😊. "
-                "Entendí tu preferencia, pero aún no hay una visita agendada ni avisamos a un ejecutivo.")
+        intro = "Sí, entendí: " if (_VISIT_CLARIFY.fullmatch(clean_plain)
+                                   or _VISIT_FOLLOWUP.search(clean_plain)
+                                   or _VISIT_AFFIRM.fullmatch(clean_plain)) else "Perfecto, "
+        return (f"{intro}te acomodaría {day} {time} para conocer el departamento {code} 😊. "
+                "Todavía no hay una visita agendada ni se notificó a un ejecutivo.")
     if day:
         return (f"Perfecto, {day} para conocer el departamento {code}. "
                 "¿Te acomoda más en la mañana o en la tarde? "
@@ -200,9 +221,19 @@ def _verified_property_facts(prop: dict) -> dict:
     features = characteristics.get("features") or []
     if isinstance(features, list):
         for value, field in (("piscina", "piscina"), ("has_terrace", "terraza"),
-                             ("mascotas", "mascotas_ficha")):
+                             ("mascotas", "mascotas_ficha"), ("has_grill", "parrillas_ficha")):
             if value in features:
                 facts[field] = True
+    location = prop.get("ubicacion") or {}
+    if isinstance(location, dict):
+        # Prop360's own published street field; never guess missing unit/number.
+        for source, target in (("calle", "calle_publicada"),
+                               ("direccion_referencial", "direccion_referencial"),
+                               ("comuna", "comuna")):
+            value = location.get(source)
+            if (isinstance(value, str) and 2 <= len(value.strip()) <= 120
+                and not any(ch in value for ch in ("\n", "\r", "<", ">"))):
+                facts[target] = value.strip()
     expenses = _money(operation.get("gastos_comunes"))
     if expenses is not None and expenses < 100000000:
         facts["gastos_comunes_clp"] = int(expenses)
@@ -224,6 +255,12 @@ def _formatted_facts(facts: dict) -> str:
     items = [f"{facts[key]} {label}" for key, label in labels if key in facts]
     if facts.get("piscina"):
         items.append("piscina según ficha")
+    if facts.get("parrillas_ficha"):
+        items.append("parrillas mencionadas en ficha (detalles de quinchos por confirmar)")
+    if facts.get("calle_publicada"):
+        items.append(f"dirección publicada: {facts['calle_publicada']}")
+    elif facts.get("direccion_referencial"):
+        items.append(f"referencia de ubicación: {facts['direccion_referencial']}")
     if facts.get("terraza"):
         items.append("terraza según ficha")
     if facts.get("mascotas_ficha"):
@@ -283,7 +320,9 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
          "caracteristicas.superficie_total": 1, "caracteristicas.superficie_util": 1,
          "caracteristicas.superficie_terraza": 1, "caracteristicas.piso": 1,
          "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
-         "caracteristicas.orientacion": 1, "caracteristicas.features": 1},
+         "caracteristicas.orientacion": 1, "caracteristicas.features": 1,
+         "ubicacion.calle": 1, "ubicacion.direccion_referencial": 1,
+         "ubicacion.comuna": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
@@ -395,9 +434,28 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
         (POOL, "piscina", lambda v: "piscina informada en la ficha"),
     )
     asked = [(key, formatter) for pattern, key, formatter in checks if pattern.search(clean)]
-    if asked:
+    if asked or ADDRESS.search(clean) or GRILL.search(clean):
         found = [format_value(facts[key]) for key, format_value in asked if key in facts]
         missing = [key for key, _ in asked if key not in facts]
+        if ADDRESS.search(clean):
+            address = facts.get("calle_publicada")
+            ref = facts.get("direccion_referencial")
+            if address:
+                position = f"dirección publicada: {address}"
+                if facts.get("comuna"):
+                    position += f", {facts['comuna']}"
+                if ref:
+                    position += f" (referencia: {ref})"
+                found.append(position)
+            elif ref:
+                found.append(f"referencia de ubicación: {ref}, {facts.get('comuna', 'San Miguel')}")
+            else:
+                found.append(f"ubicación: {facts.get('comuna', 'San Miguel')}; dirección exacta no confirmada")
+        if GRILL.search(clean):
+            if facts.get("parrillas_ficha"):
+                found.append("parrillas mencionadas en la ficha; cantidad y condiciones de uso de quinchos por confirmar")
+            else:
+                found.append("no hay confirmación de quinchos o parrillas en la ficha")
         answer = (f"Según la ficha vigente del departamento {code}: " + ", ".join(found) + ".") if found else ""
         if missing:
             answer += (" " if answer else "") + "No tengo confirmado " + (
@@ -412,6 +470,9 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
                 f"No tengo confirmadas las reglas sobre mascotas del departamento {code}.")
     if COMMISSION.search(clean):
         return "No tengo confirmados los honorarios de corretaje para esta operación."
+    if _VISIT_CONTACT.search(_plain(clean)):
+        return ("En esta prueba no se notifica a ningún ejecutivo ni se solicita contacto. "
+                "Podemos conversar sobre la visita, pero no ha quedado agendada.")
     if CONTACT_HUMAN.search(clean):
         return ("Puedes pedir hablar con un ejecutivo, pero en esta prueba no se enviará "
                 "ninguna solicitud ni notificación comercial.")
@@ -480,7 +541,7 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
     history = list(db[TURN_COLLECTION].find(
         {"campaign_id": ctx["campaign_id"], "status": "SENT", "_id": {"$ne": key}},
         {"customer_text": 1, "bot_text": 1, "created_at": 1},
-    ).sort("created_at", -1).limit(6))
+    ).sort("created_at", -1).limit(12))
     history.reverse()
     answer = build_test_reply(text, ctx, history, llm=llm)
     if not answer:

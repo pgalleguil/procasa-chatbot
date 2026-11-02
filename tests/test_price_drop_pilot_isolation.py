@@ -603,3 +603,40 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
     )
     assert "Queda registrado" not in reply
     assert "no notificaremos" in reply
+
+
+
+def test_natural_v3_sender_text_avoids_invented_historic_lead_contact():
+    from scripts import price_drop_pilot_test as sender
+    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v3"
+    source = Path(__file__).resolve().parents[1].joinpath(
+        "scripts", "price_drop_pilot_test.py"
+    ).read_text()
+    message_source = source.split("    message = (", 1)[1].split("    if not send:", 1)[0]
+    for expected in (
+        "¡Hola! ¿Cómo estás?", "PROCASA", "San Miguel",
+        "UF 2.790", "UF 2.690", "https://www.procasa.cl/6436",
+        "¿Te gustaría saber más o ir a verlo?",
+    ):
+        assert expected in message_source
+    for prohibited in (
+        "PRUEBA INTERNA", "habías consultado", "me comentaste",
+        "te acordarás", "la otra vez conversamos", "[Nombre]",
+        "Se notificará", "le avisaremos al ejecutivo",
+    ):
+        assert prohibited not in message_source
+    assert '"test_mode": True' in source
+    assert '"campaign_version": "price_drop_pilot_v3"' in source
+    assert 'if not is_test_phone(phone)' in source
+
+
+def test_v3_sender_dry_run_never_calls_provider_or_creates_campaign(isolated, monkeypatch):
+    from scripts import price_drop_pilot_test as sender
+    db = _full_pilot_db()
+    db["crm_price_drop_pilot_v1"].docs = []
+    monkeypatch.setattr(sender, "get_db", lambda: db)
+    def forbidden_send(*args, **kwargs):
+        raise AssertionError("Dry run sent a WhatsApp")
+    monkeypatch.setattr(sender, "send_whatsapp_message_detailed_sync", forbidden_send)
+    assert sender.run_test_once(send=False) == 0
+    assert not db["crm_price_drop_pilot_v1"].docs

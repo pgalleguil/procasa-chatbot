@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -58,8 +59,121 @@ BAD_CLAIM = re.compile(
     r"el ejecutivo (?:fue notificado|te (?:llamar[aá]|contactar[aá]))|"
     r"lo (?:dejamos|dej[eé]|dejo|qued[oó]) anotado|"
     r"(?:te vamos a llamar|te contactaremos|ya registr[eé]|queda reservada|qued[oó] agendada|"
-    r"le informamos al ejecutivo|avisamos al ejecutivo))\b", re.I
+    r"le informamos al ejecutivo|avisamos al ejecutivo|queda registrado|quedo registrado|lo registramos|anot[eé] tu preferencia))\b", re.I
 )
+
+
+# Keep these helpers pure: visit preferences exist only in this test thread.
+_GREETING = re.compile(r"^\s*(?:hola+|holi|buen(?:os|as) (?:d[ií]as|tardes|noches)|hello|buenas)[!¡.,\s]*$", re.I)
+_VISIT_DAY = re.compile(r"\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b")
+_VISIT_MORNING = re.compile(r"\b(?:en|por)\s+la\s+manana\b|\b(?:durante|tipo)\s+la\s+manana\b")
+_VISIT_AFTERNOON = re.compile(r"\b(?:en|por)\s+la\s+tarde\b")
+_VISIT_EVENING = re.compile(r"\b(?:en|por)\s+la\s+noche\b")
+_VISIT_TIME = re.compile(r"\b(?:a\s+las|tipo|cerca\s+de\s+las)\s+([0-2]?\d(?::[0-5]\d)?)\b")
+_VISIT_FOLLOWUP = re.compile(r"\b(?:ya te respondi|ya te dije|te acabo de decir|ya lo dije|te dije)\b")
+_VISIT_PROMPT = re.compile(r"\b(?:que dia|que horario|dia u horario|dia o horario|a que hora|horario te|dia te)\b")
+
+
+def _plain(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", str(text or "").casefold())
+                   if not unicodedata.combining(c))
+
+
+def _visit_parts(message: str) -> dict:
+    """Extract a user's stated preferences, not an appointment or CRM event."""
+    plain = _plain(message)
+    parts: dict = {}
+    day = _VISIT_DAY.search(plain)
+    if day:
+        weekday = day.group(1)
+        earlier = plain[max(0, day.start() - 20):day.start()]
+        next_word = re.search(r"(?:proximo|prroximo|siguiente|este)\s*$", earlier)
+        parts["day"] = (
+            "el próximo " + weekday if next_word and next_word.group().strip() in ("proximo", "prroximo")
+            else "el " + weekday
+        )
+    elif re.search(r"\bpasado manana\b", plain):
+        parts["day"] = "pasado mañana"
+    elif re.search(r"\bmanana\b", plain) and not _VISIT_MORNING.search(plain):
+        parts["day"] = "mañana"
+    elif re.search(r"\b(?:proximo mes|mes que viene|siguiente mes)\b", plain):
+        parts["period"] = "el próximo mes"
+    elif re.search(r"\b(?:proxima semana|semana que viene)\b", plain):
+        parts["period"] = "la próxima semana"
+    elif re.search(r"\beste fin de semana\b", plain):
+        parts["period"] = "este fin de semana"
+    if _VISIT_MORNING.search(plain):
+        parts["time"] = "por la mañana"
+    elif _VISIT_AFTERNOON.search(plain):
+        parts["time"] = "por la tarde"
+    elif _VISIT_EVENING.search(plain):
+        parts["time"] = "por la noche"
+    clock = _VISIT_TIME.search(plain)
+    if clock:
+        parts["time"] = "a las " + clock.group(1)
+    return parts
+
+
+def _visit_reply(message: str, ctx: dict, history: list[dict]) -> str | None:
+    """Use only recent customer turns in the active visit thread; never book."""
+    recent = []
+    anchored = False
+    for item in reversed(history[-6:]):
+        prior = str(item.get("customer_text") or "")
+        parsed = _visit_parts(prior)
+        if NEGATE_VISIT.search(prior) or DECLINE.search(prior) or STOP.search(prior):
+            break
+        if VISIT.search(prior):
+            recent.append(prior)
+            anchored = True
+            break
+        if parsed or _VISIT_FOLLOWUP.search(_plain(prior)):
+            recent.append(prior)
+        elif prior:
+            break
+    # A direct visit request opens a new thread. A price enquiry does not.
+    direct_visit = bool(VISIT.search(message) and not NEGATE_VISIT.search(message))
+    previous_bot = str(history[-1].get("bot_text") or "") if history else ""
+    bot_prompt = bool(_VISIT_PROMPT.search(_plain(previous_bot))
+                      and re.search(r"visita|conocerlo|verla|departamento", _plain(previous_bot)))
+    current = _visit_parts(message)
+    active = direct_visit or anchored or (bool(current) and bot_prompt)
+    if not active:
+        return None
+    if not (direct_visit or current or _VISIT_FOLLOWUP.search(_plain(message))):
+        return None
+    choice: dict = {}
+    for turn in reversed(recent):
+        fields = _visit_parts(turn)
+        for key, value in fields.items():
+            if key == "day" and value.startswith("el ") and not value.startswith("el próximo "):
+                if choice.get("day") == "el próximo " + value[3:]:
+                    continue
+            choice[key] = value
+    for key, value in current.items():
+        if key == "day" and value.startswith("el ") and not value.startswith("el próximo "):
+            if choice.get("day") == "el próximo " + value[3:]:
+                continue
+        choice[key] = value
+    day = choice.get("day")
+    time = choice.get("time")
+    period = choice.get("period")
+    code = ctx["property_code"]
+    if day and time:
+        return (f"Perfecto, te acomodaría {day} {time} para conocer el departamento {code} 😊. "
+                "Entendí tu preferencia, pero aún no hay una visita agendada ni avisamos a un ejecutivo.")
+    if day:
+        return (f"Perfecto, {day} para conocer el departamento {code}. "
+                "¿Te acomoda más en la mañana o en la tarde? "
+                "Todavía no hay una visita agendada.")
+    if time:
+        return (f"Entiendo, prefieres {time} para conocer el departamento {code}. "
+                "¿Qué día te acomodaría? Todavía no hay una visita agendada.")
+    if period:
+        return (f"De acuerdo, te interesaría visitar el departamento {code} {period}. "
+                "¿Tienes algún día en mente? Todavía no hay una visita agendada.")
+    return (f"¡Claro! Podemos conversar sobre una visita al departamento {code}. "
+            "¿Qué día te acomodaría? En esta prueba no se agenda ni se notifica a un ejecutivo.")
 
 
 def _verified_property_facts(prop: dict) -> dict:
@@ -256,11 +370,13 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
     if DECLINE.search(clean):
         return "Entendido, gracias por responder. No insistiremos en esta propiedad."
     facts = ctx.get("property_facts") or {}
-    previous = (history or [])[-1].get("bot_text", "") if history else ""
-    if VISIT_WHEN.search(clean) and re.search(r"d[ií]a|horario|semana", previous, re.I):
-        return (f"Entiendo, considerarías visitar el departamento {code} {clean.lower()}. "
-                "¿Tienes un día u horario más concreto en mente? "
-                "Es una prueba: no se ha agendado ninguna visita ni notificado a un ejecutivo.")
+    # Visit preference is reconstructed from customer turns, never written to CRM.
+    visit_reply = _visit_reply(clean, ctx, history or [])
+    if visit_reply is not None:
+        return visit_reply
+    if _GREETING.fullmatch(clean):
+        return (f"¡Hola! 😊 Soy de PROCASA. ¿Qué te gustaría saber del "
+                f"departamento {code} en San Miguel?")
     if DETAILS.search(clean) and facts:
         return (f"El departamento {code} está en venta a UF {new}. "
                 f"Su ficha informa: {_formatted_facts(facts)}. "

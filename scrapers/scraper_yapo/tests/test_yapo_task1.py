@@ -115,6 +115,91 @@ def test_blocked_response_is_preserved_in_batch_sidecar(monkeypatch, tmp_path):
     assert sidecar.read_text(encoding="utf-8") == blocked_html
 
 
+def test_generic_blocked_and_forbidden_words_do_not_reject_valid_listing_html():
+    html = _html(
+        '<article class="d3-ad-tile"><h1>Casa amplia</h1>'
+        '<p>El texto histórico menciona blocked y forbidden como palabras comunes.</p>'
+        "</article>"
+    )
+    result = downloader.validate_html(html)
+    assert result == {"status": "OK", "reason": "valid_html"}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Access denied captcha challenge",
+        "Verify you are human",
+        "Your request has been blocked",
+    ],
+)
+def test_clear_challenge_messages_are_blocked(body):
+    result = downloader.validate_html(_html(body))
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "strong_block_signal"
+
+
+def test_http_denial_saves_private_body_without_proxy_credentials(monkeypatch, tmp_path):
+    response = SimpleNamespace(
+        status_code=403,
+        text="Access denied by Yapo edge",
+        raise_for_status=lambda: None,
+    )
+
+    class Session:
+        trust_env = True
+
+        def get(self, url, **kwargs):
+            return response
+
+    monkeypatch.setattr(downloader.requests, "Session", Session)
+    monkeypatch.setattr(downloader.time, "sleep", lambda _: None)
+    config_value = AppConfig(html_dumps_dir=tmp_path)
+    config_value.proxy_url = "proxy.test:9000"
+    monkeypatch.setenv("PROXY_USER", "private-user")
+    monkeypatch.setenv("PROXY_PASS", "private-pass")
+
+    with pytest.raises(RuntimeError, match=r"YAPO_BLOCKED: HTTP 403") as error:
+        downloader.download_html(
+            "https://www.yapo.cl/searchresult/test",
+            config_value,
+            ProxyManager.from_config(config_value),
+            batch_id="http-denial",
+        )
+
+    message = str(error.value)
+    assert "private-user" not in message
+    assert "private-pass" not in message
+    diagnostic = next((tmp_path / "http-denial").glob("*.http_403.html"))
+    assert diagnostic.read_text(encoding="utf-8") == response.text
+
+
+def test_http_server_error_saves_private_body(monkeypatch, tmp_path):
+    response = SimpleNamespace(
+        status_code=500,
+        text="Yapo temporary error",
+        raise_for_status=lambda: None,
+    )
+
+    class Session:
+        trust_env = True
+
+        def get(self, url, **kwargs):
+            return response
+
+    monkeypatch.setattr(downloader.requests, "Session", Session)
+    monkeypatch.setattr(downloader.time, "sleep", lambda _: None)
+    with pytest.raises(RuntimeError, match=r"YAPO_HTTP_ERROR: HTTP 500"):
+        downloader.download_html(
+            "https://www.yapo.cl/searchresult/test",
+            AppConfig(html_dumps_dir=tmp_path),
+            ProxyManager(["proxy.test:9000"]),
+            batch_id="http-error",
+        )
+    diagnostic = next((tmp_path / "http-error").glob("*.http_500.html"))
+    assert diagnostic.read_text(encoding="utf-8") == response.text
+
+
 def test_discovery_follows_html_pagination_until_verified_end(monkeypatch):
     pages = {
         "https://www.yapo.cl/searchresult/test": _html(_listing("12345678") + '<a rel="next" href="?o=2">Siguiente</a>'),

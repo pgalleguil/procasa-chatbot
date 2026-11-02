@@ -34,8 +34,6 @@ BLOCK_VISIBLE_PATTERNS = (
     "too many requests",
     "your request has been blocked",
     "your request was blocked",
-    "blocked",
-    "forbidden",
 )
 
 BLOCK_HTML_MARKERS = (
@@ -119,6 +117,17 @@ def _requests_proxies(proxy: ProxyChoice | None) -> dict[str, str] | None:
     return proxy.requests_proxies
 
 
+def _write_response_diagnostic(html_path: Path, status_code: int | None, body: str) -> Path:
+    """Persist only the response body under the batch-scoped hashed path.
+
+    Request headers, proxy URLs, and credentials are intentionally excluded.
+    """
+    suffix = f".http_{status_code}.html" if status_code is not None else ".http_error.html"
+    diagnostic_path = html_path.with_suffix(suffix)
+    diagnostic_path.write_text(body or "", encoding="utf-8")
+    return diagnostic_path
+
+
 def download_html(
     url: str,
     config: AppConfig,
@@ -159,10 +168,26 @@ def download_html(
             response = session.get(url, headers=headers, proxies=_requests_proxies(proxy), timeout=timeout)
         except Exception as exc:
             raise RuntimeError(f"YAPO_PROXY_REQUEST_FAILED: {type(exc).__name__}") from None
-        if response.status_code == 407:
-            raise RuntimeError("YAPO_PROXY_AUTH_407: autenticación HTTP del proxy rechazada.")
-        if response.status_code in {401, 403, 429, 451}:
-            raise RuntimeError(f"YAPO_BLOCKED: HTTP {response.status_code}; solicitudes detenidas.")
+        if response.status_code >= 400:
+            diagnostic_path = _write_response_diagnostic(
+                html_path,
+                response.status_code,
+                str(getattr(response, "text", "") or ""),
+            )
+            if response.status_code == 407:
+                raise RuntimeError(
+                    "YAPO_PROXY_AUTH_407: autenticación HTTP del proxy rechazada; "
+                    f"respuesta guardada en {diagnostic_path}."
+                )
+            if response.status_code in {401, 403, 429, 451}:
+                raise RuntimeError(
+                    f"YAPO_BLOCKED: HTTP {response.status_code}; solicitudes detenidas; "
+                    f"respuesta guardada en {diagnostic_path}."
+                )
+            raise RuntimeError(
+                f"YAPO_HTTP_ERROR: HTTP {response.status_code}; "
+                f"respuesta guardada en {diagnostic_path}."
+            )
         response.raise_for_status()
         html = response.text
         validation = validate_html(html)

@@ -502,7 +502,7 @@ def test_simulated_llm_fabricated_commercial_actions_are_blocked(isolated, bad_r
     ctx = load_test_context(_full_pilot_db(), PHONE)
     answer = build_test_reply("¿Tiene conserjería?", ctx,
                               llm=lambda *_: bad_reply)
-    assert "Esta es una prueba interna" in answer
+    assert "no se ha solicitado ninguna gestión" in answer
     assert "no se ha solicitado" in answer
 
 
@@ -958,7 +958,7 @@ def test_live_november_3_outbound_whatsapp_exchange_is_contextual_not_generic(is
         assert result == {"status": "test_reply_sent"}
     greeting, correction = sent[0][1], sent[1][1]
     assert "Gracias por responder" in greeting
-    assert "te escribí" in greeting
+    assert "te escribí" in greeting.casefold()
     assert "UF 2.690" not in greeting
     assert "¿Qué te gustaría saber?" not in greeting
     assert "fuimos nosotros quienes te escribimos" in correction

@@ -637,7 +637,7 @@ def _reasks_known_customer_data(reply: str, ctx: dict,
     """Avoid asking again for name or visit preference already volunteered."""
     plain = _plain(reply)
     if ctx.get("customer_first_name") and re.search(
-        r"\\b(?:como te llamas|cual es tu nombre|me dices tu nombre)\\b", plain
+        r"\b(?:como te llamas|cual es tu nombre|me dices tu nombre)\b", plain
     ):
         return True
     seen_visit = any(VISIT.search(str(t.get("customer_text") or ""))
@@ -647,8 +647,8 @@ def _reasks_known_customer_data(reply: str, ctx: dict,
     user_details = [_visit_parts(str(t.get("customer_text") or "")) for t in history]
     day_stated = any(x.get("day") or x.get("period") for x in user_details)
     time_stated = any(x.get("time") for x in user_details)
-    asks_day = bool(re.search(r"\\b(?:que dia|cuando te acomoda|que fecha)\\b", plain))
-    asks_time = bool(re.search(r"\\b(?:que horario|a que hora|que hora)\\b", plain))
+    asks_day = bool(re.search(r"\b(?:que dia|cuando te acomoda|que fecha)\b", plain))
+    asks_time = bool(re.search(r"\b(?:que horario|a que hora|que hora)\b", plain))
     return (day_stated and asks_day) or (time_stated and asks_time)
 
 

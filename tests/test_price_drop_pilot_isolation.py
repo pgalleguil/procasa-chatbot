@@ -608,7 +608,7 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
 
 def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded():
     from scripts import price_drop_pilot_test as sender
-    assert sender.TEST_ID == "20261103-6436-price-drop-pilot-v7-validated-conversation"
+    assert sender.TEST_ID == "20261103-6436-price-drop-pilot-v8-20-dialogues"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
     ).read_text()
@@ -628,7 +628,7 @@ def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded(
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v7"' in source
+    assert '"campaign_version": "price_drop_pilot_v8"' in source
     assert 'if not is_test_phone(phone)' in source
 
 
@@ -1577,3 +1577,162 @@ def test_campaign_greeting_avoids_resending_link_unless_customer_requests_it(
     )["status"] == "test_reply_sent"
     assert "https://www.procasa.cl/6436" in outgoing[1][1]
     assert len(outgoing) == 2
+
+
+# A conversation is a sequence of user messages; every message runs through
+# the isolated production handler, while the DeepSeek API and WhatsApp send
+# are replaced by bounded offline doubles. Real lead records stay inaccessible.
+import json as _v8_json
+_V8_SCENARIOS = _v8_json.loads(
+    (Path(__file__).parent / "fixtures" /
+     "price_drop_v8_twenty_dialogues.json").read_text(encoding="utf-8")
+)
+assert len(_V8_SCENARIOS) == 20
+assert sum(len(turns) for _, turns in _V8_SCENARIOS) == 121
+
+
+def _v8_offline_model(messages, prospect, **kwargs):
+    """Adversarial model stand-in to exercise output validation and memory."""
+    from chatbot.price_drop_pilot_isolation import _plain
+    user = _plain(messages[-1]["content"]).strip()
+    earlier = " ".join(
+        _plain(x["content"]) for x in messages[:-1]
+        if x.get("role") == "user"
+    )
+    if user in ("hola", "buenas"):
+        # Reproduce the actual V7 failure: full catalogue on a mere greeting.
+        reply = (
+            "¡Hola de nuevo! Te resumo: 2 dormitorios, 2 baños, 65 m², "
+            "terraza, bodega, piscina y piso 6. Su nuevo precio es UF 2.690. "
+            "¿Te gustaría agendar una visita, ver la publicación o recibir "
+            "una ficha con todas las características?"
+        )
+    elif "nadie" in user or "no me contacto" in user:
+        reply = "Lamento la situación. Lo dejo planteado al equipo."
+    elif "asesor" in user or "me van a llamar" in user:
+        reply = "Gracias por consultarlo. Lo dejo planteado al equipo."
+    elif "quiero visitar" in user or "me interesa" in user:
+        reply = "Si te interesa una visita, dime qué día u horario te acomoda."
+    elif user == "bueno" and "nadie" in earlier:
+        reply = "Si quieres una visita, dime qué día u horario te acomoda."
+    elif user.startswith("gracias"):
+        reply = "¡De nada! 😊 Aquí estoy si surge otra consulta."
+    elif user in ("ok", "bueno", "perfecto"):
+        reply = "Perfecto 😊. Te leo."
+    elif "enlace" in user or "link" in user:
+        reply = "Claro, aquí está la publicación: https://www.procasa.cl/6436"
+    elif "dormitorios" in user:
+        reply = "Tiene 2 dormitorios, según la ficha."
+    elif "bano" in user:
+        reply = "La ficha registra 2 baños."
+    elif "terraza" in user:
+        reply = "Sí, cuenta con terraza según la publicación."
+    elif "piscina" in user:
+        reply = "Sí, la ficha del edificio menciona piscina."
+    elif "bodega" in user:
+        reply = "Sí, se informa una bodega."
+    elif "me escribieron" in user:
+        reply = "Sí, PROCASA te escribió primero por el aviso de rebaja."
+    else:
+        reply = (
+            "No tengo otro dato confirmado sobre ese punto en la ficha, "
+            "así que prefiero no inventar una respuesta."
+        )
+    return {"intencion": "consulta_general", "datos_extraidos": {},
+            "respuesta_bot": reply}
+
+
+@pytest.mark.parametrize(
+    "scenario_name,turns", _V8_SCENARIOS,
+    ids=[name for name, _ in _V8_SCENARIOS],
+)
+def test_v8_twenty_realistic_offline_customer_conversations(
+    isolated, monkeypatch, scenario_name, turns
+):
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-no-network")
+    from chatbot import grok_client
+    from chatbot.price_drop_pilot_isolation import _plain, _GREETING
+    db = db_case()
+    prop = db["universo_cartera_prop360"].docs[0]
+    prop["tipo_operacion"]["gastos_comunes"] = 85000
+    prop["caracteristicas"] = {
+        "dormitorios": 2, "banos": 2, "bodegas": 1,
+        "superficie_total": 65, "superficie_terraza": 5,
+        "piso": 6, "features": ["piscina", "has_terrace"],
+    }
+    prop["historial_cambios"] = [{
+        "fecha": "2026-10-06T21:55:59-03:00",
+        "campo": "precio_uf", "valor_anterior": 2790,
+        "valor_nuevo": 2690, "fuente": "prop360_bitacora",
+    }]
+    seen = []
+    def model(messages, prospect, **kwargs):
+        seen.append(messages)
+        return _v8_offline_model(messages, prospect, **kwargs)
+    monkeypatch.setattr(
+        grok_client, "generar_respuesta_estructurada", model
+    )
+    send, delivered = sender_spy()
+    for i, customer in enumerate(turns):
+        outcome = process_test_inbound(
+            db, PHONE, f"{scenario_name}-{i}", customer, sender=send
+        )
+        if customer.casefold() == "no me escriban más":
+            assert outcome == {"status": "test_stopped"}
+            assert len(delivered) == i
+            break
+        assert outcome == {"status": "test_reply_sent"}, (scenario_name, customer, outcome)
+        reply = delivered[-1][1]
+        low = _plain(reply)
+        question = _plain(customer)
+        assert reply and len(reply) < 650
+        assert "lo dejo planteado" not in low
+        assert "te llamara" not in low
+        assert "visita confirmada" not in low
+        assert "es competitivo" not in low
+        if _GREETING.fullmatch(customer):
+            assert len(reply) <= 175
+            assert "dormitorios" not in low
+            assert "https://www.procasa.cl/" not in reply
+        if "disponib" in question or "disponob" in question:
+            assert "disponible" in low and "confirmar" in low
+        if "gastos comunes" in question or "gastos comunes" in low and "ggcc" in question:
+            assert "$85.000" in reply
+        if "variacion" in question or "cuanto bajo" in question:
+            assert "100" in reply
+        if "cuando" in question and ("baj" in question or "rebaj" in question):
+            assert "6 de octubre de 2026" in reply
+        if "10 o 11" in question or "10 o a las 11" in question:
+            assert "10 o a las 11" in low
+            assert "entre 10 y 11" not in low
+            assert "no se ha" in low or "no hay" in low
+        if "nadie" in question:
+            assert "no se ha enviado" in low or "no se ha solicitado" in low
+        if question in ("no estoy seguro", "no puedo esta semana"):
+            assert "gracias por responder" not in low
+        if "no habia consultado" in question:
+            assert "no tengo" in low and "verificada" in low
+        if "cuanto cuesta ahora" in question or "cuanto sale" in question:
+            assert "2.690" in reply
+        if "que porcentaje bajo" in question:
+            assert "3,58%" in reply
+        if ("hola soy" in question or "hola, soy" in question) and i == 0:
+            assert "gracias por responder" in low
+        if scenario_name == "repeat_greetings" and i in (1, 2):
+            assert reply != delivered[-2][1]
+    assert len(db["crm_price_drop_pilot_test_turns_v1"].docs) == len(turns)
+    assert len(delivered) == len(turns) - int(
+        turns[-1].casefold() == "no me escriban más"
+    )
+    assert all(number == PHONE for number, _ in delivered)
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+    if len(seen) > 1:
+        # The model gets the original outbound and subsequent history.
+        last = seen[-1]
+        assert last[2]["role"] == "assistant"
+        assert "Te escribo porque el departamento" in last[2]["content"]
+        assert any(m["role"] == "user" for m in last[3:-1])

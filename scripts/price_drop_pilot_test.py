@@ -24,7 +24,7 @@ from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
 PROPERTY_CODE = "6436"
 OLD_UF = 2790.0
 NEW_UF = 2690.0
-TEST_ID = "20261103-6436-price-drop-pilot-v7-validated-conversation"
+TEST_ID = "20261103-6436-price-drop-pilot-v8-20-dialogues"
 
 
 def run_test_once(*, send: bool = False) -> int:
@@ -94,7 +94,7 @@ def run_test_once(*, send: bool = False) -> int:
         "new_price_uf": NEW_UF,
         "operation": "Venta",
         "channel": "whatsapp",
-        "campaign_version": "price_drop_pilot_v7",
+        "campaign_version": "price_drop_pilot_v8",
         "status": "SENDING",
         "isolation_version": "test_webhook_before_crm_v1",
         "created_at": now,

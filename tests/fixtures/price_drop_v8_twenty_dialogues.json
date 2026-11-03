@@ -1,0 +1,223 @@
+[
+  [
+    "v7_replay",
+    [
+      "HOLA",
+      "SI PERO CUAL ES SU VARIACION CUANTO ESTABA ANTES",
+      "SIGUE DISPONIBLE?",
+      "QUE SI SIGUE DISPONOBLE LA PROPIEDAD?",
+      "CUALES ERAN SUS GASTOS COMUNES",
+      "SI QUE ANTES ME INTEERO PERO NADIE SE PUSO EN CONTACTO CONMIGO",
+      "BUENO",
+      "MAÑANA ALAS 10 O 11",
+      "GRACIAS"
+    ]
+  ],
+  [
+    "customer_name",
+    [
+      "Hola soy Camila",
+      "¿Cuántos dormitorios?",
+      "¿Tiene terraza?",
+      "Me interesa",
+      "¿Puedo visitarla mañana a las 11?",
+      "Gracias"
+    ]
+  ],
+  [
+    "price_history",
+    [
+      "Hola",
+      "¿Cuánto estaba antes?",
+      "¿Cuándo bajó?",
+      "¿Sigue disponible?",
+      "Me interesa",
+      "Gracias"
+    ]
+  ],
+  [
+    "sold_or_active",
+    [
+      "Hola",
+      "¿Ya la vendieron?",
+      "¿Qué piso es?",
+      "¿Hay ascensor?",
+      "No puedo esta semana",
+      "Gracias"
+    ]
+  ],
+  [
+    "amenities",
+    [
+      "Hola",
+      "¿Tiene piscina?",
+      "¿Tiene estacionamiento?",
+      "¿Cuánto sale?",
+      "¿Aceptan UF 2500?",
+      "Gracias"
+    ]
+  ],
+  [
+    "past_no_contact",
+    [
+      "Hola",
+      "La vez pasada nadie me contactó",
+      "Quiero hablar con un asesor",
+      "¿Me van a llamar?",
+      "¿Sigue a la venta?",
+      "Gracias"
+    ]
+  ],
+  [
+    "decline_then_fact",
+    [
+      "Buenas",
+      "No gracias",
+      "¿Cuánto bajó?",
+      "No quiero una visita",
+      "¿Gastos comunes?",
+      "Gracias"
+    ]
+  ],
+  [
+    "request_link",
+    [
+      "Hola",
+      "¿Me compartes el enlace?",
+      "¿Cuándo bajó?",
+      "¿Cuál era el precio anterior?",
+      "¿Sigue disponible?",
+      "Gracias"
+    ]
+  ],
+  [
+    "property_details",
+    [
+      "Hola",
+      "¿Es en San Miguel?",
+      "¿Tiene dos baños?",
+      "¿Tiene bodega?",
+      "¿Gastos comunes?",
+      "Gracias"
+    ]
+  ],
+  [
+    "compound_name",
+    [
+      "Hola soy María José",
+      "¿Qué superficie tiene?",
+      "¿Quedan departamentos?",
+      "Quiero visitarla",
+      "Mañana a las 10 o a las 11",
+      "Gracias"
+    ]
+  ],
+  [
+    "budget",
+    [
+      "Hola",
+      "Mi presupuesto máximo es UF 2600",
+      "¿Se puede negociar?",
+      "¿Qué gastos comunes tiene?",
+      "Lo voy a pensar",
+      "Gracias"
+    ]
+  ],
+  [
+    "mortgage",
+    [
+      "Hola",
+      "¿Aceptan crédito hipotecario?",
+      "¿Es negociable?",
+      "¿Cuándo bajó el precio?",
+      "¿Todavía está en venta?",
+      "Gracias"
+    ]
+  ],
+  [
+    "origin_confusion",
+    [
+      "Buenas",
+      "¿Me escribieron ustedes?",
+      "¿Por qué me contactaron?",
+      "¿Qué propiedad bajó?",
+      "¿Cuánto bajó?",
+      "Ok"
+    ]
+  ],
+  [
+    "other_listing",
+    [
+      "Hola",
+      "¿Y la propiedad 6499?",
+      "¿Qué tal la de San Miguel?",
+      "¿Qué rebaja tuvo?",
+      "¿Sigue disponible?",
+      "Gracias"
+    ]
+  ],
+  [
+    "commission",
+    [
+      "Hola",
+      "¿Hay comisión de corretaje?",
+      "¿Tiene estacionamiento?",
+      "¿Cuánto cuesta ahora?",
+      "¿Tiene terraza?",
+      "Gracias"
+    ]
+  ],
+  [
+    "investor",
+    [
+      "Hola",
+      "¿Sirve como inversión?",
+      "¿Cuánto se puede arrendar?",
+      "¿Gastos comunes?",
+      "¿Sigue disponible?",
+      "Gracias"
+    ]
+  ],
+  [
+    "uncertainty",
+    [
+      "Hola",
+      "No estoy seguro",
+      "¿Cuándo fue rebajada?",
+      "¿Qué porcentaje bajó?",
+      "¿Cuántos dormitorios?",
+      "Gracias"
+    ]
+  ],
+  [
+    "repeat_greetings",
+    [
+      "Hola",
+      "Hola",
+      "Hola",
+      "¿Sigue disponible?",
+      "Me interesa",
+      "Mañana alas 10 o 11"
+    ]
+  ],
+  [
+    "repeat_question",
+    [
+      "Hola",
+      "¿Cuánto bajó?",
+      "Te pregunté cuánto bajó",
+      "¿En qué fecha bajó?",
+      "¿SIGUE DISPONOBLE?",
+      "Ok"
+    ]
+  ],
+  [
+    "privacy_stop",
+    [
+      "Hola",
+      "No había consultado esta propiedad",
+      "¿Por qué me escribieron?",
+      "No me escriban más"
+    ]
+  ]
+]

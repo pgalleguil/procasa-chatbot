@@ -1764,9 +1764,11 @@ def test_live_v8_no_unverified_apartment_number_in_realistic_reply(isolated):
             "respuesta_bot": raw,
         },
     )
-    assert "Séptima Avenida 1370. Tiene" in answer
+    assert "Séptima Avenida 1370" not in answer
+    assert "1370" not in answer
     assert "departamento 68" not in answer
-    assert "2 dormitorios" in answer
+    assert "San Miguel" in answer
+    assert "ubicación exacta" in answer or "dirección exacta" in answer
 
 
 def test_explicit_prop360_unit_can_be_named(isolated):

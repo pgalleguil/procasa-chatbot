@@ -11,6 +11,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 
+import scrapers.scraper_yapo.import_yapo_prepared_batch as import_batch
 from scrapers.scraper_yapo.config import AppConfig
 from scrapers.scraper_yapo.import_yapo_prepared_batch import (
     INITIAL_GESTION,
@@ -147,6 +148,30 @@ def test_apply_rejects_a_canonical_file_whose_preflight_hash_does_not_match(tmp_
             input_path, tmp_path / "out", apply=True, approval_id="approval",
             confirm_target="URLS.propiedades_captacion", expected_sha256="0" * 64,
         )
+
+
+def test_read_only_preflight_preserves_exact_input_sha_when_input_is_output_batch(tmp_path, monkeypatch):
+    counts = {"CORREDOR_SEGURO": 369, "CORREDOR_PROBABLE": 11, "DUEÑO_PROBABLE": 10, "INCIERTO": 92}
+    docs = []
+    index = 0
+    for state, count in counts.items():
+        for _ in range(count):
+            index += 1
+            docs.append({"listing_id": str(10000000 + index), "classification": {"state": state}})
+    input_path = tmp_path / "yapo_maipu_preimport_482.json"
+    original_bytes = (json.dumps(docs, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    input_path.write_bytes(original_bytes)
+    monkeypatch.setattr(import_batch, "_read_preflight", lambda _docs, _config: ([], {}))
+
+    report = run_preflight(input_path, tmp_path)
+
+    import hashlib
+    assert input_path.read_bytes() == original_bytes
+    assert report["input_sha256"] == hashlib.sha256(original_bytes).hexdigest()
+    assert report["input"] == str(input_path.resolve())
+    markdown = (tmp_path / "yapo_maipu_preimport_audit.md").read_text(encoding="utf-8")
+    assert f'--input "{input_path.resolve()}"' in markdown
+    assert f'--expected-sha256 "{report["input_sha256"]}"' in markdown
 
 
 def test_import_route_source_has_no_scrape_or_post_distribution_hook():

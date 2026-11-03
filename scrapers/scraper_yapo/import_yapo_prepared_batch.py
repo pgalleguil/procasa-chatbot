@@ -704,7 +704,7 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": "write_attempt" if apply else "read_only_preimport",
         "target": f"{TARGET_DATABASE}.{TARGET_COLLECTION}",
-        "input": str(input_path), "input_count": len(docs),
+        "input": str(input_path.resolve()), "output_dir": str(output_dir.resolve()), "input_count": len(docs),
         "input_sha256": actual_sha256, "sha256_scope": "exact UTF-8 bytes of canonical JSON input file",
         "classification_counts": dict(Counter(str((doc.get("classification") or {}).get("state")) for doc in docs)),
         "identity_counts": dict(identity_counts),
@@ -743,7 +743,12 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
         "write_outcomes": outcomes,
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "yapo_maipu_preimport_482.json").write_text(json.dumps(docs, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    prepared_batch_path = output_dir / "yapo_maipu_preimport_482.json"
+    # The approved SHA is over the exact input bytes. A read-only preflight
+    # must never rewrite that source when input and output point to the same
+    # canonical file, or the hash in the report would no longer authorize it.
+    if input_path.resolve() != prepared_batch_path.resolve():
+        prepared_batch_path.write_text(json.dumps(docs, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     (output_dir / "yapo_maipu_preimport_audit.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     (output_dir / "yapo_maipu_compatibilidad_campos.json").write_text(json.dumps({
         "target": report["target"], "batch_sha256": actual_sha256,
@@ -797,8 +802,8 @@ def _render_summary(report: dict[str, Any]) -> str:
         '```powershell',
         "$env:ENV_FILE='C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\.env'",
         'python -m scrapers.scraper_yapo.import_yapo_prepared_batch `',
-        '  --input "C:\\Users\\pgall\\Documents\\PROCASA\\YapoMaipu\\preimportacion_20261103\\yapo_maipu_preimport_482.json" `',
-        '  --output-dir "C:\\Users\\pgall\\Documents\\PROCASA\\YapoMaipu\\preimportacion_20261103" `',
+        f'  --input "{report["input"]}" `',
+        f'  --output-dir "{report["output_dir"]}" `',
         '  --apply --approval-id "<folio-aprobado>" --confirm-target URLS.propiedades_captacion `',
         f'  --expected-sha256 "{report["input_sha256"]}"',
         '```',

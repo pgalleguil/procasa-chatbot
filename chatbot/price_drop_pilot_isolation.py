@@ -106,6 +106,24 @@ def _plain(text: str) -> str:
                    if not unicodedata.combining(c))
 
 
+def _outreach_origin_challenge(message: str) -> bool:
+    """Recognize when the recipient calls out that PROCASA initiated contact.
+
+    Tolerate common mobile typos ('qye', 'escrobiendo') while avoiding a
+    broad sentiment classifier that could mislabel this as distrust.
+    """
+    clean = re.sub(r"\bqye\b", "que", _plain(message))
+    outbound_verb = re.search(
+        r"\b(?:escrib\w*|escrob\w*|contact\w*|mand\w*|envi\w*)\b", clean
+    )
+    sender_reference = re.search(r"\b(?:tu|ustedes|procasa)\b", clean)
+    objection_to_question = re.search(
+        r"\b(?:como que|por que)\b.{0,65}\b"
+        r"(?:me gustaria saber|me preguntas|que quiero saber)\b", clean
+    )
+    return bool((outbound_verb and sender_reference) or objection_to_question)
+
+
 def _valid_first_name(name: str) -> bool:
     return bool(re.fullmatch(r"[a-záéíóúüñ]{2,24}(?: [a-záéíóúüñ]{2,24})?", name, re.I)
                 and _plain(name.split()[0]) not in _NAME_NONPERSON)
@@ -417,10 +435,9 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
 
 def _safe_fallback(ctx: dict) -> str:
     return (
-        f"Esta es una prueba interna sobre el departamento {ctx['property_code']}, "
-        f"actualmente en UF {_format_uf(ctx['new_price_uf'])}. "
-        "¿Te gustaría recibir información o coordinar una visita? "
-        "En esta prueba no notificaremos a ejecutivos ni gestionaremos una visita real."
+        "Disculpa, no quiero responderte algo incorrecto. "
+        "¿Me puedes explicar un poquito mejor qué necesitas saber?"
+        " En esta conversación no se ha solicitado ninguna gestión a un ejecutivo."
     )
 
 
@@ -438,6 +455,13 @@ def _llm_answer(message: str, ctx: dict, history: list[dict]) -> str:
         "en español chileno profesional sin chilenismos forzados. "
         "Es una continuación de una comunicación informativa por rebaja de precio, "
         "NO el primer contacto; nunca pidas de nuevo un enlace, código o teléfono. "
+        "PROCASA ES QUIEN INICIÓ LA CONVERSACIÓN: enviamos primero el mensaje "
+        "de rebaja y el cliente está RESPONDIENDO. Jamás lo trates como si "
+        "hubiera iniciado él la consulta. El mensaje inicial ya incluyó "
+        "precio anterior, precio nuevo, enlace y la pregunta sobre el nuevo valor. "
+        "No repitas el texto inicial ni preguntes genéricamente qué quiere saber. "
+        "Si nos reclama que fuimos nosotros quienes escribimos primero, "
+        "reconoce el error y discúlpate, sin inferir desconfianza. "
         f"Propiedad: departamento en venta de San Miguel, código {code}. "
         f"Precio ANTERIOR UF {old}; precio VIGENTE UF {price}, rebaja confirmada. "
         f"ÚNICOS datos verificados en Prop360: {facts or 'sin atributos adicionales confirmados'}. "
@@ -468,7 +492,15 @@ def _llm_answer(message: str, ctx: dict, history: list[dict]) -> str:
         "contacto. Si rechaza, respeta su decisión sin insistir. "
         "No solicites RUT, nombre, correo, teléfono ni otros datos personales."
     )
-    messages = [{"role": "system", "content": sys}]
+    messages = [
+        {"role": "system", "content": sys},
+        {"role": "assistant", "content": (
+            "Hola, ¿cómo estás? Soy de PROCASA 😊. Te escribí porque el "
+            f"departamento de San Miguel bajó de UF {old} a UF {price}. "
+            f"Te compartí https://www.procasa.cl/{code}. "
+            "¿Cómo lo ves con este nuevo valor?"
+        )},
+    ]
     for item in history[-10:]:
         if item.get("customer_text"):
             messages.append({"role": "user", "content": str(item["customer_text"])[:700]})
@@ -514,6 +546,15 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
                 "¿Qué te gustaría saber del departamento?")
     if DECLINE.search(clean):
         return "Entendido, gracias por responder. No insistiremos en esta propiedad."
+    # The commercial conversation started with OUR campaign, not with
+    # this customer's first inbound. Do not classify their objection as fear.
+    if _outreach_origin_challenge(clean):
+        return (
+            "Tienes toda la razón, fuimos nosotros quienes te escribimos. "
+            "Disculpa, te respondí como si tú hubieras iniciado la conversación. "
+            "Solo queríamos comentarte la rebaja del departamento; "
+            "si te interesa conversarlo, encantada, y si no, ningún problema."
+        )
     facts = ctx.get("property_facts") or {}
     if _NAME_QUESTION.search(_plain(clean)):
         name = ctx.get("customer_first_name") or introduction
@@ -525,9 +566,12 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
         return visit_reply
     if _GREETING.fullmatch(clean):
         if history:
-            return f"¡Hola de nuevo! 😊 ¿Qué más te gustaría saber del departamento {code}?"
-        return (f"¡Hola! 😊 Te cuento del departamento {code} de San Miguel, "
-                f"que bajó a UF {new}. ¿Qué te gustaría saber?")
+            return "¡Hola de nuevo! 😊 Te leo."
+        return (
+            "¡Hola! 😊 Gracias por responder. "
+            "Te escribí por la rebaja del departamento de San Miguel. "
+            "¿Alcanzaste a revisar la publicación?"
+        )
     if DETAILS.search(clean) and facts:
         return (f"El departamento {code} está en venta a UF {new}. "
                 f"Su ficha informa: {_formatted_facts(facts)}. "
@@ -606,8 +650,10 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
         return (f"Sí, ahora está en UF {new}; antes costaba UF {old}. "
                 "¿Te interesa saber algo más del departamento?")
     if YES.search(clean):
-        return (f"¡Qué bueno! 😊 Es el departamento {code} de San Miguel, "
-                f"que ahora está en UF {new}. ¿Te gustaría saber algo en particular o ir a verlo?")
+        return (
+            "¡Qué bueno! 😊 Si quieres, podemos revisar tus dudas sobre "
+            "el departamento o conversar sobre una posible visita."
+        )
     if ALTERNATIVE.search(clean):
         return ("Podemos buscar otras alternativas, pero esta prueba solo está conectada "
                 f"al departamento {code}. No enviaré una consulta a ejecutivos.")

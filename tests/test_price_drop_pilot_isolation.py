@@ -116,7 +116,7 @@ def test_isolated_yes_no_executive_notifications_or_crm_changes(isolated):
     result = process_test_inbound(db, PHONE, "incoming-yes-1", "Sí", sender=sender)
     assert result == {"status": "test_reply_sent"}
     assert len(calls) == 1
-    assert "6436" in calls[0][1]
+    assert "¡Qué bueno!" in calls[0][1]
     assert db["crm_price_drop_pilot_test_turns_v1"].docs[0]["status"] == "SENT"
     assert set(db.keys()) == {
         "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
@@ -125,7 +125,7 @@ def test_isolated_yes_no_executive_notifications_or_crm_changes(isolated):
 
 
 @pytest.mark.parametrize("message,fragment", [
-    ("Sí, me interesa", "6436"),
+    ("Sí, me interesa", "¡Qué bueno!"),
     ("Quiero visitarla", "¿Qué día"),
     ("¿Cuánto cuesta ahora?", "2.690"),
     ("¿Aceptan ofertas?", "oferta"),
@@ -218,7 +218,7 @@ def test_model_cannot_claim_executive_was_notified(isolated):
     answer = build_test_reply("¿Hay conserjería?", ctx,
                               llm=lambda *_: "He notificado al ejecutivo y te llamará")
     assert "he notificado" not in answer.lower()
-    assert "no notificaremos" in answer.lower()
+    assert "no se ha solicitado" in answer.lower()
 
 
 def test_webhook_interception_occurs_before_production_operations():
@@ -391,12 +391,12 @@ def _full_pilot_db():
 
 
 @pytest.mark.parametrize("message,expected", [
-    ("hola", "6436"),
-    ("Sí, me interesa", "6436"),
-    ("sí", "6436"),
-    ("oka me interesa", "6436"),
-    ("okey me interesa", "6436"),
-    ("me interesa", "6436"),
+    ("hola", "Gracias por responder"),
+    ("Sí, me interesa", "¡Qué bueno!"),
+    ("sí", "¡Qué bueno!"),
+    ("oka me interesa", "¡Qué bueno!"),
+    ("okey me interesa", "¡Qué bueno!"),
+    ("me interesa", "¡Qué bueno!"),
     ("¿Cuánto cuesta?", "2.690"),
     ("¿Bajó a UF 2690?", "2.690"),
     ("¿Cuántos baños tiene?", "2 baños"),
@@ -452,11 +452,11 @@ def test_simulate_full_multi_turn_conversion_without_crm(isolated):
     db = _full_pilot_db()
     sender, calls = sender_spy()
     transcript = [
-        ("hola", "6436"),
+        ("hola", "Gracias por responder"),
         ("cuales son sus caracteristicas?", "2 baños"),
         ("pero quiero saber cuantos baños tiene", "2 baños"),
         ("¿cuánto cuesta ahora?", "2.690"),
-        ("oka me interesa", "¿Te gustaría saber algo en particular o ir a verlo?"),
+        ("oka me interesa", "podemos revisar tus dudas"),
         ("quiero visitarla", "¿Qué día"),
         ("el proximo mes", "¿Tienes algún día"),
         ("el martes", "¿Te acomoda más en la mañana"),
@@ -502,8 +502,8 @@ def test_simulated_llm_fabricated_commercial_actions_are_blocked(isolated, bad_r
     ctx = load_test_context(_full_pilot_db(), PHONE)
     answer = build_test_reply("¿Tiene conserjería?", ctx,
                               llm=lambda *_: bad_reply)
-    assert "Esta es una prueba interna" in answer
-    assert "no notificaremos" in answer
+    assert "no se ha solicitado ninguna gestión" in answer
+    assert "no se ha solicitado" in answer
 
 
 def test_simulation_response_fails_closed_on_stale_price_and_unavailable_sale(isolated):
@@ -602,7 +602,7 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
         "¿Hay conserjería?", ctx, llm=lambda *_: "Queda registrado para el viernes."
     )
     assert "Queda registrado" not in reply
-    assert "no notificaremos" in reply
+    assert "no se ha solicitado" in reply
 
 
 
@@ -743,7 +743,7 @@ def test_llm_cannot_claim_that_visit_preference_was_registered(isolated):
         llm=lambda *_: "Queda solo registrada tu preferencia."
     )
     assert "Queda solo registrada" not in answer
-    assert "no notificaremos" in answer
+    assert "no se ha solicitado" in answer
 
 
 def test_morning_daypart_does_not_erase_an_explicit_tomorrow(isolated):
@@ -776,10 +776,12 @@ def test_v4_responds_in_short_natural_whatsapp_without_reintroducing_ourselves(i
         {"customer_text": "Hola", "bot_text": first},
         {"customer_text": "Tiene terraza?", "bot_text": "Sí, tiene 5 m² de terraza."},
     ])
-    assert "bajó" in first and "2.690" in first
-    assert "6436" in first and "6436" in followup
+    assert "Gracias por responder" in first
+    assert "San Miguel" in first
+    assert "2.690" not in first and "6436" not in first
+    assert "¿Qué te gustaría saber?" not in first
     assert "Soy de PROCASA" not in followup
-    assert "¡Hola de nuevo!" in followup
+    assert followup == "¡Hola de nuevo! 😊 Te leo."
     assert first.count("¿") == 1
 
 
@@ -836,7 +838,7 @@ def test_v4_llm_cannot_send_truncated_sentence(monkeypatch, isolated):
     ctx = load_test_context(_full_pilot_db(), PHONE)
     answer = build_test_reply("¿Tiene conserjería?", ctx)
     assert "Sí, te recomiendo ver" not in answer
-    assert "no notificaremos" in answer
+    assert "no se ha solicitado" in answer
 
 
 def test_v5_customer_introduction_is_remembered_without_touching_crm(isolated):
@@ -937,3 +939,78 @@ def test_v5_duplicate_name_event_does_not_update_campaign_again(isolated):
     assert db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"] == "Daniela"
     assert sum(op == "update_one" for op, _ in db["crm_price_drop_pilot_v1"].calls) == first_updates
     assert len(calls) == 1
+
+
+def test_live_november_3_outbound_whatsapp_exchange_is_contextual_not_generic(isolated):
+    """Replay BOTH customer messages from the Nov 3 V5 WhatsApp pilot."""
+    db = _full_pilot_db()
+    send, sent = sender_spy()
+    for i, message in enumerate([
+        "HOLA",
+        "COMO QYE ME GUSTARIA SABER SI TU ME ESTAS ESCROBIENDO",
+    ]):
+        result = process_test_inbound(
+            db, PHONE, "nov3-real-" + str(i), message, sender=send,
+            llm=lambda *_: (_ for _ in ()).throw(
+                AssertionError("These two reactions must be deterministic")
+            ),
+        )
+        assert result == {"status": "test_reply_sent"}
+    greeting, correction = sent[0][1], sent[1][1]
+    assert "Gracias por responder" in greeting
+    assert "te escribí" in greeting.casefold()
+    assert "UF 2.690" not in greeting
+    assert "¿Qué te gustaría saber?" not in greeting
+    assert "fuimos nosotros quienes te escribimos" in correction
+    assert "Disculpa" in correction
+    for bad in ("desconfianza", "asistente virtual", "precio anterior",
+                "¿Qué te gustaría saber?", "6436"):
+        assert bad.casefold() not in correction.casefold()
+    assert all(x["status"] == "SENT"
+               for x in db["crm_price_drop_pilot_test_turns_v1"].docs)
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+@pytest.mark.parametrize("message", [
+    "Pero si ustedes me escribieron primero",
+    "¿Y por qué me preguntas qué quiero saber si tú me escribiste?",
+    "¿Tú me estás contactando por una rebaja?",
+    "¿Cómo que me gustaría saber si tú me estás escribiendo?",
+])
+def test_outbound_contact_objection_acknowledges_sender_without_fabrication(
+    isolated, message
+):
+    ctx = load_test_context(_full_pilot_db(), PHONE)
+    response = build_test_reply(
+        message, ctx,
+        llm=lambda *_: (_ for _ in ()).throw(AssertionError("No LLM")),
+    )
+    assert "fuimos nosotros quienes te escribimos" in response
+    assert "desconfianza" not in response
+    assert "visita agendada" not in response
+
+
+def test_followup_after_outbound_correction_continues_with_verified_facts(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    for i, message in enumerate([
+        "HOLA",
+        "COMO QYE ME GUSTARIA SABER SI TU ME ESTAS ESCROBIENDO",
+        "¿Tiene terraza?",
+        "¿Y sus gastos comunes?",
+        "Me llamo Camila",
+        "¿Cuántos baños tiene?",
+    ]):
+        result = process_test_inbound(
+            db, PHONE, "nov3-continued-" + str(i), message, sender=send,
+            llm=lambda *_: (_ for _ in ()).throw(AssertionError("No LLM")),
+        )
+        assert result == {"status": "test_reply_sent"}
+    assert "5 m² de terraza" in calls[2][1]
+    assert "$85.000" in calls[3][1]
+    assert "Camila" in calls[4][1]
+    assert "2 baños" in calls[5][1]
+    assert "Camila" in db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"]

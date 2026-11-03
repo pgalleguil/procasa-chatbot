@@ -1090,12 +1090,15 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
         if visit_answer is None and VISIT.search(clean):
             # A visit request without both day and time must still advance.
             visit_answer = _visit_reply(clean, ctx, history)
-        if visit_answer is not None:
-            return (
-                visit_answer if location_declined
-                else f"{_campaign_location_reply(ctx)} {visit_answer}"
-            )
         fact_answer = _native_verified_answer(clean, ctx)
+        if visit_answer is not None:
+            # A customer can ask three things in one WhatsApp message.
+            # Do not silently drop price/availability while answering a visit.
+            return " ".join(part for part in (
+                None if location_declined else _campaign_location_reply(ctx),
+                fact_answer,
+                visit_answer,
+            ) if part)
         if fact_answer is not None:
             return (
                 fact_answer if location_declined

@@ -323,6 +323,48 @@ def known_broker_brand_in_strong_fields(extracted: dict[str, Any]) -> dict[str, 
     }
 
 
+@lru_cache(maxsize=1)
+def _verified_broker_candidate_profiles() -> dict[str, dict[str, Any]]:
+    """Load manually verified profile evidence without promoting brands to the confirmed catalog."""
+    path = DATA_DIR / "verified_broker_candidate_profiles.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    profiles = payload.get("profiles", []) if isinstance(payload, dict) else []
+    return {
+        str(item.get("seller_profile_id")): item
+        for item in profiles if isinstance(item, dict) and item.get("seller_profile_id")
+    }
+
+
+def verified_broker_candidate_profile(extracted: dict[str, Any]) -> dict[str, Any] | None:
+    """Classify only reviewed profile IDs as probable; confirmed brand catalog remains unchanged."""
+    profile_id = str(extracted.get("seller_profile_id") or "").strip()
+    candidate = _verified_broker_candidate_profiles().get(profile_id)
+    if not candidate:
+        return None
+    if not _publisher_field_is_confirmed(extracted, "publicador_visible"):
+        return None
+    actual_name = normalize_text(str(extracted.get("publicador_visible") or ""))
+    expected_name = normalize_text(str(candidate.get("display_name") or ""))
+    if not actual_name or actual_name != expected_name:
+        return None
+    if not _publisher_field_is_confirmed(extracted, "seller_type") or normalize_text(str(extracted.get("seller_type") or "")) != "profesional":
+        return None
+    return {
+        "state": "CORREDOR_PROBABLE", "confidence": 0.88,
+        "reason": "Perfil comercial verificado por fuente externa y coincidente con identidad profesional extraída; marca pendiente de incorporación al catálogo confirmado.",
+        "evidence": [
+            f"verified_profile_id:{profile_id}",
+            f"confirmed_publisher_identity:{candidate['display_name']}",
+            "seller_type:PROFESIONAL",
+            f"external_business_evidence:{candidate.get('evidence_source', '')}",
+        ],
+        "source": "verified_candidate_profile_not_confirmed_brand",
+    }
+
+
 def hard_broker_terms_in_strong_fields(extracted: dict[str, Any]) -> dict[str, Any] | None:
     validate_classification_rules(raise_on_error=True)
     terms = load_rule_sets()["hard_broker_terms"]
@@ -711,15 +753,23 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
 
 def company_shape_in_publisher_fields(extracted: dict[str, Any]) -> dict[str, Any]:
     terms = load_rule_sets()["company_shape_terms"]
+    # Yapo profile names commonly concatenate a specific real-estate marker
+    # with the brand (for example, "CastroPropiedades"). Accept only these
+    # explicit brokerage descriptors in compact form; legal abbreviations
+    # such as S.A. remain boundary-sensitive to avoid personal-name matches.
+    compact_business_terms = {"propiedades", "inmobiliaria", "corredora", "corredores", "corretaje", "bienes raices", "real estate"}
     values = _field_values(extracted, STRONG_PUBLISHER_FIELDS)
     evidence: list[str] = []
     for field, value in values.items():
-        text = _matchable(value)
+        compact_value = "".join(_matchable(value).split())
         for term in terms:
             norm = _matchable(term)
             if not norm:
                 continue
-            if _phrase_matches(value, term):
+            compact_term = "".join(norm.split())
+            if _phrase_matches(value, term) or (
+                norm in compact_business_terms and compact_term in compact_value
+            ):
                 evidence.append(f"{field}:{term}")
                 break
     return {
@@ -806,6 +856,10 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
     hard = hard_broker_terms_in_strong_fields(extracted)
     if hard:
         return hard
+
+    reviewed_profile = verified_broker_candidate_profile(extracted)
+    if reviewed_profile:
+        return reviewed_profile
 
     profile = extracted.get("publisher_profile_context") or {}
     if profile.get("commercial_identity_confirmed") and profile.get("confirmed_broker_count", 0) > 0:

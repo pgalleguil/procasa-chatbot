@@ -1,0 +1,61 @@
+{
+  "status": "profile_specific_probable_only_not_confirmed_catalog_brands",
+  "profiles": [
+    {
+      "seller_profile_id": "15551205",
+      "display_name": "TuHouse",
+      "evidence_source": "https://www.tuhouse.cl/Default.asp",
+      "evidence_summary": "El sitio de la marca se identifica como corretaje de propiedades y ofrece venta, arriendos y administración.",
+      "status": "commercial_activity_verified_not_in_confirmed_brand_catalog"
+    },
+    {
+      "seller_profile_id": "17057667",
+      "display_name": "Hobbins Vitacura",
+      "evidence_source": "https://www.hobbins.cl/",
+      "evidence_summary": "El sitio de Hobbins identifica Hobbins Vitacura como oficina y ofrece propiedades en venta y arriendo.",
+      "status": "commercial_activity_verified_not_in_confirmed_brand_catalog"
+    },
+    {
+      "seller_profile_id": "17858827",
+      "display_name": "Inmobilien Chile",
+      "evidence_source": "https://chilepropiedades.cl/ver-publicacion/venta/maipu/casa/abate-molina-2600/140440677",
+      "evidence_summary": "La ficha identifica a Inmobiliaria e Inversiones Inmobilien SpA como corredora con publicaciones activas.",
+      "status": "commercial_activity_verified_not_in_confirmed_brand_catalog"
+    },
+    {
+      "seller_profile_id": "17065465",
+      "display_name": "Vivienda Chile",
+      "evidence_source": "https://chilepropiedades.cl/ver-corredora/2920893/vivienda-chile/0",
+      "evidence_summary": "La ficha clasifica a Vivienda Chile como corredora de propiedades; el HTML local de Yapo la identifica además como agente.",
+      "status": "commercial_activity_verified_not_in_confirmed_brand_catalog"
+    },
+    {
+      "seller_profile_id": "17450178",
+      "display_name": "Alejandro Jaime V & Asociados",
+      "evidence_source": "https://www.portalchile.org/detalle-marca/alejandro-jaime-v-and-asociados-propiedades-realty-corp-1068156",
+      "evidence_summary": "La marca registrada cubre negocios inmobiliarios; el perfil local de Yapo coincide por identidad y etiqueta profesional.",
+      "status": "commercial_activity_verified_not_in_confirmed_brand_catalog"
+    },
+    {
+      "seller_profile_id": "13725393",
+      "display_name": "CDProp",
+      "evidence_source": "https://www.yapo.cl/user/profile/id/13725393",
+      "evidence_summary": "El perfil declara explícitamente corredor de propiedades profesional independiente.",
+      "status": "commercial_activity_verified_not_in_confirmed_brand_catalog"
+    },
+    {
+      "seller_profile_id": "13726421",
+      "display_name": "Portal Arriendo",
+      "evidence_source": "https://www.yapo.cl/user/profile/id/13726421",
+      "evidence_summary": "El perfil se presenta como portal comercial de propiedades y muestra cientos de avisos en venta y arriendo.",
+      "status": "commercial_activity_verified_not_in_confirmed_brand_catalog"
+    },
+    {
+      "seller_profile_id": "13879590",
+      "display_name": "MOBILIUM",
+      "evidence_source": "https://mobilium.cl/",
+      "evidence_summary": "La empresa confirma gestión inmobiliaria y comercialización con publicación, visitas y negociación; el perfil local Yapo aparece como agente profesional.",
+      "status": "commercial_activity_verified_not_in_confirmed_brand_catalog"
+    }
+  ]
+}

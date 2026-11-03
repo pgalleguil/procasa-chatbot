@@ -18,6 +18,7 @@ from .classifier_rules import classify_yapo_listing
 from .extractor import extract_listing_fields
 from .mongo_store import MongoStore
 from .config import AppConfig
+from .downloader import validate_html
 
 UF_CLP = 41263.57
 UF_DATE = "2026-11-03"
@@ -30,12 +31,12 @@ SAVED_FIELDS = (
     "attributes", "image_urls", "main_image_url", "canonical_url",
     "publisher_field_provenance", "publisher_identity_candidates", "publisher_profile_context",
 )
-REQUIRED = (
+STRUCTURE_REQUIRED = (
     "schema_version", "origen", "source_portal", "source", "listing_id", "url", "canonical_url",
-    "run_id", "batch_id", "title", "description", "operacion", "tipo_propiedad", "comuna",
-    "precio_raw", "classification", "html_validation_status", "scrape_stage", "pipeline_state",
-    "pipeline_complete", "processed_at", "updated_at",
+    "run_id", "batch_id", "classification", "html_validation_status", "scrape_stage", "pipeline_state",
+    "pipeline_complete", "html_validation_reason", "processed_at", "updated_at",
 )
+EXTRACTION_REQUIRED = ("title", "description", "operacion", "tipo_propiedad", "comuna", "precio_raw")
 CRM_PROTECTED = {
     "gestion", "asignacion", "asignaciones", "assigned_to", "assigned_executive",
     "executive_assignments", "historial_gestion", "management_history", "captacion_management_events",
@@ -45,10 +46,10 @@ CRM_PROTECTED = {
 
 
 def _number(raw: str) -> float | None:
-    text = str(raw or "").strip()
-    if not text:
+    match = re.search(r"(?<!\d)(\d[\d.,]*)(?!\d)", str(raw or ""))
+    if not match:
         return None
-    text = re.sub(r"[^\d,.]", "", text)
+    text = match.group(1)
     if not text:
         return None
     if "," in text:
@@ -71,7 +72,8 @@ def _price_fields(record: dict[str, Any]) -> dict[str, Any]:
     return {
         "price": raw, "precio_raw": raw, "precio_moneda_original": currency,
         "precio_original_num": amount, "precio_uf": uf, "precio_clp": clp,
-        "precio_uf_normalizado": uf, "precio_clp_normalizado": clp,
+        "precio_uf_normalizado": float(uf) if uf is not None else None,
+        "precio_clp_normalizado": float(clp) if clp is not None else None,
         "uf_valor_usado": UF_CLP if currency in {"UF", "CLP"} and amount is not None else None,
         "uf_fecha": UF_DATE if currency in {"UF", "CLP"} and amount is not None else None,
         "precio_conversion_source": f"SII_UF_{UF_DATE}" if currency in {"UF", "CLP"} and amount is not None else None,
@@ -84,13 +86,16 @@ def _extract_one(row: dict[str, Any]) -> dict[str, Any]:
     parsed: dict[str, Any] = {}
     if html_path.is_file():
         html = html_path.read_text(encoding="utf-8", errors="replace")
+        html_validation = validate_html(html)
         parsed = extract_listing_fields(html, source_url=str(row.get("url") or ""), include_images=True, include_listing_details=True)
         source["html_source_missing"] = False
-        source["html_validation_status"] = "OK"
+        source["html_validation_status"] = html_validation["status"]
+        source["html_validation_reason"] = html_validation["reason"]
         source["html_sha256"] = __import__("hashlib").sha256(html.encode("utf-8")).hexdigest()
     else:
         source["html_source_missing"] = True
         source["html_validation_status"] = "MISSING_LOCAL_HTML"
+        source["html_validation_reason"] = "missing_local_html"
     out = dict(source)
     for key in SAVED_FIELDS:
         value = parsed.get(key)
@@ -112,9 +117,13 @@ def _extract_one(row: dict[str, Any]) -> dict[str, Any]:
     out["listing_advertiser_type"] = str(out.get("listing_advertiser_type") or row.get("listing_advertiser_type") or "")
     out["contact_badges_text"] = str(out.get("contact_badges_text") or "")
     out["seller_jsonld_name"] = str(out.get("seller_jsonld_name") or "")
-    out["comuna"] = str(out.get("comuna") or row.get("comuna") or row.get("discovery_comuna") or "")
+    out["comuna"] = str(out.get("comuna") or row.get("comuna") or row.get("discovery_comuna") or parsed.get("comuna") or "")
+    out["comuna_source"] = str(row.get("comuna_source") or parsed.get("comuna_source") or "")
+    out["comuna_evidence"] = row.get("comuna_detail_evidence") or parsed.get("comuna_evidence") or {}
     out["operacion"] = str(out.get("operacion") or row.get("operacion") or "")
     out["tipo_propiedad"] = str(out.get("tipo_propiedad") or row.get("tipo_propiedad") or "")
+    out["region"] = str(out.get("region") or row.get("region") or parsed.get("region") or "")
+    out["description_source"] = str(parsed.get("description_source") or row.get("descripcion_source") or row.get("description_source") or "")
     out.update(_price_fields(out))
     # Explicit nulls are used only for unavailable extracted values; no property
     # attributes are fabricated to satisfy the persistence schema.
@@ -129,22 +138,29 @@ def _extract_one(row: dict[str, Any]) -> dict[str, Any]:
 def _canonical_document(item: dict[str, Any], classification: dict[str, Any], run_id: str, batch_id: str) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
     state = str(classification.get("state") or "INCIERTO")
+    html_status = str(item.get("html_validation_status") or "MISSING_LOCAL_HTML")
+    removed = html_status == "LISTING_REMOVED" or state == "AD_REMOVED"
+    description = str(item.get("description") or "")
     essential_complete = bool(item.get("comuna") and item.get("precio_raw") and item.get("precio_moneda_original") != "UNKNOWN")
-    complete = essential_complete and state in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
+    complete = essential_complete and not removed and state in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
     doc: dict[str, Any] = {
         "schema_version": "yapo_propiedades_v1", "origen": "yapo", "source_portal": "yapo",
         "source": "owner_hunt", "run_id": run_id, "batch_id": batch_id,
         "listing_id": str(item.get("listing_id") or ""), "url": str(item.get("url") or ""),
         "canonical_url": str(item.get("canonical_url") or item.get("url") or ""),
-        "title": str(item.get("title") or ""), "description": str(item.get("description") or ""),
-        "description_available": bool(str(item.get("description") or "").strip()),
+        "title": str(item.get("title") or ""), "description": description, "descripcion": description,
+        "body_text": description, "body_text_excerpt": description[:600], "body_text_len": len(description),
+        "descripcion_len": len(description), "descripcion_is_truncated": False,
+        "descripcion_source": str(item.get("description_source") or ""),
+        "description_available": bool(description.strip()),
         "operacion": str(item.get("operacion") or ""), "tipo_propiedad": str(item.get("tipo_propiedad") or ""),
         "comuna": str(item.get("comuna") or ""), "comuna_slug": "maipu" if "maip" in str(item.get("comuna") or "").casefold() else "",
         "region": str(item.get("region") or ""), "dormitorios": item.get("dormitorios"),
         "banos": item.get("banos"), "estacionamientos": item.get("estacionamientos"),
         "m2_construidos": item.get("m2_construidos"), "m2_totales": item.get("m2_totales"),
         "direccion_exacta": item.get("direccion_exacta"), "attributes": item.get("attributes") or {},
-        "raw_attributes": item.get("attributes") or {}, "image_urls": item.get("image_urls") or [],
+        "details": item.get("attributes") or {}, "raw_attributes": item.get("attributes") or {}, "image_urls": item.get("image_urls") or [],
+        "images": item.get("images") or item.get("image_urls") or [],
         "image_urls_count": len(item.get("image_urls") or []),
         "main_image_url": str(item.get("main_image_url") or next(iter(item.get("image_urls") or []), "")),
         "seller_name": str(item.get("publicador_visible") or ""), "publicador_visible": str(item.get("publicador_visible") or ""),
@@ -161,9 +177,9 @@ def _canonical_document(item: dict[str, Any], classification: dict[str, Any], ru
         "publisher_profile_context": item.get("publisher_profile_context") or {},
         "publisher_field_provenance": item.get("publisher_field_provenance") or {},
         "publisher_identity_candidates": item.get("publisher_identity_candidates") or [],
-        "html_validation_status": item.get("html_validation_status") or "MISSING_LOCAL_HTML",
-        "scrape_stage": "processed" if essential_complete and not item.get("html_source_missing") else "needs_rescrape",
-        "pipeline_state": "CLASSIFIED" if complete else "EXTRACTOR_DEGRADED" if not essential_complete else "UNCERTAIN_PENDING_REVIEW",
+        "html_validation_status": html_status, "html_validation_reason": str(item.get("html_validation_reason") or ""),
+        "scrape_stage": "ad_removed" if removed else "processed" if essential_complete and not item.get("html_source_missing") else "needs_rescrape",
+        "pipeline_state": "AD_REMOVED" if removed else "CLASSIFIED" if complete else "EXTRACTOR_DEGRADED" if not essential_complete else "UNCERTAIN_PENDING_REVIEW",
         "pipeline_complete": complete, "classification": classification,
         "classification_debug": {
             "evidence_strength": classification.get("evidence_strength"),
@@ -183,21 +199,66 @@ def _type_name(value: Any) -> str:
     return "null" if value is None else "bool" if isinstance(value, bool) else "number" if isinstance(value, (int, float)) else "string" if isinstance(value, str) else "array" if isinstance(value, list) else "object" if isinstance(value, dict) else type(value).__name__
 
 
-def _validate(doc: dict[str, Any]) -> dict[str, Any]:
-    missing = [key for key in REQUIRED if key not in doc or doc[key] is None or doc[key] == ""]
-    issues = []
-    if not re.fullmatch(r"\d{6,}", str(doc.get("listing_id") or "")): issues.append("listing_id_no_es_string_numerico")
-    if not str(doc.get("url") or "").startswith("https://www.yapo.cl/"): issues.append("url_yapo_invalida")
-    if doc.get("canonical_url") != doc.get("url") and not str(doc.get("canonical_url") or "").startswith("https://www.yapo.cl/"): issues.append("canonical_url_invalida")
+def _validate(doc: dict[str, Any], mongo_schema_types: dict[str, list[str]] | None = None) -> dict[str, Any]:
+    structural_missing = [key for key in STRUCTURE_REQUIRED if key not in doc or doc[key] is None or doc[key] == ""]
+    extraction_missing = [key for key in EXTRACTION_REQUIRED if key not in doc or doc[key] is None or doc[key] == ""]
+    type_issues = []
+    technical_issues = []
+    if not isinstance(doc.get("schema_version"), str): type_issues.append("schema_version_no_es_string")
+    if not re.fullmatch(r"\d{6,}", str(doc.get("listing_id") or "")): type_issues.append("listing_id_no_es_string_numerico")
+    if not str(doc.get("url") or "").startswith("https://www.yapo.cl/"): type_issues.append("url_yapo_invalida")
+    if doc.get("canonical_url") != doc.get("url") and not str(doc.get("canonical_url") or "").startswith("https://www.yapo.cl/"): type_issues.append("canonical_url_invalida")
+    for key in ("origen", "source_portal", "source", "run_id", "batch_id", "title", "description", "descripcion", "body_text", "descripcion_source", "html_validation_reason", "operacion", "tipo_propiedad", "comuna", "precio_raw", "html_validation_status", "scrape_stage", "pipeline_state", "processed_at", "updated_at"):
+        if doc.get(key) is not None and not isinstance(doc.get(key), str): type_issues.append(f"tipo_no_string:{key}")
+    if not isinstance(doc.get("pipeline_complete"), bool): type_issues.append("pipeline_complete_no_es_booleano")
     for key in ("precio_original_num", "precio_uf", "precio_clp", "precio_uf_normalizado", "precio_clp_normalizado", "dormitorios", "banos", "estacionamientos", "m2_construidos", "m2_totales"):
         value = doc.get(key)
-        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))): issues.append(f"tipo_no_numerico:{key}")
-    if not isinstance(doc.get("classification"), dict): issues.append("classification_no_es_objeto")
-    elif doc["classification"].get("state") not in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO", "AD_REMOVED"}: issues.append("estado_clasificacion_invalido")
-    if not isinstance(doc.get("image_urls"), list) or not isinstance(doc.get("raw_attributes"), dict): issues.append("arreglos_o_atributos_invalidos")
-    if doc.get("precio_moneda_original") == "UNKNOWN": issues.append("moneda_desconocida")
-    if not isinstance(doc.get("description"), str) or not doc.get("description"): issues.append("descripcion_completa_ausente")
-    return {"missing_required": missing, "type_or_integrity_issues": issues, "valid": not missing and not issues}
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))): type_issues.append(f"tipo_no_numerico:{key}")
+    for key in ("classification", "attributes", "details", "raw_attributes", "publisher_profile_context", "publisher_field_provenance"):
+        if not isinstance(doc.get(key), dict): type_issues.append(f"{key}_no_es_objeto")
+    if "identity_provenance" in doc and not isinstance(doc.get("identity_provenance"), dict): type_issues.append("identity_provenance_no_es_objeto")
+    for key in ("image_urls", "images", "publisher_identity_candidates"):
+        if not isinstance(doc.get(key), list): type_issues.append(f"{key}_no_es_arreglo")
+    schema_type_mismatches = []
+    type_aliases = {"str": "str", "int": "int", "float": "float", "bool": "bool", "dict": "dict", "list": "list", "datetime": "datetime"}
+    for key, allowed in (mongo_schema_types or {}).items():
+        if key not in doc or doc[key] is None:
+            continue  # MongoDB is schemaless; null/missing is not a type conflict.
+        observed = type_aliases.get(type(doc[key]).__name__, type(doc[key]).__name__)
+        if observed not in allowed:
+            schema_type_mismatches.append({"field": key, "simulated_type": observed, "observed_mongo_types": allowed})
+    if schema_type_mismatches:
+        type_issues.extend(f"mongo_schema_type_mismatch:{item['field']}" for item in schema_type_mismatches)
+    cls = doc.get("classification") if isinstance(doc.get("classification"), dict) else {}
+    state = str(cls.get("state") or "")
+    if state not in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO", "AD_REMOVED"}: type_issues.append("estado_clasificacion_invalido")
+    if not isinstance(cls.get("evidence", []), list) or not isinstance(cls.get("contradictions", []), list): type_issues.append("evidencia_o_contradicciones_no_es_arreglo")
+    html_status = str(doc.get("html_validation_status") or "")
+    if html_status in {"MISSING_LOCAL_HTML", "INVALID", "BLOCKED"}: technical_issues.append(f"html_{html_status.lower()}")
+    elif html_status not in {"OK", "LISTING_REMOVED"}: technical_issues.append(f"html_estado_tecnico_no_reconocido:{html_status or 'missing'}")
+    if html_status == "LISTING_REMOVED" and state != "AD_REMOVED": technical_issues.append("html_removed_sin_estado_ad_removed")
+    if html_status == "LISTING_REMOVED" and doc.get("scrape_stage") != "ad_removed": technical_issues.append("html_removed_sin_scrape_stage_ad_removed")
+    if doc.get("scrape_stage") == "needs_rescrape": technical_issues.append("scrape_stage_needs_rescrape")
+    if doc.get("scrape_stage") not in {"processed", "needs_rescrape", "ad_removed"}: technical_issues.append(f"scrape_stage_no_reconocido:{doc.get('scrape_stage')}")
+    if doc.get("precio_moneda_original") == "UNKNOWN" or not doc.get("precio_raw"): extraction_missing.append("precio_moneda_o_monto")
+    if not isinstance(doc.get("description"), str) or not doc.get("description"): extraction_missing.append("descripcion_completa")
+    structural_valid = not structural_missing and not type_issues
+    extraction_complete = not extraction_missing and html_status == "OK"
+    technical_valid = html_status in {"OK", "LISTING_REMOVED"} and not technical_issues
+    commercial_candidate = state in {"DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"}
+    assignment_ready = bool(cls.get("assignment_ready"))
+    persistence_ready = structural_valid and extraction_complete and technical_valid
+    return {
+        "structural_missing": sorted(set(structural_missing)), "missing_required": sorted(set(structural_missing)),
+        "extraction_missing": sorted(set(extraction_missing)), "type_or_integrity_issues": type_issues,
+        "mongo_schema_type_mismatches": schema_type_mismatches,
+        "technical_issues": technical_issues, "html_validation_status": html_status,
+        "structural_valid": structural_valid, "valid": structural_valid,
+        "extraction_complete": extraction_complete, "technical_valid": technical_valid,
+        "commercial_candidate": commercial_candidate, "commercially_excluded_broker": state.startswith("CORREDOR"),
+        "assignment_ready": assignment_ready, "assignment_block_reasons": cls.get("assignment_block_reasons") or [],
+        "persistence_ready": persistence_ready,
+    }
 
 
 def _normal(value: Any) -> str:
@@ -209,6 +270,9 @@ def simulate(source_path: Path, out_dir: Path) -> dict[str, Any]:
     source = json.loads(source_path.read_text(encoding="utf-8-sig"))
     rows = source.get("audit_records", source)
     out_dir.mkdir(parents=True, exist_ok=True)
+    schema_path = out_dir / "atlas_yapo_schema_reference.json"
+    schema_reference = json.loads(schema_path.read_text(encoding="utf-8")) if schema_path.is_file() else {}
+    mongo_schema_types = schema_reference.get("sample_top_level_bson_types") or None
     store = MongoStore(AppConfig())  # no connect() call; sanitizer only
     run_id = "offline_yapo_audit_20261103"
     batch_id = "maipu_houses_3000_6000_20261103"
@@ -235,7 +299,7 @@ def simulate(source_path: Path, out_dir: Path) -> dict[str, Any]:
         # Exercise the exact current Yapo MongoStore probability bridge and gate
         # offline; do not call upsert_listing or collection().
         simulated = store._sanitize_payload(doc)
-        validation = _validate(simulated)
+        validation = _validate(simulated, mongo_schema_types)
         duplicate = listing_id in seen_ids
         seen_ids.add(listing_id)
         results.append({
@@ -320,10 +384,26 @@ def simulate(source_path: Path, out_dir: Path) -> dict[str, Any]:
                                        "current_to_corrected_transitions": dict(Counter(f"{r['current_state']} -> {r['corrected_state']}" for r in results if r["current_state"] != r["corrected_state"])),
                                        "original_to_current_transitions": dict(Counter(f"{r['original_state']} -> {r['current_state']}" for r in results if r["original_state"] != r["current_state"]))},
         "routing_simulation": {"routes": dict(routes), "deepseek_calls": 0, "api_tokens": 0},
+        "mongo_schema_comparison": {
+            "database": schema_reference.get("database"), "collection": schema_reference.get("collection"),
+            "sample_documents": schema_reference.get("sample_documents", 0), "sample_is_enforced_schema": False,
+            "simulated_field_count": len(results[0]["document"]) if results else 0,
+            "simulated_fields_unobserved_in_sample": sorted(set(results[0]["document"]) - set(mongo_schema_types or {})) if results else [],
+            "observed_fields_missing_in_simulation": sorted(set(mongo_schema_types or {}) - set(results[0]["document"])) if results else [],
+            "exact_field_type_mismatches": sorted({m["field"] for r in results for m in r["validation"]["mongo_schema_type_mismatches"]}),
+        },
         "duplicates": {"duplicate_id_records": sum(r["duplicate_listing_id"] for r in results), "possible_same_property_groups": potential_duplicates},
-        "validation": {"record_count": len(results), "valid_records": sum(r["validation"]["valid"] for r in results),
+        "validation": {"record_count": len(results), "unique_listing_ids": len(seen_ids),
+                       "structurally_valid": sum(r["validation"]["structural_valid"] for r in results),
+                       "extraction_complete": sum(r["validation"]["extraction_complete"] for r in results),
+                       "technically_valid": sum(r["validation"]["technical_valid"] for r in results),
+                       "commercial_candidates": sum(r["validation"]["commercial_candidate"] for r in results),
+                       "commercially_excluded_brokers": sum(r["validation"]["commercially_excluded_broker"] for r in results),
+                       "assignment_ready": sum(r["validation"]["assignment_ready"] for r in results),
+                       "persistence_ready": sum(r["validation"]["persistence_ready"] for r in results),
+                       "valid_records": sum(r["validation"]["valid"] for r in results),
                        "records_with_errors": sum(not r["validation"]["valid"] for r in results), "error_counts": dict(errors),
-                       "required_fields": list(REQUIRED), "crm_protected_fields": sorted(CRM_PROTECTED)},
+                       "structural_required_fields": list(STRUCTURE_REQUIRED), "extraction_required_fields": list(EXTRACTION_REQUIRED), "crm_protected_fields": sorted(CRM_PROTECTED)},
         "mongo_writes": 0, "yapo_requests": 0, "deepseek_calls": 0,
     }
     (out_dir / "yapo_maipu_482_captacion_simulation.json").write_text(json.dumps(full, ensure_ascii=False, indent=2, default=str), encoding="utf-8")

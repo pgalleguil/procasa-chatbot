@@ -460,13 +460,24 @@ def extract_listing_commune(soup: Any, attributes: dict[str, Any]) -> dict[str, 
             explicit = str(value).strip()
             break
     structured = _structured_real_estate_localities(soup)
+    header = _yapo_detail_header(soup)
+    header_locality = ""
+    header_location = str(header.get("location") or "").strip()
+    if header_location:
+        parts = [part.strip() for part in header_location.split(",") if part.strip()]
+        if len(parts) >= 2:
+            header_locality = parts[-1]
     structured_keys = {_commune_identity(value) for value in structured if _commune_identity(value)}
     explicit_key = _commune_identity(explicit)
-    if explicit and structured_keys and (structured_keys != {explicit_key}):
+    header_key = _commune_identity(header_locality)
+    if explicit and (
+        (structured_keys and structured_keys != {explicit_key})
+        or (header_key and header_key != explicit_key)
+    ):
         return {
             "comuna": explicit,
             "comuna_source": "explicit_attribute",
-            "comuna_evidence": {"status": "pending_ambiguous", "structured_address_localities": structured},
+            "comuna_evidence": {"status": "pending_ambiguous", "structured_address_localities": structured, "header_location": header_location},
         }
     if explicit:
         return {
@@ -487,7 +498,53 @@ def extract_listing_commune(soup: Any, attributes: dict[str, Any]) -> dict[str, 
             "comuna_source": "structured_real_estate_address",
             "comuna_evidence": {"status": "pending_ambiguous", "structured_address_localities": structured},
         }
+    if header_locality:
+        if structured_keys and structured_keys != {header_key}:
+            return {
+                "comuna": "",
+                "comuna_source": "yapo_detail_header_location",
+                "comuna_evidence": {"status": "pending_ambiguous", "structured_address_localities": structured, "header_location": header_location},
+            }
+        return {
+            "comuna": header_locality,
+            "comuna_source": "yapo_detail_header_location",
+            "comuna_evidence": {"status": "confirmed_detail", "structured_address_localities": structured, "header_location": header_location},
+        }
     return {"comuna": "", "comuna_source": "", "comuna_evidence": {"status": "pending"}}
+
+
+def _yapo_detail_header(soup: Any) -> dict[str, str]:
+    """Read the current Yapo detail header without borrowing carousel cards."""
+    heading = soup.find("h1")
+    if heading is None:
+        return {"price": "", "location": ""}
+
+    def is_card(node: Any) -> bool:
+        return node.find_parent(class_=re.compile(r"card_(?:content|layout|price|details)")) is not None
+
+    found = {"price": "", "location": ""}
+    for container in heading.parents:
+        if getattr(container, "name", None) in {"body", "html"}:
+            break
+        if not found["price"]:
+            for node in container.select("div[class*='text-2xl'], div[class*='text-[24px]']"):
+                if is_card(node):
+                    continue
+                candidate = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+                if re.search(r"(?:\bUF\b|\bCLF\b|\$)\s*[\d.]+(?:,\d+)?", candidate, re.I):
+                    found["price"] = candidate
+                    break
+        if not found["location"]:
+            for node in container.select("span, p"):
+                if is_card(node):
+                    continue
+                candidate = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+                if re.fullmatch(r"[^,]{2,},\s*[^,]{2,}", candidate) and re.search(r"\bRegi[oó]n\b", candidate, re.I):
+                    found["location"] = candidate
+                    break
+        if found["price"] and found["location"]:
+            return found
+    return found
 
 
 def extract_listing_fields(
@@ -551,6 +608,12 @@ def extract_listing_fields(
     price = f"{price_value} {price_currency}".strip() if price_value else _first_text(
         soup, ["[data-qa='price']", ".d3-property-info__price", ".d3-property-insight__attribute-value", ".price", ".item-price", "strong.price", "span.price"]
     )
+    detail_header = _yapo_detail_header(soup)
+    if not price and detail_header["price"]:
+        price = detail_header["price"]
+        amount_match = re.search(r"(?:\bUF\b|\bCLF\b|\$)\s*([\d.]+(?:,\d+)?)", price, re.I)
+        price_value = amount_match.group(1) if amount_match else ""
+        price_currency = "CLP" if "$" in price else "UF" if re.search(r"\b(?:UF|CLF)\b", price, re.I) else ""
     description, description_source, description_summary, description_sources = _description_from_soup(soup)
 
     publisher_scopes = _publisher_scopes(soup)

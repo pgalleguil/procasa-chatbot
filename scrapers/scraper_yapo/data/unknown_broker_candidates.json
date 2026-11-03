@@ -334,5 +334,159 @@
     "normalized_name": "cristi propiedades",
     "status": "pending_manual_verification",
     "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-adriana-perez-llona/32632678"
+  },
+  {
+    "content_sha256": "cc95a0767800ed860ad1ed6c6c0c9a4475c23745dd4631d4870dfb3e9ca11691",
+    "display_name": "TuHouse",
+    "normalized_name": "tuhouse",
+    "seller_profile_id": "15551205",
+    "listing_id": "33149321",
+    "evidence": [
+      "Actividad de corretaje verificada; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.tuhouse.cl/Default.asp",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "9048a6e47d2ae01b8dec09f815bb398a2a7d315ff20332f9d2af244e462e9e82",
+    "display_name": "Hobbins Vitacura",
+    "normalized_name": "hobbins vitacura",
+    "seller_profile_id": "17057667",
+    "listing_id": "32179366",
+    "evidence": [
+      "Oficina de Hobbins Propiedades confirmada; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.hobbins.cl/",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "4c424ecd87fb3f885df6aaf290a016b92f6b14727dcfe12afe53dd9c2edc2610",
+    "display_name": "Inmobilien Chile",
+    "normalized_name": "inmobilien chile",
+    "seller_profile_id": "17858827",
+    "listing_id": "33067915",
+    "evidence": [
+      "Ficha clasifica Inmobilien SpA como corredora; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://chilepropiedades.cl/ver-publicacion/venta/maipu/casa/abate-molina-2600/140440677",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "6347bd5a7ec12a97a3929d1b875ab3d357c1b4ae32683b899e463e3b5b41fd8a",
+    "display_name": "Vivienda Chile",
+    "normalized_name": "vivienda chile",
+    "seller_profile_id": "17065465",
+    "listing_id": "31631448",
+    "evidence": [
+      "Ficha identifica corredora; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://chilepropiedades.cl/ver-corredora/2920893/vivienda-chile/0",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "3b6087b25c634dbd20103f52a20e51c56b80ad39f6d411f35303683423652fbe",
+    "display_name": "Alejandro Jaime V & Asociados",
+    "normalized_name": "alejandro jaime v asociados",
+    "seller_profile_id": "17450178",
+    "listing_id": "32225278",
+    "evidence": [
+      "Marca registrada para negocios inmobiliarios; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.portalchile.org/detalle-marca/alejandro-jaime-v-and-asociados-propiedades-realty-corp-1068156",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "82dcde828df0122408b78ea7e889aeaae4a2e44726ad57b59a920487b3ad10fe",
+    "display_name": "CDProp",
+    "normalized_name": "cdprop",
+    "seller_profile_id": "13725393",
+    "listing_id": "33208422",
+    "evidence": [
+      "Perfil declara corredor de propiedades profesional independiente; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.yapo.cl/user/profile/id/13725393",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "e5c493c615136ec49e381295e3e8523fc35c93af5330f2fa818d0e10f63b9fe0",
+    "display_name": "Portal Arriendo",
+    "normalized_name": "portal arriendo",
+    "seller_profile_id": "13726421",
+    "listing_id": "32382872",
+    "evidence": [
+      "Perfil comercial con avisos de venta y arriendo; no se confirma como marca de corretaje.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.yapo.cl/user/profile/id/13726421",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "dca7546e2c68a3ec7a3071dc3185cb0d319fa102771450550996250b064ff28d",
+    "display_name": "MOBILIUM",
+    "normalized_name": "mobilium",
+    "seller_profile_id": "13879590",
+    "listing_id": "26287624",
+    "evidence": [
+      "Empresa de gestión inmobiliaria que comercializa y negocia propiedades; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://mobilium.cl/",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "15bdae5c2cccd9c7318c013c9d9b054e4197d8e3d30ae32db074e92847d153af",
+    "display_name": "CastroPropiedades",
+    "normalized_name": "castropropiedades",
+    "seller_profile_id": "13726406",
+    "listing_id": "33197164",
+    "evidence": [
+      "Identidad comercial compacta detectada en HTML local y tipo de cuenta profesional.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "30eaf3b32646471f19dec6cf625e7d1d49f9d16896417e7a3a4080a76f2bf265",
+    "display_name": "Pro habital",
+    "normalized_name": "pro habital",
+    "seller_profile_id": "16608516",
+    "listing_id": "30934288",
+    "evidence": [
+      "Nombre comercial candidato; evidencia insuficiente para confirmarlo como corredor.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "pending_manual_verification"
+  },
+  {
+    "content_sha256": "2e5bfe6e78c1c31155e3a39c659ab39e775c2c0006efe0029d1ad68d522006b6",
+    "display_name": "Bustaprop",
+    "normalized_name": "bustaprop",
+    "seller_profile_id": "13769400",
+    "listing_id": "25888323",
+    "evidence": [
+      "Nombre comercial candidato; evidencia insuficiente para confirmarlo como corredor.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "pending_manual_verification"
   }
 ]

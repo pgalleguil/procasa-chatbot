@@ -1014,3 +1014,165 @@ def test_followup_after_outbound_correction_continues_with_verified_facts(isolat
     assert "Camila" in calls[4][1]
     assert "2 baños" in calls[5][1]
     assert "Camila" in db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"]
+
+
+def test_native_pilot_uses_real_production_commercial_generator_and_outreach_history(
+    isolated, monkeypatch
+):
+    """No second bot: identical structured generator, isolated context only."""
+    from chatbot import grok_client
+    db = _full_pilot_db()
+    send, sent = sender_spy()
+    seen = []
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+
+    def native_model(messages, prospect, **kwargs):
+        seen.append((messages, prospect, kwargs))
+        return {
+            "intencion": "consulta_general",
+            "respuesta_bot": "¡Hola! Qué bueno que me respondiste. ¿Alcanzaste a mirar la publicación?",
+            "datos_extraidos": {"rut": "NOT_SAVED"},
+        }
+
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", native_model)
+    outcome = process_test_inbound(db, PHONE, "natural-1", "HOLA", sender=send)
+    assert outcome == {"status": "test_reply_sent"}
+    assert "Qué bueno que me respondiste" in sent[-1][1]
+    messages, prospect, kwargs = seen[0]
+    assert "Eres una ejecutiva senior de Procasa" in messages[0]["content"]
+    assert "PROCASA, no el cliente, inició este contacto" in messages[1]["content"]
+    assert "3.58%" in messages[1]["content"]  # 100 UF / 2.790 UF
+    assert "UF 2.690" in messages[2]["content"]
+    assert messages[2]["role"] == "assistant"
+    assert messages[-1] == {"role": "user", "content": "HOLA"}
+    assert prospect == {"operacion": "Venta"}
+    assert kwargs["write_telemetry"] is False
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+def test_native_pilot_replays_real_whatsapp_dialogue_with_full_context(
+    isolated, monkeypatch
+):
+    from chatbot import grok_client
+    db = _full_pilot_db()
+    send, sent = sender_spy()
+    seen = []
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "1")
+
+    def native_model(messages, prospect, **kwargs):
+        seen.append(messages)
+        last = messages[-1]["content"]
+        if last == "HOLA":
+            reply = "¡Hola! Gracias por responderme 😊. ¿Alcanzaste a mirar el departamento?"
+        elif last == "COMO QYE ME GUSTARIA SABER SI TU ME ESTAS ESCROBIENDO":
+            reply = ("Tienes razón, fui yo quien te escribió para contarte de la rebaja. "
+                     "Disculpa que te preguntara como si tú hubieras iniciado el contacto.")
+        elif last == "¿Cuántos baños tiene?":
+            reply = "Tiene 2 baños. ¿Quieres que te cuente algo más sobre la distribución?"
+        else:
+            raise AssertionError("Unexpected user message: " + last)
+        return {"intencion": "consulta_general", "respuesta_bot": reply,
+                "datos_extraidos": {}}
+
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", native_model)
+    for i, msg in enumerate([
+        "HOLA",
+        "COMO QYE ME GUSTARIA SABER SI TU ME ESTAS ESCROBIENDO",
+        "¿Cuántos baños tiene?",
+    ]):
+        assert process_test_inbound(
+            db, PHONE, "natural-replay-" + str(i), msg, sender=send,
+        )["status"] == "test_reply_sent"
+    assert len(seen) == 3
+    last_messages = seen[-1]
+    assert [m["content"] for m in last_messages if m["role"] == "user"] == [
+        "HOLA",
+        "COMO QYE ME GUSTARIA SABER SI TU ME ESTAS ESCROBIENDO",
+        "¿Cuántos baños tiene?",
+    ]
+    assert "Tienes razón" in last_messages[-2]["content"]
+    assert "2 baños" in sent[-1][1]
+    assert all(t["status"] == "SENT"
+               for t in db["crm_price_drop_pilot_test_turns_v1"].docs)
+
+
+def test_native_pilot_remembers_name_without_reading_live_leads(
+    isolated, monkeypatch
+):
+    from chatbot import grok_client
+    db = _full_pilot_db()
+    sender, sent = sender_spy()
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "yes")
+    contexts = []
+
+    def native_model(messages, prospect, **kwargs):
+        contexts.append(messages[1]["content"])
+        return {"intencion": "consulta_general",
+                "respuesta_bot": "Gracias por escribirme. Cuéntame qué te interesa del departamento."}
+
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", native_model)
+    for i, msg in enumerate(["Hola, soy María José", "¿Tiene terraza?"]):
+        assert process_test_inbound(
+            db, PHONE, "natural-name-" + str(i), msg, sender=sender,
+        )["status"] == "test_reply_sent"
+    assert "Nombre confirmado por el propio cliente: María José" in contexts[-1]
+    assert db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"] == "María José"
+    assert "leads" in db and isinstance(db["leads"], BlockedCollection)
+
+
+def test_native_pilot_blocks_unverified_operations_and_sensitive_requests(
+    isolated, monkeypatch
+):
+    from chatbot import grok_client
+    db = _full_pilot_db()
+    sender, sent = sender_spy()
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+
+    unsafe = iter([
+        "Te agendé una visita para mañana.",
+        "Envíame tu RUT para poder ayudarte.",
+        "Un ejecutivo te llamará mañana.",
+    ])
+    monkeypatch.setattr(
+        grok_client, "generar_respuesta_estructurada",
+        lambda messages, prospect, **kwargs: {
+            "intencion": "agendar_visita", "respuesta_bot": next(unsafe)
+        },
+    )
+    for i, query in enumerate(["Me interesa", "¿Qué piden?", "¿Me llamarán?"]):
+        assert process_test_inbound(
+            db, PHONE, "natural-unsafe-" + str(i), query, sender=sender,
+        )["status"] == "test_reply_sent"
+        assert "no se ha solicitado ninguna gestión" in sent[-1][1]
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+def test_native_pilot_is_opt_in_and_unrelated_phones_never_invoke_generator(
+    isolated, monkeypatch
+):
+    from chatbot import grok_client
+    db = _full_pilot_db()
+    sender, sent = sender_spy()
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "1")
+    monkeypatch.setattr(
+        grok_client, "generar_respuesta_estructurada",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Unauthorized phone invoked production generator")
+        ),
+    )
+    assert process_test_inbound(
+        db, "+56988889999", "out", "Hola", sender=sender
+    ) == {"status": "not_test_phone"}
+    assert not sent
+    monkeypatch.delenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION")
+    assert process_test_inbound(
+        db, PHONE, "legacy-1", "Hola", sender=sender,
+        llm=lambda *_: "No additional model needed",
+    )["status"] == "test_reply_sent"
+    assert "Gracias por responder" in sent[-1][1]

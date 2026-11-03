@@ -1540,3 +1540,40 @@ def test_deepseek_pilot_json_mode_double_invalid_does_not_retry_indefinitely(
     assert result["respuesta_bot"] == ""
     assert len(calls) == 2
     assert all("response_format" in x for x in calls)
+
+
+def test_campaign_greeting_avoids_resending_link_unless_customer_requests_it(
+    isolated, monkeypatch
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-offline-test")
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+    from chatbot import grok_client
+    db = db_case()
+    calls = []
+    def simulated_model(messages, prospect, **kwargs):
+        calls.append(messages)
+        return {"intencion": "consulta_general", "datos_extraidos": {},
+                "respuesta_bot": (
+                    "Te dejé el enlace https://www.procasa.cl/6436."
+                    if len(calls) == 1 else
+                    "¡Hola! Gracias por responder 😊. ¿Qué tal te pareció la rebaja?"
+                )}
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", simulated_model)
+    sender, outgoing = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "greeting-no-url", "HOLA", sender=sender
+    )["status"] == "test_reply_sent"
+    assert len(calls) == 2
+    assert len(outgoing) == 1
+    assert "https://www.procasa.cl" not in outgoing[0][1]
+    assert "Gracias por responder" in outgoing[0][1]
+
+    def requested_link(messages, prospect, **kwargs):
+        return {"intencion": "consulta_general", "datos_extraidos": {},
+                "respuesta_bot": "Claro, aquí está: https://www.procasa.cl/6436"}
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", requested_link)
+    assert process_test_inbound(
+        db, PHONE, "link-requested", "¿Me compartes el enlace?", sender=sender
+    )["status"] == "test_reply_sent"
+    assert "https://www.procasa.cl/6436" in outgoing[1][1]
+    assert len(outgoing) == 2

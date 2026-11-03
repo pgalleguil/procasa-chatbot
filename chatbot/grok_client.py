@@ -300,7 +300,7 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             if ini != -1 and fin != -1 and fin > ini:
                 contenido_json_str = contenido_json_str[ini : fin + 1].strip()
 
-        if not contenido_json_str:
+        if not contenido_json_str and not is_price_drop_pilot:
             raise ValueError("Respuesta vacia del modelo")
         try:
             datos = json.loads(contenido_json_str)

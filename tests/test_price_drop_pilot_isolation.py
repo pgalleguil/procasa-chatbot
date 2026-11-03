@@ -2069,3 +2069,30 @@ def test_v8_mixed_location_and_price_answers_both(isolated):
     )
     assert "San Miguel" in answer
     assert "2.690" in answer
+
+def test_v8_mixed_location_visit_without_hour_still_advances(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    answer = build_native_pilot_reply(
+        "¿Dónde queda? Quiero visitarlo el sábado.", ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Mixed visit and location should be deterministic")
+        ),
+    )
+    assert "San Miguel" in answer
+    assert "sábado" in answer
+    assert "mañana o en la tarde" in answer
+
+
+def test_v8_location_optout_visit_without_hour_does_not_repeat_location(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    answer = build_native_pilot_reply(
+        "No me repitas la dirección, quiero visitarlo el sábado.", ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Visit and location opt-out should be deterministic")
+        ),
+    )
+    assert "sábado" in answer
+    assert "San Miguel" not in answer
+    assert "dirección" not in answer.lower()

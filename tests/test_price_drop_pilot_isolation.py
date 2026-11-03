@@ -2025,3 +2025,89 @@ def test_v8_numbered_location_reference_never_leaks_address(isolated):
     assert "San Miguel" in output
     assert "1370" not in output
     assert "sector de Séptima Avenida 1370" not in output
+
+def test_v8_mixed_location_and_visit_keeps_both_intents(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    answer = build_native_pilot_reply(
+        "¿Dónde queda y puedo visitarlo el sábado a las 11?",
+        ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Verified mixed intent should not need a model")
+        ),
+    )
+    assert "San Miguel" in answer
+    assert "sábado" in answer
+    assert "11" in answer
+    assert "no hay" in answer.lower() and "agendada" in answer.lower()
+
+
+def test_v8_location_mention_is_not_a_request_to_repeat_it(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    answer = build_native_pilot_reply(
+        "No me repitas la dirección. Quiero visitarlo el sábado a las 11.",
+        ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Visit preference should be handled directly")
+        ),
+    )
+    assert "sábado" in answer and "11" in answer
+    assert "dirección" not in answer.lower()
+    assert "San Miguel" not in answer
+
+
+def test_v8_mixed_location_and_price_answers_both(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    answer = build_native_pilot_reply(
+        "¿Dónde queda y cuánto cuesta ahora?",
+        ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Both verified facts should be direct")
+        ),
+    )
+    assert "San Miguel" in answer
+    assert "2.690" in answer
+
+def test_v8_mixed_location_visit_without_hour_still_advances(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    answer = build_native_pilot_reply(
+        "¿Dónde queda? Quiero visitarlo el sábado.", ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Mixed visit and location should be deterministic")
+        ),
+    )
+    assert "San Miguel" in answer
+    assert "sábado" in answer
+    assert "mañana o en la tarde" in answer
+
+
+def test_v8_location_optout_visit_without_hour_does_not_repeat_location(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    answer = build_native_pilot_reply(
+        "No me repitas la dirección, quiero visitarlo el sábado.", ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Visit and location opt-out should be deterministic")
+        ),
+    )
+    assert "sábado" in answer
+    assert "San Miguel" not in answer
+    assert "dirección" not in answer.lower()
+
+def test_v8_mixed_location_price_visit_answers_all_three(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    answer = build_native_pilot_reply(
+        "¿Dónde queda, cuánto cuesta y puedo visitarlo el sábado a las 11?",
+        ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Triple intent should be deterministic")
+        ),
+    )
+    assert "San Miguel" in answer
+    assert "2.690" in answer
+    assert "sábado" in answer and "11" in answer
+    assert "agendada" in answer

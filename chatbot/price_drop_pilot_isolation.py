@@ -272,6 +272,8 @@ def _visit_reply(message: str, ctx: dict, history: list[dict]) -> str | None:
                 continue
         choice[key] = value
     day = choice.get("day")
+    if day:
+        day = day.replace("sabado", "sábado").replace("miercoles", "miércoles")
     time = choice.get("time")
     period = choice.get("period")
     code = ctx["property_code"]
@@ -777,6 +779,9 @@ def _native_visit_time_answer(message: str, history: list[dict]) -> str | None:
     day, time = parts.get("day"), parts.get("time")
     if not day or not time:
         return None
+    # _visit_parts parses normalized weekday tokens; restore Spanish accents
+    # in outbound WhatsApp without changing the stored scheduling preference.
+    day = day.replace("sabado", "sábado").replace("miercoles", "miércoles")
     if " o " in time:
         # Never transform two alternatives into a continuous interval.
         time = time.replace(" o ", " o a las ")
@@ -1070,7 +1075,40 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
             "Las condiciones de corretaje también se deben confirmar con "
             "el corredor antes de cualquier gestión."
         )
-    if ADDRESS.search(clean) or "direcion" in plain or "dirrecion" in plain:
+    location_mentioned = bool(
+        ADDRESS.search(clean) or "direcion" in plain or "dirrecion" in plain
+    )
+    if location_mentioned:
+        # Mentioning an address is not always a request to receive it again.
+        # Give precedence to a simultaneous visit preference or fact question.
+        location_declined = bool(re.search(
+            r"\b(?:no (?:me )?(?:repitas?|digas?|mandes?)|sin repetir)\b"
+            r".{0,45}\b(?:direccion|ubicacion|calle)\b",
+            plain,
+        ))
+        visit_answer = _native_visit_time_answer(clean, history)
+        if visit_answer is None and VISIT.search(clean):
+            # A visit request without both day and time must still advance.
+            visit_answer = _visit_reply(clean, ctx, history)
+        fact_answer = _native_verified_answer(clean, ctx)
+        if visit_answer is not None:
+            # A customer can ask three things in one WhatsApp message.
+            # Do not silently drop price/availability while answering a visit.
+            return " ".join(part for part in (
+                None if location_declined else _campaign_location_reply(ctx),
+                fact_answer,
+                visit_answer,
+            ) if part)
+        if fact_answer is not None:
+            return (
+                fact_answer if location_declined
+                else f"{_campaign_location_reply(ctx)} {fact_answer}"
+            )
+        if location_declined:
+            return (
+                "Entiendo, no volveré a repetirte la ubicación. "
+                "¿Qué otra duda tienes sobre el departamento?"
+            )
         return _campaign_location_reply(ctx)
     introduced, _ = _customer_introduction(clean)
     if introduced and _plain(clean).startswith(("hola", "buenas")) and len(clean) < 55:

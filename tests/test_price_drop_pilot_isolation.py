@@ -1709,6 +1709,16 @@ def test_v8_twenty_realistic_offline_customer_conversations(
             assert "no se ha" in low or "no hay" in low
         if "nadie" in question:
             assert "no se ha enviado" in low or "no se ha solicitado" in low
+        if "no habia consultado" in question:
+            assert "no tengo" in low and "verificada" in low
+        if "cuanto cuesta ahora" in question or "cuanto sale" in question:
+            assert "2.690" in reply
+        if "que porcentaje bajo" in question:
+            assert "3,58%" in reply
+        if ("hola soy" in question or "hola, soy" in question) and i == 0:
+            assert "gracias por responder" in low
+        if scenario_name == "repeat_greetings" and i in (1, 2):
+            assert reply != delivered[-2][1]
     assert len(db["crm_price_drop_pilot_test_turns_v1"].docs) == len(turns)
     assert len(delivered) == len(turns) - int(
         turns[-1].casefold() == "no me escriban más"

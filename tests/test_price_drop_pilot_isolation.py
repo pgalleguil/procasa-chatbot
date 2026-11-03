@@ -2096,3 +2096,18 @@ def test_v8_location_optout_visit_without_hour_does_not_repeat_location(isolated
     assert "sábado" in answer
     assert "San Miguel" not in answer
     assert "dirección" not in answer.lower()
+
+def test_v8_mixed_location_price_visit_answers_all_three(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    answer = build_native_pilot_reply(
+        "¿Dónde queda, cuánto cuesta y puedo visitarlo el sábado a las 11?",
+        ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Triple intent should be deterministic")
+        ),
+    )
+    assert "San Miguel" in answer
+    assert "2.690" in answer
+    assert "sábado" in answer and "11" in answer
+    assert "agendada" in answer

@@ -628,7 +628,7 @@ def test_v6_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded(
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v5"' in source
+    assert '"campaign_version": "price_drop_pilot_v6"' in source
     assert 'if not is_test_phone(phone)' in source
 
 

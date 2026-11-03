@@ -238,7 +238,11 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         )
 
         kwargs = {}
-        if force_json_output or Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
+        is_price_drop_pilot = (not write_telemetry and any(
+            "[CONTEXTO COMERCIAL DEL MENSAJE SALIENTE - PRIORIDAD]" in str(m.get("content", ""))
+            for m in messages if m.get("role") == "system"
+        ))
+        if force_json_output or is_price_drop_pilot or Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
             kwargs["response_format"] = {"type": "json_object"}
 
         response = client.chat.completions.create(

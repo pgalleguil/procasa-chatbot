@@ -1899,6 +1899,9 @@ def test_v8_campaign_location_objections_never_reveal_street_number(
     "La propiedad está en Séptima Avenida 1370, departamento 68, San Miguel.",
     "Claro, es Séptima Avenida 1370 68, piso 6.",
     "Se ubica en Séptima Avenida 1370, dpto 68. Te leo.",
+    "Está en Av. Séptima 1370, en San Miguel.",
+    "La dirección es Av. Séptima 1370.",
+    "El número es 1370, justo cerca de la transversal.",
 ])
 def test_v8_model_cannot_repeat_address_from_previous_customer_turn(
     isolated, model_reply
@@ -1999,3 +2002,24 @@ def test_v8_real_whatsapp_ten_turn_replay_avoids_old_address_and_crm(
         "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
         "crm_price_drop_pilot_test_turns_v1",
     }
+
+
+def test_v8_numbered_location_reference_never_leaks_address(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370 68",
+        "direccion_referencial": "Séptima Avenida 1370 - Tercera Transversal",
+        "comuna": "San Miguel",
+        "unidad": None,
+    }
+    ctx = load_test_context(db, PHONE)
+    output = build_native_pilot_reply(
+        "¿Dónde queda?", ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Address query should not invoke model")
+        ),
+    )
+    assert "San Miguel" in output
+    assert "1370" not in output
+    assert "sector de Séptima Avenida 1370" not in output

@@ -133,7 +133,7 @@ def test_five_required_real_listing_regressions():
         "seller_type": {"status": "confirmed", "source": "publisher_scope:publisher_profile_account_badge", "relationship": "publisher"},
     }
     cases = {
-        "26547167": ({"title": "Casa en Maipú", "description": "Vende su propio dueño, valor solo contado.", "publicador_visible": "Paola Andrea", "seller_profile_id": "14042195", "seller_type": "PROFESIONAL", "listing_advertiser_type": "Propietario", "publisher_field_provenance": profile_badge}, "INCIERTO", "OWNER_SALE_BY_OWNER"),
+        "26547167": ({"title": "Casa en Maipú", "description": "Vende su propio dueño, valor solo contado.", "publicador_visible": "Paola Andrea", "seller_profile_id": "14042195", "seller_type": "PROFESIONAL", "listing_advertiser_type": "Propietario", "publisher_field_provenance": profile_badge}, "DUEÑO_PROBABLE", "OWNER_SALE_BY_OWNER"),
         "33190839": ({"title": "Hermosa casa individual", "description": "Propiedad con todos sus papeles al día, vende su propietario, sin comisión. Consulte y agende su visita.", "seller_profile_id": "18088099", "listing_advertiser_type": "Propietario"}, "DUEÑO_PROBABLE", "OWNER_SALE_BY_OWNER"),
         "26581974": ({"title": "Casa en Maipú", "description": "Agende su visita.", "publicador_visible": "GLORIA SILVA", "seller_profile_id": "13755528", "seller_type": "PROFESIONAL", "listing_advertiser_type": "Propietario", "publisher_field_provenance": profile_badge}, "INCIERTO", "LISTING_ADVERTISER_OWNER_TYPE"),
         "32562399": ({"title": "Excelente oportunidad habitacional", "publicador_visible": "Vilches Propiedades", "contact_logo_alt": "Vilches Propiedades", "seller_profile_id": "13735924", "seller_type": "PROFESIONAL", "listing_advertiser_type": "Agente", "publisher_field_provenance": commercial_profile}, "CORREDOR_SEGURO", "PUBLISHER_IDENTITY_COMPANY_SHAPE"),
@@ -144,9 +144,12 @@ def test_five_required_real_listing_regressions():
         assert result["state"] == expected_state, listing_id
         assert result["confidence"] is None, listing_id
         assert expected_rule in result["classification_rule_ids"], (listing_id, result["classification_rule_ids"])
-        if listing_id in {"26547167", "26581974"}:
-            assert result["contradictions"], listing_id
-            assert result["requires_review"] is True, listing_id
+        if listing_id == "26581974":
+            assert not result["contradictions"], listing_id
+            assert result["state"] == "INCIERTO", listing_id
+        elif listing_id == "26547167":
+            assert not result["contradictions"], listing_id
+            assert result["requires_review"] is False, listing_id
         if listing_id in {"32562399", "32160716"}:
             assert result["classification_route"] if "classification_route" in result else result["state"] == "CORREDOR_SEGURO"
             assert result["broker_evidence"], listing_id

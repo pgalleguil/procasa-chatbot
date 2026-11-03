@@ -112,9 +112,47 @@ class MongoStore:
         payload["source"] = "owner_hunt"
         payload["origen"] = "yapo"
         payload["source_portal"] = "yapo"
+        payload.setdefault("schema_version", "yapo_propiedades_v1")
+        batch_id = str(record.get("batch_id") or record.get("run_id") or self.config.generate_batch_id())
+        payload.setdefault("batch_id", batch_id)
+        payload.setdefault("run_id", str(record.get("run_id") or batch_id))
         comuna = record.get("comuna") or record.get("details", {}).get("comuna") or ""
         payload["comuna_slug"] = normalize_commune_slug(comuna) or payload.get("comuna_slug") or ""
+        # The shared probability engine serves other portals and may derive a
+        # different public state. For Yapo, preserve the deterministic state
+        # and surface any disagreement as a blocking review flag.
+        classification = dict(payload.get("classification") or {})
+        yapo_state = str(classification.get("state") or classification.get("final_state") or "").upper()
+        classification.setdefault("classifier_version", "yapo-deterministic-v6")
+        classification.setdefault("deepseek_status", "disabled")
+        classification.setdefault("deepseek_call_executed", False)
+        canonical_state = {
+            "DUEÑO_SEGURO": "OWNER_CONFIRMED", "DUEÑO_PROBABLE": "OWNER_PROBABLE",
+            "CORREDOR_SEGURO": "BROKER_CONFIRMED", "CORREDOR_PROBABLE": "BROKER_PROBABLE",
+            "INCIERTO": "UNCERTAIN",
+        }.get(yapo_state)
+        if canonical_state:
+            # Bridge the Yapo enum to the canonical enum consumed by the
+            # shared probability engine; do not let it infer a new identity.
+            classification.setdefault("final", canonical_state)
+            classification.setdefault("identity_classification", canonical_state)
+            payload["classification"] = classification
         apply_owner_probability_to_document(payload)
+        computed = dict(payload.get("classification") or {})
+        computed_state = str(computed.get("state") or computed.get("final_state") or "").upper()
+        if yapo_state:
+            computed["yapo_classifier_state"] = yapo_state
+            computed["probability_derived_state"] = computed_state
+            computed["state"] = yapo_state
+            computed["final_state"] = yapo_state
+            if computed_state and computed_state != yapo_state:
+                computed["yapo_probability_state_conflict"] = True
+                computed["yapo_probability_state_conflict_reason"] = (
+                    "El motor global derivó un estado distinto; se conserva la clasificación Yapo para revisión."
+                )
+                computed["pipeline_complete"] = False
+                computed["pipeline_state"] = "CLASSIFICATION_CONFLICT_REVIEW"
+            payload["classification"] = computed
         # The owner-probability helper supplies canonical probability fields,
         # but its historical assignment flags predate the global gate where
         # INCIERTO is assignable. Re-derive the persisted readiness fields from
@@ -122,7 +160,48 @@ class MongoStore:
         # NON_OWNER_STATE_NOT_ASSIGNABLE.
         from captacion_assignment_eligibility import apply_assignment_eligibility_fields
         apply_assignment_eligibility_fields(payload)
+        if payload.get("classification", {}).get("yapo_probability_state_conflict"):
+            classification = dict(payload["classification"])
+            classification["assignment_ready"] = False
+            classification["exclude_from_assignment"] = True
+            reasons = set(classification.get("assignment_block_reasons") or [])
+            reasons.add("yapo_owner_probability_state_conflict")
+            classification["assignment_block_reasons"] = sorted(reasons)
+            payload["classification"] = classification
         return payload
+
+    @staticmethod
+    def _yapo_identity_query(record: dict[str, Any]) -> dict[str, Any]:
+        """Match a Yapo listing only when both its ID and portal are proven."""
+        url = MongoStore.normalize_listing_url(str(record.get("canonical_url") or record.get("url") or ""))
+        if not url:
+            raise ValueError("La URL del registro no pertenece a yapo.cl.")
+        listing_id = str(record.get("listing_id") or MongoStore._listing_id_from_url(url)).strip()
+        portal = {"$or": [
+            {"origen": "yapo"}, {"source_portal": "yapo"},
+            {"url": {"$regex": r"^https?://(?:www\.)?yapo\.cl/", "$options": "i"}},
+            {"canonical_url": {"$regex": r"^https?://(?:www\.)?yapo\.cl/", "$options": "i"}},
+        ]}
+        if listing_id:
+            alternatives: list[Any] = [listing_id]
+            if listing_id.isdigit():
+                alternatives.append(int(listing_id))
+            identity = {"listing_id": {"$in": alternatives}}
+        else:
+            identity = {"$or": [{"url": url}, {"canonical_url": url}]}
+        return {"$and": [identity, portal]}
+
+    @staticmethod
+    def _human_confirmed_classification(classification: Any) -> bool:
+        if not isinstance(classification, dict):
+            return False
+        source = str(classification.get("source") or classification.get("confirmed_by") or "").lower()
+        return bool(
+            classification.get("human_confirmed") is True
+            or classification.get("confirmed_by_human") is True
+            or classification.get("manual_confirmation") is True
+            or source in {"human", "manual", "crm_manual", "human_review"}
+        )
 
     def upsert_listing(self, record: dict[str, Any]) -> dict[str, Any]:
         collection = self.collection()
@@ -130,9 +209,30 @@ class MongoStore:
         if not url:
             raise ValueError("El registro no contiene URL.")
         payload = self._sanitize_payload(record)
-        listing_id = record.get("listing_id")
-        query = {"listing_id": listing_id} if listing_id else {"url": url}
-        result = collection.update_one(query, {"$set": payload}, upsert=True)
+        query = self._yapo_identity_query({**record, "url": url})
+        existing = collection.find_one(query, {"_id": 1, "created_at": 1, "classification": 1})
+        protected = {
+            "_id", "created_at", "gestion", "asignacion", "asignaciones", "executive_assignments",
+            "assigned_to", "assigned_executive", "historial_gestion", "management_history",
+            "captacion_management_events", "captacion_management_date", "manual_review",
+            "telefono_normalizado", "phone_identity",
+            "phone_identity_decision", "captacion_priority", "captacion_probability_sort",
+            "captacion_comuna_sort", "captacion_price_sort", "captacion_sort_date",
+        }
+        if existing:
+            protected |= {key for key in payload if key.startswith(("gestion_", "asignacion_", "executive_", "crm_"))}
+            if self._human_confirmed_classification(existing.get("classification")):
+                protected.add("classification")
+            update = {key: value for key, value in payload.items() if key not in protected}
+            result = collection.update_one(query, {"$set": update})
+        else:
+            insert_only = {key: value for key, value in payload.items() if key in {
+                "schema_version", "run_id", "batch_id", "source", "source_portal", "origen",
+                "listing_id", "url", "canonical_url", "created_at",
+            }}
+            insert_only.setdefault("created_at", payload.get("created_at") or datetime.utcnow().isoformat())
+            update = {key: value for key, value in payload.items() if key not in protected and key not in insert_only}
+            result = collection.update_one(query, {"$set": update, "$setOnInsert": insert_only}, upsert=True)
         return {
             "matched_count": result.matched_count,
             "modified_count": result.modified_count,

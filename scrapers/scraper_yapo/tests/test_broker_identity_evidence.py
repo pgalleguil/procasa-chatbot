@@ -97,40 +97,39 @@ def test_personal_name_without_commercial_signals_is_not_safe():
     assert rules.classify_obvious_broker(_confirmed(contact_name="María Pérez")) is None
 
 
-def test_professional_account_overrides_direct_deal_title():
+def test_professional_account_and_personal_name_do_not_override_direct_deal_title():
     fields = extract_listing_fields(_publisher_html(
         "<span class='seller-name'>Agencia Casa</span>"
         "<span class='seller-type'>Profesional</span><span class='badge'>Cuenta profesional</span>"
     ))
     fields["title"] = "Trato directo, sin comisión"
     result = rules.classify_obvious_broker(fields)
-    assert result["state"] == "CORREDOR_SEGURO"
-    assert result["source"] == "structural_rules"
+    assert result is None
 
 
-def test_single_professional_badge_is_probable_not_safe_evidence():
+def test_single_professional_badge_is_not_broker_evidence():
     fields = extract_listing_fields(_publisher_html(
         "<span class='badge'>Cuenta profesional</span>"
     ))
     assert fields["seller_type"] == "PROFESIONAL"
     result = rules.classify_obvious_broker(fields)
-    assert result["state"] == "CORREDOR_PROBABLE"
+    assert result is None
 
 
-def test_single_explicit_professional_type_is_probable_not_safe_evidence():
+def test_single_explicit_professional_type_is_not_broker_evidence():
     fields = extract_listing_fields(_publisher_html(
         "<span class='seller-type'>Profesional</span>"
     ))
     result = rules.classify_obvious_broker(fields)
-    assert result["state"] == "CORREDOR_PROBABLE"
+    assert result is None
 
 
-def test_two_independent_professional_fields_are_safe():
+def test_profile_label_and_badge_are_one_structural_signal_not_broker_proof():
     fields = extract_listing_fields(_publisher_html(
         "<span class='seller-type'>Profesional</span><span class='badge'>Cuenta profesional</span>"
     ))
     result = rules.classify_obvious_broker(fields)
-    assert result["state"] == "CORREDOR_SEGURO"
+    assert result is None
 
 
 def test_professional_badge_outside_publisher_is_not_evidence():

@@ -744,6 +744,28 @@ def _all_evidence_context(extracted: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _explicit_seller_contact_mismatch(extracted: dict[str, Any]) -> dict[str, str] | None:
+    """Find an explicitly named contact who differs from the publisher identity."""
+    publisher = str(extracted.get("publicador_visible") or extracted.get("contact_name") or "").strip()
+    publisher_words = normalize_text(publisher).split()
+    if not publisher or "@" in publisher or len(publisher_words) < 2:
+        return None
+    description = re.sub(r"<[^>]+>", " ", str(extracted.get("description") or extracted.get("descripcion") or ""))
+    pattern = re.compile(
+        r"\b(?:contactar(?:\s+al)?|contacto|comunicarse\s+con)\s*(?:a|con)?\s*:?\s*"
+        r"([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑa-záéíóúüñ'-]+(?:\s+[A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑa-záéíóúüñ'-]+){1,3})",
+        re.IGNORECASE,
+    )
+    publisher_norm = " ".join(publisher_words)
+    for match in pattern.finditer(description):
+        contact = re.sub(r"[.,;:!?]+$", "", match.group(1)).strip()
+        contact_words = normalize_text(contact).split()
+        contact_norm = " ".join(contact_words)
+        if len(contact_words) >= 2 and contact_norm not in publisher_norm and publisher_norm not in contact_norm:
+            return {"publisher": publisher, "named_contact": contact, "fragment": match.group(0)}
+    return None
+
+
 def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
     removed = is_removed_listing(extracted)
     if removed:
@@ -760,11 +782,10 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
         "profesional" in badges
         and _publisher_field_is_confirmed(extracted, "contact_badges_text")
     )
-    independent_professional_evidence = (
-        professional_type
-        and professional_badge
-        and _publisher_field_source(extracted, "seller_type") != "publisher_scoped_badge"
-    )
+    # A Yapo PROFESSIONAL label and its profile badge are structural account
+    # metadata, not independent proof of brokerage. Keep them observable, but
+    # require commercial identity, brokerage services, a known brand, or a
+    # confirmed profile correlation before classifying the publisher as broker.
     confirmed_company = company_shape_in_publisher_fields(extracted)
     confirmed_company_profile = professional_type and confirmed_company["company_like_suspected"] and any(
         _publisher_field_is_confirmed(extracted, evidence.split(":", 1)[0])
@@ -777,28 +798,10 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
             "evidence": [*confirmed_company["company_like_evidence"], f"seller_type:{seller_type}"],
             "source": "confirmed_publisher_company_and_profile",
         }
-    if independent_professional_evidence:
-        return {
-            "state": "CORREDOR_SEGURO",
-            "confidence": 0.99,
-            "reason": "El portal identifica estructuralmente al publicador como profesional.",
-            "evidence": [f"seller_type:{seller_type}", f"contact_badges_text:{badges}"],
-            "source": "structural_rules",
-        }
     brand = known_broker_brand_in_strong_fields(extracted)
     if brand:
         return brand
-    if professional_type or professional_badge:
-        return {
-            "state": "CORREDOR_PROBABLE",
-            "confidence": 0.85,
-            "reason": "Una señal profesional confirmada está vinculada al bloque del publicador, sin corroboración independiente.",
-            "evidence": [
-                *( [f"seller_type:{seller_type}"] if professional_type else [] ),
-                *( ["contact_badges_text:profesional"] if professional_badge else [] ),
-            ],
-            "source": "structural_rules",
-        }
+    # Do not let an isolated PROFESSIONAL account tag create a broker state.
 
     hard = hard_broker_terms_in_strong_fields(extracted)
     if hard:
@@ -962,6 +965,15 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
             "reason": "El texto menciona a un propietario tercero; no se atribuye esa identidad al anunciante.",
             "evidence_ids": [f"{item['rule_id']}:{item['field']}:{item['position_start']}" for item in contextual["owner_third_party_mentions"]],
         })
+    seller_contact_mismatch = _explicit_seller_contact_mismatch(extracted)
+    if owner_evidence and seller_contact_mismatch:
+        contradictions.append({
+            "rule_id": "OWNER_DECLARATION_CONTACT_IDENTITY_MISMATCH",
+            "reason": "La declaración de venta propia nombra un contacto distinto del publicador; requiere verificar si es representante o tercero.",
+            "publisher": seller_contact_mismatch["publisher"],
+            "named_contact": seller_contact_mismatch["named_contact"],
+            "evidence": seller_contact_mismatch["fragment"],
+        })
 
     if strong_broker_identity:
         state = "CORREDOR_SEGURO"
@@ -977,7 +989,11 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         source = broker_identity.get("source") if broker_identity else (
             "unknown_business_context" if contextual["unknown_business_identity_evidence"] else "contextual_rules"
         )
-    elif strong_owner and not (strong_broker_identity or probable_broker or commercial_conflict or confirmed_company_identity):
+    elif strong_owner and not (
+        strong_broker_identity or probable_broker or commercial_conflict
+        or confirmed_company_identity or contextual["owner_third_party_mentions"]
+        or seller_contact_mismatch
+    ):
         state = "DUEÑO_PROBABLE"
         reason = "Una declaración atribuible indica que vende su propia propiedad; no verifica titularidad legal."
         source = "owner_declaration_grammar"
@@ -1018,7 +1034,9 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
     if state == "INCIERTO" and not review_reasons:
         review_reasons.append("Revisión manual: no se detectó una señal concluyente de propietario o corredor.")
 
-    if strong_broker_identity or strong_owner:
+    if strong_broker_identity or (
+        strong_owner and not contextual["owner_third_party_mentions"] and not seller_contact_mismatch
+    ):
         evidence_strength = "ALTA"
     elif probable_broker or owner_evidence or contextual["family_or_representative_signals"]:
         evidence_strength = "MEDIA"

@@ -145,6 +145,13 @@ class MongoStore:
             computed["probability_derived_state"] = computed_state
             computed["state"] = yapo_state
             computed["final_state"] = yapo_state
+            if canonical_state:
+                # Older shared probability-engine versions may rewrite the
+                # canonical `final` value to UNCERTAIN when owner probability
+                # is intentionally absent. Preserve the Yapo state bridge;
+                # the missing probability remains a separate assignment gate.
+                computed["final"] = canonical_state
+                computed["identity_classification"] = canonical_state
             if computed_state and computed_state != yapo_state:
                 computed["yapo_probability_state_conflict"] = True
                 computed["yapo_probability_state_conflict_reason"] = (

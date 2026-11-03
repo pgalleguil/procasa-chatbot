@@ -50,6 +50,13 @@ def cache_key(extracted: dict[str, Any]) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+def estimate_deepseek_cost_usd(extracted: dict[str, Any], *, max_output_tokens: int = 500) -> float:
+    """Conservative cache-miss estimate using 4 chars/token and Flash peak rates."""
+    text_chars = sum(len(str(extracted.get(key) or "")) for key in ("title", "description", "descripcion"))
+    input_tokens = max(1, min(6000, text_chars) // 4)
+    return (input_tokens * 0.30 + max(0, int(max_output_tokens)) * 1.20) / 1_000_000
+
+
 def get_cached_deepseek_result(extracted: dict[str, Any], path: Path = DEEPSEEK_CACHE_PATH) -> dict[str, Any] | None:
     key = cache_key(extracted)
     try:
@@ -203,7 +210,10 @@ def classify_with_routing(
     *,
     simulate_deepseek: bool = True,
     max_calls: int = 0,
+    max_budget_usd: float = 0.0,
+    budget_used_usd: float = 0.0,
     deepseek_calls_used: int = 0,
+    cache_path: Path | None = None,
     candidate_registry_path: Path | None = None,
 ) -> dict[str, Any] | None:
     """Return deterministic classification plus a no-cost proposed IA route."""
@@ -220,10 +230,16 @@ def classify_with_routing(
     else:
         route = "deepseek_candidate"
         reason = "Caso ambiguo o propietario probable; se simula el enrutamiento sin llamada real."
-    cached = get_cached_deepseek_result(extracted)
+    cached = get_cached_deepseek_result(extracted, path=cache_path or DEEPSEEK_CACHE_PATH)
+    estimated_cost = 0.0 if cached is not None else estimate_deepseek_cost_usd(extracted)
     if route == "deepseek_candidate" and cached is not None:
         route = "deepseek_cached"
         reason = "Hay una adjudicación en caché para el mismo anuncio, contenido y versiones; no se repite una llamada."
+    budget_exhausted = bool(
+        route == "deepseek_candidate"
+        and (max_calls <= 0 or deepseek_calls_used >= max_calls
+             or max_budget_usd <= 0 or budget_used_usd + estimated_cost > max_budget_usd)
+    )
     result = {
         **result,
         "classification_route": route,
@@ -233,7 +249,10 @@ def classify_with_routing(
         "cached_deepseek_result": (cached or {}).get("result") if cached else None,
         "deepseek_budget_max_calls": max(0, int(max_calls)),
         "deepseek_calls_used": max(0, int(deepseek_calls_used)),
-        "deepseek_budget_exhausted": bool(route == "deepseek_candidate" and max_calls > 0 and deepseek_calls_used >= max_calls),
+        "deepseek_budget_max_usd": max(0.0, float(max_budget_usd)),
+        "deepseek_budget_used_usd": max(0.0, float(budget_used_usd)),
+        "deepseek_estimated_cost_usd": estimated_cost,
+        "deepseek_budget_exhausted": budget_exhausted,
         "deepseek_route_reason": reason,
         "content_sha256": content_fingerprint(extracted),
         "classifier_version": CLASSIFIER_VERSION,

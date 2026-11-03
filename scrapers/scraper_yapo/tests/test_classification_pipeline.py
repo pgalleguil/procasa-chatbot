@@ -1,4 +1,5 @@
 import json
+from scrapers.scraper_yapo import classification_pipeline as pipeline
 
 from scrapers.scraper_yapo.classification_pipeline import (
     classify_with_routing,
@@ -79,6 +80,24 @@ def test_ambiguous_route_is_simulation_and_cache_uses_full_description(tmp_path)
     assert result["classification_route"] == "deepseek_candidate"
     assert result["deepseek_simulation_only"] is True
     assert result["deepseek_call_executed"] is False
+
+
+def test_budget_blocks_paid_route_and_cached_decision_skips_budget(tmp_path, monkeypatch):
+    extracted = {"listing_id": "budget-1", "title": "Casa", "description": "Texto ambiguo."}
+    monkeypatch.setattr(pipeline, "DEEPSEEK_CACHE_PATH", tmp_path / "cache.jsonl")
+    blocked = classify_with_routing(extracted, max_calls=2, max_budget_usd=0, cache_path=tmp_path / "cache.jsonl")
+    assert blocked["classification_route"] == "deepseek_candidate"
+    assert blocked["deepseek_budget_exhausted"] is True
+    assert blocked["deepseek_call_executed"] is False
+
+    store_deepseek_result(
+        extracted, {"state": "INCIERTO"}, input_tokens=3, output_tokens=3,
+        estimated_cost_usd=0, path=tmp_path / "cache.jsonl",
+    )
+    cached = classify_with_routing(extracted, max_calls=0, max_budget_usd=0, cache_path=tmp_path / "cache.jsonl")
+    assert cached["classification_route"] == "deepseek_cached"
+    assert cached["deepseek_cache_hit"] is True
+    assert cached["deepseek_budget_exhausted"] is False
 
 
 def test_catalog_matching_tolerates_case_accents_punctuation_and_joined_words():

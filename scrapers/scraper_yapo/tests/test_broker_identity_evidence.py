@@ -9,6 +9,7 @@ sys.path.insert(0, str(REPO))
 
 from scrapers.scraper_yapo import classifier_rules as rules
 from scrapers.scraper_yapo.extractor import extract_listing_fields
+from scrapers.scraper_yapo.reclassify_saved_pilot import _with_saved_publisher_provenance
 
 
 def _confirmed(**fields):
@@ -212,3 +213,63 @@ def test_identity_rules_never_upgrade_missing_evidence_to_owner():
     result = rules.classify_with_rules(extracted)
     assert result["state"] == "DUEÑO_PROBABLE"
     assert result["owner_classification_confirmed"] is False
+
+
+@pytest.mark.parametrize("name", [
+    "Gonzalo Sánchez", "Cami San Martín Hellberg", "SANDRA ABURTO GUTIERREZ",
+    "Oscar salinas", "Renato Alviz Santander", "katherinne Saavedra", "Boris Avila",
+    "SAULING CHIONG ABE", "SAULING CHIONG ABE", "Patricio Javier Guiñez Sandoval",
+    "fernando Salazar", "katherinne Saavedra", "sergio sanhueza",
+])
+def test_sa_false_positive_does_not_match_inside_personal_name(name):
+    fields = _confirmed(publicador_visible=name)
+    assert rules.company_shape_in_publisher_fields(fields)["company_like_evidence"] == []
+    result = rules.classify_yapo_listing(fields)
+    assert result["state"] == "INCIERTO"
+    assert not any("s.a" in str(item).lower() for item in result.get("evidence", []))
+
+
+def test_saved_pilot_values_are_not_promoted_to_confirmed_provenance():
+    fields = _with_saved_publisher_provenance({
+        "publicador_visible": "Focus Propiedades", "logo": "Foto de perfil de Focus Propiedades",
+        "tipo_anunciante": "Empresa",
+    })
+    assert not any(item.get("status") == "confirmed" for item in fields["publisher_field_provenance"].values())
+    assert fields["unverified_publisher_fields"]["publicador_visible"] == "Focus Propiedades"
+    fields["publisher_profile_context"] = {"distinct_listing_count": 2}
+    assert rules.classify_yapo_listing(fields)["state"] == "CORREDOR_PROBABLE"
+
+
+@pytest.mark.parametrize("name,description", [
+    ("Mery Reyes Propiedades", "Contáctenos para coordinar una visita."),
+    ("Focus Propiedades", "Agenda tu visita para conocer más detalles."),
+])
+def test_repeated_commercial_publisher_gets_probable_without_catalog_promotion(name, description):
+    fields = _with_saved_publisher_provenance({
+        "publicador_visible": name, "logo": f"Foto de perfil de {name}",
+        "description": description, "title": "Casa en venta en Maipú",
+    })
+    fields["publisher_profile_context"] = {"distinct_listing_count": 2}
+    result = rules.classify_yapo_listing(fields)
+    assert result["state"] == "CORREDOR_PROBABLE"
+    assert "repeat_listings:2" in " ".join(result["evidence"])
+
+
+def test_repeated_hyc_associados_profile_is_probable_with_publisher_logo_and_cta():
+    name = "HyC Asociados"
+    fields = _with_saved_publisher_provenance({
+        "publicador_visible": name, "logo": f"Foto de perfil de {name}",
+        "description": "Las superficies fueron proporcionadas por su dueño.",
+        "title": "Casa en venta en Maipú",
+    })
+    fields["publisher_profile_context"] = {"distinct_listing_count": 2}
+    result = rules.classify_yapo_listing(fields)
+    assert result["state"] == "CORREDOR_PROBABLE"
+    assert "repeated_associates" in " ".join(result["evidence"])
+
+
+def test_corredor_jorge_carreno_unverified_publisher_is_probable():
+    fields = _with_saved_publisher_provenance({"publicador_visible": "Corredor - Jorge Carreño"})
+    result = rules.classify_obvious_broker(fields)
+    assert result["state"] == "CORREDOR_PROBABLE"
+    assert "unverified_saved_identity" in " ".join(result["evidence"])

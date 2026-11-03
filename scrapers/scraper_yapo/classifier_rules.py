@@ -197,6 +197,17 @@ def _confirmed_identity_values(extracted: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _unverified_identity_values(extracted: dict[str, Any]) -> dict[str, str]:
+    """Raw imported identity fields are candidates, never extraction-confirmed facts."""
+    stored = extracted.get("unverified_publisher_fields") or {}
+    if isinstance(stored, dict) and stored:
+        return {str(k): str(v) for k, v in stored.items() if str(v or "").strip()}
+    return {
+        field: value for field, value in _field_values(extracted, IDENTITY_FIELDS).items()
+        if value.strip() and not _publisher_field_is_confirmed(extracted, field)
+    }
+
+
 def _phrase_matches(value: str, phrase: str) -> bool:
     """Match complete normalized tokens, allowing spacing/punctuation variants."""
     value_text = normalize_text(value)
@@ -260,7 +271,8 @@ def known_broker_brand_in_strong_fields(extracted: dict[str, Any]) -> dict[str, 
     brands = rules["known_broker_brands"]
     aliases = rules.get("known_broker_brand_aliases") or {}
     evidence: list[str] = []
-    for field, value in _confirmed_identity_values(extracted).items():
+    confirmed = _confirmed_identity_values(extracted)
+    for field, value in confirmed.items():
         compact_value = "".join(normalize_text(value).split())
         for brand in brands:
             variants = [brand, *(aliases.get(brand) or [])]
@@ -286,7 +298,22 @@ def known_broker_brand_in_strong_fields(extracted: dict[str, Any]) -> dict[str, 
                 if _phrase_matches(value, str(variant)):
                     evidence.append(f"{field}:{brand}|matched_variant:{variant}")
     if not evidence:
-        return None
+        # Saved pilot exports contain names but no extraction provenance. A
+        # catalog match is useful evidence, but cannot confirm the publisher.
+        for field, value in _unverified_identity_values(extracted).items():
+            compact_value = "".join(normalize_text(value).split())
+            for brand in brands:
+                for variant in [brand, *(aliases.get(brand) or [])]:
+                    compact_term = "".join(normalize_text(str(variant)).split())
+                    if compact_term and compact_term in compact_value and _phrase_matches(value, str(variant)):
+                        evidence.append(f"{field}:{brand}|matched_variant:{variant}|unverified_saved_identity")
+        if not evidence:
+            return None
+        return {
+            "state": "CORREDOR_PROBABLE", "confidence": 0.82,
+            "reason": "Nombre coincidente con el catálogo, pero la exportación guardada no acredita su extracción como identidad del publicador.",
+            "evidence": evidence[:8], "source": "catalog_unverified_identity",
+        }
     return {
         "state": "CORREDOR_SEGURO",
         "confidence": 0.99,
@@ -301,13 +328,22 @@ def hard_broker_terms_in_strong_fields(extracted: dict[str, Any]) -> dict[str, A
     terms = load_rule_sets()["hard_broker_terms"]
     evidence = _confirmed_identity_evidence(extracted, terms)
     if not evidence:
+        evidence = [
+            f"{field}:{term}|unverified_saved_identity"
+            for field, value in _unverified_identity_values(extracted).items()
+            for term in terms if _phrase_matches(value, term)
+        ]
+    for field, value in _unverified_identity_values(extracted).items():
+        if re.match(r"^\s*corredor\s*[-–—:]\s*", value, re.I):
+            evidence.append(f"{field}:publisher_role_prefix:corredor|unverified_saved_identity")
+    if not evidence:
         return None
     return {
         "state": "CORREDOR_PROBABLE",
         "confidence": 0.9,
         "reason": "Hard broker terms found in strong publisher fields.",
         "evidence": evidence[:8],
-        "source": "rules_json",
+        "source": "rules_json" if _confirmed_identity_values(extracted) else "unverified_saved_identity",
     }
 
 
@@ -429,6 +465,15 @@ def _unknown_business_signature(extracted: dict[str, Any]) -> list[str]:
         "corredora", "corredores", "corretaje", "inmobiliaria", "inmobiliario",
         "gestion inmobiliaria", "asesoria inmobiliaria", "servicios inmobiliarios",
     }
+    profile = extracted.get("publisher_profile_context") or {}
+    repeat_count = int(profile.get("distinct_listing_count") or 0) if isinstance(profile, dict) else 0
+    logo_identity = normalize_text(str(extracted.get("contact_logo_alt") or ""))
+    repeated_associates = (
+        repeat_count >= 2
+        and "asociados" in normalize_text(" ".join(identity_values.values()))
+        and logo_identity
+        and "asociados" in logo_identity
+    )
     result: list[str] = []
     for field, value in identity_values.items():
         value = re.sub(r"^\s*(?:foto|imagen|logo)\s+de\s+perfil\s+de\s+", "", value, flags=re.I)
@@ -442,9 +487,15 @@ def _unknown_business_signature(extracted: dict[str, Any]) -> list[str]:
         if shape_hits and len(normalized.split()) >= 2:
             normalized_shapes = {normalize_text(term) for term in shape_hits}
             strong_name = bool(normalized_shapes & specific_broker_shapes)
-            strength = "probable" if (strong_name or has_brokerage_service) else "review_candidate"
+            strength = "probable" if (strong_name or has_brokerage_service or (repeat_count >= 2 and shape_hits)) else "review_candidate"
             result.append(
-                f"unknown_business_identity:{field}:{value.strip()}|shape:{shape_hits[0]}|strength:{strength}"
+                f"unknown_business_identity:{field}:{value.strip()}|shape:{shape_hits[0]}|"
+                f"repeat_listings:{repeat_count}|strength:{strength}"
+            )
+        elif repeated_associates:
+            result.append(
+                f"unknown_business_identity:{field}:{value.strip()}|shape:repeated_associates|"
+                f"repeat_listings:{repeat_count}|strength:probable"
             )
     return result[:4]
 
@@ -522,7 +573,7 @@ def company_shape_in_publisher_fields(extracted: dict[str, Any]) -> dict[str, An
             norm = _matchable(term)
             if not norm:
                 continue
-            if norm in text:
+            if _phrase_matches(value, term):
                 evidence.append(f"{field}:{term}")
                 break
     return {

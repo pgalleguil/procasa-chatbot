@@ -1709,6 +1709,8 @@ def test_v8_twenty_realistic_offline_customer_conversations(
             assert "no se ha" in low or "no hay" in low
         if "nadie" in question:
             assert "no se ha enviado" in low or "no se ha solicitado" in low
+        if question in ("no estoy seguro", "no puedo esta semana"):
+            assert "gracias por responder" not in low
         if "no habia consultado" in question:
             assert "no tengo" in low and "verificada" in low
         if "cuanto cuesta ahora" in question or "cuanto sale" in question:

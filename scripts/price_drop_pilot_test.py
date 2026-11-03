@@ -24,7 +24,7 @@ from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
 PROPERTY_CODE = "6436"
 OLD_UF = 2790.0
 NEW_UF = 2690.0
-TEST_ID = "20261102-6436-price-drop-pilot-v4"
+TEST_ID = "20261102-6436-price-drop-pilot-v5"
 
 
 def run_test_once(*, send: bool = False) -> int:
@@ -71,12 +71,13 @@ def run_test_once(*, send: bool = False) -> int:
     # contact, stated objections, or claims of a previous consultation.
     # The test-only allowlist, campaign ID, and CRM isolation stay invisible.
     message = (
-        "¡Hola! ¿Cómo estás? 😊\n\n"
-        "Te quería contar desde PROCASA que el departamento de San Miguel "
-        "bajó recientemente de UF 2.790 a UF 2.690.\n\n"
-        "Te dejo el enlace para que lo mires:\n"
+        "Hola, ¿cómo estás? Soy de PROCASA 😊\n\n"
+        "Te escribo porque el departamento de San Miguel tuvo una rebaja: "
+        "ahora está en UF 2.690, 100 UF menos que antes (UF 2.790).\n\n"
+        "Con este nuevo precio quizás valga la pena darle otra mirada. "
+        "Acá está la publicación actualizada:\n"
         "https://www.procasa.cl/6436\n\n"
-        "¿Te gustaría saber algo más o ir a verlo?"
+        "¿Cómo lo ves con este nuevo valor?"
     )
     if not send:
         print("DRY RUN PASSED: isolated recipient and current price verified; no WhatsApp sent")
@@ -93,7 +94,7 @@ def run_test_once(*, send: bool = False) -> int:
         "new_price_uf": NEW_UF,
         "operation": "Venta",
         "channel": "whatsapp",
-        "campaign_version": "price_drop_pilot_v4",
+        "campaign_version": "price_drop_pilot_v5",
         "status": "SENDING",
         "isolation_version": "test_webhook_before_crm_v1",
         "created_at": now,

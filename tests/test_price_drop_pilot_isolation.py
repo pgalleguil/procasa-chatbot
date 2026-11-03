@@ -606,27 +606,29 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
 
 
 
-def test_natural_v3_sender_text_avoids_invented_historic_lead_contact():
+def test_v5_sender_reactivation_copy_is_warm_specific_and_historically_grounded():
     from scripts import price_drop_pilot_test as sender
-    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v4"
+    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v5"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
     ).read_text()
     message_source = source.split("    message = (", 1)[1].split("    if not send:", 1)[0]
     for expected in (
-        "¡Hola! ¿Cómo estás?", "PROCASA", "San Miguel",
-        "UF 2.790", "UF 2.690", "https://www.procasa.cl/6436",
-        "¿Te gustaría saber algo más o ir a verlo?",
+        "Hola, ¿cómo estás? Soy de PROCASA", "San Miguel",
+        "UF 2.790", "UF 2.690", "100 UF menos",
+        "https://www.procasa.cl/6436",
+        "¿Cómo lo ves con este nuevo valor?",
     ):
         assert expected in message_source
     for prohibited in (
         "PRUEBA INTERNA", "habías consultado", "me comentaste",
         "te acordarás", "la otra vez conversamos", "[Nombre]",
         "Se notificará", "le avisaremos al ejecutivo",
+        "te interesó la última vez", "te habíamos contactado",
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v4"' in source
+    assert '"campaign_version": "price_drop_pilot_v5"' in source
     assert 'if not is_test_phone(phone)' in source
 
 
@@ -835,3 +837,103 @@ def test_v4_llm_cannot_send_truncated_sentence(monkeypatch, isolated):
     answer = build_test_reply("¿Tiene conserjería?", ctx)
     assert "Sí, te recomiendo ver" not in answer
     assert "no notificaremos" in answer
+
+
+def test_v5_customer_introduction_is_remembered_without_touching_crm(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "name-1", "Hola, soy Camila", sender=send
+    )["status"] == "test_reply_sent"
+    assert "Camila" in calls[-1][1]
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    assert campaign["customer_first_name"] == "Camila"
+    assert campaign["customer_first_name_source"] == "customer_message"
+    # Earlier customer name leaves the 12-turn history window, but persists
+    # ONLY in the isolated campaign and can still be recalled reliably.
+    for i in range(15):
+        assert process_test_inbound(
+            db, PHONE, "name-filler-" + str(i), "¿Tiene terraza?", sender=send,
+        )["status"] == "test_reply_sent"
+    assert process_test_inbound(
+        db, PHONE, "name-recall", "¿Cómo me llamo?", sender=send,
+    )["status"] == "test_reply_sent"
+    assert "Camila" in calls[-1][1]
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+def test_v5_name_in_combined_introduction_does_not_swallow_property_question(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    outcome = process_test_inbound(
+        db, PHONE, "name-and-baths",
+        "Hola, soy María José, ¿cuántos baños tiene?", sender=send,
+        llm=lambda *_: (_ for _ in ()).throw(AssertionError(
+            "Confirmed property facts must remain deterministic"
+        )),
+    )
+    assert outcome["status"] == "test_reply_sent"
+    assert "María José" in calls[-1][1]
+    assert "2 baños" in calls[-1][1]
+    assert db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"] == "María José"
+
+
+def test_v5_uses_name_sparingly_and_accepts_explicit_correction(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    for key, msg in [
+        ("n-1", "Me llamo Juan Pablo"),
+        ("n-2", "¿Tiene terraza?"),
+        ("n-3", "¿Cuántos baños tiene?"),
+        ("n-4", "Quiero visitarla"),
+    ]:
+        assert process_test_inbound(db, PHONE, key, msg, sender=send)["status"] == "test_reply_sent"
+    assert calls[-1][1].count("Juan Pablo") <= 1
+    assert "Juan Pablo" in calls[-1][1]
+    assert process_test_inbound(
+        db, PHONE, "n-5", "No, me llamo Andrés", sender=send
+    )["status"] == "test_reply_sent"
+    assert db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"] == "Andrés"
+    assert process_test_inbound(
+        db, PHONE, "n-6", "¿Recuerdas mi nombre?", sender=send
+    )["status"] == "test_reply_sent"
+    assert "Andrés" in calls[-1][1]
+    assert "Juan Pablo" not in calls[-1][1]
+
+
+def test_v5_never_assumes_someone_elses_name_or_occupation(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    for key, msg in [
+        ("other-name", "Mi esposa se llama Patricia"),
+        ("non-name", "Soy interesado"),
+        ("wrong-name", "Hola, soy de PROCASA"),
+    ]:
+        assert process_test_inbound(
+            db, PHONE, key, msg, sender=send,
+            llm=lambda *_: "Gracias por escribir.",
+        )["status"] == "test_reply_sent"
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    assert "customer_first_name" not in campaign
+    assert process_test_inbound(
+        db, PHONE, "unknown-name", "¿Cuál es mi nombre?", sender=send
+    )["status"] == "test_reply_sent"
+    assert "no me has indicado tu nombre" in calls[-1][1]
+
+
+def test_v5_duplicate_name_event_does_not_update_campaign_again(isolated):
+    db = _full_pilot_db()
+    send, calls = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "intro-duplicate", "Soy Daniela", sender=send
+    )["status"] == "test_reply_sent"
+    first_updates = sum(op == "update_one" for op, _ in db["crm_price_drop_pilot_v1"].calls)
+    assert process_test_inbound(
+        db, PHONE, "intro-duplicate", "Soy Valentina", sender=send
+    ) == {"status": "duplicate_suppressed"}
+    assert db["crm_price_drop_pilot_v1"].docs[0]["customer_first_name"] == "Daniela"
+    assert sum(op == "update_one" for op, _ in db["crm_price_drop_pilot_v1"].calls) == first_updates
+    assert len(calls) == 1

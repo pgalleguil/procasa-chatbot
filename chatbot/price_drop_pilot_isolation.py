@@ -717,6 +717,22 @@ def _native_verified_answer(message: str, ctx: dict) -> str | None:
             f"UF {_format_uf(now)}. Son {_format_uf(saving)} UF menos, "
             f"equivalente a un {percentage:.2f}% de rebaja."
         ).replace(f"{percentage:.2f}%", f"{percentage:.2f}".replace(".", ",") + "%")
+    if re.search(
+        r"\b(?:cuanto (?:cuesta|sale|vale) (?:ahora|hoy)?|"
+        r"precio actual|precio de ahora|en cuanto quedo|"
+        r"cuanto esta ahora|valor actual)\b", plain
+    ):
+        return f"Actualmente figura publicado en UF {_format_uf(ctx['new_price_uf'])}."
+    if re.search(
+        r"\b(?:que porcentaje bajo|cuanto porcentaje bajo|"
+        r"que rebaja tuvo|de cuanto fue la rebaja)\b", plain
+    ):
+        saved = ctx["old_price_uf"] - ctx["new_price_uf"]
+        percent = 100 * saved / ctx["old_price_uf"]
+        return (
+            f"La rebaja fue de {_format_uf(saved)} UF, "
+            f"un {percent:.2f}% del precio anterior."
+        ).replace(f"{percent:.2f}%", f"{percent:.2f}".replace(".", ",") + "%")
     if re.search(r"\b(?:gastos? comunes?|ggcc)\b", plain):
         amount = facts.get("gastos_comunes_clp")
         if amount is not None:

@@ -811,6 +811,24 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
         name = ctx.get("customer_first_name")
         return (f"Me dijiste que te llamas {name} 😊." if name
                 else "Todavía no me has indicado tu nombre.")
+    # A precise date question is answered from the matching Prop360 bitácora,
+    # never from language-model guesses or the date the WhatsApp was sent.
+    date_query = re.search(
+        r"\\b(?:cuando|fecha|que dia|hace cuanto|desde cuando)\\b.{0,75}"
+        r"\\b(?:baj\\w*|rebaj\\w*|cambi\\w* el precio)\\b",
+        _plain(clean),
+    )
+    if date_query:
+        date = ctx.get("price_drop_date")
+        if date:
+            return (
+                f"La rebaja que te comentamos se registró el {date}. "
+                "Te escribimos para avisarte del nuevo valor."
+            )
+        return (
+            "La rebaja está confirmada, pero todavía no tengo "
+            "una fecha exacta verificada para darte."
+        )
     from .grok_client import generar_respuesta_estructurada
     generate = generator or generar_respuesta_estructurada
     messages = _build_native_campaign_messages(clean, ctx, history)

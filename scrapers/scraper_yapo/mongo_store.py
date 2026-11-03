@@ -152,7 +152,13 @@ class MongoStore:
                 # the missing probability remains a separate assignment gate.
                 computed["final"] = canonical_state
                 computed["identity_classification"] = canonical_state
-            if computed_state and computed_state != yapo_state:
+            canonical_states = {"OWNER_CONFIRMED", "OWNER_PROBABLE", "BROKER_CONFIRMED", "BROKER_PROBABLE", "UNCERTAIN"}
+            derived_state_conflicts = bool(
+                computed_state in canonical_states
+                and computed_state != canonical_state
+                and not (computed_state == "UNCERTAIN" and computed.get("owner_probability") is None)
+            )
+            if derived_state_conflicts:
                 computed["yapo_probability_state_conflict"] = True
                 computed["yapo_probability_state_conflict_reason"] = (
                     "El motor global derivó un estado distinto; se conserva la clasificación Yapo para revisión."

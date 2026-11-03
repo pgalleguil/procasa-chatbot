@@ -160,15 +160,24 @@ def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path) -> dict[str,
     cost_all = (projected_input_tokens_all * 0.30 + projected_output_tokens_all * 1.20) / 1_000_000
     cost_ambiguous = (projected_input_tokens_ambiguous * 0.30 + projected_output_tokens_ambiguous * 1.20) / 1_000_000
     changed = [item for item in audit if item["classification_changed"]]
-    new_brokers = []
-    seen_names: set[str] = set()
+    new_broker_map: dict[str, dict[str, Any]] = {}
     for item in audit:
         for evidence in (item["classification_new"].get("contextual_analysis") or {}).get("unknown_business_identity_evidence", []):
             name = evidence.split(":", 2)[-1].split("|shape:", 1)[0].strip()
             norm = normalize_text(name)
-            if norm and norm not in seen_names:
-                seen_names.add(norm)
-                new_brokers.append({"name": name, "listing_id": item.get("listing_id"), "evidence": evidence})
+            if not norm:
+                continue
+            candidate = new_broker_map.setdefault(norm, {
+                "name": name, "listing_ids": [], "evidence": [], "strength": "review_candidate",
+            })
+            listing_id = str(item.get("listing_id") or "")
+            if listing_id and listing_id not in candidate["listing_ids"]:
+                candidate["listing_ids"].append(listing_id)
+            if evidence not in candidate["evidence"]:
+                candidate["evidence"].append(evidence)
+            if "|strength:probable" in evidence:
+                candidate["strength"] = "probable"
+    new_brokers = list(new_broker_map.values())
 
     priority = {"DUEÑO_SEGURO": 1, "DUEÑO_PROBABLE": 2, "INCIERTO": 3}
     sales_candidates = [
@@ -269,7 +278,7 @@ def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path) -> dict[str,
         "audit_records": audit,
     }
     report_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    probable_new_count = sum("|strength:probable" in item["evidence"] for item in new_brokers)
+    probable_new_count = sum(item["strength"] == "probable" for item in new_brokers)
     summary_path.write_text(
         "\n".join([
             "# Reclasificación offline Yapo Maipú",

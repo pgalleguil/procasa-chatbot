@@ -82,7 +82,7 @@ _VISIT_MORNING = re.compile(r"\b(?:en|por)\s+la\s+manana\b|\b(?:durante|tipo)\s+
 _VISIT_AFTERNOON = re.compile(r"\b(?:en|por)\s+la\s+tarde\b")
 _VISIT_EVENING = re.compile(r"\b(?:en|por)\s+la\s+noche\b")
 _VISIT_TIME = re.compile(r"\b(?:a\s+las|tipo|cerca\s+de\s+las)\s+([0-2]?\d(?::[0-5]\d)?)\b")
-_VISIT_TWO_TIMES = re.compile(r"\b(?:a\s+las|tipo|cerca\s+de\s+las)\s+([0-2]?\d(?::[0-5]\d)?)\s+(?:o|u)\s+([0-2]?\d(?::[0-5]\d)?)\b")
+_VISIT_TWO_TIMES = re.compile(r"\b(?:a\s+las|tipo|cerca\s+de\s+las)\s+([0-2]?\d(?::[0-5]\d)?)\s+(?:o|u)\s+(?:a\s+las\s+)?([0-2]?\d(?::[0-5]\d)?)\b")
 _VISIT_CLARIFY = re.compile(r"^\s*(?:que|como|perdon|no entiendo|no cache|a que te refieres)[?.!¿¡\s]*$")
 _VISIT_AFFIRM = re.compile(r"^\s*(?:si+|sip|claro|correcto|ok|okay|dale)[.!?\s]*$")
 _VISIT_CONTACT = re.compile(r"\b(?:me contactaran|me llamaran|me van a contactar|me van a llamar|se comunicaran conmigo)\b")
@@ -698,7 +698,7 @@ def _native_verified_answer(message: str, ctx: dict) -> str | None:
     """
     plain = _plain(message)
     facts = ctx.get("property_facts") or {}
-    if re.search(r"\b(?:disponib\w*|disponob\w*|se vendio|vendid[oa]|sigue en venta|"
+    if re.search(r"\b(?:disponib\w*|disponob\w*|se vendio|la vendieron|vendieron|vendid[oa]|sigue en venta|"
                  r"aun esta en venta|todavia esta en venta|queda disponible)\b", plain):
         return (
             "Sí, el departamento sigue publicado como disponible en la "
@@ -746,7 +746,10 @@ def _active_visit_context(history: list[dict]) -> bool:
 
 def _native_visit_time_answer(message: str, history: list[dict]) -> str | None:
     """Preserve alternatives, especially 'mañana a las 10 o a las 11'."""
-    if not (VISIT.search(message) or _active_visit_context(history)):
+    if not (VISIT.search(message)
+            or "puedo ir" in _plain(message)
+            or "vamos a verla" in _plain(message)
+            or _active_visit_context(history)):
         return None
     parts = _visit_parts(message)
     day, time = parts.get("day"), parts.get("time")

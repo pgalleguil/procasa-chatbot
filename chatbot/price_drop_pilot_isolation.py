@@ -1077,8 +1077,8 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
         # Mentioning an address is not always a request to receive it again.
         # Give precedence to a simultaneous visit preference or fact question.
         location_declined = bool(re.search(
-            r"\\b(?:no (?:me )?(?:repitas?|digas?|mandes?)|sin repetir)\\b"
-            r".{0,45}\\b(?:direccion|ubicacion|calle)\\b",
+            r"\b(?:no (?:me )?(?:repitas?|digas?|mandes?)|sin repetir)\b"
+            r".{0,45}\b(?:direccion|ubicacion|calle)\b",
             plain,
         ))
         visit_answer = _native_visit_time_answer(clean, history)

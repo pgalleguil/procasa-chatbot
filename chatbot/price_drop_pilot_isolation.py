@@ -978,6 +978,8 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
         name = ctx.get("customer_first_name")
         return (f"Me dijiste que te llamas {name} 😊." if name
                 else "Todavía no me has indicado tu nombre.")
+    if "no habia consultado" in _plain(clean):
+        return "Perdona la confusión. No tengo aquí una consulta anterior verificada. Si no deseas más mensajes, puedes indicárnoslo."
     introduced, _ = _customer_introduction(clean)
     if introduced and _plain(clean).startswith(("hola", "buenas")) and len(clean) < 55:
         return f"¡Hola, {introduced}! 😊 Gracias por responder al aviso."

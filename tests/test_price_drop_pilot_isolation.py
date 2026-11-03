@@ -1468,3 +1468,75 @@ def test_price_change_date_from_untrusted_source_is_discarded(isolated):
          "fuente": "not_prop360"},
     ]
     assert load_test_context(db, PHONE)["price_drop_date"] is None
+
+
+def test_deepseek_pilot_json_mode_recovers_from_whitespace_http_200(
+    isolated, monkeypatch
+):
+    import json
+    from types import SimpleNamespace
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-no-network-test")
+    from chatbot import grok_client
+    calls = []
+
+    def fake_api(**kwargs):
+        calls.append(kwargs)
+        raw = " " * 96 if len(calls) == 1 else json.dumps({
+            "intencion": "consulta_general",
+            "respuesta_bot": "Fuimos nosotros quienes te avisamos de la rebaja.",
+            "datos_extraidos": {},
+        })
+        choice = SimpleNamespace(
+            message=SimpleNamespace(content=raw),
+            finish_reason="stop",
+        )
+        return SimpleNamespace(choices=[choice], usage=None)
+
+    monkeypatch.setattr(grok_client, "client",
+        SimpleNamespace(chat=SimpleNamespace(
+            completions=SimpleNamespace(create=fake_api))))
+    messages = [
+        {"role": "system", "content":
+            "[CONTEXTO COMERCIAL DEL MENSAJE SALIENTE - PRIORIDAD]"},
+        {"role": "assistant", "content":
+            "Hola, te escribimos para avisar de la rebaja de UF 2.790 a UF 2.690."},
+        {"role": "user", "content": "¿Cuándo bajó?"},
+    ]
+    result = grok_client.generar_respuesta_estructurada(
+        messages, {"operacion": "Venta"}, write_telemetry=False
+    )
+    assert "nosotros quienes" in result["respuesta_bot"]
+    assert len(calls) == 2
+    assert all(
+        x.get("response_format") == {"type": "json_object"} for x in calls
+    )
+    assert all(x["messages"][-1]["content"] == "¿Cuándo bajó?" for x in calls)
+
+
+def test_deepseek_pilot_json_mode_double_invalid_does_not_retry_indefinitely(
+    isolated, monkeypatch
+):
+    from types import SimpleNamespace
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-no-network-test")
+    from chatbot import grok_client
+    calls = []
+
+    def fake_api(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="    "),
+            finish_reason="stop"
+        )], usage=None)
+
+    monkeypatch.setattr(grok_client, "client",
+        SimpleNamespace(chat=SimpleNamespace(
+            completions=SimpleNamespace(create=fake_api))))
+    result = grok_client.generar_respuesta_estructurada([
+        {"role": "system", "content":
+            "[CONTEXTO COMERCIAL DEL MENSAJE SALIENTE - PRIORIDAD]"},
+        {"role": "assistant", "content": "Te informamos del nuevo precio."},
+        {"role": "user", "content": "¿Me das más información?"},
+    ], {"operacion": "Venta"}, write_telemetry=False)
+    assert result["respuesta_bot"] == ""
+    assert len(calls) == 2
+    assert all("response_format" in x for x in calls)

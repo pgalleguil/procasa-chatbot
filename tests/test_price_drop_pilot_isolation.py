@@ -1577,3 +1577,66 @@ def test_campaign_greeting_avoids_resending_link_unless_customer_requests_it(
     )["status"] == "test_reply_sent"
     assert "https://www.procasa.cl/6436" in outgoing[1][1]
     assert len(outgoing) == 2
+
+
+# A conversation is a sequence of user messages; every message runs through
+# the isolated production handler, while the DeepSeek API and WhatsApp send
+# are replaced by bounded offline doubles. Real lead records stay inaccessible.
+import json as _v8_json
+_V8_SCENARIOS = _v8_json.loads(
+    (Path(__file__).parent / "fixtures" /
+     "price_drop_v8_twenty_dialogues.json").read_text(encoding="utf-8")
+)
+assert len(_V8_SCENARIOS) == 20
+assert sum(len(turns) for _, turns in _V8_SCENARIOS) == 121
+
+
+def _v8_offline_model(messages, prospect, **kwargs):
+    """Adversarial model stand-in to exercise output validation and memory."""
+    from chatbot.price_drop_pilot_isolation import _plain
+    user = _plain(messages[-1]["content"]).strip()
+    earlier = " ".join(
+        _plain(x["content"]) for x in messages[:-1]
+        if x.get("role") == "user"
+    )
+    if user in ("hola", "buenas"):
+        # Reproduce the actual V7 failure: full catalogue on a mere greeting.
+        reply = (
+            "¡Hola de nuevo! Te resumo: 2 dormitorios, 2 baños, 65 m², "
+            "terraza, bodega, piscina y piso 6. Su nuevo precio es UF 2.690. "
+            "¿Te gustaría agendar una visita, ver la publicación o recibir "
+            "una ficha con todas las características?"
+        )
+    elif "nadie" in user or "no me contacto" in user:
+        reply = "Lamento la situación. Lo dejo planteado al equipo."
+    elif "asesor" in user or "me van a llamar" in user:
+        reply = "Gracias por consultarlo. Lo dejo planteado al equipo."
+    elif "quiero visitar" in user or "me interesa" in user:
+        reply = "Si te interesa una visita, dime qué día u horario te acomoda."
+    elif user == "bueno" and "nadie" in earlier:
+        reply = "Si quieres una visita, dime qué día u horario te acomoda."
+    elif user.startswith("gracias"):
+        reply = "¡De nada! 😊 Aquí estoy si surge otra consulta."
+    elif user in ("ok", "bueno", "perfecto"):
+        reply = "Perfecto 😊. Te leo."
+    elif "enlace" in user or "link" in user:
+        reply = "Claro, aquí está la publicación: https://www.procasa.cl/6436"
+    elif "dormitorios" in user:
+        reply = "Tiene 2 dormitorios, según la ficha."
+    elif "bano" in user:
+        reply = "La ficha registra 2 baños."
+    elif "terraza" in user:
+        reply = "Sí, cuenta con terraza según la publicación."
+    elif "piscina" in user:
+        reply = "Sí, la ficha del edificio menciona piscina."
+    elif "bodega" in user:
+        reply = "Sí, se informa una bodega."
+    elif "me escribieron" in user:
+        reply = "Sí, PROCASA te escribió primero por el aviso de rebaja."
+    else:
+        reply = (
+            "No tengo otro dato confirmado sobre ese punto en la ficha, "
+            "así que prefiero no inventar una respuesta."
+        )
+    return {"intencion": "consulta_general", "datos_extraidos": {},
+            "respuesta_bot": reply}

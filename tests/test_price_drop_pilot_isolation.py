@@ -1196,3 +1196,172 @@ def test_native_pilot_is_opt_in_and_unrelated_phones_never_invoke_generator(
         llm=lambda *_: "No additional model needed",
     )["status"] == "test_reply_sent"
     assert "Gracias por responder" in sent[-1][1]
+
+
+def _seed_long_pilot_history(db, count=85):
+    """Offline historical exchange fixture; no lead/CRM access."""
+    now = datetime.now(timezone.utc) - timedelta(minutes=20)
+    campaign_id = db["crm_price_drop_pilot_v1"].docs[0]["_id"]
+    for i in range(count):
+        if i == 2:
+            customer = "Mi prioridad es una terraza y un presupuesto máximo de UF 2700."
+            bot = "Entiendo: priorizas la terraza y un presupuesto de UF 2700."
+        elif i == 4:
+            customer = "Quiero ir a visitar el departamento."
+            bot = "¿Qué día te acomodaría?"
+        elif i == 5:
+            customer = "Prefiero el viernes a las 10."
+            bot = "Perfecto, tengo presente tu preferencia. No hay reserva confirmada."
+        else:
+            customer = f"Consulta histórica {i}: seguimiento de la conversación."
+            bot = f"Respuesta previa {i}: continuamos con los antecedentes."
+        db["crm_price_drop_pilot_test_turns_v1"].docs.append({
+            "_id": f"old-turn-{i}",
+            "campaign_id": campaign_id, "status": "SENT",
+            "customer_text": customer, "bot_text": bot,
+            "created_at": now + timedelta(seconds=i),
+        })
+
+
+def test_extended_campaign_context_includes_early_customer_facts_and_bot_answers(
+    isolated, monkeypatch
+):
+    # The real generator is used, but fake credentials/model prevent API calls.
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-only")
+    from chatbot import grok_client
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "1")
+    db = _full_pilot_db()
+    _seed_long_pilot_history(db, count=85)
+    seen = []
+    def model(messages, prospect, **kwargs):
+        seen.append(messages)
+        return {"intencion": "consulta_general", "datos_extraidos": {},
+                "respuesta_bot": (
+                    "Claro, seguimos conversando. ¿Prefieres que revisemos "
+                    "alguna duda pendiente sobre el departamento?"
+                )}
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", model)
+    sender, sent = sender_spy()
+    result = process_test_inbound(
+        db, PHONE, "long-history-1", "Gracias", sender=sender
+    )
+    assert result == {"status": "test_reply_sent"}
+    content = seen[0]
+    archive = next(m["content"] for m in content
+                   if "TRANSCRIPCIÓN ANTERIOR" in m["content"])
+    assert "Mi prioridad es una terraza" in archive
+    assert "presupuesto máximo de UF 2700" in archive
+    assert "priorizas la terraza y un presupuesto" in archive
+    assert "Prefiero el viernes a las 10" in archive
+    # The last 36 exchanges retain actual user/assistant roles and order.
+    assert [m["role"] for m in content[-3:]] == ["user", "assistant", "user"]
+    assert content[-1] == {"role": "user", "content": "Gracias"}
+    assert len(content) > 60
+    assert len(sent) == 1
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+def test_extended_history_is_bounded_to_240_sent_exchanges(isolated, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-only")
+    from chatbot import grok_client
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+    db = _full_pilot_db()
+    _seed_long_pilot_history(db, count=248)
+    seen = []
+    def model(messages, prospect, **kwargs):
+        seen.append(messages)
+        return {"intencion": "consulta_general", "respuesta_bot": (
+            "Perfecto, sigo atento a lo que necesites sobre este departamento."
+        )}
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", model)
+    sender, sent = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "long-history-240", "De acuerdo", sender=sender
+    )["status"] == "test_reply_sent"
+    full = " ".join(m["content"] for m in seen[0])
+    assert "Consulta histórica 0" not in full
+    assert "Consulta histórica 211" in full
+    assert "Consulta histórica 247" in full
+    assert len(full) < 46000
+    assert len(sent) == 1
+
+
+def test_native_pilot_repairs_near_duplicate_response_before_single_whatsapp_send(
+    isolated, monkeypatch
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-only")
+    from chatbot import grok_client
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+    db = _full_pilot_db()
+    now = datetime.now(timezone.utc)
+    previous = ("Qué bueno que te interese el departamento de San Miguel, "
+                "puedes revisar la publicación y me dices qué te parece.")
+    db["crm_price_drop_pilot_test_turns_v1"].docs.append({
+        "_id": "previous-sent", "campaign_id": "test:6436", "status": "SENT",
+        "customer_text": "Me interesa", "bot_text": previous,
+        "created_at": now - timedelta(minutes=1),
+    })
+    calls = []
+    def model(messages, prospect, **kwargs):
+        calls.append(messages)
+        return {
+            "intencion": "consulta_general", "datos_extraidos": {},
+            "respuesta_bot": (previous if len(calls) == 1 else
+                "Perfecto, tengo presente tu interés. Si quieres, podemos "
+                "conversar sobre una posible visita, sin compromiso."),
+        }
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", model)
+    sender, sent = sender_spy()
+    result = process_test_inbound(db, PHONE, "duplicate-repair-1", "Sí", sender=sender)
+    assert result["status"] == "test_reply_sent"
+    assert len(calls) == 2
+    assert len(sent) == 1
+    assert sent[0][1] != previous
+    assert "tengo presente tu interés" in sent[0][1]
+
+
+def test_native_pilot_does_not_reask_name_or_visit_day_already_given(
+    isolated, monkeypatch
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-only")
+    from chatbot import grok_client
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "1")
+    db = _full_pilot_db()
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    campaign.update({
+        "customer_first_name": "Camila",
+        "customer_first_name_source": "customer_message",
+    })
+    history = [
+        ("Quiero visitar el departamento.", "¿Qué día te acomodaría?"),
+        ("Prefiero el viernes a las 10.", "Gracias por indicarme tu preferencia."),
+    ]
+    now = datetime.now(timezone.utc)
+    for i, (customer, bot) in enumerate(history):
+        db["crm_price_drop_pilot_test_turns_v1"].docs.append({
+            "_id": "visit-seed-" + str(i), "campaign_id": "test:6436",
+            "status": "SENT", "created_at": now - timedelta(seconds=100-i),
+            "customer_text": customer, "bot_text": bot,
+        })
+    calls = []
+    def model(messages, prospect, **kwargs):
+        calls.append(messages)
+        return {"intencion": "consulta_general", "datos_extraidos": {},
+                "respuesta_bot": (
+                    "Camila, ¿qué día te acomoda la visita?"
+                    if len(calls) == 1 else
+                    "Camila, tengo presente que prefieres el viernes a las 10. "
+                    "La disponibilidad sigue por confirmar."
+                )}
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", model)
+    sender, sent = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "no-repeat-visit", "¿Podemos avanzar?", sender=sender
+    )["status"] == "test_reply_sent"
+    assert len(calls) == 2
+    assert len(sent) == 1
+    assert "¿qué día" not in sent[0][1].casefold()
+    assert "viernes a las 10" in sent[0][1]

@@ -20,11 +20,13 @@ try:
     from .classifier_rules import load_rule_sets, normalize_text
     from .deepseek_classifier import _build_messages, build_description_for_llm
     from .classifier_rules import build_rule_context
+    from .extractor import extract_listing_fields
 except ImportError:  # direct script execution
     from classification_pipeline import classify_with_routing, record_unknown_business_candidate
     from classifier_rules import load_rule_sets, normalize_text
     from deepseek_classifier import _build_messages, build_description_for_llm
     from classifier_rules import build_rule_context
+    from extractor import extract_listing_fields
 
 NS = {
     "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -32,7 +34,7 @@ NS = {
     "p": "http://schemas.openxmlformats.org/package/2006/relationships",
 }
 UF_REFERENCE_DATE = "2026-11-03"
-UF_REFERENCE_CLP = 40844.79
+UF_REFERENCE_CLP = 41263.57
 UF_REFERENCE_SOURCE = "https://www.sii.cl/valores_y_fechas/uf/uf2026.htm"
 
 
@@ -83,21 +85,71 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _html_dump_index(directory: Path | None) -> dict[str, Path]:
+    if not directory or not directory.exists():
+        return {}
+    paths = sorted(directory.rglob("*.html"), key=lambda p: (
+        "maipu_casas_3000_6000_audit_20261102" not in str(p), str(p).lower()
+    ))
+    result: dict[str, Path] = {}
+    for path in paths:
+        result.setdefault(path.stem.lower(), path)
+    return result
+
+
+def _reextract_saved_html(record: dict[str, Any], html_index: dict[str, Path]) -> dict[str, Any]:
+    url = str(record.get("url") or "")
+    key = hashlib.md5(url.encode("utf-8")).hexdigest().lower() if url else ""
+    html_path = html_index.get(key)
+    if not html_path:
+        return {**record, "html_source_missing": True, "html_reextraction_used": False}
+    html = html_path.read_text(encoding="utf-8", errors="replace")
+    parsed = extract_listing_fields(html, source_url=url, include_images=False, include_listing_details=True)
+    merged = dict(record)
+    fields = (
+        "title", "description", "descripcion", "description_summary", "price", "price_value",
+        "price_currency", "publicador_visible", "contact_name", "contact_logo_alt", "seller_type",
+        "listing_advertiser", "seller_jsonld_name", "contact_badges_text", "seller_profile_id",
+        "seller_profile_url", "listing_advertiser_type", "listing_advertiser_type_source",
+        "attributes", "publisher_field_provenance", "title_source", "descripcion_source",
+        "description_truncation_reason", "canonical_url",
+    )
+    for field in fields:
+        value = parsed.get(field)
+        if value not in (None, "", [], {}):
+            merged[field] = value
+    saved_description = str(record.get("description") or record.get("descripcion") or "")
+    parsed_description = str(parsed.get("description") or "")
+    if len(saved_description) > len(parsed_description):
+        merged["description"] = saved_description
+        merged["descripcion"] = saved_description
+        merged["description_source_audit"] = "saved_full_description_longer_than_local_html_parse"
+    else:
+        merged["description_source_audit"] = str(parsed.get("descripcion_source") or "local_html")
+    if parsed.get("publisher_field_provenance"):
+        merged["publisher_field_provenance"] = parsed["publisher_field_provenance"]
+    merged["html_source_missing"] = False
+    merged["html_reextraction_used"] = True
+    merged["html_source_path"] = str(html_path)
+    merged["html_sha256"] = hashlib.sha256(html.encode("utf-8")).hexdigest()
+    return merged
+
+
 def _with_saved_publisher_provenance(record: dict[str, Any]) -> dict[str, Any]:
     """Keep imported values observable without claiming they were extracted."""
     fields = dict(record.get("publisher_field_provenance") or {})
     raw_fields: dict[str, str] = {}
     for field, source_value in (
         ("publicador_visible", record.get("publicador_visible")),
-        ("contact_logo_alt", record.get("logo")),
-        ("seller_type", record.get("tipo_anunciante")),
+        ("contact_logo_alt", record.get("contact_logo_alt") or record.get("logo")),
     ):
-        if source_value:
+        if source_value and not (fields.get(field) or {}).get("status") == "confirmed":
             raw_fields[field] = str(source_value)
     return {
         **record,
-        "contact_logo_alt": record.get("logo") or record.get("contact_logo_alt") or "",
-        "seller_type": record.get("tipo_anunciante") or record.get("seller_type") or "",
+        "contact_logo_alt": record.get("contact_logo_alt") or record.get("logo") or "",
+        "seller_type": record.get("seller_type") or "",
+        "listing_advertiser_type": record.get("listing_advertiser_type") or record.get("tipo_anunciante") or "",
         "publisher_field_provenance": fields,
         "unverified_publisher_fields": raw_fields,
     }
@@ -124,7 +176,10 @@ def _estimated_input_tokens(record: dict[str, Any]) -> int:
     return max(1, sum(len(item["content"]) for item in messages) // 4)
 
 
-def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path, baseline_csv: Path | None = None) -> dict[str, Any]:
+def reclassify(
+    pilot_path: Path, xlsx_path: Path, output_dir: Path,
+    baseline_csv: Path | None = None, html_dump_dir: Path | None = None,
+) -> dict[str, Any]:
     original = json.loads(pilot_path.read_text(encoding="utf-8-sig"))
     records = original.get("audit_records") if isinstance(original, dict) else original
     if not isinstance(records, list):
@@ -134,35 +189,47 @@ def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path, baseline_csv
     excluded_rows = _read_xlsx_sheet(xlsx_path, "Corredores excluidos")
     catalog = load_rule_sets().get("known_broker_brands", [])
 
-    audit: list[dict[str, Any]] = []
-    registry_path = output_dir / "unknown_broker_candidates.json"
-    if registry_path.exists():
-        registry_path.unlink()
-    # Correlate repeated publisher identities inside the saved 482 records only.
-    publisher_ids: dict[str, set[str]] = {}
-    for row in records:
-        publisher = normalize_text(str(row.get("publicador_visible") or ""))
-        listing_id = str(row.get("listing_id") or "")
-        if publisher and listing_id:
-            publisher_ids.setdefault(publisher, set()).add(listing_id)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    registry_path = output_dir / "unknown_broker_candidates_exhaustive.json"
+    html_index = _html_dump_index(html_dump_dir)
+    prepared: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
-    for row in records:
-        listing_id = str(row.get("listing_id") or "")
+    for source_row in records:
+        listing_id = str(source_row.get("listing_id") or "")
         if listing_id and listing_id in seen_ids:
             continue
         if listing_id:
             seen_ids.add(listing_id)
-        extracted = _with_saved_publisher_provenance(row)
-        publisher = normalize_text(str(row.get("publicador_visible") or ""))
+        enriched = _reextract_saved_html(source_row, html_index)
+        prepared.append(_with_saved_publisher_provenance(enriched))
+
+    # Repeated postings are correlated by extracted Yapo profile ID where possible.
+    profile_listing_ids: dict[str, set[str]] = {}
+    for item in prepared:
+        listing_id = str(item.get("listing_id") or "")
+        profile_id = str(item.get("seller_profile_id") or "").strip()
+        identity = f"profile:{profile_id}" if profile_id else f"name:{normalize_text(str(item.get('publicador_visible') or ''))}"
+        if listing_id and identity not in {"name:"}:
+            profile_listing_ids.setdefault(identity, set()).add(listing_id)
+
+    audit: list[dict[str, Any]] = []
+    for extracted in prepared:
+        listing_id = str(extracted.get("listing_id") or "")
+        profile_id = str(extracted.get("seller_profile_id") or "").strip()
+        identity = f"profile:{profile_id}" if profile_id else f"name:{normalize_text(str(extracted.get('publicador_visible') or ''))}"
+        linked_count = len(profile_listing_ids.get(identity, set()))
         extracted["publisher_profile_context"] = {
-            "distinct_listing_count": len(publisher_ids.get(publisher, set())),
-            "evidence": [f"saved_pilot_repeated_publisher:{len(publisher_ids.get(publisher, set()))}_listings"]
-            if publisher_ids.get(publisher) else [],
+            **(extracted.get("publisher_profile_context") or {}),
+            "seller_profile_id": profile_id,
+            "distinct_listing_count": linked_count,
+            "evidence": [f"saved_html_profile:{profile_id or identity}:{linked_count}_listings"] if linked_count else [],
         }
+        row = extracted
         classification = classify_with_routing(
             extracted,
             simulate_deepseek=True,
             max_calls=0,
+            max_budget_usd=0.0,
             candidate_registry_path=registry_path,
         ) or {"state": "UNAVAILABLE", "classification_route": "unavailable", "evidence": []}
         old = (row.get("clasificacion_preliminar") or {}).get("state") or row.get("classification_original", "UNKNOWN")
@@ -182,6 +249,8 @@ def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path, baseline_csv
     resolved_old_uncertain = [item for item in old_uncertain if item["classification_new"]["state"] != "INCIERTO"]
     route_counts = Counter(item["classification_new"].get("classification_route", "unavailable") for item in audit)
     simulated_candidates = [item for item in audit if item["classification_new"].get("classification_route") == "deepseek_candidate"]
+    html_reextracted_count = sum(bool(item.get("html_reextraction_used")) for item in audit)
+    html_missing_count = sum(bool(item.get("html_source_missing")) for item in audit)
     projected_input_tokens_all = sum(_estimated_input_tokens(item) for item in audit)
     projected_input_tokens_ambiguous = sum(_estimated_input_tokens(item) for item in simulated_candidates)
     projected_output_tokens_all = len(audit) * 500
@@ -312,7 +381,7 @@ def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path, baseline_csv
         "deepseek_tokens": 0,
         "mongo_writes": 0,
         "scraping_performed": False,
-        "historical_html_reprocessed": False,
+        "historical_html_reprocessed": html_reextracted_count > 0,
         "pilot_records": len(audit),
         "duplicate_listing_ids_skipped": len(records) - len(audit),
         "xlsx_corrected_candidates": len(candidates),
@@ -321,6 +390,15 @@ def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path, baseline_csv
         "known_broker_catalog_unique_normalized": len({normalize_text(name) for name in catalog}),
         "original_state_counts": dict(old_counts),
         "new_state_counts": dict(new_counts),
+        "classification_exclusive_totals": {
+            "CORREDOR_SEGURO": new_counts.get("CORREDOR_SEGURO", 0),
+            "CORREDOR_PROBABLE": new_counts.get("CORREDOR_PROBABLE", 0),
+            "DUEÑO_PROBABLE": new_counts.get("DUEÑO_PROBABLE", 0),
+            "INCIERTO": new_counts.get("INCIERTO", 0),
+            "AD_REMOVED": new_counts.get("AD_REMOVED", 0),
+            "other_or_unavailable": sum(v for k, v in new_counts.items() if k not in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_PROBABLE", "INCIERTO", "AD_REMOVED"}),
+            "sum": sum(new_counts.values()),
+        },
         "brokers_resolved_without_deepseek": new_counts.get("CORREDOR_SEGURO", 0) + new_counts.get("CORREDOR_PROBABLE", 0),
         "probable_owners_remaining": new_counts.get("DUEÑO_PROBABLE", 0),
         "actual_deepseek_ambiguous_cases": route_counts.get("deepseek_candidate", 0),
@@ -348,7 +426,17 @@ def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path, baseline_csv
                 bool(item["classification_new"].get("deepseek_budget_exhausted")) for item in simulated_candidates
             ),
         },
+        "html_sources": {
+            "html_dump_directory": str(html_dump_dir) if html_dump_dir else None,
+            "indexed_html_files": len(html_index),
+            "records_reextracted_from_saved_html": html_reextracted_count,
+            "records_without_saved_html": html_missing_count,
+        },
         "changed_classification_count": len(changed),
+        "classification_transition_counts": {
+            f"{old} -> {new}": count
+            for (old, new), count in Counter((item["classification_original"], item["classification_new"]["state"]) for item in changed).items()
+        },
         "classification_transition_counts": {
             f"{old} -> {new}": count
             for (old, new), count in Counter((item["classification_original"], item["classification_new"]["state"]) for item in changed).items()
@@ -430,9 +518,11 @@ def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path, baseline_csv
             "## Resultado",
             "",
             f"- Avisos auditados: {len(audit)}; candidatos del Excel corregido: {len(candidates)}.",
+            f"- HTML locales recuperados y analizados: {html_reextracted_count}/{len(audit)}; faltantes: {html_missing_count}.",
             f"- Catálogo conocido: {len(catalog)} nombres, {len({normalize_text(name) for name in catalog})} normalizados únicos.",
             f"- Original → nuevo: {dict(old_counts)} → {dict(new_counts)}.",
-            f"- Corredores resueltos sin DeepSeek: {new_counts.get('CORREDOR_SEGURO', 0) + new_counts.get('CORREDOR_PROBABLE', 0)}; dueños probables: {new_counts.get('DUEÑO_PROBABLE', 0)}; casos ambiguos candidatos a IA: {route_counts.get('deepseek_candidate', 0)} (simulación, cero llamadas).",
+            f"- Totales mutuamente excluyentes (suman {sum(new_counts.values())}): corredor seguro {new_counts.get('CORREDOR_SEGURO', 0)}, corredor probable {new_counts.get('CORREDOR_PROBABLE', 0)}, dueño probable {new_counts.get('DUEÑO_PROBABLE', 0)}, incierto {new_counts.get('INCIERTO', 0)}, eliminados {new_counts.get('AD_REMOVED', 0)}.",
+            f"- Derivación simulada a DeepSeek: {route_counts.get('deepseek_candidate', 0)}. Se cuenta aparte; los {new_counts.get('DUEÑO_PROBABLE', 0)} dueños probables determinísticos no se suman a esa cola. API y presupuesto permanecen en cero.",
             f"- De los {len(old_uncertain)} originales INCIERTO, {len(resolved_old_uncertain)} se resolvieron automáticamente con reglas determinísticas.",
             f"- Enrutamiento simulado: {route_counts.get('deterministic_only', 0)} determinísticos y {route_counts.get('deepseek_candidate', 0)} casos ambiguos; ahorro estimado de llamadas: {summary['estimated_calls_saved_percent']}%.",
             f"- Evidencia ausente en {summary['candidates_without_deterministic_evidence']} candidatos: {summary['evidence_diagnostics']['no_evidence_but_text_available']} tienen título y descripción extraídos, pero sin señales concluyentes; se conserva INCIERTO y queda explicado en el CSV. Descripciones faltantes: {summary['evidence_diagnostics']['description_missing']}; publicador faltante: {summary['evidence_diagnostics']['publisher_missing']}.",
@@ -467,8 +557,9 @@ def main() -> None:
     parser.add_argument("--corrected-xlsx", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--baseline-csv", type=Path)
+    parser.add_argument("--html-dump-dir", type=Path)
     args = parser.parse_args()
-    result = reclassify(args.pilot_json, args.corrected_xlsx, args.output_dir, args.baseline_csv)
+    result = reclassify(args.pilot_json, args.corrected_xlsx, args.output_dir, args.baseline_csv, args.html_dump_dir)
     for key in (
         "pilot_records", "xlsx_corrected_candidates", "known_broker_catalog_entries",
         "original_uncertain_count", "old_uncertain_resolved_deterministically",

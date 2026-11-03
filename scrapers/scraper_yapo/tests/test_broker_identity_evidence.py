@@ -207,11 +207,13 @@ def test_correlated_profile_with_confirmed_commercial_identity_stays_safe():
     assert result["source"] == "profile_correlation"
 
 
-def test_identity_rules_never_upgrade_missing_evidence_to_owner():
+def test_neutral_direct_deal_and_no_commission_do_not_upgrade_missing_evidence_to_owner():
     extracted = {"title": "Casa trato directo", "description": "Sin comisión"}
     assert rules.classify_obvious_broker(extracted) is None
     result = rules.classify_with_rules(extracted)
-    assert result["state"] == "DUEÑO_PROBABLE"
+    assert result["state"] == "INCIERTO"
+    assert result["requires_review"] is True
+    assert result["owner_evidence"] == []
     assert result["owner_classification_confirmed"] is False
 
 

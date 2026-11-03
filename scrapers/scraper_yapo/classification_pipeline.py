@@ -225,8 +225,10 @@ def classify_with_routing(
     reason = ""
     if state == "AD_REMOVED":
         route, reason = "removed", "Anuncio eliminado; sin clasificación comercial."
-    elif state in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE"}:
-        route, reason = "deterministic_only", "La evidencia comercial resuelve el caso sin IA."
+    elif state in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE"} or (
+        state == "DUEÑO_PROBABLE" and not result.get("contradictions")
+    ):
+        route, reason = "deterministic_only", "La evidencia permite clasificarlo con reglas y sin contradicciones; no requiere IA."
     else:
         route = "deepseek_candidate"
         reason = "Caso ambiguo o propietario probable; se simula el enrutamiento sin llamada real."

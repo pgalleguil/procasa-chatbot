@@ -148,6 +148,44 @@ def _current_yapo_publisher(soup: Any) -> tuple[str, str]:
     return "", ""
 
 
+def _publisher_profile_account_type(soup: Any, profile_id: str) -> tuple[str, str]:
+    """Read a profile badge only when its nearby profile link matches the seller ID."""
+    if not profile_id:
+        return "", ""
+    target = f"/user/profile/id/{profile_id}"
+    for node in soup.find_all(["p", "span"]):
+        value = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+        if _commune_key(value) not in {"profesional", "empresa", "agente", "corredor"}:
+            continue
+        parent = node
+        for _ in range(6):
+            parent = getattr(parent, "parent", None)
+            if parent is None:
+                break
+            if any(str(link.get("href") or "").rstrip("/").endswith(target) for link in parent.select("a[href*='/user/profile/id/']")):
+                return value, "publisher_profile_account_badge"
+    return "", ""
+
+
+def _listing_advertiser_type(soup: Any) -> tuple[str, str]:
+    """Extract Yapo's listing-level advertiser attribute separately from profile type."""
+    for label in soup.find_all(["p", "dt", "span"]):
+        if _commune_key(label.get_text(" ", strip=True)) != "tipo-de-anunciante":
+            continue
+        parent = label.parent
+        if parent is None:
+            continue
+        values = [
+            re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+            for node in parent.find_all(["p", "dd", "span"], recursive=True)
+            if node is not label and node.get_text(" ", strip=True)
+        ]
+        value = next((item for item in values if _commune_key(item) != "tipo-de-anunciante"), "")
+        if value:
+            return value, "yapo_listing_attribute_tipo_anunciante"
+    return "", ""
+
+
 def _jsonld_name(soup: Any) -> str:
     """Compatibility wrapper; never returns a property or arbitrary JSON-LD name."""
     return _jsonld_seller_name(soup)[0]
@@ -557,6 +595,10 @@ def extract_listing_fields(
     if profile_link:
         match = re.search(r"/user/profile/id/(\d+)", str(profile_link.get("href") or ""))
         seller_profile_id = match.group(1) if match else ""
+    profile_account_type, profile_type_source = _publisher_profile_account_type(soup, seller_profile_id)
+    if not seller_type and profile_account_type:
+        seller_type = profile_account_type
+        seller_type_selector = profile_type_source
     if not seller_type and "profesional" in contact_badges_text.lower():
         seller_type = "PROFESIONAL"
 
@@ -612,6 +654,12 @@ def extract_listing_fields(
                 if key and value:
                     attributes.setdefault(key, value)
 
+        listing_advertiser_type, listing_advertiser_type_source = _listing_advertiser_type(soup)
+        if listing_advertiser_type:
+            attributes.setdefault("tipo de anunciante", listing_advertiser_type)
+    else:
+        listing_advertiser_type, listing_advertiser_type_source = "", ""
+
     commune = extract_listing_commune(soup, attributes) if include_listing_details else {
         "comuna": "", "comuna_source": "", "comuna_evidence": {"status": "pending"},
     }
@@ -646,6 +694,8 @@ def extract_listing_fields(
         "contact_name": contact_name,
         "contact_logo_alt": contact_logo_alt,
         "seller_type": seller_type,
+        "listing_advertiser_type": listing_advertiser_type,
+        "listing_advertiser_type_source": listing_advertiser_type_source,
         "listing_advertiser": listing_advertiser,
         "seller_jsonld_name": seller_jsonld_name,
         "contact_badges_text": contact_badges_text,

@@ -1060,7 +1060,7 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
             "Las condiciones de corretaje también se deben confirmar con "
             "el corredor antes de cualquier gestión."
         )
-    if ADDRESS.search(clean):
+    if ADDRESS.search(clean) or "direcion" in plain or "dirrecion" in plain:
         return _campaign_location_reply(ctx)
     introduced, _ = _customer_introduction(clean)
     if introduced and _plain(clean).startswith(("hola", "buenas")) and len(clean) < 55:

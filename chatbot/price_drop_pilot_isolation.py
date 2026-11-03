@@ -978,6 +978,9 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
         name = ctx.get("customer_first_name")
         return (f"Me dijiste que te llamas {name} 😊." if name
                 else "Todavía no me has indicado tu nombre.")
+    introduced, _ = _customer_introduction(clean)
+    if introduced and _plain(clean).startswith(("hola", "buenas")) and len(clean) < 55:
+        return f"¡Hola, {introduced}! 😊 Gracias por responder al aviso."
     # A precise date question is answered from the matching Prop360 bitácora,
     # never from language-model guesses or the date the WhatsApp was sent.
     date_query = re.search(

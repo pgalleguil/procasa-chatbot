@@ -700,6 +700,8 @@ def _build_native_campaign_messages(message: str, ctx: dict,
         f"precio vigente UF {new}; rebaja verificada de UF {old} a UF {new} "
         f"({discount_uf:g} UF, {discount_pct:.2f}% sobre precio anterior). "
         f"Ficha Prop360: {facts or 'sin otros atributos confirmados'}. "
+        f"Fecha de la rebaja confirmada en bitácora Prop360: "
+        f"{ctx.get('price_drop_date') or 'no disponible en la ficha verificada'}. "
         f"URL comprobable: https://www.procasa.cl/{code}."
     )
     context = (

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -524,6 +525,163 @@ def _llm_answer(message: str, ctx: dict, history: list[dict]) -> str:
     return answer
 
 
+# The native model is opt-in and can only run inside the pre-existing
+# single-phone isolated webhook branch. It never calls chatbot.core (which
+# persists CRM messages, lead fields and commercial notifications).
+NATIVE_PILOT_ENGINE_FLAG = "PRICE_DROP_PILOT_NATIVE_CONVERSATION"
+_CAMPAIGN_SENSITIVE_REQUEST = re.compile(
+    r"\b(?:enviame|env[ií]ame|mandame|m[aá]ndame|comp[aá]rteme)\b.{0,35}"
+    r"\b(?:enlace|link|c[oó]digo|telefono|tel[eé]fono|rut|correo)\b",
+    re.I,
+)
+_CAMPAIGN_UNVERIFIED_ACTION = re.compile(
+    r"\b(?:te (?:agend[eé]|reserv[eé]|inscrib[ií]|registr[eé])|"
+    r"tu visita (?:qued[oó]|est[aá])|"
+    r"un ejecutivo (?:ya |te )?(?:avis[oó]|llamar[aá]|contactar[aá]))\b",
+    re.I,
+)
+
+
+def _native_campaign_enabled() -> bool:
+    return os.getenv(NATIVE_PILOT_ENGINE_FLAG, "").strip().lower() in {
+        "1", "true", "yes"
+    }
+
+
+def _build_native_campaign_messages(message: str, ctx: dict,
+                                    history: list[dict]) -> list[dict]:
+    """Prompt payload with the REAL outreach as an assistant turn.
+
+    No lead database is read. An earlier property inquiry is never claimed
+    without an independently verified source in an eventual real campaign.
+    """
+    old = _format_uf(ctx["old_price_uf"])
+    new = _format_uf(ctx["new_price_uf"])
+    discount_uf = ctx["old_price_uf"] - ctx["new_price_uf"]
+    discount_pct = discount_uf / ctx["old_price_uf"] * 100
+    code = str(ctx["property_code"])
+    facts = _formatted_facts(ctx.get("property_facts") or {})
+    name = ctx.get("customer_first_name")
+    # No CRM/lead identity lookup is permitted for the isolated test.
+    known_name = name if isinstance(name, str) and _valid_first_name(name) else None
+    official = (
+        "[DATOS OFICIALES DE LA PROPIEDAD ACTIVA]\\n"
+        f"Venta de departamento en San Miguel, código {code}; "
+        f"precio vigente UF {new}; rebaja verificada de UF {old} a UF {new} "
+        f"({discount_uf:g} UF, {discount_pct:.2f}% sobre precio anterior). "
+        f"Ficha Prop360: {facts or 'sin otros atributos confirmados'}. "
+        f"URL comprobable: https://www.procasa.cl/{code}."
+    )
+    context = (
+        "[CONTEXTO COMERCIAL DEL MENSAJE SALIENTE - PRIORIDAD]\\n"
+        "Continúa la conversación de un ejecutivo inmobiliario PROCASA. "
+        "PROCASA, no el cliente, inició este contacto: acabamos de enviar "
+        "el aviso de rebaja que figura a continuación como un mensaje assistant. "
+        "El cliente está respondiendo a ESE mensaje. "
+        "Usa las mismas reglas, el tono comercial y la capacidad conversacional "
+        "del chatbot normal de leads; la única diferencia es que ya conoce la "
+        "propiedad, la rebaja y el motivo del contacto. "
+        "No vuelvas a pedir enlace, código o teléfono ni a presentarte como si "
+        "el cliente hubiera escrito por primera vez. No repitas la rebaja ni "
+        "preguntes de forma mecánica 'qué te gustaría saber' ante un saludo. "
+        "Si el cliente cuestiona que le preguntemos, reconoce que nosotros "
+        "escribimos primero; no lo confundas con desconfianza. "
+        "Responde primero a lo que acaba de expresar: reconoce objeciones, "
+        "responde datos verificables, usa el nombre confirmado con moderación, "
+        "y conversa con naturalidad sin llenar cada turno de preguntas. "
+        "Mantén la continuidad de interés, dudas y horarios ya mencionados. "
+        "En lo habitual, 1-3 frases y menos de 80 palabras; sin fichas largas "
+        "ni repetir códigos, precios, saludos o enlaces innecesariamente. "
+        "No presupongas que esta persona consultó días/semanas atrás: en "
+        "ESTE test aislado no hay historial CRM verificado. "
+        "En campañas reales solo se puede referir a consultas previas cuando "
+        "exista trazabilidad suficiente de esa misma propiedad y lead. "
+        f"Nombre confirmado por el propio cliente: {known_name or 'no informado'}. "
+        "No inventes nombres ni detalles personales. "
+        "NO solicites RUT, nombre, correo ni teléfono; acepta el nombre si lo "
+        "entrega espontáneamente. Si quiere una visita, puedes preguntar "
+        "día u horario faltante, pero no confirmes disponibilidad ni digas que "
+        "se registró, notificó, agendó o transfirió nada. "
+        "Esta prueba NO contacta ejecutivos ni modifica CRM. "
+        "No menciones detalles técnicos de la prueba salvo que debas aclarar "
+        "que una gestión real no ha ocurrido. "
+        "Respeta el rechazo y las solicitudes de no recibir mensajes.\\n"
+        + official
+    )
+    # The campaign was actually sent once, so its text acts as the same
+    # assistant history that the normal chatbot would use for a first lead.
+    outbound = (
+        "Hola, ¿cómo estás? Soy de PROCASA 😊\\n\\n"
+        "Te escribo porque el departamento de San Miguel tuvo una rebaja: "
+        f"ahora está en UF {new}, {discount_uf:g} UF menos que antes "
+        f"(UF {old}).\\n\\n"
+        "Con este nuevo precio quizás valga la pena darle otra mirada. "
+        "Acá está la publicación actualizada:\\n"
+        f"https://www.procasa.cl/{code}\\n\\n"
+        "¿Cómo lo ves con este nuevo valor?"
+    )
+    from .prompts import SYSTEM_PROMPT_PROSPECTO
+    result = [
+        # Same commercial personality/system instructions as the normal
+        # chatbot in chatbot.core; the addendum only changes outreach origin.
+        {"role": "system", "content": SYSTEM_PROMPT_PROSPECTO},
+        {"role": "system", "content": context},
+        {"role": "assistant", "content": outbound},
+    ]
+    for item in history[-12:]:
+        if item.get("customer_text"):
+            result.append({"role": "user",
+                           "content": str(item["customer_text"])[:1000]})
+        if item.get("bot_text"):
+            result.append({"role": "assistant",
+                           "content": str(item["bot_text"])[:1000]})
+    result.append({"role": "user", "content": str(message)[:1600]})
+    return result
+
+
+def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
+                             *, generator: Callable | None = None) -> str:
+    """Run the SAME structured commercial DeepSeek generator as normal leads.
+
+    Only a safe, explicit campaign context changes. Extracted prospect fields
+    are intentionally discarded; the pilot does not call CRM operations.
+    """
+    clean = str(message or "").strip()
+    if not clean:
+        return ""
+    code = str(ctx["property_code"])
+    if _other_property_referenced(clean, code):
+        return (f"Esta conversación es sobre el departamento {code}. "
+                "Podemos hablar de otra propiedad, pero no tengo su ficha verificada aquí.")
+    if NEGATE_VISIT.search(clean):
+        return ("Entendido, no coordinaremos una visita. "
+                "Si quieres conversar sobre la propiedad, encantada.")
+    if DECLINE.search(clean) and not _customer_introduction(clean)[0]:
+        return "Entiendo, gracias por responder. No volveremos a insistir por esta propiedad."
+    if _NAME_QUESTION.search(_plain(clean)):
+        name = ctx.get("customer_first_name")
+        return (f"Me dijiste que te llamas {name} 😊." if name
+                else "Todavía no me has indicado tu nombre.")
+    from .grok_client import generar_respuesta_estructurada
+    generate = generator or generar_respuesta_estructurada
+    messages = _build_native_campaign_messages(clean, ctx, history)
+    try:
+        result = generate(
+            messages,
+            {"operacion": "Venta"},  # No phone or lead ID: no CRM lookups.
+            write_telemetry=False,   # No observability DB writes either.
+        )
+        answer = str((result or {}).get("respuesta_bot") or "").strip()
+        if (not answer or len(answer) > 650 or BAD_CLAIM.search(answer)
+                or _CAMPAIGN_UNVERIFIED_ACTION.search(answer)
+                or _CAMPAIGN_SENSITIVE_REQUEST.search(answer)):
+            return _safe_fallback(ctx)
+        return answer
+    except Exception:
+        logger.exception("[PRICE_DROP_TEST] native commercial generator unavailable")
+        return _safe_fallback(ctx)
+
+
 def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
                      llm: Callable | None = None) -> str:
     """Common intents deterministic; free-form inquiries use the real LLM provider."""
@@ -716,9 +874,14 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
                      "customer_first_name_updated_at": now}
         })
         ctx["customer_first_name"] = introduced
-    answer = _personalize_reply(
-        build_test_reply(text, ctx, history, llm=llm), text, ctx, history
-    )
+    # The shared commercial generator is available ONLY for this whitelisted
+    # test phone. Existing legacy pilot behavior remains the safe default
+    # until the dedicated natural-conversation switch is explicitly enabled.
+    if _native_campaign_enabled() and llm is None:
+        response = build_native_pilot_reply(text, ctx, history)
+    else:
+        response = build_test_reply(text, ctx, history, llm=llm)
+    answer = _personalize_reply(response, text, ctx, history)
     if not answer:
         db[TURN_COLLECTION].update_one({"_id": key}, {"$set": {"status": "NO_REPLY"}})
         return {"status": "no_reply"}

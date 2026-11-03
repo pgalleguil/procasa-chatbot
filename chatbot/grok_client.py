@@ -103,7 +103,8 @@ def generar_respuesta(messages: list, tipo: str = "prospecto", telemetry_context
 
 
 def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None,
-                                    telemetry_context: dict | None = None) -> dict:
+                                    telemetry_context: dict | None = None, *,
+                                    write_telemetry: bool = True) -> dict:
     """
     Genera respuesta conversacional y extrae datos nuevos si el usuario los menciona.
     Combina el prompt de negocio + instrucciones de extracción.
@@ -298,10 +299,11 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             raise ValueError("Respuesta vacia del modelo")
         datos = json.loads(contenido_json_str)
 
-        _record_llm_telemetry(
-            model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
-            usage=usage, context=telemetry_context,
-        )
+        if write_telemetry:
+            _record_llm_telemetry(
+                model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
+                usage=usage, context=telemetry_context,
+            )
 
         return {
             "intencion": datos.get("intencion", "consulta_general").lower().strip(),
@@ -309,12 +311,18 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             "respuesta_bot": datos.get("respuesta_bot", "Gracias por tu consulta."),
         }
     except Exception as e:
-        _record_llm_telemetry(
-            model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
-            context=telemetry_context, status="error", error=type(e).__name__,
-            timeout=_is_timeout_error(e),
-        )
+        if write_telemetry:
+            _record_llm_telemetry(
+                model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,
+                context=telemetry_context, status="error", error=type(e).__name__,
+                timeout=_is_timeout_error(e),
+            )
         print(f"[ERROR DEEPSEEK] {e}")
+        # Isolated pilot must not use the production fallback's observability
+        # writes or a second, unstructured model after an uncertain failure.
+        if not write_telemetry:
+            return {"intencion": "consulta_general",
+                    "datos_extraidos": {}, "respuesta_bot": ""}
         try:
             texto = generar_respuesta(
                 messages, tipo="prospecto", telemetry_context=telemetry_context,

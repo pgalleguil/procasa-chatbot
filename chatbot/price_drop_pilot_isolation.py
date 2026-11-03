@@ -818,7 +818,10 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
         r"\\b(?:baj\\w*|rebaj\\w*|cambi\\w* el precio)\\b",
         _plain(clean),
     )
-    if date_query:
+    if date_query or (
+        ("cuando" in _plain(clean) or "fecha" in _plain(clean))
+        and ("baj" in _plain(clean) or "rebaj" in _plain(clean))
+    ):
         date = ctx.get("price_drop_date")
         if date:
             return (

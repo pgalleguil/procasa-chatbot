@@ -370,6 +370,31 @@ def is_test_phone(phone: str) -> bool:
     return _enabled_for_phone(phone)
 
 
+def _verified_discount_date(prop: dict, old: float, new: float) -> str | None:
+    """Only matching audited Prop360 changes can supply the discount date."""
+    months = ("enero", "febrero", "marzo", "abril", "mayo", "junio",
+              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+    matching = []
+    for change in prop.get("historial_cambios") or []:
+        if not isinstance(change, dict):
+            continue
+        if change.get("campo") != "precio_uf" or change.get("fuente") != "prop360_bitacora":
+            continue
+        before, after = _money(change.get("valor_anterior")), _money(change.get("valor_nuevo"))
+        if before is None or after is None or abs(before - old) > 0.01 or abs(after - new) > 0.01:
+            continue
+        try:
+            occurred = datetime.fromisoformat(str(change.get("fecha") or ""))
+        except ValueError:
+            continue
+        if occurred.tzinfo and occurred.astimezone(timezone.utc) <= datetime.now(timezone.utc):
+            matching.append(occurred)
+    if not matching:
+        return None
+    d = max(matching)
+    return f"{d.day} de {months[d.month - 1]} de {d.year}"
+
+
 def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> dict | None:
     """Resolve *only* a verified test send; never inspect the leads collection."""
     if not is_test_phone(phone):
@@ -419,7 +444,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
          "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
          "caracteristicas.orientacion": 1, "caracteristicas.features": 1,
          "ubicacion.calle": 1, "ubicacion.direccion_referencial": 1,
-         "ubicacion.comuna": 1},
+         "ubicacion.comuna": 1, "historial_cambios": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
@@ -432,6 +457,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
         "campaign_id": campaign["_id"],
         "property_code": str(campaign["property_code"]),
         "old_price_uf": old, "new_price_uf": new,
+        "price_drop_date": _verified_discount_date(property_doc, old, new),
         "property_facts": _verified_property_facts(property_doc),
         "customer_first_name": (
             campaign.get("customer_first_name")
@@ -616,6 +642,16 @@ def _normalize_reply_for_comparison(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", _plain(value)))
 
 
+def _unrequested_link_repeated(reply: str, customer_message: str) -> bool:
+    """Do not resend the campaign's URL in a routine reply to a greeting."""
+    plain = _plain(customer_message)
+    if any(word in plain for word in (
+        "enlace", "link", "url", "publicacion", "mandame la pagina"
+    )):
+        return False
+    return "https://www.procasa.cl/" in reply.casefold()
+
+
 def _reply_repeats_history(reply: str, current_message: str,
                            history: list[dict]) -> bool:
     """Reject near-verbatim canned echoes unless a fact was asked again."""
@@ -674,6 +710,8 @@ def _build_native_campaign_messages(message: str, ctx: dict,
         f"precio vigente UF {new}; rebaja verificada de UF {old} a UF {new} "
         f"({discount_uf:g} UF, {discount_pct:.2f}% sobre precio anterior). "
         f"Ficha Prop360: {facts or 'sin otros atributos confirmados'}. "
+        f"Fecha de la rebaja confirmada en bitácora Prop360: "
+        f"{ctx.get('price_drop_date') or 'no disponible en la ficha verificada'}. "
         f"URL comprobable: https://www.procasa.cl/{code}."
     )
     context = (
@@ -783,6 +821,27 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
         name = ctx.get("customer_first_name")
         return (f"Me dijiste que te llamas {name} 😊." if name
                 else "Todavía no me has indicado tu nombre.")
+    # A precise date question is answered from the matching Prop360 bitácora,
+    # never from language-model guesses or the date the WhatsApp was sent.
+    date_query = re.search(
+        r"\\b(?:cuando|fecha|que dia|hace cuanto|desde cuando)\\b.{0,75}"
+        r"\\b(?:baj\\w*|rebaj\\w*|cambi\\w* el precio)\\b",
+        _plain(clean),
+    )
+    if date_query or (
+        any(x in _plain(clean) for x in ("cuando", "fecha", "que dia", "hace cuanto"))
+        and ("baj" in _plain(clean) or "rebaj" in _plain(clean))
+    ):
+        date = ctx.get("price_drop_date")
+        if date:
+            return (
+                f"La rebaja que te comentamos se registró el {date}. "
+                "Te escribimos para avisarte del nuevo valor."
+            )
+        return (
+            "La rebaja está confirmada, pero todavía no tengo "
+            "una fecha exacta verificada para darte."
+        )
     from .grok_client import generar_respuesta_estructurada
     generate = generator or generar_respuesta_estructurada
     messages = _build_native_campaign_messages(clean, ctx, history)
@@ -798,6 +857,7 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                 or _CAMPAIGN_SENSITIVE_REQUEST.search(answer)):
             return _safe_fallback(ctx)
         if (_reply_repeats_history(answer, clean, history)
+                or _unrequested_link_repeated(answer, clean)
                 or _reasks_known_customer_data(answer, ctx, history)):
             # One bounded attempt to repair repetition without generating a
             # second WhatsApp. Both calls are read-only; only final answer sends.
@@ -815,6 +875,7 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                     or _CAMPAIGN_UNVERIFIED_ACTION.search(answer)
                     or _CAMPAIGN_SENSITIVE_REQUEST.search(answer)
                     or _reply_repeats_history(answer, clean, history)
+                    or _unrequested_link_repeated(answer, clean)
                     or _reasks_known_customer_data(answer, ctx, history)):
                 return _safe_fallback(ctx)
         return answer

@@ -1365,3 +1365,215 @@ def test_native_pilot_does_not_reask_name_or_visit_day_already_given(
     assert len(sent) == 1
     assert "¿qué día" not in sent[0][1].casefold()
     assert "viernes a las 10" in sent[0][1]
+
+
+@pytest.mark.parametrize("customer_message", [
+    "CUANDO BAJO",
+    "CUANDO HA BAJADO LA PROPEIDAD QUE ANTES PREGUNTE",
+    "¿Cuándo bajó el departamento?",
+    "¿Qué día bajó el precio?",
+    "¿Desde qué fecha se rebajó?",
+    "Hace cuánto bajó el precio?",
+])
+def test_v6_actual_price_drop_date_is_grounded_and_no_llm_needed(
+    isolated, customer_message
+):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["historial_cambios"] = [
+        {
+            "fecha": "2026-10-06T21:55:59-03:00",
+            "campo": "precio_uf",
+            "valor_anterior": 2790,
+            "valor_nuevo": 2690,
+            "fuente": "prop360_bitacora",
+        },
+        {
+            "fecha": "2026-10-31T21:55:59-03:00",
+            "campo": "precio_uf",
+            "valor_anterior": 2890,
+            "valor_nuevo": 2790,
+            "fuente": "prop360_bitacora",
+        },
+    ]
+    ctx = load_test_context(db, PHONE)
+    assert ctx["price_drop_date"] == "6 de octubre de 2026"
+    answer = build_native_pilot_reply(
+        customer_message, ctx, [], generator=lambda *_args, **_kw: (
+            _ for _ in ()
+        ).throw(AssertionError("No LLM should handle an audited date"))
+    )
+    assert "6 de octubre de 2026" in answer
+    assert "te escribimos" in answer.lower()
+    assert "no se ha solicitado" not in answer
+
+
+def test_unverified_discount_date_is_never_invented(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["historial_cambios"] = [
+        {"fecha": "2026-10-06T21:55:59-03:00", "campo": "precio_uf",
+         "valor_anterior": 2890, "valor_nuevo": 2690,
+         "fuente": "prop360_bitacora"},
+    ]
+    ctx = load_test_context(db, PHONE)
+    assert ctx["price_drop_date"] is None
+    result = build_native_pilot_reply(
+        "CUANDO BAJO", ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Must not call model")
+        )
+    )
+    assert "fecha exacta" in result
+    assert "6 de octubre" not in result
+
+
+def test_v6_price_change_date_survives_real_isolated_whatsapp_path(
+    isolated, monkeypatch
+):
+    from chatbot import grok_client
+    from chatbot.price_drop_pilot_isolation import (
+        _build_native_campaign_messages,
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-only")
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["historial_cambios"] = [
+        {"fecha": "2026-10-06T21:55:59-03:00", "campo": "precio_uf",
+         "valor_anterior": 2790, "valor_nuevo": 2690,
+         "fuente": "prop360_bitacora"},
+    ]
+    ctx = load_test_context(db, PHONE)
+    msg = _build_native_campaign_messages("¿Sigue vigente?", ctx, [])
+    assert "6 de octubre de 2026" in msg[1]["content"]
+    assert msg[2]["role"] == "assistant"
+    assert "Te escribo porque el departamento" in msg[2]["content"]
+    sender, calls = sender_spy()
+    # No model needed for date question and only ONE outbound provider call.
+    assert process_test_inbound(
+        db, PHONE, "date-e2e-v6", "CUANDO BAJO",
+        sender=sender,
+    )["status"] == "test_reply_sent"
+    assert len(calls) == 1
+    assert "6 de octubre de 2026" in calls[0][1]
+    assert "leads" in db and isinstance(db["leads"], BlockedCollection)
+    assert len(db["crm_price_drop_pilot_test_turns_v1"].docs) == 1
+
+
+def test_price_change_date_from_untrusted_source_is_discarded(isolated):
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["historial_cambios"] = [
+        {"fecha": "2026-10-06T21:55:59-03:00", "campo": "precio_uf",
+         "valor_anterior": 2790, "valor_nuevo": 2690,
+         "fuente": "not_prop360"},
+    ]
+    assert load_test_context(db, PHONE)["price_drop_date"] is None
+
+
+def test_deepseek_pilot_json_mode_recovers_from_whitespace_http_200(
+    isolated, monkeypatch
+):
+    import json
+    from types import SimpleNamespace
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-no-network-test")
+    from chatbot import grok_client
+    calls = []
+
+    def fake_api(**kwargs):
+        calls.append(kwargs)
+        raw = " " * 96 if len(calls) == 1 else json.dumps({
+            "intencion": "consulta_general",
+            "respuesta_bot": "Fuimos nosotros quienes te avisamos de la rebaja.",
+            "datos_extraidos": {},
+        })
+        choice = SimpleNamespace(
+            message=SimpleNamespace(content=raw),
+            finish_reason="stop",
+        )
+        return SimpleNamespace(choices=[choice], usage=None)
+
+    monkeypatch.setattr(grok_client, "client",
+        SimpleNamespace(chat=SimpleNamespace(
+            completions=SimpleNamespace(create=fake_api))))
+    messages = [
+        {"role": "system", "content":
+            "[CONTEXTO COMERCIAL DEL MENSAJE SALIENTE - PRIORIDAD]"},
+        {"role": "assistant", "content":
+            "Hola, te escribimos para avisar de la rebaja de UF 2.790 a UF 2.690."},
+        {"role": "user", "content": "¿Cuándo bajó?"},
+    ]
+    result = grok_client.generar_respuesta_estructurada(
+        messages, {"operacion": "Venta"}, write_telemetry=False
+    )
+    assert "nosotros quienes" in result["respuesta_bot"]
+    assert len(calls) == 2
+    assert all(
+        x.get("response_format") == {"type": "json_object"} for x in calls
+    )
+    assert all(x["messages"][-1]["content"] == "¿Cuándo bajó?" for x in calls)
+
+
+def test_deepseek_pilot_json_mode_double_invalid_does_not_retry_indefinitely(
+    isolated, monkeypatch
+):
+    from types import SimpleNamespace
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-no-network-test")
+    from chatbot import grok_client
+    calls = []
+
+    def fake_api(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="    "),
+            finish_reason="stop"
+        )], usage=None)
+
+    monkeypatch.setattr(grok_client, "client",
+        SimpleNamespace(chat=SimpleNamespace(
+            completions=SimpleNamespace(create=fake_api))))
+    result = grok_client.generar_respuesta_estructurada([
+        {"role": "system", "content":
+            "[CONTEXTO COMERCIAL DEL MENSAJE SALIENTE - PRIORIDAD]"},
+        {"role": "assistant", "content": "Te informamos del nuevo precio."},
+        {"role": "user", "content": "¿Me das más información?"},
+    ], {"operacion": "Venta"}, write_telemetry=False)
+    assert result["respuesta_bot"] == ""
+    assert len(calls) == 2
+    assert all("response_format" in x for x in calls)
+
+
+def test_campaign_greeting_avoids_resending_link_unless_customer_requests_it(
+    isolated, monkeypatch
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-offline-test")
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+    from chatbot import grok_client
+    db = db_case()
+    calls = []
+    def simulated_model(messages, prospect, **kwargs):
+        calls.append(messages)
+        return {"intencion": "consulta_general", "datos_extraidos": {},
+                "respuesta_bot": (
+                    "Te dejé el enlace https://www.procasa.cl/6436."
+                    if len(calls) == 1 else
+                    "¡Hola! Gracias por responder 😊. ¿Qué tal te pareció la rebaja?"
+                )}
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", simulated_model)
+    sender, outgoing = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "greeting-no-url", "HOLA", sender=sender
+    )["status"] == "test_reply_sent"
+    assert len(calls) == 2
+    assert len(outgoing) == 1
+    assert "https://www.procasa.cl" not in outgoing[0][1]
+    assert "Gracias por responder" in outgoing[0][1]
+
+    def requested_link(messages, prospect, **kwargs):
+        return {"intencion": "consulta_general", "datos_extraidos": {},
+                "respuesta_bot": "Claro, aquí está: https://www.procasa.cl/6436"}
+    monkeypatch.setattr(grok_client, "generar_respuesta_estructurada", requested_link)
+    assert process_test_inbound(
+        db, PHONE, "link-requested", "¿Me compartes el enlace?", sender=sender
+    )["status"] == "test_reply_sent"
+    assert "https://www.procasa.cl/6436" in outgoing[1][1]
+    assert len(outgoing) == 2

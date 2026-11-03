@@ -104,7 +104,8 @@ def generar_respuesta(messages: list, tipo: str = "prospecto", telemetry_context
 
 def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None,
                                     telemetry_context: dict | None = None, *,
-                                    write_telemetry: bool = True) -> dict:
+                                    write_telemetry: bool = True,
+                                    force_json_output: bool = False) -> dict:
     """
     Genera respuesta conversacional y extrae datos nuevos si el usuario los menciona.
     Combina el prompt de negocio + instrucciones de extracción.
@@ -237,7 +238,11 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         )
 
         kwargs = {}
-        if Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
+        is_price_drop_pilot = (not write_telemetry and any(
+            "[CONTEXTO COMERCIAL DEL MENSAJE SALIENTE - PRIORIDAD]" in str(m.get("content", ""))
+            for m in messages if m.get("role") == "system"
+        ))
+        if force_json_output or is_price_drop_pilot or Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
             kwargs["response_format"] = {"type": "json_object"}
 
         response = client.chat.completions.create(
@@ -295,9 +300,28 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             if ini != -1 and fin != -1 and fin > ini:
                 contenido_json_str = contenido_json_str[ini : fin + 1].strip()
 
-        if not contenido_json_str:
+        if not contenido_json_str and not is_price_drop_pilot:
             raise ValueError("Respuesta vacia del modelo")
-        datos = json.loads(contenido_json_str)
+        try:
+            datos = json.loads(contenido_json_str)
+        except json.JSONDecodeError:
+            if not is_price_drop_pilot:
+                raise
+            logger.warning("[PRICE_DROP_PILOT_JSON] invalid output, retry once")
+            again = client.chat.completions.create(
+                model=Config.DEEPSEEK_MODEL_REASONER,
+                messages=[*structured_messages[:-1], {
+                    "role": "system", "content": (
+                        "Responde solamente un objeto JSON válido con los campos "
+                        "intencion, respuesta_bot y datos_extraidos. "
+                        "No inventes información no verificada."
+                    )}, structured_messages[-1]],
+                temperature=Config.DEEPSEEK_TEMPERATURE,
+                max_tokens=Config.DEEPSEEK_MAX_TOKENS_REASONER,
+                timeout=Config.DEEPSEEK_TIMEOUT_REASONER,
+                response_format={"type": "json_object"},
+            )
+            datos = json.loads((again.choices[0].message.content or "").strip())
 
         if write_telemetry:
             _record_llm_telemetry(

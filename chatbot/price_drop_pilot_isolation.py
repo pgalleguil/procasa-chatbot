@@ -795,6 +795,8 @@ def _native_safe_fallback(message: str, ctx: dict, history: list[dict],
 
 def _native_reception_guard(message: str, answer: str, history: list[dict]) -> str:
     """Correct high-risk repetitive/generic replies before WhatsApp delivery."""
+    if _GREETING.fullmatch(message) and any(_GREETING.fullmatch(str(t.get("customer_text") or "")) for t in history[-8:]):
+        return "¡Hola de nuevo! 😊 Aquí estoy."
     if _GREETING.fullmatch(message) and len(answer) > 175:
         return "¡Hola! 😊 Gracias por responder al aviso. Te leo."
     if _GREETING.fullmatch(message) and any(

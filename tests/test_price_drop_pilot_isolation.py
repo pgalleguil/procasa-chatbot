@@ -1736,3 +1736,51 @@ def test_v8_twenty_realistic_offline_customer_conversations(
         assert last[2]["role"] == "assistant"
         assert "Te escribo porque el departamento" in last[2]["content"]
         assert any(m["role"] == "user" for m in last[3:-1])
+
+
+def test_live_v8_no_unverified_apartment_number_in_realistic_reply(isolated):
+    """Reproduce the first real V8 reply: trailing '68' is not a verified unit."""
+    from chatbot.price_drop_pilot_isolation import (
+        _sanitize_unverified_unit, build_native_pilot_reply,
+    )
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370 68",
+        "comuna": "San Miguel",
+        "unidad": None,
+    }
+    ctx = load_test_context(db, PHONE)
+    assert ctx["property_facts"].get("unidad_verificada") is None
+    raw = (
+        "Claro 😊 Es el departamento en San Miguel, en Séptima Avenida 1370, "
+        "departamento 68. Tiene 2 dormitorios y 65 m²."
+    )
+    assert "departamento 68" not in _sanitize_unverified_unit(raw, ctx)
+    answer = build_native_pilot_reply(
+        "Comentame no recuerdonesa casa", ctx, [],
+        generator=lambda *_args, **_kwargs: {
+            "intencion": "consulta_general",
+            "datos_extraidos": {},
+            "respuesta_bot": raw,
+        },
+    )
+    assert "Séptima Avenida 1370. Tiene" in answer
+    assert "departamento 68" not in answer
+    assert "2 dormitorios" in answer
+
+
+def test_explicit_prop360_unit_can_be_named(isolated):
+    from chatbot.price_drop_pilot_isolation import _sanitize_unverified_unit
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370",
+        "comuna": "San Miguel",
+        "unidad": "68",
+    }
+    ctx = load_test_context(db, PHONE)
+    assert ctx["property_facts"]["unidad_verificada"] == "68"
+    reply = "Está en Séptima Avenida 1370, departamento 68."
+    assert _sanitize_unverified_unit(reply, ctx) == reply
+    assert "departamento 69" not in _sanitize_unverified_unit(
+        "Está en Séptima Avenida 1370, departamento 69.", ctx
+    )

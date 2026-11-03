@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import sys
 import ast
+import json
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 
 from scrapers.scraper_yapo.config import AppConfig
 from scrapers.scraper_yapo.import_yapo_prepared_batch import (
+    INITIAL_GESTION,
+    _append_journal,
     _build_update,
     _identity_matches,
+    _mongo_import_payload,
+    run_preflight,
     _safe_update_plan,
     _upsert_one,
 )
@@ -89,6 +96,8 @@ def test_import_route_is_idempotent_and_never_writes_crm_assignment():
     assert "assigned_to" not in collection.doc and "asignacion" not in collection.doc
     assert "owner_probability" not in collection.doc["classification"]
     assert collection.doc["classification"]["assignment_ready"] is False
+    assert collection.doc["gestion"] == INITIAL_GESTION
+    assert collection.doc["gestion"]["ejecutivo_id"] is None
 
 
 def test_existing_crm_data_and_human_decision_survive_import():
@@ -112,6 +121,32 @@ def test_existing_crm_data_and_human_decision_survive_import():
     assert collection.doc["classification"] == existing["classification"]
     assert collection.doc["description"] == "texto de CRM ya revisado"
     assert collection.doc["title"] == "Casa actualizada"
+
+
+def test_capture_date_coercion_and_durable_journal(tmp_path):
+    payload = _mongo_import_payload({"fecha_scraping": "2026-11-02T18:21:00+00:00"})
+    assert payload["fecha_scraping"].isoformat() == "2026-11-02T18:21:00+00:00"
+    path = tmp_path / "import.jsonl"
+    _append_journal(path, {"event": "record_upsert_completed", "index": 1, "listing_id": "12345678"})
+    row = path.read_text(encoding="utf-8").strip()
+    assert '"index": 1' in row and '"listing_id": "12345678"' in row
+
+
+def test_apply_rejects_a_canonical_file_whose_preflight_hash_does_not_match(tmp_path):
+    counts = {"CORREDOR_SEGURO": 369, "CORREDOR_PROBABLE": 11, "DUEÑO_PROBABLE": 10, "INCIERTO": 92}
+    docs = []
+    index = 0
+    for state, count in counts.items():
+        for _ in range(count):
+            index += 1
+            docs.append({"listing_id": str(10000000 + index), "classification": {"state": state}})
+    input_path = tmp_path / "stale.json"
+    input_path.write_text(json.dumps(docs), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="SHA-256"):
+        run_preflight(
+            input_path, tmp_path / "out", apply=True, approval_id="approval",
+            confirm_target="URLS.propiedades_captacion", expected_sha256="0" * 64,
+        )
 
 
 def test_import_route_source_has_no_scrape_or_post_distribution_hook():

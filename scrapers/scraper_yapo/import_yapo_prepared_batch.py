@@ -7,7 +7,9 @@ require both --apply and an explicit approval ID and target confirmation.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -49,10 +51,87 @@ ASSIGNMENT_FIELDS = {
 }
 EMPTY = (None, "", [], {})
 URL_FIELDS = ("url", "canonical_url", "source_url")
+INITIAL_GESTION = {
+    "estado": "NUEVO", "estado_captacion": "NUEVO", "ejecutivo_id": None,
+    "ejecutivo_asignado": None, "intent_count": 0, "notas": [], "actividades": [],
+}
+FIELD_CONTRACTS = {
+    "schema_version": ("obligatorio_almacenamiento", "Versionado de documento persistido."),
+    "origen": ("obligatorio_almacenamiento", "Identidad de portal usada por permisos y filtros."),
+    "source_portal": ("obligatorio_almacenamiento", "Identidad explícita del portal."),
+    "source": ("obligatorio_almacenamiento", "Procedencia owner_hunt del registro."),
+    "listing_id": ("obligatorio_almacenamiento", "Identidad canónica Yapo para deduplicación."),
+    "url": ("obligatorio_almacenamiento", "Enlace a ficha de origen."),
+    "canonical_url": ("obligatorio_almacenamiento", "Enlace canónico para deduplicación."),
+    "run_id": ("obligatorio_almacenamiento", "Trazabilidad de corrida guardada."),
+    "batch_id": ("obligatorio_almacenamiento", "Trazabilidad e idempotencia del lote."),
+    "title": ("obligatorio_crm", "Título mostrado en lista y ficha."),
+    "description": ("obligatorio_crm", "Descripción completa mostrada y usada para revisión."),
+    "comuna": ("obligatorio_crm_filtros", "Comuna usada en ficha y filtros."),
+    "comuna_slug": ("obligatorio_crm_filtros", "Comuna normalizada para filtros e índices."),
+    "operacion": ("obligatorio_crm_filtros", "Operación normalizada para ficha y filtros."),
+    "tipo_propiedad": ("obligatorio_crm_filtros", "Tipo normalizado para ficha y filtros."),
+    "precio_raw": ("obligatorio_crm", "Precio original visible."),
+    "precio_uf_normalizado": ("obligatorio_crm_filtros", "Campo UF consultado por el filtro de rangos."),
+    "precio_clp_normalizado": ("derivado_para_filtros", "Campo CLP consultado por el filtro de rangos."),
+    "classification": ("obligatorio_clasificacion", "Estado y evidencias visibles; no autoriza asignación."),
+    "gestion": ("obligatorio_crm", "Estado NUEVO sin ejecutivo, en inserción solamente."),
+    "publicador": ("opcional_anunciante", "Nombre de anunciante disponible para ficha y contacto."),
+    "publicador_visible": ("opcional_anunciante", "Nombre visible del publicador en Yapo."),
+    "seller_name": ("opcional_anunciante", "Alias consumido por el normalizador de ficha."),
+    "contact_name": ("opcional_anunciante", "Nombre de contacto extraído, si existe."),
+    "contact_phone": ("opcional_contacto", "No se crea si Yapo no lo expone en el HTML/JSON local."),
+    "contact_email": ("opcional_contacto", "No se crea si Yapo no lo expone en el HTML/JSON local."),
+    "fecha_publicacion": ("opcional_publicacion", "Fecha explícita de publicación; no se infiere desde la captura."),
+    "fecha_publicacion_raw": ("opcional_publicacion", "Texto fuente de fecha cuando exista."),
+    "fecha_scraping": ("obligatorio_procedencia", "Timestamp de captura derivado del procesado guardado."),
+    "processed_at": ("derivado_procedencia", "Marca temporal del procesamiento guardado."),
+    "updated_at": ("derivado_procedencia", "Marca temporal estable de la corrida guardada."),
+    "enlaces_fotos": ("opcional_multimedia", "Lista consumida por la ficha; limita URLs a fotos del listing."),
+    "images": ("opcional_multimedia", "Alias leído por el normalizador de ficha."),
+    "image_urls": ("opcional_multimedia", "Alias de fotos e índice de imagen."),
+    "image_urls_count": ("derivado_multimedia", "Cantidad de fotos de este anuncio, no activos de la página."),
+    "main_image_url": ("opcional_multimedia", "Primera foto del anuncio, si existe."),
+    "superficie_total": ("opcional_caracteristica", "Superficie de terreno cuando el atributo la especifica."),
+    "superficie_util": ("opcional_caracteristica", "Superficie construida/útil cuando está especificada."),
+    "m2_totales": ("opcional_caracteristica", "Metros totales/terreno de fuente."),
+    "m2_construidos": ("opcional_caracteristica", "Metros construidos de fuente."),
+    "attributes": ("opcional_atributos", "Atributos fuente sin reinterpretar."),
+    "raw_attributes": ("opcional_atributos_historicos", "Atributos originales conservados para trazabilidad."),
+    "details": ("obligatorio_crm_normalizado", "Campos normalizados que lee la vista CRM."),
+    "details.comuna": ("obligatorio_crm_filtros", "Comuna alternativa consumida por el adaptador CRM."),
+    "details.comuna_norm": ("derivado_para_filtros", "Alias de comuna consultado por filtros legacy."),
+    "details.operacion": ("obligatorio_crm", "Operación normalizada leída en ficha."),
+    "details.tipo_propiedad": ("obligatorio_crm", "Tipo normalizado leído en ficha."),
+    "details.precio_uf": ("obligatorio_crm", "Precio UF leído por la ficha."),
+    "details.precio_clp": ("obligatorio_crm", "Precio CLP leído por la ficha."),
+    "details.dormitorios": ("opcional_caracteristica", "Dormitorios normalizados cuando la fuente los ofrece."),
+    "details.banos": ("opcional_caracteristica", "Baños normalizados cuando la fuente los ofrece."),
+    "details.m2_total": ("opcional_caracteristica", "Superficie de terreno usada por la ficha."),
+    "details.m2_construidos": ("opcional_caracteristica", "Superficie construida, separada del terreno."),
+    "details.superficie_total": ("opcional_caracteristica", "Alias de superficie total/terreno."),
+    "details.superficie_util": ("opcional_caracteristica", "Alias de superficie construida/útil."),
+    "details.enlaces_fotos": ("opcional_multimedia", "Fotos consumidas por vistas legacy."),
+    "details.publicador": ("opcional_anunciante", "Nombre mostrado en ficha del CRM."),
+    "captacion_priority": ("derivado_interno", "Materializado por proceso CRM; no se calcula en el lote Yapo."),
+    "captacion_sort_date": ("derivado_interno", "Materializado por proceso CRM; no se calcula en el lote Yapo."),
+    "captacion_comuna_sort": ("derivado_interno", "Materializado por proceso CRM; no se calcula en el lote Yapo."),
+    "captacion_price_sort": ("derivado_interno", "Materializado por proceso CRM; no se calcula en el lote Yapo."),
+    "captacion_probability_sort": ("derivado_interno", "Materializado por proceso CRM; no se calcula en el lote Yapo."),
+    "phone_identity": ("historico_otro_proceso", "Backfill de identidad telefónica; no se inventa en Yapo."),
+    "created_at": ("historico_otro_proceso", "Creado al insertar en Mongo; no forma parte del hash fuente."),
+}
 
 
 def _id_text(value: Any) -> str:
     return str(value).strip() if value is not None else ""
+
+
+def _path_value(document: dict[str, Any], field: str) -> Any:
+    value: Any = document
+    for component in field.split("."):
+        value = value.get(component) if isinstance(value, dict) else None
+    return value
 
 
 def _url_listing_id(value: Any) -> str:
@@ -93,15 +172,18 @@ def _types_compatible(left: Any, right: Any) -> bool:
 
 def _load_records(path: Path) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8-sig"))
-    records = payload.get("records") if isinstance(payload, dict) else payload
-    if not isinstance(records, list):
-        raise ValueError("El archivo debe ser una lista o contener records[].")
-    docs = []
-    for row in records:
-        doc = row.get("document") if isinstance(row, dict) else None
-        if not isinstance(doc, dict):
-            raise ValueError("Cada registro debe contener document canónico.")
-        docs.append(doc)
+    if isinstance(payload, list):
+        docs = payload
+    elif isinstance(payload, dict) and isinstance(payload.get("documents"), list):
+        docs = payload["documents"]
+    elif isinstance(payload, dict) and isinstance(payload.get("records"), list):
+        docs = [row.get("document") if isinstance(row, dict) else None for row in payload["records"]]
+    else:
+        raise ValueError("El archivo debe ser un lote canónico o incluir records[].document.")
+    if docs and isinstance(docs[0], dict) and isinstance(docs[0].get("document"), dict):
+        docs = [row["document"] for row in docs]
+    if not all(isinstance(doc, dict) for doc in docs):
+        raise ValueError("Cada registro debe ser un documento canónico.")
     ids = [_id_text(doc.get("listing_id")) for doc in docs]
     if len(docs) != 482 or len(set(ids)) != 482 or any(not value for value in ids):
         raise ValueError(f"Se requieren 482 documentos e IDs únicos; recibidos {len(docs)}.")
@@ -109,6 +191,35 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
     if dict(states) != EXPECTED_STATE_COUNTS:
         raise ValueError(f"Distribución de estados distinta de la auditoría aprobada: {dict(states)}")
     return docs
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _mongo_import_payload(record: dict[str, Any]) -> dict[str, Any]:
+    """Convert ISO capture timestamps to BSON Date fields used by Yapo docs."""
+    payload = dict(record)
+    for field in ("fecha_scraping", "fecha_captura", "first_seen", "first_seen_at", "captacion_sort_date"):
+        value = payload.get(field)
+        if isinstance(value, str) and value.strip():
+            try:
+                payload[field] = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+    return payload
+
+
+def _append_journal(path: Path, event: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _validate_prepared_doc(doc: dict[str, Any]) -> list[str]:
@@ -273,6 +384,91 @@ def _server_validator(database: Any, collection_name: str) -> dict[str, Any]:
     return rows[0].get("options", {}).get("validator") or {}
 
 
+def _existing_source_contract_sample(collection: Any) -> dict[str, Any]:
+    """Read representative owner_hunt / targeted_owner_hunt shapes without exposing values."""
+    projection = {"source": 1, "origen": 1, "source_portal": 1, "gestion": 1, "classification": 1, "details": 1}
+    top_fields = {path.split(".")[0] for path in FIELD_CONTRACTS if "." not in path}
+    projection.update({field: 1 for field in top_fields})
+    source_counts: dict[str, int] = {}
+    sample_counts: dict[str, int] = {}
+    presence: dict[str, Counter[str]] = defaultdict(Counter)
+    field_types: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
+    sample_shapes: dict[str, dict[str, Any]] = {}
+    for source in ("owner_hunt", "targeted_owner_hunt"):
+        query = {"$and": [{"$or": [{"origen": "yapo"}, {"source_portal": "yapo"}]}, {"source": source}]}
+        source_counts[source] = collection.count_documents(query)
+        sample_shapes[source] = {
+            "sample_documents": 0,
+            "management_keys_observed": set(),
+            "management_status_counts": Counter(),
+            "samples_with_executive_assignment": 0,
+            "classification_keys_observed": set(),
+            "details_keys_observed": set(),
+        }
+        for document in collection.find(query, projection).limit(12):
+            sample_counts[source] = sample_counts.get(source, 0) + 1
+            for field in FIELD_CONTRACTS:
+                value = _path_value(document, field)
+                if _nonempty(value):
+                    presence[source][field] += 1
+                    field_types[source][field].add(_mongo_type(value))
+            shape = sample_shapes[source]
+            if shape["sample_documents"] < 12:
+                shape["sample_documents"] += 1
+                gestion = document.get("gestion") if isinstance(document.get("gestion"), dict) else {}
+                classification = document.get("classification") if isinstance(document.get("classification"), dict) else {}
+                details = document.get("details") if isinstance(document.get("details"), dict) else {}
+                shape["management_keys_observed"].update(gestion.keys())
+                if gestion.get("estado"):
+                    shape["management_status_counts"][str(gestion["estado"])] += 1
+                shape["samples_with_executive_assignment"] += bool(gestion.get("ejecutivo_id") or gestion.get("ejecutivo_asignado"))
+                shape["classification_keys_observed"].update(classification.keys())
+                shape["details_keys_observed"].update(details.keys())
+    return {
+        "documents_by_source": source_counts,
+        "sample_documents_by_source": sample_counts,
+        "field_presence_by_source": {source: dict(values) for source, values in presence.items()},
+        "field_types_by_source": {source: {field: sorted(types) for field, types in fields.items()} for source, fields in field_types.items()},
+        "representative_sample_shapes": {
+            source: {
+                **shape,
+                "management_keys_observed": sorted(shape["management_keys_observed"]),
+                "management_status_counts": dict(shape["management_status_counts"]),
+                "classification_keys_observed": sorted(shape["classification_keys_observed"]),
+                "details_keys_observed": sorted(shape["details_keys_observed"]),
+            }
+            for source, shape in sample_shapes.items()
+        },
+        "privacy": "Only field names, types/status counts, and presence counts are emitted; contact values and listing text are omitted.",
+    }
+
+
+def _build_field_contract_matrix(docs: list[dict[str, Any]], schema: dict[str, Any]) -> list[dict[str, Any]]:
+    source_sample = schema.get("existing_source_contract_sample") or {}
+    observed = schema.get("observed_top_level_bson_types") or {}
+    existing_presence = source_sample.get("field_presence_by_source") or {}
+    existing_types = source_sample.get("field_types_by_source") or {}
+    rows = []
+    for field, (category, meaning) in FIELD_CONTRACTS.items():
+        values = [_path_value(document, field) for document in docs]
+        nonempty = sum(_nonempty(value) for value in values)
+        writer_values = [_path_value(_mongo_import_payload(document), field) for document in docs]
+        writer_types = sorted({_mongo_type(value) for value in writer_values if value is not None})
+        mongo_field = field.split(".")[0]
+        existing_type_set = set(existing_types.get("owner_hunt", {}).get(field, []))
+        existing_type_set.update(existing_types.get("targeted_owner_hunt", {}).get(field, []))
+        existing_type_set.update(observed.get(mongo_field, []))
+        rows.append({
+            "field": field, "classification": category, "contract_or_consumer": meaning,
+            "batch_present": nonempty, "batch_missing": len(docs) - nonempty,
+            "batch_mongo_write_types": writer_types,
+            "mongo_observed_types": sorted(existing_type_set),
+            "owner_hunt_sample_nonempty": existing_presence.get("owner_hunt", {}).get(field, 0),
+            "targeted_owner_hunt_sample_nonempty": existing_presence.get("targeted_owner_hunt", {}).get(field, 0),
+        })
+    return rows
+
+
 def _field_schema_conflicts(doc: dict[str, Any], type_sets: dict[str, set[str]]) -> list[dict[str, str]]:
     conflicts = []
     bson = _mongo_type
@@ -313,6 +509,7 @@ def _read_preflight(docs: list[dict[str, Any]], config: AppConfig) -> tuple[list
         full_map = {str(item.get("_id")): item for item in complete_matches}
         type_sets = _top_level_type_sets(collection)
         validator = _server_validator(database, TARGET_COLLECTION)
+        source_contract_sample = _existing_source_contract_sample(collection)
         total = collection.count_documents({})
         yapo_count = collection.count_documents({"$or": [{"origen": "yapo"}, {"source_portal": "yapo"}]})
         store = MongoStore(config)
@@ -332,7 +529,8 @@ def _read_preflight(docs: list[dict[str, Any]], config: AppConfig) -> tuple[list
             property_duplicate_peers = []
             result_validation = _validate(doc)
             errors = _validate_prepared_doc(doc)
-            schema_conflicts = _field_schema_conflicts(doc, type_sets)
+            mongo_payload = _mongo_import_payload(doc)
+            schema_conflicts = _field_schema_conflicts(mongo_payload, type_sets)
             if schema_conflicts:
                 errors.extend(f"tipo_schema_observado:{item['field']}" for item in schema_conflicts)
             if validator:
@@ -340,7 +538,7 @@ def _read_preflight(docs: list[dict[str, Any]], config: AppConfig) -> tuple[list
             hard_storage_errors += bool(errors)
             human_matches = [str(row.get("_id")) for row, _ in canonical if _is_nonempty_human_classification(store, row)]
             crm_fields = sorted({field for row, _ in canonical for field in _crm_nonempty_fields(row)})
-            safe_plans = [_safe_update_plan(doc, row, store) for row, _ in canonical]
+            safe_plans = [_safe_update_plan(mongo_payload, row, store) for row, _ in canonical]
             type_conflicts = [conflict for plan in safe_plans for conflict in plan["field_type_conflicts"]]
             if type_conflicts:
                 errors.extend(f"tipo_existente_incompatible:{item['field']}" for item in type_conflicts)
@@ -378,6 +576,7 @@ def _read_preflight(docs: list[dict[str, Any]], config: AppConfig) -> tuple[list
             "collection_documents": total, "yapo_documents_by_origin_or_portal": yapo_count,
             "server_validator_defined": bool(validator), "server_validator": validator,
             "observed_top_level_bson_types": {key: sorted(values) for key, values in sorted(type_sets.items())},
+            "existing_source_contract_sample": source_contract_sample,
             "read_only": True, "read_preference": "secondaryPreferred", "read_concern": "majority",
             "mongo_writes": 0,
         }
@@ -396,7 +595,7 @@ def _build_update(existing: dict[str, Any], payload: dict[str, Any], store: Mong
 def _upsert_one(collection: Any, store: MongoStore, record: dict[str, Any]) -> dict[str, Any]:
     # Input is already the sanitized canonical document from the audited
     # simulation. Do not rerun the global probability/eligibility adapter here.
-    payload = dict(record)
+    payload = _mongo_import_payload(record)
     if (payload.get("classification") or {}).get("assignment_ready") is True:
         raise RuntimeError("El lote no puede importar registros elegibles para asignación automática.")
     if (payload.get("classification") or {}).get("owner_probability") is not None:
@@ -413,6 +612,9 @@ def _upsert_one(collection: Any, store: MongoStore, record: dict[str, Any]) -> d
             "schema_version", "run_id", "batch_id", "source", "source_portal", "origen",
             "listing_id", "url", "canonical_url", "created_at",
         ) if key in payload}
+        # New CRM rows need a valid unassigned starting state. Only this
+        # canonical default is inserted; incoming management data is ignored.
+        insert_only["gestion"] = dict(INITIAL_GESTION)
         insert_only.setdefault("created_at", payload.get("created_at") or datetime.now(timezone.utc).isoformat())
         protected = CRM_PROTECTED_FIELDS | {key for key in payload if key.startswith(CRM_PREFIXES)}
         update = {key: value for key, value in payload.items() if key not in protected and key not in insert_only}
@@ -422,8 +624,14 @@ def _upsert_one(collection: Any, store: MongoStore, record: dict[str, Any]) -> d
 
 
 def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
-                  approval_id: str = "", confirm_target: str = "") -> dict[str, Any]:
+                  approval_id: str = "", confirm_target: str = "",
+                  expected_sha256: str = "") -> dict[str, Any]:
     docs = _load_records(input_path)
+    actual_sha256 = _sha256_file(input_path)
+    if expected_sha256 and actual_sha256.casefold() != expected_sha256.strip().casefold():
+        raise RuntimeError("SHA-256 del lote no coincide con el registrado en el preflight revisado.")
+    if apply and not expected_sha256:
+        raise RuntimeError("Escritura bloqueada: --apply requiere --expected-sha256 del lote revisado.")
     config = AppConfig()
     per_record, schema = _read_preflight(docs, config)
     identity_counts = Counter(item["identity_status"] for item in per_record)
@@ -440,10 +648,26 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
             raise RuntimeError("Escritura bloqueada: configuración no coincide con el destino aprobado.")
         from pymongo import MongoClient
         client = MongoClient(config.mongo_uri, serverSelectionTimeoutMS=20000)
+        journal_path = output_dir / f"yapo_maipu_import_{actual_sha256[:16]}.jsonl"
         try:
             collection = client[TARGET_DATABASE][TARGET_COLLECTION]
             store = MongoStore(config)
-            outcomes = [_upsert_one(collection, store, doc) for doc in docs]
+            _append_journal(journal_path, {
+                "event": "import_started_or_resumed", "batch_sha256": actual_sha256,
+                "expected_sha256": expected_sha256, "record_count": len(docs),
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            })
+            outcomes = []
+            for index, doc in enumerate(docs, start=1):
+                outcome = _upsert_one(collection, store, doc)
+                outcomes.append(outcome)
+                _append_journal(journal_path, {
+                    "event": "record_upsert_completed", "batch_sha256": actual_sha256,
+                    "index": index, "listing_id": _id_text(doc.get("listing_id")),
+                    "matched_count": outcome["matched_count"], "modified_count": outcome["modified_count"],
+                    "upserted_id": outcome["upserted_id"],
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                })
         finally:
             client.close()
     else:
@@ -451,7 +675,13 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
 
     duplicate_peer_ids: dict[str, set[str]] = defaultdict(set)
     source_json = json.loads(input_path.read_text(encoding="utf-8-sig"))
-    for group in (source_json.get("duplicates", {}).get("possible_same_property_groups", []) if isinstance(source_json, dict) else []):
+    duplicate_groups = source_json.get("duplicates", {}).get("possible_same_property_groups", []) if isinstance(source_json, dict) else []
+    if not duplicate_groups:
+        simulation_path = output_dir / "yapo_maipu_482_captacion_simulation.json"
+        if simulation_path.is_file():
+            simulation_json = json.loads(simulation_path.read_text(encoding="utf-8-sig"))
+            duplicate_groups = simulation_json.get("duplicates", {}).get("possible_same_property_groups", [])
+    for group in duplicate_groups:
         ids = [str(value) for value in group.get("listing_ids", [])]
         for left in ids:
             duplicate_peer_ids[left].update(value for value in ids if value != left)
@@ -467,11 +697,15 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
             uncertain_blockers.update(item["assignment_block_reasons"])
 
     valid_storage_count = sum(not item["storage_exceptions"] and item["identity_status"] != "IDENTITY_CONFLICT" for item in per_record)
+    field_contract_matrix = _build_field_contract_matrix(docs, schema)
+    simulation_path = output_dir / "yapo_maipu_482_captacion_simulation.json"
+    simulation_audit = json.loads(simulation_path.read_text(encoding="utf-8-sig")) if simulation_path.is_file() else {}
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": "write_attempt" if apply else "read_only_preimport",
         "target": f"{TARGET_DATABASE}.{TARGET_COLLECTION}",
         "input": str(input_path), "input_count": len(docs),
+        "input_sha256": actual_sha256, "sha256_scope": "exact UTF-8 bytes of canonical JSON input file",
         "classification_counts": dict(Counter(str((doc.get("classification") or {}).get("state")) for doc in docs)),
         "identity_counts": dict(identity_counts),
         "new_insert_candidates": identity_counts.get("WOULD_INSERT", 0),
@@ -484,6 +718,9 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
         "automatic_assignment_authorized": assignment_ready,
         "assignment_blockers": {"DUEÑO_PROBABLE": dict(owner_blockers), "INCIERTO": dict(uncertain_blockers)},
         "mongo_schema": schema,
+        "field_compatibility_matrix": field_contract_matrix,
+        "available_data_summary": simulation_audit.get("available_data_summary", {}),
+        "crm_read_qa": simulation_audit.get("crm_read_qa", {}),
         "crm_preservation": {
             "records_with_existing_crm_fields": sum(bool(item["existing_crm_fields_to_preserve"]) for item in per_record),
             "human_classifications_protected": sum(item["human_classification_preserved"] for item in per_record),
@@ -499,6 +736,8 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
                              "distribution_runs": 0, "notifications": 0,
                              "mongo_writes": len(outcomes)},
         "import_route": "scrapers/scraper_yapo/import_yapo_prepared_batch.py",
+        "durable_import_journal": str(journal_path if apply else output_dir / f"yapo_maipu_import_{actual_sha256[:16]}.jsonl"),
+        "recovery_policy": "Each completed upsert is fsync-journaled; rerun the same SHA-256 batch to resume safely through identity upserts. Conflicts block before writes.",
         "not_run": not apply,
         "records": per_record,
         "write_outcomes": outcomes,
@@ -506,6 +745,17 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "yapo_maipu_preimport_482.json").write_text(json.dumps(docs, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     (output_dir / "yapo_maipu_preimport_audit.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    (output_dir / "yapo_maipu_compatibilidad_campos.json").write_text(json.dumps({
+        "target": report["target"], "batch_sha256": actual_sha256,
+        "source_reference_sample": schema.get("existing_source_contract_sample", {}),
+        "fields": field_contract_matrix,
+    }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    import csv
+    if field_contract_matrix:
+        with (output_dir / "yapo_maipu_compatibilidad_campos.csv").open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(field_contract_matrix[0]))
+            writer.writeheader()
+            writer.writerows(field_contract_matrix)
     csv_fields = ["listing_id", "classification", "identity_status", "canonical_matches", "conflicting_matches",
                   "human_classification_preserved", "existing_crm_fields_to_preserve", "explicitly_protected_fields_in_update",
                   "existing_nonempty_values_preserved_from_empty_input", "field_type_incompatibilities",
@@ -530,21 +780,27 @@ def _render_summary(report: dict[str, Any]) -> str:
         f"- Insertarían: **{report['new_insert_candidates']}**; ya existen canónicamente: **{report['already_existing_canonical']}**; conflictos: **{report['identity_conflicts']}**.",
         f"- Posibles captaciones: **{report['potential_captations']}**; corredores excluidos comercialmente: **{report['classification_counts'].get('CORREDOR_SEGURO',0)+report['classification_counts'].get('CORREDOR_PROBABLE',0)}**.",
         f"- Válidos para almacenamiento: **{report['valid_for_storage']}/482**; excepciones: **{report['records_with_storage_exceptions']}**.",
+        f"- SHA-256 exacto del lote: `{report['input_sha256']}`.",
         f"- Asignación automática autorizada: **{report['automatic_assignment_authorized']}**.",
         f"- Bloqueos de dueños probables: `{json.dumps(blockers.get('DUEÑO_PROBABLE',{}),ensure_ascii=False)}`.",
         f"- Bloqueos de inciertos: `{json.dumps(blockers.get('INCIERTO',{}),ensure_ascii=False)}`.",
         "- Significado de bloqueos: " + "; ".join(f"`{key}`: {meaning}" for key, meaning in ASSIGNMENT_BLOCKER_MEANINGS.items()) + ".",
         f"- Tipos de schema de servidor: {'definidos; requiere revisión' if report['mongo_schema'].get('server_validator_defined') else 'sin validator restrictivo'}.",
         f"- Campos CRM existentes detectados: {report['crm_preservation']['records_with_existing_crm_fields']} documentos; clasificaciones humanas a preservar: {report['crm_preservation']['human_classifications_protected']}.",
+        f"- Documentos existentes por origen: `{json.dumps(report['mongo_schema'].get('existing_source_contract_sample',{}).get('documents_by_source',{}),ensure_ascii=False)}`; muestra de esquema por origen: `{json.dumps(report['mongo_schema'].get('existing_source_contract_sample',{}).get('sample_documents_by_source',{}),ensure_ascii=False)}`.",
+        f"- Matriz de compatibilidad: {len(report.get('field_compatibility_matrix', []))} campos; ver `yapo_maipu_compatibilidad_campos.csv`.",
+        f"- Lectura CRM simulada: {report.get('crm_read_qa',{}).get('read_model_valid',0)}/{report.get('crm_read_qa',{}).get('tested_documents',0)} válidos; rango 3.000–6.000 UF incluye {report.get('crm_read_qa',{}).get('price_filter_range_matches',0)} y excluye {len(report.get('crm_read_qa',{}).get('price_filter_out_of_range_exclusions',[]))} anuncios fuera de rango.",
+        f"- Lote reproducible: hash ligado al JSON canónico; reejecución por identidad y bitácora fsync en `{report.get('durable_import_journal','')}`.",
         "- Idempotencia: identidad Yapo + listing_id, actualizaciones `$set`/`$setOnInsert`, sin `$unset`; se omiten valores entrantes vacíos para no borrar datos.",
         "- DeepSeek, scraping Yapo, asignación, distribución, notificaciones y escrituras Mongo en este preflight: **0**.",
         "", "## Comando propuesto (no ejecutado)", "",
         '```powershell',
         "$env:ENV_FILE='C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\.env'",
         'python -m scrapers.scraper_yapo.import_yapo_prepared_batch `',
-        '  --input "C:\\Users\\pgall\\Documents\\PROCASA\\YapoMaipu\\auditoria_compatibilidad_20261103\\yapo_maipu_482_captacion_simulation.json" `',
+        '  --input "C:\\Users\\pgall\\Documents\\PROCASA\\YapoMaipu\\preimportacion_20261103\\yapo_maipu_preimport_482.json" `',
         '  --output-dir "C:\\Users\\pgall\\Documents\\PROCASA\\YapoMaipu\\preimportacion_20261103" `',
-        '  --apply --approval-id "<folio-aprobado>" --confirm-target URLS.propiedades_captacion',
+        '  --apply --approval-id "<folio-aprobado>" --confirm-target URLS.propiedades_captacion `',
+        f'  --expected-sha256 "{report["input_sha256"]}"',
         '```',
         "", "El script es import-only; no llama a `run_owner_hunt.py` ni a `_run_post_scrape_distribution()`. La ruta queda bloqueada sin aprobación explícita.",
         "",
@@ -558,12 +814,15 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true", help="Write only after separate approval")
     parser.add_argument("--approval-id", default="")
     parser.add_argument("--confirm-target", default="")
+    parser.add_argument("--expected-sha256", default="")
     args = parser.parse_args()
     report = run_preflight(args.input, args.output_dir, apply=args.apply,
-                           approval_id=args.approval_id, confirm_target=args.confirm_target)
+                           approval_id=args.approval_id, confirm_target=args.confirm_target,
+                           expected_sha256=args.expected_sha256)
     print(json.dumps({key: report[key] for key in (
         "target", "input_count", "identity_counts", "records_with_storage_exceptions",
         "valid_for_storage", "potential_captations", "automatic_assignment_authorized", "external_effects", "not_run",
+        "input_sha256", "crm_read_qa",
     )}, ensure_ascii=False, indent=2))
     return 0
 

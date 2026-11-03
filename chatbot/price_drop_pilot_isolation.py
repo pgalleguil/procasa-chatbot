@@ -419,7 +419,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
          "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
          "caracteristicas.orientacion": 1, "caracteristicas.features": 1,
          "ubicacion.calle": 1, "ubicacion.direccion_referencial": 1,
-         "ubicacion.comuna": 1},
+         "ubicacion.comuna": 1, "historial_cambios": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))

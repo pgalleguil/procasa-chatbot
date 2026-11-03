@@ -1640,3 +1640,87 @@ def _v8_offline_model(messages, prospect, **kwargs):
         )
     return {"intencion": "consulta_general", "datos_extraidos": {},
             "respuesta_bot": reply}
+
+
+@pytest.mark.parametrize(
+    "scenario_name,turns", _V8_SCENARIOS,
+    ids=[name for name, _ in _V8_SCENARIOS],
+)
+def test_v8_twenty_realistic_offline_customer_conversations(
+    isolated, monkeypatch, scenario_name, turns
+):
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-no-network")
+    from chatbot import grok_client
+    from chatbot.price_drop_pilot_isolation import _plain, _GREETING
+    db = db_case()
+    prop = db["universo_cartera_prop360"].docs[0]
+    prop["tipo_operacion"]["gastos_comunes"] = 85000
+    prop["caracteristicas"] = {
+        "dormitorios": 2, "banos": 2, "bodegas": 1,
+        "superficie_total": 65, "superficie_terraza": 5,
+        "piso": 6, "features": ["piscina", "has_terrace"],
+    }
+    prop["historial_cambios"] = [{
+        "fecha": "2026-10-06T21:55:59-03:00",
+        "campo": "precio_uf", "valor_anterior": 2790,
+        "valor_nuevo": 2690, "fuente": "prop360_bitacora",
+    }]
+    seen = []
+    def model(messages, prospect, **kwargs):
+        seen.append(messages)
+        return _v8_offline_model(messages, prospect, **kwargs)
+    monkeypatch.setattr(
+        grok_client, "generar_respuesta_estructurada", model
+    )
+    send, delivered = sender_spy()
+    for i, customer in enumerate(turns):
+        outcome = process_test_inbound(
+            db, PHONE, f"{scenario_name}-{i}", customer, sender=send
+        )
+        if customer.casefold() == "no me escriban más":
+            assert outcome == {"status": "test_stopped"}
+            assert len(delivered) == i
+            break
+        assert outcome == {"status": "test_reply_sent"}, (scenario_name, customer, outcome)
+        reply = delivered[-1][1]
+        low = _plain(reply)
+        question = _plain(customer)
+        assert reply and len(reply) < 650
+        assert "lo dejo planteado" not in low
+        assert "te llamara" not in low
+        assert "visita confirmada" not in low
+        assert "es competitivo" not in low
+        if _GREETING.fullmatch(customer):
+            assert len(reply) <= 175
+            assert "dormitorios" not in low
+            assert "https://www.procasa.cl/" not in reply
+        if "disponib" in question or "disponob" in question:
+            assert "disponible" in low and "confirmar" in low
+        if "gastos comunes" in question or "gastos comunes" in low and "ggcc" in question:
+            assert "$85.000" in reply
+        if "variacion" in question or "cuanto bajo" in question:
+            assert "100" in reply
+        if "cuando" in question and ("baj" in question or "rebaj" in question):
+            assert "6 de octubre de 2026" in reply
+        if "10 o 11" in question or "10 o a las 11" in question:
+            assert "10 o a las 11" in low
+            assert "entre 10 y 11" not in low
+            assert "no se ha" in low or "no hay" in low
+        if "nadie" in question:
+            assert "no se ha enviado" in low or "no se ha solicitado" in low
+    assert len(db["crm_price_drop_pilot_test_turns_v1"].docs) == len(turns)
+    assert len(delivered) == len(turns) - int(
+        turns[-1].casefold() == "no me escriban más"
+    )
+    assert all(number == PHONE for number, _ in delivered)
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+    if len(seen) > 1:
+        # The model gets the original outbound and subsequent history.
+        last = seen[-1]
+        assert last[2]["role"] == "assistant"
+        assert "Te escribo porque el departamento" in last[2]["content"]
+        assert any(m["role"] == "user" for m in last[3:-1])

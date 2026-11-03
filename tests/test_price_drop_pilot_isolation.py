@@ -606,9 +606,9 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
 
 
 
-def test_v5_sender_reactivation_copy_is_warm_specific_and_historically_grounded():
+def test_v6_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded():
     from scripts import price_drop_pilot_test as sender
-    assert sender.TEST_ID == "20261102-6436-price-drop-pilot-v5"
+    assert sender.TEST_ID == "20261103-6436-price-drop-pilot-v6-fresh-dialog"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
     ).read_text()
@@ -628,7 +628,7 @@ def test_v5_sender_reactivation_copy_is_warm_specific_and_historically_grounded(
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v5"' in source
+    assert '"campaign_version": "price_drop_pilot_v6"' in source
     assert 'if not is_test_phone(phone)' in source
 
 

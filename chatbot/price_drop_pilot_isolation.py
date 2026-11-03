@@ -184,7 +184,8 @@ def _personalize_reply(reply: str, message: str, ctx: dict,
 
 def _visit_parts(message: str) -> dict:
     """Extract a user's stated preferences, not an appointment or CRM event."""
-    plain = _plain(message)
+    # Common WhatsApp typo: "ALAS 10 O 11" means two alternatives.
+    plain = re.sub(r"\balas\b", "a las", _plain(message))
     parts: dict = {}
     day = _VISIT_DAY.search(plain)
     if day:
@@ -715,7 +716,7 @@ def _native_verified_answer(message: str, ctx: dict) -> str | None:
             f"Antes costaba UF {_format_uf(before)} y ahora está en "
             f"UF {_format_uf(now)}. Son {_format_uf(saving)} UF menos, "
             f"equivalente a un {percentage:.2f}% de rebaja."
-        ).replace(".", ".", 1)
+        ).replace(f"{percentage:.2f}%", f"{percentage:.2f}".replace(".", ",") + "%")
     if re.search(r"\b(?:gastos? comunes?|ggcc)\b", plain):
         amount = facts.get("gastos_comunes_clp")
         if amount is not None:
@@ -754,8 +755,6 @@ def _native_visit_time_answer(message: str, history: list[dict]) -> str | None:
     if " o " in time:
         # Never transform two alternatives into a continuous interval.
         time = time.replace(" o ", " o a las ")
-        if time.startswith("a las ") and "o a las" in time:
-            pass
         return (
             f"Perfecto, te acomodaría {day} {time}. Son dos horarios "
             "alternativos, no una visita reservada. Todavía no se ha "
@@ -767,7 +766,8 @@ def _native_visit_time_answer(message: str, history: list[dict]) -> str | None:
     )
 
 
-def _native_safe_fallback(message: str, ctx: dict, history: list[dict]) -> str:
+def _native_safe_fallback(message: str, ctx: dict, history: list[dict],
+                          *, unverified_action: bool = False) -> str:
     """Specific safe recovery, not a generic request to restate clear intent."""
     known = _native_verified_answer(message, ctx)
     if known:
@@ -777,6 +777,12 @@ def _native_safe_fallback(message: str, ctx: dict, history: list[dict]) -> str:
     if _active_visit_context(history) and _visit_parts(message).get("time"):
         return _native_visit_time_answer(message, history) or (
             "Tengo presente tu preferencia, pero aún no hay visita agendada."
+        )
+    if unverified_action:
+        return (
+            "En esta conversación no se ha solicitado ninguna gestión "
+            "a un ejecutivo. Puedo seguir ayudándote con tus dudas, "
+            "pero no quiero prometerte una llamada o visita que no se hizo."
         )
     return (
         "Disculpa, no quiero darte información que no esté confirmada. "
@@ -990,7 +996,12 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
         if (not answer or len(answer) > 650 or BAD_CLAIM.search(answer)
                 or _CAMPAIGN_UNVERIFIED_ACTION.search(answer)
                 or _CAMPAIGN_SENSITIVE_REQUEST.search(answer)):
-            return _native_safe_fallback(clean, ctx, history)
+            unsafe = bool(BAD_CLAIM.search(answer)
+                          or _CAMPAIGN_UNVERIFIED_ACTION.search(answer)
+                          or _CAMPAIGN_SENSITIVE_REQUEST.search(answer))
+            return _native_safe_fallback(
+                clean, ctx, history, unverified_action=unsafe
+            )
         answer = _native_reception_guard(clean, answer, history)
         if (_reply_repeats_history(answer, clean, history)
                 or _unrequested_link_repeated(answer, clean)
@@ -1013,7 +1024,12 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                     or _reply_repeats_history(answer, clean, history)
                     or _unrequested_link_repeated(answer, clean)
                     or _reasks_known_customer_data(answer, ctx, history)):
-                return _native_safe_fallback(clean, ctx, history)
+                unsafe = bool(BAD_CLAIM.search(answer)
+                              or _CAMPAIGN_UNVERIFIED_ACTION.search(answer)
+                              or _CAMPAIGN_SENSITIVE_REQUEST.search(answer))
+                return _native_safe_fallback(
+                    clean, ctx, history, unverified_action=unsafe
+                )
             answer = _native_reception_guard(clean, answer, history)
         return answer
     except Exception:

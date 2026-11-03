@@ -840,6 +840,10 @@ def _campaign_location_reply(ctx: dict) -> str:
     facts = ctx.get("property_facts") or {}
     comuna = facts.get("comuna") or "San Miguel"
     ref = facts.get("direccion_referencial")
+    # A reference that already includes a house number is an address, not
+    # an area reference. Never repeat it as a safe approximation.
+    if isinstance(ref, str) and re.search(r"\b\d{3,5}\b", ref):
+        ref = None
     if ref:
         return (
             f"Está en el sector de {ref}, en {comuna}. "
@@ -864,11 +868,17 @@ def _campaign_location_guard(answer: str, ctx: dict) -> str:
         if len(token) > 3
     ]
     normalized = _plain(answer)
-    if (
-        number_tokens and street_words
-        and any(re.search(r"\b" + re.escape(n) + r"\b", normalized)
-                for n in number_tokens)
-        and all(w in normalized for w in street_words[:2])
+    contains_number = any(
+        re.search(r"\b" + re.escape(n) + r"\b", normalized)
+        for n in number_tokens
+    )
+    location_context = any(word in normalized for word in (
+        "direccion", "ubicacion", "avenida", "calle", "septima",
+        "depto", "dpto", "departamento", "numero", "av."
+    ))
+    if contains_number and (
+        location_context
+        or (street_words and all(w in normalized for w in street_words[:2]))
     ):
         return _campaign_location_reply(ctx)
     return answer

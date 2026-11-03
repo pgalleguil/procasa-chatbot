@@ -1764,9 +1764,11 @@ def test_live_v8_no_unverified_apartment_number_in_realistic_reply(isolated):
             "respuesta_bot": raw,
         },
     )
-    assert "Séptima Avenida 1370. Tiene" in answer
+    assert "Séptima Avenida 1370" not in answer
+    assert "1370" not in answer
     assert "departamento 68" not in answer
-    assert "2 dormitorios" in answer
+    assert "San Miguel" in answer
+    assert "ubicación exacta" in answer or "dirección exacta" in answer
 
 
 def test_explicit_prop360_unit_can_be_named(isolated):
@@ -1784,3 +1786,242 @@ def test_explicit_prop360_unit_can_be_named(isolated):
     assert "departamento 69" not in _sanitize_unverified_unit(
         "Está en Séptima Avenida 1370, departamento 69.", ctx
     )
+
+
+@pytest.mark.parametrize("query", [
+    "Tienes la direccion exacta?",
+    "Yvla direcion exacta",
+    "¿Dónde queda el departamento?",
+])
+def test_campaign_location_shows_area_not_street_number(isolated, query):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370 68",
+        "direccion_referencial": "Séptima Avenida - Tercera Transversal",
+        "comuna": "San Miguel",
+        "unidad": None,
+    }
+    ctx = load_test_context(db, PHONE)
+    answer = build_native_pilot_reply(
+        query, ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("A verified area is answered without the model")
+        ),
+    )
+    assert "Séptima Avenida - Tercera Transversal" in answer
+    assert "San Miguel" in answer
+    assert "1370" not in answer and "departamento 68" not in answer
+
+
+def test_campaign_acknowledges_address_and_commission_objection(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    ctx = load_test_context(db, PHONE)
+    answer = build_native_pilot_reply(
+        "Mo deberias darme la direccion porque iria sin corredor y sin pagar 2% de comision",
+        ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Address objection should not need the LLM")
+        ),
+    )
+    assert "Entiendo" in answer
+    assert "corretaje" in answer
+    assert "2%" not in answer
+    assert "no quiero darte información" not in answer
+
+
+def test_campaign_guards_exact_address_leaked_by_dialogue_history(isolated):
+    from chatbot.price_drop_pilot_isolation import (
+        build_native_pilot_reply, _build_native_campaign_messages,
+    )
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370 68",
+        "direccion_referencial": "Séptima Avenida - Tercera Transversal",
+        "comuna": "San Miguel",
+        "unidad": None,
+    }
+    ctx = load_test_context(db, PHONE)
+    history = [{
+        "customer_text": "¿Y la dirección exacta?",
+        "bot_text": "En Séptima Avenida 1370, departamento 68.",
+    }]
+    msgs = _build_native_campaign_messages(
+        "¿Cómo es el sector?", ctx, history
+    )
+    assert "dirección publicada (texto literal)" not in msgs[1]["content"]
+    assert "1370" not in msgs[1]["content"]
+    answer = build_native_pilot_reply(
+        "¿Cómo es el sector?", ctx, history,
+        generator=lambda *_a, **_k: {
+            "intencion": "consulta_general", "datos_extraidos": {},
+            "respuesta_bot": "Está en Séptima Avenida 1370, departamento 68.",
+        },
+    )
+    assert "1370" not in answer
+    assert "departamento 68" not in answer
+    assert "Tercera Transversal" in answer
+
+
+@pytest.mark.parametrize("customer", [
+    "Tienes la direccion exacta?",
+    "Yvla direcion exacta",
+    "¿Dónde queda?",
+    "¿Cuál es la ubicación?",
+    "¿En qué calle está?",
+    "Mo deberias darme la direccion porque sino yo iria solo sin corresro y sin pagar comision",
+])
+def test_v8_campaign_location_objections_never_reveal_street_number(
+    isolated, customer
+):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370 68",
+        "unidad": None,
+        "direccion_referencial": "Séptima Avenida - Tercera Transversal",
+        "comuna": "San Miguel",
+    }
+    ctx = load_test_context(db, PHONE)
+    reply = build_native_pilot_reply(
+        customer, ctx, [],
+        generator=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("Location/objection should not require the model")
+        ),
+    )
+    assert "1370" not in reply
+    assert "departamento 68" not in reply.lower()
+    assert ("sector" in reply.lower() or
+            "dirección exacta" in reply.lower())
+    assert "San Miguel" in reply or "corretaje" in reply
+
+
+@pytest.mark.parametrize("model_reply", [
+    "La propiedad está en Séptima Avenida 1370, departamento 68, San Miguel.",
+    "Claro, es Séptima Avenida 1370 68, piso 6.",
+    "Se ubica en Séptima Avenida 1370, dpto 68. Te leo.",
+    "Está en Av. Séptima 1370, en San Miguel.",
+    "La dirección es Av. Séptima 1370.",
+    "El número es 1370, justo cerca de la transversal.",
+])
+def test_v8_model_cannot_repeat_address_from_previous_customer_turn(
+    isolated, model_reply
+):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370 68",
+        "unidad": None,
+        "direccion_referencial": "Séptima Avenida - Tercera Transversal",
+        "comuna": "San Miguel",
+    }
+    ctx = load_test_context(db, PHONE)
+    prior = [
+        {"customer_text": "Tienes la direccion exacta?",
+         "bot_text": "La dirección es Séptima Avenida 1370, departamento 68."},
+    ]
+    reply = build_native_pilot_reply(
+        "Comentame no recuerdonesa casa", ctx, prior,
+        generator=lambda *_args, **_kwargs: {
+            "intencion": "consulta_general",
+            "datos_extraidos": {},
+            "respuesta_bot": model_reply,
+        },
+    )
+    assert "1370" not in reply
+    assert "departamento 68" not in reply.lower()
+    assert "Tercera Transversal" in reply
+    assert "San Miguel" in reply
+
+
+def test_v8_location_without_reference_discloses_only_commune(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370 68", "unidad": None,
+        "comuna": "San Miguel",
+    }
+    ctx = load_test_context(db, PHONE)
+    reply = build_native_pilot_reply(
+        "La direccion por favor", ctx, [],
+        generator=lambda *_args, **_kwargs: (
+            _ for _ in ()
+        ).throw(AssertionError("Must not call LLM")),
+    )
+    assert "San Miguel" in reply
+    assert "1370" not in reply
+
+
+def test_v8_real_whatsapp_ten_turn_replay_avoids_old_address_and_crm(
+    isolated, monkeypatch
+):
+    from chatbot import grok_client
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370 68",
+        "unidad": None,
+        "direccion_referencial": "Séptima Avenida - Tercera Transversal",
+        "comuna": "San Miguel",
+    }
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-no-network")
+    sender, outgoing = sender_spy()
+
+    def fake_model(messages, *_args, **_kwargs):
+        # Adversarial imitation of the V8 mistake in the exact channel.
+        return {"intencion": "consulta_general", "datos_extraidos": {},
+                "respuesta_bot": (
+                    "Claro, el departamento está en Séptima Avenida 1370, "
+                    "departamento 68. Tiene 2 dormitorios y 2 baños."
+                )}
+    monkeypatch.setattr(
+        grok_client, "generar_respuesta_estructurada", fake_model
+    )
+    replay = [
+        "Comentame no recuerdonesa casa",
+        "Si lonrecuerdo en realidad tengo un presupuesto menos aceptabofertas?",
+        "Cual es su orientacion",
+        "Tienes la direccion exacta?",
+        "Mo deberias darme la direccion porque sino yo iria solo sin corresro y sinnpagar por 2% de comision",
+        "Me interesa visidtarlo",
+        "El fin de semana dependie dipobibilidsd de ustedes durante en la mañana",
+        "Me puedes dar el teléfono del propietario",
+        "Ybel nombre de propietario",
+        "Yvla direcion exacta",
+    ]
+    for i, customer in enumerate(replay):
+        result = process_test_inbound(
+            db, PHONE, f"v8-live-history-address-fix-{i}", customer,
+            sender=sender,
+        )
+        assert result["status"] == "test_reply_sent"
+        assert "1370" not in outgoing[-1][1]
+        assert "departamento 68" not in outgoing[-1][1].lower()
+    assert len(outgoing) == len(replay)
+    assert len(db["crm_price_drop_pilot_test_turns_v1"].docs) == len(replay)
+    assert set(db) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+def test_v8_numbered_location_reference_never_leaks_address(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "calle": "Séptima Avenida 1370 68",
+        "direccion_referencial": "Séptima Avenida 1370 - Tercera Transversal",
+        "comuna": "San Miguel",
+        "unidad": None,
+    }
+    ctx = load_test_context(db, PHONE)
+    output = build_native_pilot_reply(
+        "¿Dónde queda?", ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Address query should not invoke model")
+        ),
+    )
+    assert "San Miguel" in output
+    assert "1370" not in output
+    assert "sector de Séptima Avenida 1370" not in output

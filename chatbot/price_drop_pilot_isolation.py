@@ -360,14 +360,11 @@ def _formatted_facts(facts: dict) -> str:
         items.append("piscina según ficha")
     if facts.get("parrillas_ficha"):
         items.append("parrillas mencionadas en ficha (detalles de quinchos por confirmar)")
-    if facts.get("calle_publicada"):
-        items.append(f"dirección publicada (texto literal): {facts['calle_publicada']}")
-    elif facts.get("direccion_referencial"):
+    if facts.get("direccion_referencial"):
         items.append(f"referencia de ubicación: {facts['direccion_referencial']}")
-    if facts.get("unidad_verificada"):
-        items.append(f"unidad verificada: {facts['unidad_verificada']}")
-    else:
-        items.append("número de unidad/departamento no confirmado")
+    elif facts.get("comuna"):
+        items.append(f"comuna: {facts['comuna']}")
+    # Do not expose exact street/door/apartment number in outreach replies.
     if facts.get("terraza"):
         items.append("terraza según ficha")
     if facts.get("mascotas_ficha"):
@@ -838,6 +835,55 @@ def _sanitize_unverified_unit(answer: str, ctx: dict) -> str:
     return pattern.sub(strip_claim, answer)
 
 
+def _campaign_location_reply(ctx: dict) -> str:
+    """Give a verified area reference, not a street or apartment number."""
+    facts = ctx.get("property_facts") or {}
+    comuna = facts.get("comuna") or "San Miguel"
+    ref = facts.get("direccion_referencial")
+    # A reference that already includes a house number is an address, not
+    # an area reference. Never repeat it as a safe approximation.
+    if isinstance(ref, str) and re.search(r"\b\d{3,5}\b", ref):
+        ref = None
+    if ref:
+        return (
+            f"Está en el sector de {ref}, en {comuna}. "
+            "La dirección exacta se confirma al coordinar una visita."
+        )
+    return (
+        f"Está en {comuna}. La ubicación exacta se confirma "
+        "al coordinar una visita."
+    )
+
+
+def _campaign_location_guard(answer: str, ctx: dict) -> str:
+    """History may contain previously leaked addresses; never repeat them."""
+    street = str(
+        (ctx.get("property_facts") or {}).get("calle_publicada") or ""
+    ).strip()
+    if not street:
+        return answer
+    number_tokens = re.findall(r"\b\d{3,5}\b", street)
+    street_words = [
+        token for token in _plain(re.sub(r"\d+", "", street)).split()
+        if len(token) > 3
+    ]
+    normalized = _plain(answer)
+    contains_number = any(
+        re.search(r"\b" + re.escape(n) + r"\b", normalized)
+        for n in number_tokens
+    )
+    location_context = any(word in normalized for word in (
+        "direccion", "ubicacion", "avenida", "calle", "septima",
+        "depto", "dpto", "departamento", "numero", "av."
+    ))
+    if contains_number and (
+        location_context
+        or (street_words and all(w in normalized for w in street_words[:2]))
+    ):
+        return _campaign_location_reply(ctx)
+    return answer
+
+
 def _native_reception_guard(message: str, answer: str, history: list[dict]) -> str:
     """Correct high-risk repetitive/generic replies before WhatsApp delivery."""
     if _GREETING.fullmatch(message) and any(_GREETING.fullmatch(str(t.get("customer_text") or "")) for t in history[-8:]):
@@ -938,6 +984,10 @@ def _build_native_campaign_messages(message: str, ctx: dict,
         "exista trazabilidad suficiente de esa misma propiedad y lead. "
         f"Nombre confirmado por el propio cliente: {known_name or 'no informado'}. "
         "No inventes nombres ni detalles personales. "
+        "Por resguardo de la gestión comercial, entrega únicamente la "
+        "referencia de ubicación o sector, NUNCA calle con numeración "
+        "exacta ni unidad, incluso si aparecen en diálogos anteriores. "
+        "La dirección exacta se confirma al coordinar una visita. "
         "En Prop360 la calle puede terminar con números que NO identifican "
         "una unidad. Nunca deduzcas el número de departamento del texto "
         "de calle si no está la unidad verificada por separado. "
@@ -1012,6 +1062,16 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                 else "Todavía no me has indicado tu nombre.")
     if "no habia consultado" in _plain(clean):
         return "Perdona la confusión. No tengo aquí una consulta anterior verificada. Si no deseas más mensajes, puedes indicárnoslo."
+    plain = _plain(clean)
+    if "deberias darme la direccion" in plain or "sin corredor" in plain:
+        return (
+            "Entiendo tu observación. Por este canal puedo indicarte el sector, "
+            "pero la dirección exacta se confirma al coordinar una visita. "
+            "Las condiciones de corretaje también se deben confirmar con "
+            "el corredor antes de cualquier gestión."
+        )
+    if ADDRESS.search(clean) or "direcion" in plain or "dirrecion" in plain:
+        return _campaign_location_reply(ctx)
     introduced, _ = _customer_introduction(clean)
     if introduced and _plain(clean).startswith(("hola", "buenas")) and len(clean) < 55:
         return f"¡Hola, {introduced}! 😊 Gracias por responder al aviso."
@@ -1061,9 +1121,9 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
             return _native_safe_fallback(
                 clean, ctx, history, unverified_action=unsafe
             )
-        answer = _sanitize_unverified_unit(
+        answer = _campaign_location_guard(_sanitize_unverified_unit(
             _native_reception_guard(clean, answer, history), ctx
-        )
+        ), ctx)
         if (_reply_repeats_history(answer, clean, history)
                 or _unrequested_link_repeated(answer, clean)
                 or _reasks_known_customer_data(answer, ctx, history)):
@@ -1091,9 +1151,9 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                 return _native_safe_fallback(
                     clean, ctx, history, unverified_action=unsafe
                 )
-            answer = _sanitize_unverified_unit(
+            answer = _campaign_location_guard(_sanitize_unverified_unit(
                 _native_reception_guard(clean, answer, history), ctx
-            )
+            ), ctx)
         return answer
     except Exception:
         logger.exception("[PRICE_DROP_TEST] native commercial generator unavailable")

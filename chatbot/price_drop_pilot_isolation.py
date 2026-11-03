@@ -272,6 +272,8 @@ def _visit_reply(message: str, ctx: dict, history: list[dict]) -> str | None:
                 continue
         choice[key] = value
     day = choice.get("day")
+    if day:
+        day = day.replace("sabado", "sábado").replace("miercoles", "miércoles")
     time = choice.get("time")
     period = choice.get("period")
     code = ctx["property_code"]
@@ -1085,6 +1087,9 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
             plain,
         ))
         visit_answer = _native_visit_time_answer(clean, history)
+        if visit_answer is None and VISIT.search(clean):
+            # A visit request without both day and time must still advance.
+            visit_answer = _visit_reply(clean, ctx, history)
         if visit_answer is not None:
             return (
                 visit_answer if location_declined

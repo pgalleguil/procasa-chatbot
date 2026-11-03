@@ -340,7 +340,14 @@ def reclassify(pilot_path: Path, xlsx_path: Path, output_dir: Path, baseline_csv
         "estimated_peak_cost_usd_saved": round(cost_all - cost_ambiguous, 6),
         "cost_estimate_method": "4 characters/token approximation; 500 output tokens/call; DeepSeek Flash peak cache-miss rates ($0.30/M input, $1.20/M output); not a charge",
         "cost_source": "https://api-docs.deepseek.com/quick_start/pricing/",
-        "deepseek_policy": {"api_called": False, "routing_mode": "simulation", "configured_default_max_calls_per_session": 0},
+        "deepseek_policy": {
+            "api_called": False, "routing_mode": "simulation",
+            "configured_default_max_calls_per_session": 0,
+            "configured_default_max_budget_usd_per_session": 0.0,
+            "ambiguous_routes_blocked_by_zero_budget": sum(
+                bool(item["classification_new"].get("deepseek_budget_exhausted")) for item in simulated_candidates
+            ),
+        },
         "changed_classification_count": len(changed),
         "classification_transition_counts": {
             f"{old} -> {new}": count

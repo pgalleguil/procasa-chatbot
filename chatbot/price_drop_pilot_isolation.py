@@ -362,12 +362,12 @@ def _formatted_facts(facts: dict) -> str:
         items.append("parrillas mencionadas en ficha (detalles de quinchos por confirmar)")
     if facts.get("calle_publicada"):
         items.append(f"dirección publicada (texto literal): {facts['calle_publicada']}")
+    elif facts.get("direccion_referencial"):
+        items.append(f"referencia de ubicación: {facts['direccion_referencial']}")
     if facts.get("unidad_verificada"):
         items.append(f"unidad verificada: {facts['unidad_verificada']}")
     else:
         items.append("número de unidad/departamento no confirmado")
-    elif facts.get("direccion_referencial"):
-        items.append(f"referencia de ubicación: {facts['direccion_referencial']}")
     if facts.get("terraza"):
         items.append("terraza según ficha")
     if facts.get("mascotas_ficha"):

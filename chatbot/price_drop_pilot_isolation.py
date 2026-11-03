@@ -370,6 +370,31 @@ def is_test_phone(phone: str) -> bool:
     return _enabled_for_phone(phone)
 
 
+def _verified_discount_date(prop: dict, old: float, new: float) -> str | None:
+    """Only matching audited Prop360 changes can supply the discount date."""
+    months = ("enero", "febrero", "marzo", "abril", "mayo", "junio",
+              "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+    matching = []
+    for change in prop.get("historial_cambios") or []:
+        if not isinstance(change, dict):
+            continue
+        if change.get("campo") != "precio_uf" or change.get("fuente") != "prop360_bitacora":
+            continue
+        before, after = _money(change.get("valor_anterior")), _money(change.get("valor_nuevo"))
+        if before is None or after is None or abs(before - old) > 0.01 or abs(after - new) > 0.01:
+            continue
+        try:
+            occurred = datetime.fromisoformat(str(change.get("fecha") or ""))
+        except ValueError:
+            continue
+        if occurred.tzinfo and occurred.astimezone(timezone.utc) <= datetime.now(timezone.utc):
+            matching.append(occurred)
+    if not matching:
+        return None
+    d = max(matching)
+    return f"{d.day} de {months[d.month - 1]} de {d.year}"
+
+
 def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> dict | None:
     """Resolve *only* a verified test send; never inspect the leads collection."""
     if not is_test_phone(phone):

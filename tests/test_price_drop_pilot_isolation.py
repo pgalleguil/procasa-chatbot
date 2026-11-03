@@ -1020,6 +1020,10 @@ def test_native_pilot_uses_real_production_commercial_generator_and_outreach_his
     isolated, monkeypatch
 ):
     """No second bot: identical structured generator, isolated context only."""
+    # The CI environment intentionally has no provider credentials.
+    # A dummy SDK key allows import; the generator is monkeypatched below,
+    # so these regression tests never call any remote model.
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-dummy-key-no-network")
     from chatbot import grok_client
     db = _full_pilot_db()
     send, sent = sender_spy()
@@ -1056,6 +1060,10 @@ def test_native_pilot_uses_real_production_commercial_generator_and_outreach_his
 def test_native_pilot_replays_real_whatsapp_dialogue_with_full_context(
     isolated, monkeypatch
 ):
+    # The CI environment intentionally has no provider credentials.
+    # A dummy SDK key allows import; the generator is monkeypatched below,
+    # so these regression tests never call any remote model.
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-dummy-key-no-network")
     from chatbot import grok_client
     db = _full_pilot_db()
     send, sent = sender_spy()
@@ -1102,6 +1110,10 @@ def test_native_pilot_replays_real_whatsapp_dialogue_with_full_context(
 def test_native_pilot_remembers_name_without_reading_live_leads(
     isolated, monkeypatch
 ):
+    # The CI environment intentionally has no provider credentials.
+    # A dummy SDK key allows import; the generator is monkeypatched below,
+    # so these regression tests never call any remote model.
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-dummy-key-no-network")
     from chatbot import grok_client
     db = _full_pilot_db()
     sender, sent = sender_spy()
@@ -1126,6 +1138,10 @@ def test_native_pilot_remembers_name_without_reading_live_leads(
 def test_native_pilot_blocks_unverified_operations_and_sensitive_requests(
     isolated, monkeypatch
 ):
+    # The CI environment intentionally has no provider credentials.
+    # A dummy SDK key allows import; the generator is monkeypatched below,
+    # so these regression tests never call any remote model.
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-dummy-key-no-network")
     from chatbot import grok_client
     db = _full_pilot_db()
     sender, sent = sender_spy()
@@ -1156,6 +1172,10 @@ def test_native_pilot_blocks_unverified_operations_and_sensitive_requests(
 def test_native_pilot_is_opt_in_and_unrelated_phones_never_invoke_generator(
     isolated, monkeypatch
 ):
+    # The CI environment intentionally has no provider credentials.
+    # A dummy SDK key allows import; the generator is monkeypatched below,
+    # so these regression tests never call any remote model.
+    monkeypatch.setenv("OPENAI_API_KEY", "ci-test-dummy-key-no-network")
     from chatbot import grok_client
     db = _full_pilot_db()
     sender, sent = sender_spy()

@@ -332,6 +332,11 @@ def _verified_property_facts(prop: dict) -> dict:
             if (isinstance(value, str) and 2 <= len(value.strip()) <= 120
                 and not any(ch in value for ch in ("\n", "\r", "<", ">"))):
                 facts[target] = value.strip()
+        unit = location.get("unidad")
+        if isinstance(unit, (str, int)) and not isinstance(unit, bool):
+            unit_text = str(unit).strip()
+            if re.fullmatch(r"[A-Za-z0-9-]{1,12}", unit_text):
+                facts["unidad_verificada"] = unit_text
     expenses = _money(operation.get("gastos_comunes"))
     if expenses is not None and expenses < 100000000:
         facts["gastos_comunes_clp"] = int(expenses)
@@ -356,7 +361,11 @@ def _formatted_facts(facts: dict) -> str:
     if facts.get("parrillas_ficha"):
         items.append("parrillas mencionadas en ficha (detalles de quinchos por confirmar)")
     if facts.get("calle_publicada"):
-        items.append(f"dirección publicada: {facts['calle_publicada']}")
+        items.append(f"dirección publicada (texto literal): {facts['calle_publicada']}")
+    if facts.get("unidad_verificada"):
+        items.append(f"unidad verificada: {facts['unidad_verificada']}")
+    else:
+        items.append("número de unidad/departamento no confirmado")
     elif facts.get("direccion_referencial"):
         items.append(f"referencia de ubicación: {facts['direccion_referencial']}")
     if facts.get("terraza"):
@@ -445,7 +454,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
          "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
          "caracteristicas.orientacion": 1, "caracteristicas.features": 1,
          "ubicacion.calle": 1, "ubicacion.direccion_referencial": 1,
-         "ubicacion.comuna": 1, "historial_cambios": 1},
+         "ubicacion.comuna": 1, "ubicacion.unidad": 1, "historial_cambios": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
@@ -809,6 +818,26 @@ def _native_safe_fallback(message: str, ctx: dict, history: list[dict],
     )
 
 
+def _sanitize_unverified_unit(answer: str, ctx: dict) -> str:
+    """Remove unsupported unit labels; never infer from a street number."""
+    verified = str(
+        (ctx.get("property_facts") or {}).get("unidad_verificada") or ""
+    ).strip()
+    pattern = re.compile(
+        r"(?P<comma>,\s*)?(?P<kind>departamento|depto\.?|dpto\.?|unidad)"
+        r"\s+(?:n[°º]\s*)?(?P<num>\d{1,3})\b", re.I
+    )
+
+    def strip_claim(match):
+        if verified and match.group("num") == verified:
+            return match.group(0)
+        if match.group("comma"):
+            return ""
+        return "departamento" if match.group("kind").lower().startswith(("dep", "dpto")) else "unidad"
+
+    return pattern.sub(strip_claim, answer)
+
+
 def _native_reception_guard(message: str, answer: str, history: list[dict]) -> str:
     """Correct high-risk repetitive/generic replies before WhatsApp delivery."""
     if _GREETING.fullmatch(message) and any(_GREETING.fullmatch(str(t.get("customer_text") or "")) for t in history[-8:]):
@@ -909,6 +938,9 @@ def _build_native_campaign_messages(message: str, ctx: dict,
         "exista trazabilidad suficiente de esa misma propiedad y lead. "
         f"Nombre confirmado por el propio cliente: {known_name or 'no informado'}. "
         "No inventes nombres ni detalles personales. "
+        "En Prop360 la calle puede terminar con números que NO identifican "
+        "una unidad. Nunca deduzcas el número de departamento del texto "
+        "de calle si no está la unidad verificada por separado. "
         "NO solicites RUT, nombre, correo ni teléfono; acepta el nombre si lo "
         "entrega espontáneamente. Si quiere una visita, puedes preguntar "
         "día u horario faltante, pero no confirmes disponibilidad ni digas que "
@@ -1029,7 +1061,9 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
             return _native_safe_fallback(
                 clean, ctx, history, unverified_action=unsafe
             )
-        answer = _native_reception_guard(clean, answer, history)
+        answer = _sanitize_unverified_unit(
+            _native_reception_guard(clean, answer, history), ctx
+        )
         if (_reply_repeats_history(answer, clean, history)
                 or _unrequested_link_repeated(answer, clean)
                 or _reasks_known_customer_data(answer, ctx, history)):
@@ -1057,7 +1091,9 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                 return _native_safe_fallback(
                     clean, ctx, history, unverified_action=unsafe
                 )
-            answer = _native_reception_guard(clean, answer, history)
+            answer = _sanitize_unverified_unit(
+                _native_reception_guard(clean, answer, history), ctx
+            )
         return answer
     except Exception:
         logger.exception("[PRICE_DROP_TEST] native commercial generator unavailable")

@@ -777,6 +777,9 @@ def _native_visit_time_answer(message: str, history: list[dict]) -> str | None:
     day, time = parts.get("day"), parts.get("time")
     if not day or not time:
         return None
+    # _visit_parts parses normalized weekday tokens; restore Spanish accents
+    # in outbound WhatsApp without changing the stored scheduling preference.
+    day = day.replace("sabado", "sábado").replace("miercoles", "miércoles")
     if " o " in time:
         # Never transform two alternatives into a continuous interval.
         time = time.replace(" o ", " o a las ")

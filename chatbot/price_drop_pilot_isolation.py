@@ -718,7 +718,7 @@ def _native_verified_answer(message: str, ctx: dict) -> str | None:
             f"equivalente a un {percentage:.2f}% de rebaja."
         ).replace(f"{percentage:.2f}%", f"{percentage:.2f}".replace(".", ",") + "%")
     if re.search(
-        r"\b(?:cuanto (?:cuesta|sale|vale) (?:ahora|hoy)?|"
+        r"\b(?:cuanto (?:cuesta|sale|vale)(?: (?:ahora|hoy))?|"
         r"precio actual|precio de ahora|en cuanto quedo|"
         r"cuanto esta ahora|valor actual)\b", plain
     ):

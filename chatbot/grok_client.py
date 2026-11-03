@@ -302,7 +302,26 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
 
         if not contenido_json_str:
             raise ValueError("Respuesta vacia del modelo")
-        datos = json.loads(contenido_json_str)
+        try:
+            datos = json.loads(contenido_json_str)
+        except json.JSONDecodeError:
+            if not is_price_drop_pilot:
+                raise
+            logger.warning("[PRICE_DROP_PILOT_JSON] invalid output, retry once")
+            again = client.chat.completions.create(
+                model=Config.DEEPSEEK_MODEL_REASONER,
+                messages=[*structured_messages[:-1], {
+                    "role": "system", "content": (
+                        "Responde solamente un objeto JSON válido con los campos "
+                        "intencion, respuesta_bot y datos_extraidos. "
+                        "No inventes información no verificada."
+                    )}, structured_messages[-1]],
+                temperature=Config.DEEPSEEK_TEMPERATURE,
+                max_tokens=Config.DEEPSEEK_MAX_TOKENS_REASONER,
+                timeout=Config.DEEPSEEK_TIMEOUT_REASONER,
+                response_format={"type": "json_object"},
+            )
+            datos = json.loads((again.choices[0].message.content or "").strip())
 
         if write_telemetry:
             _record_llm_telemetry(

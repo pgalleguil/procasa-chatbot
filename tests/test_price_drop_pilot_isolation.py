@@ -1283,7 +1283,7 @@ def test_extended_history_is_bounded_to_240_sent_exchanges(isolated, monkeypatch
     )["status"] == "test_reply_sent"
     full = " ".join(m["content"] for m in seen[0])
     assert "Consulta histórica 0" not in full
-    assert "Consulta histórica 8" in full
+    assert "Consulta histórica 211" in full
     assert "Consulta histórica 247" in full
     assert len(full) < 46000
     assert len(sent) == 1

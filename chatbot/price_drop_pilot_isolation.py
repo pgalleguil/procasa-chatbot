@@ -1070,7 +1070,34 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
             "Las condiciones de corretaje también se deben confirmar con "
             "el corredor antes de cualquier gestión."
         )
-    if ADDRESS.search(clean) or "direcion" in plain or "dirrecion" in plain:
+    location_mentioned = bool(
+        ADDRESS.search(clean) or "direcion" in plain or "dirrecion" in plain
+    )
+    if location_mentioned:
+        # Mentioning an address is not always a request to receive it again.
+        # Give precedence to a simultaneous visit preference or fact question.
+        location_declined = bool(re.search(
+            r"\\b(?:no (?:me )?(?:repitas?|digas?|mandes?)|sin repetir)\\b"
+            r".{0,45}\\b(?:direccion|ubicacion|calle)\\b",
+            plain,
+        ))
+        visit_answer = _native_visit_time_answer(clean, history)
+        if visit_answer is not None:
+            return (
+                visit_answer if location_declined
+                else f"{_campaign_location_reply(ctx)} {visit_answer}"
+            )
+        fact_answer = _native_verified_answer(clean, ctx)
+        if fact_answer is not None:
+            return (
+                fact_answer if location_declined
+                else f"{_campaign_location_reply(ctx)} {fact_answer}"
+            )
+        if location_declined:
+            return (
+                "Entiendo, no volveré a repetirte la ubicación. "
+                "¿Qué otra duda tienes sobre el departamento?"
+            )
         return _campaign_location_reply(ctx)
     introduced, _ = _customer_introduction(clean)
     if introduced and _plain(clean).startswith(("hola", "buenas")) and len(clean) < 55:

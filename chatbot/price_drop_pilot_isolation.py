@@ -642,6 +642,16 @@ def _normalize_reply_for_comparison(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", _plain(value)))
 
 
+def _unrequested_link_repeated(reply: str, customer_message: str) -> bool:
+    """Do not resend the campaign's URL in a routine reply to a greeting."""
+    plain = _plain(customer_message)
+    if any(word in plain for word in (
+        "enlace", "link", "url", "publicacion", "mandame la pagina"
+    )):
+        return False
+    return "https://www.procasa.cl/" in reply.casefold()
+
+
 def _reply_repeats_history(reply: str, current_message: str,
                            history: list[dict]) -> bool:
     """Reject near-verbatim canned echoes unless a fact was asked again."""
@@ -847,6 +857,7 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                 or _CAMPAIGN_SENSITIVE_REQUEST.search(answer)):
             return _safe_fallback(ctx)
         if (_reply_repeats_history(answer, clean, history)
+                or _unrequested_link_repeated(answer, clean)
                 or _reasks_known_customer_data(answer, ctx, history)):
             # One bounded attempt to repair repetition without generating a
             # second WhatsApp. Both calls are read-only; only final answer sends.
@@ -864,6 +875,7 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                     or _CAMPAIGN_UNVERIFIED_ACTION.search(answer)
                     or _CAMPAIGN_SENSITIVE_REQUEST.search(answer)
                     or _reply_repeats_history(answer, clean, history)
+                    or _unrequested_link_repeated(answer, clean)
                     or _reasks_known_customer_data(answer, ctx, history)):
                 return _safe_fallback(ctx)
         return answer

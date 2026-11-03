@@ -120,8 +120,8 @@ def _build_parser() -> argparse.ArgumentParser:
     export = subparsers.add_parser("export", help="Export CSV and summary for a batch")
     export.add_argument("--batch-id", required=True, help="Batch identifier")
 
-    pilot = subparsers.add_parser("pilot", help="Read-only Yapo Maipú sale-house pilot (3,000–6,000 UF)")
-    pilot.add_argument("--start-url", required=True, help="Yapo search URL with confirmed Maipú, sale and house filters")
+    pilot = subparsers.add_parser("pilot", help="Read-only compatibility adapter for one configured Yapo search URL")
+    pilot.add_argument("--start-url", required=True, help="Yapo search URL whose category, commune and filters are parsed and reverified")
     pilot.add_argument("--batch-id", default="", help="Optional batch identifier")
 
     return parser

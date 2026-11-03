@@ -4,7 +4,7 @@ import json
 import re
 import unicodedata
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
@@ -649,6 +649,7 @@ def discover_listing_urls(
     report: dict[str, Any] | None = None,
     config: AppConfig | None = None,
     proxy_manager: ProxyManager | None = None,
+    page_filter_validator: Callable[[str, str], dict[str, Any]] | None = None,
 ) -> list[dict]:
     config = config or AppConfig()
     config.ensure_layout()
@@ -658,7 +659,7 @@ def discover_listing_urls(
     seen_urls: set[str] = set()
     target_norm = {_norm_commune(value) for value in (target_communes or []) if value}
     report = report if report is not None else {}
-    report.update({"pages": [], "pagination_complete": True, "pagination_cause": "", "errors": [], "proxy_requests": 0, "request_attempts": 0, "successful_downloads": 0, "cache_responses": 0, "pagination_requests": []})
+    report.update({"pages": [], "pagination_complete": True, "pagination_cause": "", "errors": [], "proxy_requests": 0, "request_attempts": 0, "successful_downloads": 0, "cache_responses": 0, "pagination_requests": [], "selection_truncated": False, "selection_dropped_count": 0})
     if not start_urls:
         start_urls = build_default_start_urls(config)
 
@@ -741,6 +742,30 @@ def discover_listing_urls(
                 report["pagination_complete"] = False
                 report["pagination_cause"] = f"html_{validation['status'].lower()}"
                 break
+            filter_validation: dict[str, Any] = {"verified": True, "reason": "not_requested"}
+            if page_filter_validator is not None:
+                try:
+                    filter_validation = page_filter_validator(current_url, download.html)
+                except Exception as exc:
+                    filter_validation = {
+                        "verified": False,
+                        "reason": f"page_filter_validator_error:{type(exc).__name__}",
+                    }
+                if not filter_validation.get("verified"):
+                    report["pages"].append({
+                        "page_number": page_number,
+                        "url": current_url,
+                        "status": "filter_unverified",
+                        "http_status": download.status_code,
+                        "listing_count": None,
+                        "duplicate_count": None,
+                        "validation": validation["status"],
+                        "filter_validation": filter_validation,
+                    })
+                    report["pagination_complete"] = False
+                    report["pagination_cause"] = "search_filter_verification_failed"
+                    report["errors"].append(str(filter_validation.get("reason") or "search_filter_verification_failed"))
+                    break
             page_records, anchors_total, page_duplicates = _extract_listing_urls_detailed(download.html, current_url)
             page_new = 0
             duplicate_count = page_duplicates
@@ -755,18 +780,15 @@ def discover_listing_urls(
                     discovery_record["discovery_commune_evidence"] = _discovery_commune_evidence(
                         item.get("discovery_comuna", ""), target_norm
                     )
+                if max_urls is not None and len(discovered) >= max_urls:
+                    report["selection_truncated"] = True
+                    report["selection_dropped_count"] += 1
+                    continue
                 # Do not discard on card location. The detail page is the source
                 # used by the pilot to confirm the commune or leave it pending.
                 discovered.append({**discovery_record, "url": url, "source_search_url": start_url, "source_page_url": current_url, "page_number": page_number, "discovered_at": _utcnow(), "batch_id": batch_id})
                 page_new += 1
-                if max_urls is not None and len(discovered) >= max_urls:
-                    report["pages"].append({"page_number": page_number, "url": current_url, "status": "complete", "listing_count": len(page_records), "duplicate_count": duplicate_count, "new_count": page_new, "anchors_total": anchors_total})
-                    report["pagination_complete"] = False
-                    report["pagination_cause"] = "safety_max_urls_reached"
-                    if browser_navigator is not None:
-                        browser_navigator.close()
-                    return discovered
-            report["pages"].append({"page_number": page_number, "url": current_url, "status": "complete" if page_records else "empty", "listing_count": len(page_records), "duplicate_count": duplicate_count, "new_count": page_new, "anchors_total": anchors_total})
+            report["pages"].append({"page_number": page_number, "url": current_url, "status": "complete" if page_records else "empty", "listing_count": len(page_records), "duplicate_count": duplicate_count, "new_count": page_new, "anchors_total": anchors_total, "filter_validation": filter_validation, "html_path": str(download.html_path), "selection_truncated": bool(report["selection_truncated"])})
             next_url, terminal_verified, evidence = _pagination_state(download.html, current_url)
             report["pages"][-1]["pagination_evidence"] = evidence
             if next_url:

@@ -238,17 +238,17 @@ def test_same_yapo_id_with_historical_slug_change_is_deduplicated():
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("Maipú", "confirmed_maipu"),
-        ("Maipu", "confirmed_maipu"),
-        ("Maipú, Región Metropolitana", "confirmed_maipu"),
-        ("Maipú, Región Metropolitana, Pudahuel", "pending_ambiguous"),
+        ("Maipú", "confirmed_detail"),
+        ("Maipu", "confirmed_detail"),
+        ("Maipú, Región Metropolitana", "confirmed_detail"),
+        ("Maipú, Región Metropolitana, Pudahuel", "pending_conflicting_location_evidence"),
         ("", "pending"),
-        ("Maipú / Pudahuel", "pending_ambiguous"),
+        ("Maipú / Pudahuel", "pending_conflicting_location_evidence"),
         ("Talca", "confirmed_other_commune"),
     ],
 )
 def test_detail_commune_validation(value, expected):
-    assert _commune_validation(value) == expected
+    assert _commune_validation(value, "", "maipu", "region-metropolitana")[0] == expected
 
 
 @pytest.mark.parametrize(

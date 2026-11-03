@@ -10,11 +10,11 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 
 
-def test_pilot_is_utf8_complete_python_and_keeps_task1d_functions():
+def test_pilot_is_utf8_complete_python_and_exposes_the_general_engine():
     source = (ROOT / "pilot.py").read_bytes().decode("utf-8")
     tree = ast.parse(source, filename="pilot.py")
     functions = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
-    assert {"run_pilot", "_commune_validation", "_price_in_uf", "_matches_pilot_property_filters", "_extraction_issues"} <= functions
+    assert {"run_search", "run_pilot", "validate_listing_filters", "_commune_validation", "_extraction_issues"} <= functions
     compile(source, str(ROOT / "pilot.py"), "exec")
 
 
@@ -78,34 +78,50 @@ def test_pilot_uses_only_fake_read_only_mongo_and_never_calls_ai(tmp_path, monke
         def has_proxies(self):
             return True
 
-    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?operation=venta&q=bienes-raices-venta-de-propiedades-casas%7Cf_currency.CLF%7Cf_price.3000-6000&regionslug=maipu"
+    from scrapers.scraper_yapo.search_config import SearchConfig
 
-    def fake_discovery(*_args, report, **_kwargs):
+    search = SearchConfig(
+        region="Región Metropolitana", communes=("Maipú",), operation="venta",
+        property_type="casa", price_min=3000, price_max=6000,
+        price_currency="UF", live=True, output_dir=str(tmp_path), batch_id="offline-test",
+    )
+    start_url = search.start_urls()[0][0]
+    search_html = f'<html><head><link rel="canonical" href="{start_url}"></head><body>search</body></html>'
+
+    def fake_discovery(_urls, *, report, page_filter_validator, **_kwargs):
+        filter_validation = page_filter_validator(start_url, search_html)
         report.update({
             "pagination_complete": True,
             "pagination_cause": "portal_end_signal",
-            "pages": [{"url": start_url, "status": "complete", "listing_count": 1, "duplicate_count": 0}],
+            "pages": [{"url": start_url, "status": "complete", "listing_count": 1,
+                       "duplicate_count": 0, "filter_validation": filter_validation}],
             "request_attempts": 1,
             "successful_downloads": 1,
             "cache_responses": 0,
             "proxy_requests": 1,
         })
-        return [{"url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa/12345678", "page_number": 1, "discovery_comuna": "Maipú"}]
+        return [{"url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa/12345678",
+                 "page_number": 1, "discovery_comuna": "Maipú", "source_search_url": start_url}]
 
     monkeypatch.setattr(pilot, "ProxyManager", FakeProxyManager)
     monkeypatch.setattr(pilot, "discover_listing_urls", fake_discovery)
     monkeypatch.setattr(pilot, "MongoStore", FakeStore)
     monkeypatch.setattr(pilot, "html_path_for_url", lambda *_args, **_kwargs: SimpleNamespace(exists=lambda: False))
-    monkeypatch.setattr(pilot, "download_html", lambda *_args, **_kwargs: SimpleNamespace(fetch_source="cache", html="<html><body>ok</body></html>", blocked=False))
-    monkeypatch.setattr(pilot, "validate_html", lambda _html: {"status": "OK"})
+    monkeypatch.setattr(pilot, "download_html", lambda *_args, **_kwargs: SimpleNamespace(
+        fetch_source="cache", html="<html><body>ok</body></html>", blocked=False,
+        html_path=tmp_path / "detail.html",
+    ))
+    monkeypatch.setattr(pilot, "validate_html", lambda _html: {"status": "OK", "reason": "valid_html"})
     monkeypatch.setattr(pilot, "extract_listing_fields", lambda *_args, **_kwargs: {
         "title": "Casa en venta", "description": "Descripción completa", "price": "UF 4.000",
+        "price_value": "4000", "price_currency": "UF", "attributes": {},
         "comuna": "Maipú", "comuna_evidence": {"status": "confirmed_detail"},
         "seller_type": "", "contact_name": "", "contact_logo_alt": "",
     })
-    def rules_only(_fields):
-        return {"state": "INCIERTO", "evidence": [], "source": "rules_json"}
-    monkeypatch.setattr(pilot, "classify_with_routing", lambda *_args, **_kwargs: rules_only({}))
+    monkeypatch.setattr(pilot, "_enrich_property_fields", lambda fields, *_args, **_kwargs: fields)
+    monkeypatch.setattr(pilot, "classify_yapo_listing", lambda _fields: {
+        "state": "INCIERTO", "evidence": [], "source": "rules_json",
+    })
     monkeypatch.setattr(pilot, "_write_json", lambda *_args, **_kwargs: None)
     config = SimpleNamespace(
         ensure_layout=lambda: None,
@@ -113,14 +129,12 @@ def test_pilot_uses_only_fake_read_only_mongo_and_never_calls_ai(tmp_path, monke
         reports_dir=tmp_path,
         data_dir=tmp_path / "data",
         mongo_uri="mongodb://offline-mock",
+        uf_valor_clp=40000,
+        uf_fecha="2026-11-03",
     )
-    summary = pilot.run_pilot(
-        start_url,
-        config=config,
-        batch_id="offline-test",
-    )
+    summary = pilot.run_search(search, config=config)
     assert summary["mongo_dedup_status"] == "verified_read_only"
     assert summary["mongo_writes"] == 0
-    assert summary["calls_to_deepseek"] == 0
+    assert summary["deepseek_calls"] == 0
     assert writes == []
     assert summary["filter_matches"] == 1

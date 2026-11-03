@@ -115,6 +115,7 @@ class AppConfig:
     uf_fecha: str = field(
         default_factory=lambda: os.getenv("UF_FECHA", "2026-07-14")
     )
+    uf_source: str = field(default_factory=lambda: os.getenv("UF_SOURCE", ""))
     request_timeout_seconds: int = field(default_factory=lambda: _env_int("REQUEST_TIMEOUT_SECONDS", 25))
     user_agent: str = field(
         default_factory=lambda: os.getenv(

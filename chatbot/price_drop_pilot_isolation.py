@@ -530,14 +530,14 @@ def _llm_answer(message: str, ctx: dict, history: list[dict]) -> str:
 # persists CRM messages, lead fields and commercial notifications).
 NATIVE_PILOT_ENGINE_FLAG = "PRICE_DROP_PILOT_NATIVE_CONVERSATION"
 _CAMPAIGN_SENSITIVE_REQUEST = re.compile(
-    r"\b(?:enviame|env[ií]ame|mandame|m[aá]ndame|comp[aá]rteme)\\b.{0,35}"
-    r"\b(?:enlace|link|c[oó]digo|telefono|tel[eé]fono|rut|correo)\\b",
+    r"\b(?:enviame|env[ií]ame|mandame|m[aá]ndame|comp[aá]rteme)\b.{0,35}"
+    r"\b(?:enlace|link|c[oó]digo|telefono|tel[eé]fono|rut|correo)\b",
     re.I,
 )
 _CAMPAIGN_UNVERIFIED_ACTION = re.compile(
     r"\b(?:te (?:agend[eé]|reserv[eé]|inscrib[ií]|registr[eé])|"
     r"tu visita (?:qued[oó]|est[aá])|"
-    r"un ejecutivo (?:ya |te )?(?:avis[oó]|llamar[aá]|contactar[aá]))\\b",
+    r"un ejecutivo (?:ya |te )?(?:avis[oó]|llamar[aá]|contactar[aá]))\b",
     re.I,
 )
 

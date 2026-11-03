@@ -104,7 +104,8 @@ def generar_respuesta(messages: list, tipo: str = "prospecto", telemetry_context
 
 def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None,
                                     telemetry_context: dict | None = None, *,
-                                    write_telemetry: bool = True) -> dict:
+                                    write_telemetry: bool = True,
+                                    force_json_output: bool = False) -> dict:
     """
     Genera respuesta conversacional y extrae datos nuevos si el usuario los menciona.
     Combina el prompt de negocio + instrucciones de extracción.
@@ -237,7 +238,7 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         )
 
         kwargs = {}
-        if Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
+        if force_json_output or Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
             kwargs["response_format"] = {"type": "json_object"}
 
         response = client.chat.completions.create(

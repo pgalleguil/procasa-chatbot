@@ -96,6 +96,58 @@ def _jsonld_seller_name(soup: Any) -> tuple[str, str]:
     return "", ""
 
 
+def _jsonld_product_details(soup: Any) -> dict[str, Any]:
+    """Return the listing Product with an offer, used by Yapo's current detail UI."""
+    def walk(value: Any):
+        if isinstance(value, list):
+            for item in value:
+                yield from walk(item)
+        elif isinstance(value, dict):
+            yield value
+            for item in value.values():
+                if isinstance(item, (dict, list)):
+                    yield from walk(item)
+
+    for script in soup.select('script[type="application/ld+json"]'):
+        raw = script.string or script.get_text(strip=True)
+        if not raw:
+            continue
+        try:
+            payload = json.loads(raw)
+        except (TypeError, ValueError):
+            continue
+        for node in walk(payload):
+            types = node.get("@type", [])
+            types = types if isinstance(types, list) else [types]
+            type_names = {str(value).rstrip("/").rsplit("/", 1)[-1].lower() for value in types}
+            offers = node.get("offers")
+            if "product" in type_names and isinstance(offers, dict) and offers.get("price") is not None:
+                return node
+    return {}
+
+
+def _current_yapo_publisher(soup: Any) -> tuple[str, str]:
+    """Read the advertiser card introduced by Yapo's current detail template."""
+    for heading in soup.select("main h3"):
+        if _commune_key(heading.get_text(" ", strip=True)) != "publicado-por":
+            continue
+        card = heading.parent.parent if heading.parent and heading.parent.parent else heading.parent
+        if card is None:
+            continue
+        names = [node.get_text(" ", strip=True) for node in card.select("h4, [data-qa='publisher-name']")
+                 if _commune_key(node.get_text(" ", strip=True)) != "publicado-por"]
+        name = next((value for value in names if value), "")
+        logo = ""
+        for image in card.select("img[alt]"):
+            alt = str(image.get("alt") or "").strip()
+            if alt and ("logo" in alt.lower() or "foto de perfil" in alt.lower()):
+                logo = alt
+                break
+        if name:
+            return name, logo
+    return "", ""
+
+
 def _jsonld_name(soup: Any) -> str:
     """Compatibility wrapper; never returns a property or arbitrary JSON-LD name."""
     return _jsonld_seller_name(soup)[0]
@@ -184,6 +236,22 @@ def _description_from_soup(soup: Any) -> tuple[str, str, str, list[dict[str, Any
     candidates: list[tuple[int, str, str]] = []
     article_candidates: list[tuple[int, str, str]] = []
     seen_text: set[str] = set()
+    # Current Yapo pages render the complete description in a paragraph directly
+    # under the section headed "Descripción"; the old d3 selectors no longer match.
+    for heading in soup.select("main h2"):
+        if _commune_key(heading.get_text(" ", strip=True)) not in {"descripcion", "descripcion-del-anuncio"}:
+            continue
+        parent = heading.parent
+        if parent is None:
+            continue
+        direct = [child for child in parent.find_all(recursive=False) if child is not heading]
+        for node in direct:
+            if getattr(node, "name", "") not in {"p", "div"}:
+                continue
+            text = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
+            if text and text not in seen_text:
+                candidates.append((len(text), text, "yapo_detail_section_description"))
+                seen_text.add(text)
     for selector, source in selectors:
         for node in soup.select(selector):
             text = re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
@@ -191,6 +259,11 @@ def _description_from_soup(soup: Any) -> tuple[str, str, str, list[dict[str, Any
                 item = (len(text), text, source)
                 (article_candidates if source == "article" else candidates).append(item)
                 seen_text.add(text)
+    product = _jsonld_product_details(soup)
+    jsonld_description = re.sub(r"\s+", " ", str(product.get("description") or "")).strip()
+    if jsonld_description and jsonld_description not in seen_text:
+        candidates.append((len(jsonld_description), jsonld_description, "yapo_product_jsonld_description"))
+        seen_text.add(jsonld_description)
     if not candidates:
         candidates = article_candidates
     if candidates:
@@ -200,6 +273,10 @@ def _description_from_soup(soup: Any) -> tuple[str, str, str, list[dict[str, Any
         return full_text, full_source, "", [
             {"source": source, "length": length}
             for length, _text, source in sorted(candidates, reverse=True)
+        ]
+    if jsonld_description:
+        return jsonld_description, "yapo_product_jsonld_description", "", [
+            {"source": "yapo_product_jsonld_description", "length": len(jsonld_description)}
         ]
     meta_desc = soup.find("meta", attrs={"property": "og:description"}) or soup.find("meta", attrs={"name": "description"})
     if meta_desc and meta_desc.get("content"):
@@ -215,8 +292,22 @@ def _is_source_truncated(description: str, source: str, soup: Any) -> bool:
     text = description.strip().lower()
     if not text:
         return False
-    if any(hint in text for hint in DESCRIPTION_TRUNCATION_HINTS):
+    if re.search(r"(?:\.{3}|…|ver\s+m[aá]s|continuar\s+leyendo|leer\s+m[aá]s|mostrar\s+m[aá]s)\s*$", text):
         return True
+    if source == "yapo_detail_section_description":
+        for heading in soup.select("main h2") if soup is not None else []:
+            if _commune_key(heading.get_text(" ", strip=True)) == "descripcion":
+                section = heading.parent
+                if section is not None:
+                    if section.select_one("[aria-expanded='false'], [class*='line-clamp']"):
+                        return True
+                    if any(_commune_key(button.get_text(" ", strip=True)) in {
+                        "ver-mas", "continuar-leyendo", "leer-mas", "mostrar-mas",
+                    } for button in section.select("button, a[role='button']")):
+                        return True
+        return False
+    if source == "yapo_product_jsonld_description":
+        return False
     if source == "meta_description":
         # Meta descriptions are often summaries, not the full body.
         return True
@@ -301,6 +392,19 @@ def _structured_real_estate_localities(soup: Any) -> list[str]:
                 value = locality.get("content") or locality.get_text(" ", strip=True)
                 if value:
                     found.append(str(value).strip())
+    # Yapo's current JSON-LD uses Product -> offers -> availableAtOrFrom -> Place
+    # -> PostalAddress rather than a RealEstateListing top-level type.
+    product = _jsonld_product_details(soup)
+    offers = product.get("offers") if isinstance(product, dict) else None
+    place = offers.get("availableAtOrFrom") if isinstance(offers, dict) else None
+    address = place.get("address") if isinstance(place, dict) else None
+    if isinstance(address, dict):
+        address_types = address.get("@type", [])
+        address_types = address_types if isinstance(address_types, list) else [address_types]
+        if any(str(value).rstrip("/").rsplit("/", 1)[-1].lower() == "postaladdress" for value in address_types):
+            locality = address.get("addressLocality")
+            if isinstance(locality, str) and locality.strip():
+                found.append(locality.strip())
     return list(dict.fromkeys(found))
 
 
@@ -395,6 +499,7 @@ def extract_listing_fields(
         }
 
     soup = BeautifulSoup(html, parser)  # type: ignore[misc]
+    product_jsonld = _jsonld_product_details(soup)
     title, title_source = _first_text_with_source(soup, ["h1", ".d3-property-details__title", "[data-qa='title']", "title"])
     if not title:
         meta_title = soup.find("meta", attrs={"property": "og:title"}) or soup.find("meta", attrs={"name": "title"})
@@ -402,7 +507,12 @@ def extract_listing_fields(
             title = meta_title["content"].strip()
             title_source = "meta_title"
 
-    price = _first_text(soup, ["[data-qa='price']", ".d3-property-info__price", ".d3-property-insight__attribute-value", ".price", ".item-price", "strong.price", "span.price"])
+    offers = product_jsonld.get("offers") if isinstance(product_jsonld.get("offers"), dict) else {}
+    price_value = str(offers.get("price") or "").strip()
+    price_currency = str(offers.get("priceCurrency") or "").strip()
+    price = f"{price_value} {price_currency}".strip() if price_value else _first_text(
+        soup, ["[data-qa='price']", ".d3-property-info__price", ".d3-property-insight__attribute-value", ".price", ".item-price", "strong.price", "span.price"]
+    )
     description, description_source, description_summary, description_sources = _description_from_soup(soup)
 
     publisher_scopes = _publisher_scopes(soup)
@@ -413,9 +523,15 @@ def extract_listing_fields(
     seller_text = _strip_html(" ".join(node.get_text(" ", strip=True) for node in publisher_scopes))
 
     publicador_visible, publicador_selector = _publicador_visible(publisher_scopes)
+    current_publisher, current_publisher_logo = _current_yapo_publisher(soup)
+    if not publicador_visible and current_publisher:
+        publicador_visible = current_publisher
+        publicador_selector = "yapo_published_by_heading"
     seller_jsonld_name, seller_jsonld_source = _jsonld_seller_name(soup)
     contact_name = publicador_visible or seller_name or seller_jsonld_name
     contact_logo_alt, logo_source = _contact_logo_alt(publisher_scopes)
+    if not contact_logo_alt and current_publisher_logo:
+        contact_logo_alt, logo_source = current_publisher_logo, "yapo_publisher_card_logo_alt"
     contact_badges_text = _contact_badges_text(publisher_scopes)
 
     seller_type, seller_type_selector = _scoped_first_text(
@@ -513,6 +629,8 @@ def extract_listing_fields(
         "title_original_len": len(title),
         "title_is_truncated": any(hint in title.lower() for hint in DESCRIPTION_TRUNCATION_HINTS),
         "price": price,
+        "price_value": price_value,
+        "price_currency": price_currency,
         "description": description,
         "descripcion": description,
         "description_summary": description_summary,

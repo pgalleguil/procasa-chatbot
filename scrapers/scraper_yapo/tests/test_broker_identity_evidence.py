@@ -35,6 +35,20 @@ def test_remax_logo_in_publisher_block_is_safe_broker():
     assert result["state"] == "CORREDOR_SEGURO"
 
 
+def test_broker_brand_matching_ignores_case_accents_and_extra_letter_spacing():
+    fields = _confirmed(contact_name="e N G e L  V O L K E R S")
+    result = rules.classify_obvious_broker(fields)
+    assert result["state"] == "CORREDOR_SEGURO"
+    assert any("Engel & Völkers" in item for item in result["evidence"])
+
+
+def test_new_national_catalog_matches_visan_with_mixed_case_and_inserted_spaces():
+    fields = _confirmed(contact_name="v I s A n   p R o P i E d A d E s")
+    result = rules.classify_obvious_broker(fields)
+    assert result["state"] == "CORREDOR_SEGURO"
+    assert any("VISAN Propiedades" in item for item in result["evidence"])
+
+
 def test_prourbe_logo_in_publisher_block_is_safe_broker():
     fields = extract_listing_fields(_publisher_html(
         "<div class='contact_logo'><img alt='PROurbe' src='/users/logo/17462648.png'></div>"
@@ -193,6 +207,8 @@ def test_correlated_profile_with_confirmed_commercial_identity_stays_safe():
 
 
 def test_identity_rules_never_upgrade_missing_evidence_to_owner():
-    result = rules.classify_obvious_broker({"title": "Casa trato directo", "description": "Sin comisión"})
-    assert result is None
-    assert rules.classify_with_rules({"title": "Casa trato directo", "description": "Sin comisión"})["state"] == "INCIERTO"
+    extracted = {"title": "Casa trato directo", "description": "Sin comisión"}
+    assert rules.classify_obvious_broker(extracted) is None
+    result = rules.classify_with_rules(extracted)
+    assert result["state"] == "DUEÑO_PROBABLE"
+    assert result["owner_classification_confirmed"] is False

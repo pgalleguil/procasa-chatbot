@@ -18,7 +18,8 @@ def test_blocked_html_is_counted_as_technical_and_never_commercial(tmp_path):
     summary = report["summary"]
     assert summary["technical_status_counts"]["BLOCKED"] == 11
     assert summary["commercial_classifications_counted"] == 1
-    assert summary["INCIERTO"] == 1
+    assert summary["DUEÑO_PROBABLE"] == 1
+    assert summary["owner_confirmation_count"] == 0
     rows = dict(zip([r[0] for r in report["cases"]], report["cases"]))
     assert all(row[4] is None for row in report["cases"] if row[1] == "BLOCKED")
 

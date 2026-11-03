@@ -122,11 +122,11 @@ def test_locality_outside_typed_real_estate_scope_is_ignored():
 
 
 def test_pending_commune_listing_remains_in_audit_report(monkeypatch, tmp_path):
-    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas"
+    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas%7Cf_currency.CLF%7Cf_price.3000-6000"
 
     def discover(_urls, **kwargs):
         kwargs["report"].update({
-            "pages": [{"status": "complete", "listing_count": 1, "duplicate_count": 0}],
+            "pages": [{"url": start_url, "status": "complete", "listing_count": 1, "duplicate_count": 0}],
             "pagination_complete": True, "pagination_cause": "explicit_total_pages_reached",
             "errors": [], "proxy_requests": 1, "request_attempts": 1,
             "successful_downloads": 1, "cache_responses": 0,
@@ -155,7 +155,7 @@ def test_pending_commune_listing_remains_in_audit_report(monkeypatch, tmp_path):
         "price": "UF 4.000", "comuna": "", "comuna_source": "",
         "comuna_evidence": {"status": "pending"},
     })
-    monkeypatch.setattr(pilot, "classify_with_rules", lambda _record: {"state": "INCIERTO", "evidence": []})
+    monkeypatch.setattr(pilot, "classify_with_routing", lambda *_args, **_kwargs: {"state": "INCIERTO", "evidence": []})
     config = AppConfig(mongo_uri="mongodb://fake", reports_dir=tmp_path, html_dumps_dir=tmp_path / "html")
     result = pilot.run_pilot(start_url, config, batch_id="commune-pending-test")
     import json

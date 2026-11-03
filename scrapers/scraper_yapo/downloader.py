@@ -178,10 +178,23 @@ def download_html(
         time.sleep(1.0)
         session = requests.Session()
         session.trust_env = False
-        try:
-            response = session.get(url, headers=headers, proxies=_requests_proxies(proxy), timeout=timeout)
-        except Exception as exc:
-            raise RuntimeError(f"YAPO_PROXY_REQUEST_FAILED: {type(exc).__name__}") from None
+        response = None
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                response = session.get(url, headers=headers, proxies=_requests_proxies(proxy), timeout=timeout)
+                last_error = None
+                break
+            except Exception as exc:
+                last_error = exc
+                if attempt < 2:
+                    # Retry transport failures through the same paid proxy.
+                    # HTTP denials are handled below and are never retried.
+                    time.sleep(1.0 + attempt)
+        if last_error is not None:
+            raise RuntimeError(f"YAPO_PROXY_REQUEST_FAILED: {type(last_error).__name__}") from None
+        if response is None:  # pragma: no cover - defensive for unusual transports
+            raise RuntimeError("YAPO_PROXY_REQUEST_FAILED: no response")
         if response.status_code >= 400:
             diagnostic_path = _write_response_diagnostic(
                 html_path,

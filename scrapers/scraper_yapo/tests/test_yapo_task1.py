@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import sys
 from types import SimpleNamespace
 
@@ -87,6 +88,30 @@ def test_valid_proxy_is_the_only_transport(monkeypatch, tmp_path):
     result = downloader.download_html("https://www.yapo.cl/test", AppConfig(html_dumps_dir=tmp_path), manager)
     assert result.fetch_source == "requests_proxy"
     assert captured == [("https://www.yapo.cl/test", False, {"http": "http://proxy.test:9000", "https": "http://proxy.test:9000"})]
+
+
+def test_proxy_transport_retries_transient_errors_without_changing_proxy(monkeypatch, tmp_path):
+    captured = []
+    response = SimpleNamespace(status_code=200, text=_html("contenido válido"), raise_for_status=lambda: None)
+
+    class Session:
+        trust_env = True
+
+        def get(self, url, **kwargs):
+            captured.append((url, self.trust_env, kwargs.get("proxies")))
+            if len(captured) < 3:
+                raise TimeoutError("transient transport failure")
+            return response
+
+    monkeypatch.setattr(downloader.requests, "Session", Session)
+    monkeypatch.setattr(downloader.time, "sleep", lambda _: None)
+    manager = ProxyManager(["proxy.test:9000"])
+    result = downloader.download_html("https://www.yapo.cl/test", AppConfig(html_dumps_dir=tmp_path), manager)
+
+    expected_proxy = {"http": "http://proxy.test:9000", "https": "http://proxy.test:9000"}
+    assert result.validation_status == "OK"
+    assert len(captured) == 3
+    assert all(item == ("https://www.yapo.cl/test", False, expected_proxy) for item in captured)
 
 
 def test_blocked_response_is_preserved_in_batch_sidecar(monkeypatch, tmp_path):
@@ -455,7 +480,7 @@ def test_block_or_captcha_stops_without_followup(monkeypatch):
 
 
 def test_pilot_deduplicates_by_id_and_normalized_url_before_details(monkeypatch, tmp_path):
-    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas"
+    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas%7Cf_currency.CLF%7Cf_price.3000-6000"
     rows = [
         {"url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa/12345678?utm_source=x", "listing_id": "12345678", "page_number": 1, "discovery_comuna": "Maipú"},
         {"url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/otra-casa/12345678", "listing_id": "12345678", "page_number": 2, "discovery_comuna": "Maipú"},
@@ -466,7 +491,7 @@ def test_pilot_deduplicates_by_id_and_normalized_url_before_details(monkeypatch,
     def fake_discover(*args, **kwargs):
         used_configs.append(kwargs["config"])
         used_managers.append(kwargs["proxy_manager"])
-        kwargs["report"].update({"pages": [{"status": "complete", "listing_count": 3, "duplicate_count": 0}], "pagination_complete": True, "pagination_cause": "explicit_total_pages_reached", "errors": [], "proxy_requests": 1, "request_attempts": 1, "successful_downloads": 1, "cache_responses": 0})
+        kwargs["report"].update({"pages": [{"url": start_url, "status": "complete", "listing_count": 3, "duplicate_count": 0}], "pagination_complete": True, "pagination_cause": "explicit_total_pages_reached", "errors": [], "proxy_requests": 1, "request_attempts": 1, "successful_downloads": 1, "cache_responses": 0})
         return rows
     monkeypatch.setattr(pilot, "discover_listing_urls", fake_discover)
     monkeypatch.setattr(pilot.ProxyManager, "from_config", lambda _: ProxyManager(["proxy.test:9000"]))
@@ -495,9 +520,9 @@ def test_pilot_deduplicates_by_id_and_normalized_url_before_details(monkeypatch,
 
 
 def test_mongo_unavailable_is_not_treated_as_no_duplicates(monkeypatch, tmp_path):
-    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas"
+    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas%7Cf_currency.CLF%7Cf_price.3000-6000"
     def fake_discover(*args, **kwargs):
-        kwargs["report"].update({"pages": [{"status": "complete", "listing_count": 1, "duplicate_count": 0}], "pagination_complete": True, "pagination_cause": "explicit_total_pages_reached", "errors": [], "proxy_requests": 1, "request_attempts": 1, "successful_downloads": 1, "cache_responses": 0})
+        kwargs["report"].update({"pages": [{"url": start_url, "status": "complete", "listing_count": 1, "duplicate_count": 0}], "pagination_complete": True, "pagination_cause": "explicit_total_pages_reached", "errors": [], "proxy_requests": 1, "request_attempts": 1, "successful_downloads": 1, "cache_responses": 0})
         return [{"url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa/12345678", "listing_id": "12345678", "discovery_comuna": "Maipú"}]
     monkeypatch.setattr(pilot, "discover_listing_urls", fake_discover)
     monkeypatch.setattr(pilot.ProxyManager, "from_config", lambda _: ProxyManager(["proxy.test:9000"]))
@@ -512,7 +537,7 @@ def test_mongo_unavailable_is_not_treated_as_no_duplicates(monkeypatch, tmp_path
 
 
 def test_pilot_skips_detail_if_search_was_interrupted(monkeypatch, tmp_path):
-    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas"
+    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas%7Cf_currency.CLF%7Cf_price.3000-6000"
     def fake_discover(*args, **kwargs):
         kwargs["report"].update({"pages": [{"listing_count": 1, "duplicate_count": 0, "status": "error"}], "pagination_complete": False, "pagination_cause": "blocked_or_download_error", "errors": ["blocked"], "proxy_requests": 0, "request_attempts": 1, "successful_downloads": 0, "cache_responses": 0})
         return [{"url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa/12345678", "listing_id": "12345678", "discovery_comuna": "Maipú"}]
@@ -528,9 +553,9 @@ def test_pilot_skips_detail_if_search_was_interrupted(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("listing_html", ["invalid", "removed"])
 def test_pilot_rejects_invalid_or_removed_html(monkeypatch, tmp_path, listing_html):
-    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas"
+    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?regionslug=region-metropolitana-maipu&q=withcat.bienes-raices-venta-de-propiedades-casas%7Cf_currency.CLF%7Cf_price.3000-6000"
     def fake_discover(*args, **kwargs):
-        kwargs["report"].update({"pages": [{"status": "complete", "listing_count": 1, "duplicate_count": 0}], "pagination_complete": True, "pagination_cause": "explicit_total_pages_reached", "errors": [], "proxy_requests": 1, "request_attempts": 1, "successful_downloads": 1, "cache_responses": 0})
+        kwargs["report"].update({"pages": [{"url": start_url, "status": "complete", "listing_count": 1, "duplicate_count": 0}], "pagination_complete": True, "pagination_cause": "explicit_total_pages_reached", "errors": [], "proxy_requests": 1, "request_attempts": 1, "successful_downloads": 1, "cache_responses": 0})
         return [{"url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa/12345678", "listing_id": "12345678", "discovery_comuna": "Maipú"}]
     class Store:
         def __init__(self, _): pass
@@ -594,3 +619,78 @@ def test_meta_description_is_not_used_as_full_description():
     assert fields["description"] == ""
     assert fields["description_summary"] == "Resumen breve"
     assert fields["descripcion_is_truncated"] is True
+
+
+def test_current_yapo_detail_template_uses_full_description_and_structured_listing_data():
+    description = ("Texto completo del aviso... con sus condiciones y características. " * 14).strip()
+    payload = {
+        "@context": "https://schema.org", "@type": "Product", "name": "Casa en Maipú",
+        "description": description + " Texto final conservado desde JSON-LD.",
+        "offers": {
+            "@type": "Offer", "price": "165000000", "priceCurrency": "CLP",
+            "seller": {"@type": "Organization", "name": "Fuenzalida Propiedades Maipú Plaza"},
+            "availableAtOrFrom": {"@type": "Place", "address": {
+                "@type": "PostalAddress", "addressLocality": "Maipú",
+            }},
+        },
+    }
+    html = _html(
+        '<main><h1>Casa en Maipú</h1>'
+        '<section><h2>Descripción</h2><div><p>' + description + '</p></div></section>'
+        '<div><h3>Publicado por</h3><div><h4>Fuenzalida Propiedades Maipú Plaza</h4>'
+        '<img alt="Logo Fuenzalida Propiedades"></div></div></main>'
+        '<script type="application/ld+json">' + json.dumps(payload, ensure_ascii=False) + '</script>'
+        '<meta property="og:description" content="Resumen breve">'
+    )
+    fields = pilot.extract_listing_fields(
+        html, source_url="https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa/12345678"
+    )
+    assert fields["description"] == description + " Texto final conservado desde JSON-LD."
+    assert fields["descripcion_is_truncated"] is False
+    assert fields["price"] == "165000000 CLP"
+    assert fields["price_currency"] == "CLP"
+    assert fields["publicador_visible"] == "Fuenzalida Propiedades Maipú Plaza"
+    assert fields["comuna"] == "Maipú"
+    assert fields["comuna_evidence"]["status"] == "confirmed_detail"
+
+
+@pytest.mark.parametrize("raw,expected", [("4.000 UF", 4000), ("4.250 CLF", 4250), ("165000000 CLP", None)])
+def test_pilot_price_parser_accepts_yapo_uf_currency_code(raw, expected):
+    assert pilot._price_in_uf(raw) == expected
+
+
+def test_pilot_requires_exact_uf_price_filter_in_start_url():
+    base = "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/region-metropolitana-maipu"
+    assert pilot._scope_url_is_valid(base + "?q=f_currency.CLF|f_price.3000-6000")[0] is True
+    assert pilot._scope_url_is_valid(base)[0] is False
+
+
+def test_local_classification_uses_existing_possible_owner_state_only_with_clear_direct_signal():
+    from scrapers.scraper_yapo.classifier_rules import classify_yapo_listing
+
+    possible_owner = classify_yapo_listing({"title": "Dueño vende casa", "description": "Trato directo"})
+    assert possible_owner["state"] == "DUEÑO_PROBABLE"
+    assert possible_owner["owner_classification_confirmed"] is False
+
+    uncertain = classify_yapo_listing({"title": "Casa sin comisión", "description": "Se acepta corredor"})
+    assert uncertain["state"] == "INCIERTO"
+
+    company_conflict = classify_yapo_listing({
+        "title": "Dueño vende", "description": "", "publicador_visible": "Casa Example Propiedades",
+        "publisher_field_provenance": {"publicador_visible": {"status": "confirmed", "source": "test", "relationship": "publisher"}},
+    })
+    assert company_conflict["state"] == "INCIERTO"
+
+
+@pytest.mark.parametrize("publisher", ["Kutt Property", "Dataprop Propiedades", "Focolare Propiedades"])
+def test_pilot_observed_verified_broker_brands_are_filtered_first(publisher):
+    from scrapers.scraper_yapo.classifier_rules import classify_yapo_listing
+
+    result = classify_yapo_listing({
+        "publicador_visible": publisher, "contact_name": publisher,
+        "publisher_field_provenance": {
+            "publicador_visible": {"status": "confirmed", "source": "test", "relationship": "publisher"},
+            "contact_name": {"status": "confirmed", "source": "test", "relationship": "publisher"},
+        },
+    })
+    assert result["state"] == "CORREDOR_SEGURO"

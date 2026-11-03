@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ sys.path.insert(0, str(_SCRAPER_DIR.parent))
 
 try:
     from .classifier_rules import classify_yapo_listing
+    from .classification_pipeline import classify_with_routing
     from .config import AppConfig
     from .discovery import _norm_commune, discover_listing_urls, normalize_yapo_url
     from .downloader import download_html, html_path_for_url, validate_html
@@ -22,6 +24,7 @@ try:
     from .proxy_manager import ProxyManager
 except ImportError:  # direct script execution
     from scrapers.scraper_yapo.classifier_rules import classify_yapo_listing
+    from scrapers.scraper_yapo.classification_pipeline import classify_with_routing
     from scrapers.scraper_yapo.config import AppConfig
     from scrapers.scraper_yapo.discovery import _norm_commune, discover_listing_urls, normalize_yapo_url
     from scrapers.scraper_yapo.downloader import download_html, html_path_for_url, validate_html
@@ -48,10 +51,12 @@ def _scope_url_is_valid(url: str) -> tuple[bool, str]:
     region = " ".join(query.get("regionslug", [])).lower()
     if parsed.hostname not in {"www.yapo.cl", "yapo.cl"}:
         return False, "start_url_no_es_yapo"
-    # Current Yapo URL embeds the sale/house/commune filters directly in the path.
-    # The price remains a separate detail-level UF validation in this pilot.
-    if parsed.path.rstrip("/") == "/bienes-raices-venta-de-propiedades-casas/region-metropolitana-maipu":
-        return True, "current_yapo_sale_house_maipu_path"
+    expected_path = "/bienes-raices-venta-de-propiedades-casas/region-metropolitana-maipu"
+    if parsed.path.rstrip("/").startswith(expected_path):
+        filters = set("|".join(query.get("q", [])).split("|"))
+        if {"f_currency.CLF", "f_price.3000-6000"}.issubset(filters):
+            return True, "current_yapo_sale_house_maipu_3000_6000_uf"
+        return False, "filtro_precio_uf_3000_6000_no_confirmado"
     if not parsed.path.startswith("/searchresult/bienes-raices-venta-de-propiedades"):
         return False, "ruta_no_confirma_busqueda_de_venta"
     if "casas" not in q_value or "bienes-raices-venta-de-propiedades-casas" not in q_value:
@@ -62,9 +67,9 @@ def _scope_url_is_valid(url: str) -> tuple[bool, str]:
 
 
 def _price_in_uf(raw: str) -> float | None:
-    if not raw or not re.search(r"\bUF\b", raw, re.I):
+    if not raw or not re.search(r"\b(?:UF|CLF)\b", raw, re.I):
         return None
-    match = re.search(r"(?:UF\s*)?([\d.]+(?:,\d+)?)\s*UF?", raw, re.I)
+    match = re.search(r"(?:UF|CLF)?\s*([\d.]+(?:,\d+)?)\s*(?:UF|CLF)?", raw, re.I)
     if not match:
         match = re.search(r"UF\s*([\d.]+(?:,\d+)?)", raw, re.I)
     if not match:
@@ -125,6 +130,28 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _prefetch_detail_downloads(records: list[dict[str, Any]], config: AppConfig,
+                              proxy_manager: ProxyManager, batch_id: str,
+                              workers: int = 2):
+    """Keep a small bounded number of proxy downloads in flight."""
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="yapo-detail") as pool:
+        pending: list[tuple[dict[str, Any], Future[Any]]] = []
+        next_index = 0
+        while next_index < min(workers, len(records)):
+            record = records[next_index]
+            pending.append((record, pool.submit(download_html, record["url"], config,
+                                                proxy_manager, batch_id=batch_id)))
+            next_index += 1
+        while pending:
+            record, future = pending.pop(0)
+            yield record, future
+            if next_index < len(records):
+                record = records[next_index]
+                pending.append((record, pool.submit(download_html, record["url"], config,
+                                                    proxy_manager, batch_id=batch_id)))
+                next_index += 1
+
+
 def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str | None = None) -> dict[str, Any]:
     config = config or AppConfig()
     config.ensure_layout()
@@ -133,7 +160,7 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
     summary: dict[str, Any] = {
         "scope": PILOT_SCOPE.copy(), "batch_id": batch_id, "pages_visited": 0,
         "pages_complete": 0, "pages_not_verified": 0,
-        "price_filter_mode": "local_only_from_explicit_uf_price; no_clp_conversion",
+        "price_filter_mode": "exact_yapo_uf_search_filter_verified_on_every_result_page; detail_currency_recorded_as_shown",
         "pagination_complete": False, "pagination_cause": "not_started",
         "ads_discovered": 0, "batch_duplicates": 0, "mongo_existing": 0,
         "new_ads": 0, "filter_matches": 0, "pending_price_validation": 0,
@@ -160,14 +187,20 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
             records = discover_listing_urls([start_url], max_pages=None, max_urls=None, until_end=True,
                                             batch_id=batch_id, target_communes=["Maipú"], report=discovery_report,
                                             config=config, proxy_manager=proxy_manager)
-            summary["search_filters_verified"] = bool(records) and all(
-                "/bienes-raices-venta-de-propiedades-casas/" in str(row.get("url") or "").lower()
-                for row in records
-            )
             summary["pages_visited"] = len(discovery_report.get("pages", []))
             summary["pagination_complete"] = bool(discovery_report.get("pagination_complete"))
             summary["pagination_cause"] = discovery_report.get("pagination_cause", "unknown")
             summary["page_log"] = discovery_report.get("pages", [])
+            expected_query = {"f_currency.CLF", "f_price.3000-6000"}
+            page_filters_ok = bool(summary["page_log"]) and all(
+                expected_query.issubset(set("|".join(parse_qs(urlparse(str(page.get("url") or "")).query).get("q", [])).split("|")))
+                for page in summary["page_log"]
+            )
+            summary["search_filters_verified"] = (
+                page_filters_ok
+                and bool(records)
+                and all("/bienes-raices-venta-de-propiedades-casas/" in str(row.get("url") or "").lower() for row in records)
+            )
             summary["pages_complete"] = sum(
                 page.get("status") in {"complete", "empty"} for page in summary["page_log"]
             )
@@ -236,12 +269,12 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                 summary["mongo_existing"] = None
                 summary["new_ads"] = None
             # If Mongo is unavailable, do not treat records as new or download their details.
-            for record in new_records:
+            for record, download_future in _prefetch_detail_downloads(new_records, config, proxy_manager, batch_id):
                 try:
                     cached_before = html_path_for_url(record["url"], config, batch_id=batch_id).exists()
                     if not cached_before and proxy_manager.has_proxies():
                         summary["request_attempts"] += 1
-                    downloaded = download_html(record["url"], config, proxy_manager, batch_id=batch_id)
+                    downloaded = download_future.result()
                     if downloaded.fetch_source == "cache":
                         summary["cache_responses"] += 1
                     elif downloaded.fetch_source == "requests_proxy":
@@ -274,14 +307,23 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                 )
                 operation = "venta" if "venta" in record["url"].lower() else ""
                 property_type = "casa" if "casa" in record["url"].lower() else ""
-                local_match = _matches_pilot_property_filters(
-                    territory_validation, operation, property_type, raw_price
+                local_match = bool(
+                    summary["search_filters_verified"]
+                    and territory_validation == "confirmed_maipu"
+                    and operation == "venta"
+                    and property_type == "casa"
+                    and (price_uf is None or 3000 <= price_uf <= 6000)
                 )
                 if price_uf is None:
                     summary["pending_price_validation"] += 1
                 if local_match:
                     summary["filter_matches"] += 1
-                classification = classify_yapo_listing(extracted)
+                classification = classify_with_routing(
+                    extracted,
+                    simulate_deepseek=True,
+                    max_calls=0,
+                    candidate_registry_path=Path(getattr(config, "data_dir", _SCRAPER_DIR / "data")) / "unknown_broker_candidates.json",
+                )
                 classification = classification or {
                     "state": "INCIERTO",
                     "reason": "Clasificación omitida por estado técnico no comercial.",
@@ -299,7 +341,12 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                     "description_summary": extracted.get("description_summary", ""),
                     "tipo_propiedad": property_type, "operacion": operation,
                     "precio_raw": raw_price, "precio_uf": price_uf,
-                    "precio_validacion": "pendiente_sin_valor_uf_verificado" if price_uf is None else "precio_uf_observado",
+                    "precio_moneda": extracted.get("price_currency", ""),
+                    "precio_validacion": (
+                        "filtro_yapo_uf_3000_6000_verificado;detalle_en_moneda_nativa"
+                        if price_uf is None and summary["search_filters_verified"]
+                        else "pendiente_sin_valor_uf_verificado" if price_uf is None else "precio_uf_observado"
+                    ),
                     "publicador_visible": extracted.get("publicador_visible", ""),
                     "tipo_anunciante": extracted.get("seller_type", ""),
                     "logo": extracted.get("contact_logo_alt", ""),
@@ -308,9 +355,14 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
                     "evidencia": classification.get("evidence", []),
                     "problemas_extraccion": _extraction_issues(extracted),
                     "filter_match": local_match,
+                    "crm_candidate": classification.get("state") in {"DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"},
                 })
     summary["calls_to_deepseek"] = 0
+    summary["deepseek_execution_mode"] = "disabled_simulation_only"
+    summary["classification_route_counts"] = {}
     summary["mongo_writes"] = 0
+    summary["crm_candidate_count"] = sum(bool(item.get("crm_candidate")) for item in audit)
+    summary["broker_excluded_count"] = sum(not bool(item.get("crm_candidate")) for item in audit)
     page_log = summary.get("page_log", [])
     has_parsed_page = any(page.get("status") in {"complete", "empty"} for page in page_log)
     summary["commercial_result_available"] = bool(has_parsed_page and summary["pagination_complete"] and summary["search_filters_verified"])
@@ -333,6 +385,8 @@ def run_pilot(start_url: str, config: AppConfig | None = None, *, batch_id: str 
         summary["commune_validation_counts"][commune_status] = summary["commune_validation_counts"].get(commune_status, 0) + 1
         classification_state = str((item.get("clasificacion_preliminar") or {}).get("state") or "unavailable")
         summary["preliminary_classification_counts"][classification_state] = summary["preliminary_classification_counts"].get(classification_state, 0) + 1
+        route = str((item.get("clasificacion_preliminar") or {}).get("classification_route") or "unavailable")
+        summary["classification_route_counts"][route] = summary["classification_route_counts"].get(route, 0) + 1
         for issue in item.get("problemas_extraccion", []):
             summary["extraction_error_counts"][issue] = summary["extraction_error_counts"].get(issue, 0) + 1
     summary_path = config.reports_dir / f"yapo_maipu_pilot_summary_{timestamp}.json"

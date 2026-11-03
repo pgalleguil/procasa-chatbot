@@ -164,6 +164,8 @@ def audit_html_files(
         "commercial_identity_confirmed": states["CORREDOR_SEGURO"],
         "CORREDOR_SEGURO": states["CORREDOR_SEGURO"],
         "CORREDOR_PROBABLE": states["CORREDOR_PROBABLE"],
+        "DUEÑO_PROBABLE": states["DUEÑO_PROBABLE"],
+        "owner_confirmation_count": 0,
         "INCIERTO": states["INCIERTO"],
         "uncertain_with_owner_signals": totals["uncertain_with_owner_signals"],
         "all_cases_with_owner_signal_candidates": totals["with_owner_signal_candidates"],
@@ -180,7 +182,7 @@ def audit_html_files(
         "cases_without_owner_or_broker_context_signal": totals["cases_without_owner_or_broker_context_signal"],
         "errors_or_parse_failures": totals["errors_or_parse_failures"],
         "extraction_error_counts": dict(extraction_errors),
-        "human_review_cases": states["CORREDOR_PROBABLE"] + states["INCIERTO"],
+        "human_review_cases": states["CORREDOR_PROBABLE"] + states["DUEÑO_PROBABLE"] + states["INCIERTO"],
     }
     return {
         "source_commit": source_commit,

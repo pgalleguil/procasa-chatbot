@@ -18,6 +18,43 @@ def test_third_party_reference_does_not_identify_publisher_as_broker():
     assert result["contextual_analysis"]["broker_third_party_mentions"]
 
 
+def test_company_signature_in_full_description_is_safe_broker_even_with_html_breaks():
+    result = classify_yapo_listing({
+        "publicador_visible": "Hugo Aguila",
+        "description": (
+            "Estamos disponibles para asesorarlo en cualquier operación inmobiliaria."
+            "<br/>VISAN Propiedades actúa con el mayor profesionalismo y ética. "
+            "Así Ud. puede estar tranquilo y recibir un servicio de calidad."
+        ),
+    })
+    assert result["state"] == "CORREDOR_SEGURO"
+    assert result["source"] == "description_business_signature"
+    assert any("visan propiedades actua" in item for item in result["evidence"])
+
+
+def test_real_estate_consultancy_offer_in_description_is_safe_broker():
+    result = classify_yapo_listing({
+        "description": "Consultora Inmobiliaria Ofrece para la Venta: Región Metropolitana.",
+    })
+    assert result["state"] == "CORREDOR_SEGURO"
+    assert result["source"] == "description_business_signature"
+
+
+def test_known_brand_in_description_is_case_and_spacing_insensitive():
+    result = classify_yapo_listing({
+        "description": "rE  mAx Chile OfReCe servicios de corretaje y asesoría inmobiliaria.",
+    })
+    assert result["state"] == "CORREDOR_SEGURO"
+    assert any("description_known_brand_signature:RE/MAX" in item for item in result["evidence"])
+
+
+def test_later_third_party_agency_mention_is_not_a_business_signature():
+    result = classify_yapo_listing({
+        "description": "La casa está cerca de la consultora inmobiliaria, que ofrece asesoría al barrio.",
+    })
+    assert result["state"] == "INCIERTO"
+
+
 def test_negated_broker_reference_does_not_create_broker_classification():
     result = classify_yapo_listing({"description": "No soy corredor de propiedades. Trato directo con el dueño."})
     assert result["state"] == "INCIERTO"
@@ -26,11 +63,11 @@ def test_negated_broker_reference_does_not_create_broker_classification():
     assert result["contextual_analysis"]["owner_classification_confirmed"] is False
 
 
-def test_uncertain_owner_candidate_is_not_promoted_to_owner_state():
+def test_explicit_possible_owner_signal_stays_probable_not_confirmed():
     result = classify_yapo_listing({"title": "Dueño vende, sin comisión"})
-    assert result["state"] == "INCIERTO"
+    assert result["state"] == "DUEÑO_PROBABLE"
     assert result["owner_signal_candidates"]
-    assert result["state"] not in {"DUEÑO_PROBABLE", "DUEÑO_SEGURO"}
+    assert result["owner_classification_confirmed"] is False
 
 
 def test_direct_deal_with_commercial_contradiction_is_flagged():

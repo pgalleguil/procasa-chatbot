@@ -78,11 +78,13 @@ def test_pilot_uses_only_fake_read_only_mongo_and_never_calls_ai(tmp_path, monke
         def has_proxies(self):
             return True
 
+    start_url = "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?operation=venta&q=bienes-raices-venta-de-propiedades-casas%7Cf_currency.CLF%7Cf_price.3000-6000&regionslug=maipu"
+
     def fake_discovery(*_args, report, **_kwargs):
         report.update({
             "pagination_complete": True,
             "pagination_cause": "portal_end_signal",
-            "pages": [{"status": "complete", "listing_count": 1, "duplicate_count": 0}],
+            "pages": [{"url": start_url, "status": "complete", "listing_count": 1, "duplicate_count": 0}],
             "request_attempts": 1,
             "successful_downloads": 1,
             "cache_responses": 0,
@@ -103,16 +105,17 @@ def test_pilot_uses_only_fake_read_only_mongo_and_never_calls_ai(tmp_path, monke
     })
     def rules_only(_fields):
         return {"state": "INCIERTO", "evidence": [], "source": "rules_json"}
-    monkeypatch.setattr(pilot, "classify_with_rules", rules_only)
+    monkeypatch.setattr(pilot, "classify_with_routing", lambda *_args, **_kwargs: rules_only({}))
     monkeypatch.setattr(pilot, "_write_json", lambda *_args, **_kwargs: None)
     config = SimpleNamespace(
         ensure_layout=lambda: None,
         generate_batch_id=lambda: "offline-test",
         reports_dir=tmp_path,
+        data_dir=tmp_path / "data",
         mongo_uri="mongodb://offline-mock",
     )
     summary = pilot.run_pilot(
-        "https://www.yapo.cl/searchresult/bienes-raices-venta-de-propiedades?operation=venta&q=bienes-raices-venta-de-propiedades-casas&regionslug=maipu",
+        start_url,
         config=config,
         batch_id="offline-test",
     )

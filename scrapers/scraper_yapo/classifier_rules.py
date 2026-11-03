@@ -3,6 +3,7 @@
 import json
 import re
 import unicodedata
+from html import unescape
 from functools import lru_cache
 from typing import Any, Iterable
 
@@ -25,6 +26,11 @@ IDENTITY_FIELDS = frozenset({
     "listing_advertiser", "seller_jsonld_name",
 })
 _RULE_LOAD_ERRORS: dict[str, str] = {}
+_GENERIC_SINGLE_TERM_ALIASES = frozenset({
+    "nueva", "nuevo", "propiedad", "propiedades", "inmobiliaria", "inmobiliario",
+    "corredora", "corredor", "corredores", "gestiones", "gestion", "inversiones",
+    "servicios", "asesoria", "chile", "group", "grupo", "real", "property",
+})
 
 WEAK_CONTEXT_FIELDS = (
     "title",
@@ -193,13 +199,27 @@ def _confirmed_identity_values(extracted: dict[str, Any]) -> dict[str, str]:
 
 def _phrase_matches(value: str, phrase: str) -> bool:
     """Match complete normalized tokens, allowing spacing/punctuation variants."""
-    value_tokens = normalize_text(value).split()
+    value_text = normalize_text(value)
     phrase_tokens = normalize_text(phrase).split()
-    if not value_tokens or not phrase_tokens:
+    if not value_text or not phrase_tokens:
         return False
-    target = "".join(phrase_tokens)
-    width = len(phrase_tokens)
-    return any("".join(value_tokens[i:i + width]) == target for i in range(len(value_tokens) - width + 1))
+    pattern = _flexible_phrase_pattern(phrase)
+    return bool(pattern and pattern.search(value_text))
+
+
+@lru_cache(maxsize=8192)
+def _flexible_phrase_pattern(phrase: str) -> re.Pattern[str] | None:
+    """Compile a case/accent-insensitive phrase matcher tolerant of spaces.
+
+    Normalization already lowercases text and removes accents/punctuation.
+    Optional whitespace between letters also catches logos such as
+    ``I N M O B I L A N D`` without permitting the brand inside a longer word.
+    """
+    tokens = normalize_text(phrase).split()
+    if not tokens:
+        return None
+    body = r"\s*".join(r"\s*".join(re.escape(char) for char in token) for token in tokens)
+    return re.compile(r"(?<![a-z0-9])" + body + r"(?![a-z0-9])")
 
 
 def _confirmed_identity_evidence(extracted: dict[str, Any], terms: Iterable[str]) -> list[str]:
@@ -209,6 +229,16 @@ def _confirmed_identity_evidence(extracted: dict[str, Any], terms: Iterable[str]
             if _phrase_matches(value, term):
                 evidence.append(f"{field}:{term}")
     return evidence
+
+
+def _surface_contains(value: str, phrase: str) -> bool:
+    """Prefer an alias's visible spelling when recording match evidence."""
+    source = unicodedata.normalize("NFKC", str(value or "")).casefold()
+    target = unicodedata.normalize("NFKC", str(phrase or "")).casefold().strip()
+    if not source or not target:
+        return False
+    body = r"\s+".join(re.escape(token) for token in re.split(r"\s+", target))
+    return bool(re.search(r"(?<![a-z0-9])" + body + r"(?![a-z0-9])", source))
 
 
 def is_removed_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
@@ -231,9 +261,28 @@ def known_broker_brand_in_strong_fields(extracted: dict[str, Any]) -> dict[str, 
     aliases = rules.get("known_broker_brand_aliases") or {}
     evidence: list[str] = []
     for field, value in _confirmed_identity_values(extracted).items():
+        compact_value = "".join(normalize_text(value).split())
         for brand in brands:
             variants = [brand, *(aliases.get(brand) or [])]
-            for variant in variants:
+            # Avoid compiling/testing a regex for every one of the 1,200+
+            # catalog entries on every listing. Compact containment is a fast
+            # prefilter; the boundary-aware matcher remains the final check.
+            possible = [
+                variant for variant in variants
+                if (compact_term := "".join(normalize_text(str(variant)).split()))
+                and compact_term in compact_value
+                and (
+                    len(normalize_text(str(variant)).split()) > 1
+                    or normalize_text(str(variant)) not in _GENERIC_SINGLE_TERM_ALIASES
+                    and (normalize_text(value) == normalize_text(str(variant)) or len(compact_term) >= 4)
+                )
+            ]
+            if not possible:
+                continue
+            surface_matches = [variant for variant in possible if _surface_contains(value, str(variant))]
+            if surface_matches:
+                possible = surface_matches
+            for variant in possible:
                 if _phrase_matches(value, str(variant)):
                     evidence.append(f"{field}:{brand}|matched_variant:{variant}")
     if not evidence:
@@ -271,7 +320,150 @@ def detect_owner_signals(extracted: dict[str, Any]) -> list[str]:
 
 
 def _context_text(extracted: dict[str, Any]) -> str:
-    return normalize_text(" ".join(str(extracted.get(key) or "") for key in ("title", "description", "descripcion")))
+    # Yapo descriptions can contain HTML separators/entities in saved CSVs and
+    # cached runs. Strip markup without shortening the source text so phrases
+    # split by <br> remain visible to the contextual rules.
+    values = []
+    for key in ("title", "description", "descripcion"):
+        value = unescape(str(extracted.get(key) or ""))
+        values.append(re.sub(r"<[^>]*>", " ", value))
+    return normalize_text(" ".join(values))
+
+
+def _description_business_signature(extracted: dict[str, Any]) -> list[str]:
+    """Find an advertiser identifying its real-estate business in the ad text.
+
+    A broker can publish under an individual's account name while signing the
+    description with a company brand. Require both a business designation and
+    a first-party business verb, plus an explicit service/commercial cue; a
+    passing mention of an agency or a nearby property is not enough.
+    """
+    segments = []
+    for key in ("title", "description", "descripcion"):
+        source_text = unescape(str(extracted.get(key) or ""))
+        source_text = re.sub(r"<[^>]*>", " ", source_text)
+        segments.extend(re.split(r"(?<=[.!?;])\s+|[\r\n]+", source_text))
+    company_statement = re.compile(
+        r"\b(?P<identity>(?:[a-z0-9&+]+\s+){0,3}"
+        r"(?:propiedades|inmobiliaria|inmobiliario|corredora|corretaje))\s+"
+        r"(?P<verb>actua|actuamos|ofrece|ofrecemos|brinda|brindamos|"
+        r"asesora|asesoramos|trabaja|trabajamos)\b"
+    )
+    service_cue = re.compile(
+        r"\b(profesionalismo|etica|asesoria|asesoramiento|corretaje|"
+        r"honorarios|servicio(?:s)? de calidad|operacion(?:es)? inmobiliaria(?:s)?|"
+        r"para la venta|en venta|comercializacion inmobiliaria)\b"
+    )
+    business_verb = re.compile(
+        r"^(?:actua|actuamos|ofrece|ofrecemos|brinda|brindamos|asesora|"
+        r"asesoramos|gestiona|gestionamos|administra|administramos|"
+        r"entrega|entregamos|presta|prestamos)$"
+    )
+    known_brands = _known_brand_compact_index()
+    evidence = []
+    for segment in segments:
+        text = normalize_text(segment)
+        for match in company_statement.finditer(text):
+            # Signatures and listing headers identify the advertiser near the
+            # start of a sentence. Later mentions can describe a third party.
+            if len(text[:match.start()].split()) > 4:
+                continue
+            cue = service_cue.search(text[match.start():match.start() + 260])
+            if cue:
+                evidence.append(
+                    f"description_business_signature:{match.group('identity')} "
+                    f"{match.group('verb')}|{cue.group(1)}"
+                )
+        tokens = text.split()
+        for start in range(min(5, len(tokens))):
+            for end in range(start + 1, min(len(tokens), start + 13) + 1):
+                canonical = known_brands.get("".join(tokens[start:end]))
+                if not canonical:
+                    continue
+                verb_index = end
+                while verb_index < len(tokens) and tokens[verb_index] in {
+                    "chile", "propiedades", "inmobiliaria", "corretaje", "servicios"
+                } and verb_index < end + 3:
+                    verb_index += 1
+                if verb_index >= len(tokens) or not business_verb.fullmatch(tokens[verb_index]):
+                    continue
+                cue = service_cue.search(" ".join(tokens[verb_index:verb_index + 35]))
+                if cue:
+                    evidence.append(
+                        f"description_known_brand_signature:{canonical}|"
+                        f"{tokens[verb_index]}|{cue.group(1)}"
+                    )
+    return evidence[:5]
+
+
+def _unknown_business_signature(extracted: dict[str, Any]) -> list[str]:
+    """Find an unknown publisher identity paired with explicit brokerage cues.
+
+    This deliberately returns probable evidence only: a new company-like name
+    must be reviewed before it can enter the confirmed brand catalog.
+    """
+    rules = load_rule_sets()
+    known = _known_brand_compact_index()
+    shape_terms = rules.get("company_shape_terms", [])
+    identity_values = _confirmed_identity_values(extracted)
+    if not identity_values:
+        # Some saved pilot records predate publisher provenance. The visible
+        # publisher is still usable as a candidate, never as confirmed proof.
+        identity_values = {
+            key: str(extracted.get(key) or "")
+            for key in ("publicador_visible", "contact_name", "contact_logo_alt", "listing_advertiser")
+            if extracted.get(key)
+        }
+    business_cue = re.compile(
+        r"\b(corretaje|comision(?:es)?|honorarios|"
+        r"gestion inmobiliaria|servicios inmobiliarios|asesoria inmobiliaria|"
+        r"administracion de propiedades|intermediacion inmobiliaria)\b"
+    )
+    full_text = _context_text(extracted)
+    business_matches = list(business_cue.finditer(full_text))
+    has_brokerage_service = any(
+        not re.search(r"\b(?:sin|no|libre de)(?:\s+(?:cobro|pago|comision))?\s*$", full_text[max(0, match.start() - 30):match.start()])
+        for match in business_matches
+    )
+    specific_broker_shapes = {
+        "corredora", "corredores", "corretaje", "inmobiliaria", "inmobiliario",
+        "gestion inmobiliaria", "asesoria inmobiliaria", "servicios inmobiliarios",
+    }
+    result: list[str] = []
+    for field, value in identity_values.items():
+        value = re.sub(r"^\s*(?:foto|imagen|logo)\s+de\s+perfil\s+de\s+", "", value, flags=re.I)
+        normalized = normalize_text(value)
+        compact = "".join(normalized.split())
+        if not compact or any(compact in brand or brand in compact for brand in known):
+            continue
+        shape_hits = [term for term in shape_terms if _phrase_matches(value, str(term))]
+        # Avoid interpreting isolated legal abbreviations or short personal
+        # names as a business identity.
+        if shape_hits and len(normalized.split()) >= 2:
+            normalized_shapes = {normalize_text(term) for term in shape_hits}
+            strong_name = bool(normalized_shapes & specific_broker_shapes)
+            strength = "probable" if (strong_name or has_brokerage_service) else "review_candidate"
+            result.append(
+                f"unknown_business_identity:{field}:{value.strip()}|shape:{shape_hits[0]}|strength:{strength}"
+            )
+    return result[:4]
+
+
+@lru_cache(maxsize=1)
+def _known_brand_compact_index() -> dict[str, str]:
+    """Index brand and alias spellings for efficient description checks."""
+    rules = load_rule_sets()
+    aliases = rules.get("known_broker_brand_aliases") or {}
+    result: dict[str, str] = {}
+    for brand in rules.get("known_broker_brands") or []:
+        for variant in (brand, *(aliases.get(brand) or [])):
+            compact = "".join(normalize_text(str(variant)).split())
+            normalized_variant = normalize_text(str(variant))
+            if normalized_variant not in _GENERIC_SINGLE_TERM_ALIASES and (
+                len(compact) >= 4 and (len(normalized_variant.split()) > 1 or len(compact) >= 4)
+            ):
+                result.setdefault(compact, str(brand))
+    return result
 
 
 def _context_term_hits(text: str, terms: Iterable[str]) -> list[str]:
@@ -288,6 +480,8 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
     third_party_mentions = _context_term_hits(text, rules.get("broker_third_party_mentions", []))
     negations = _context_term_hits(text, rules.get("broker_negations", []))
     owner_candidates = _context_term_hits(text, rules.get("owner_candidate_signals", []))
+    business_signature_evidence = _description_business_signature(extracted)
+    unknown_business_evidence = _unknown_business_signature(extracted)
     trato_directo_terms = [str(rules.get("direct_deal_phrase") or "")]
     trato_directo = _context_term_hits(text, trato_directo_terms)
     commercial_contradictions = _context_term_hits(text, rules.get("commercial_contradiction_signals", []))
@@ -305,6 +499,8 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
         "broker_self_declarations": self_declarations,
         "broker_third_party_mentions": third_party_mentions,
         "broker_negations": negations,
+        "broker_business_signature_evidence": business_signature_evidence,
+        "unknown_business_identity_evidence": unknown_business_evidence,
         "owner_signal_candidates": owner_candidates,
         "commercial_contradiction_signals": commercial_contradictions,
         "broker_self_declaration_confirmed": self_declaration_confirmed,
@@ -485,7 +681,58 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
             "direct_deal_with_commercial_contradictions": contextual["direct_deal_with_commercial_contradictions"],
         }
 
+    if contextual["broker_business_signature_evidence"]:
+        return {
+            "state": "CORREDOR_SEGURO", "confidence": 0.99,
+            "reason": "La descripción firma el aviso con una identidad inmobiliaria y una declaración comercial de servicios.",
+            "evidence": contextual["broker_business_signature_evidence"],
+            "source": "description_business_signature", "contextual_analysis": contextual,
+            "owner_signal_candidates": contextual["owner_signal_candidates"],
+            "direct_deal_with_commercial_contradictions": True,
+        }
+
+    strong_unknown_identity = any(
+        "|strength:probable" in item
+        for item in contextual["unknown_business_identity_evidence"]
+    )
+    if strong_unknown_identity:
+        return {
+            "state": "CORREDOR_PROBABLE", "confidence": 0.78,
+            "reason": "Identidad comercial no incluida en el catálogo, respaldada por señales explícitas de corretaje; requiere revisión antes de confirmarse.",
+            "evidence": contextual["unknown_business_identity_evidence"],
+            "source": "unknown_business_context",
+            "contextual_analysis": contextual,
+            "owner_signal_candidates": contextual["owner_signal_candidates"],
+            "direct_deal_with_commercial_contradictions": True,
+        }
+
     company = company_shape_in_publisher_fields(extracted)
+    strong_owner_declarations = {
+        "dueño vende", "dueno vende", "propietario vende", "particular vende",
+        "soy dueño", "soy dueno", "soy propietario", "vendo mi casa",
+        "vendo mi departamento", "vendo mi propiedad", "directo con el dueño",
+        "directo con propietario", "trato directo",
+    }
+    owner_declarations = [
+        signal for signal in contextual["owner_signal_candidates"]
+        if normalize_text(signal) in {normalize_text(term) for term in strong_owner_declarations}
+    ]
+    if (
+        owner_declarations
+        and not company["company_like_suspected"]
+        and not contextual["direct_deal_with_commercial_contradictions"]
+        and not contextual["trato_directo_with_commercial_contradictions"]
+        and not contextual["broker_third_party_mentions"]
+    ):
+        return {
+            "state": "DUEÑO_PROBABLE", "confidence": 0.72,
+            "reason": "El texto declara una venta directa o una identidad de propietario, sin señales comerciales contradictorias.",
+            "evidence": [f"owner_declaration:{signal}" for signal in owner_declarations],
+            "source": "contextual_rules", "contextual_analysis": contextual,
+            "owner_signal_candidates": contextual["owner_signal_candidates"],
+            "owner_classification_confirmed": False,
+        }
+
     return {
         "state": "INCIERTO",
         "confidence": 0.35 if company["company_like_suspected"] else 0.2,

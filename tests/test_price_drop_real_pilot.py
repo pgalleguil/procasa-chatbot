@@ -896,6 +896,10 @@ def test_price_drop_alert_reassignment_uses_latest_owner_not_first(
     assert result["owner_name"] == "Ejecutiva Última"
     assert attempted[0][0] == new_phone
     assert attempted[0][0] != old_phone
+    from chatbot.price_drop_campaign_exec_alert import COLLECTION
+    audit = db[COLLECTION].find_one({"provider_message_id": "exec-latest"})
+    assert audit["target_owner_cycle_id"] == "campaign-cycle-2"
+    assert audit["target_owner_user_id"] == "690000000000000000000091"
     assert "Ejecutiva Última" in attempted[0][1]
     assert build_secure_crm_url(lead) in attempted[0][1]
     assert "NO un lead nuevo" in attempted[0][1]

@@ -163,10 +163,19 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
     s = plain(message)
     if not s or _NEGATIVE.search(s):
         return None
+    # The customer may challenge our own outreach or a previous poor answer.
+    if (re.search(r"\\b(?:me (?:envi|escrib|mand)\\w*|ustedes me escribieron)\\b", s)
+            and re.search(r"\\b(?:informacion|no quieres|no me dices|mensaje)\\b", s)):
+        return (
+            f"Tienes razón: fuimos nosotros quienes te escribimos. Disculpa "
+            f"la confusión. Es el departamento de San Miguel (código "
+            f"{ctx['property_code']}), ahora a UF {_price(ctx['new_price_uf'])}. "
+            "Con gusto te aclaro lo que quieras saber."
+        )
 
     property_question = bool(_REMEMBER.search(s))
     amount = bool(_AMOUNT.search(s))
-    date = bool(_DATE.search(s)) and not amount
+    date = bool(_DATE.search(s))
     negotiate = bool(_NEGOTIATE.search(s))
     contact = bool(_CONTACT.search(s))
     visit = bool(_VISIT.search(s))

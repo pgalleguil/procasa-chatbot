@@ -144,3 +144,11 @@ def test_preference_is_remembered_and_not_a_booking():
 def test_single_word_yes_is_not_automatically_a_booking():
     reply = answer("ok", HISTORY_VISIT)
     assert reply is None
+
+
+def test_recent_rejection_cancels_earlier_visit_thread():
+    history = [
+        {"customer_text": "quiero visitar", "bot_text": "¿Qué día te sirve?"},
+        {"customer_text": "ya no me interesa", "bot_text": "Entendido, gracias."},
+    ]
+    assert answer("lunes a las 10", history) is None

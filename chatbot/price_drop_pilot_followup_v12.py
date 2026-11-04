@@ -35,8 +35,8 @@ _INTEREST = re.compile(
     r"\b(?:me interesa|estoy interesado|estoy interesada|quiero ir a verlo|"
     r"quiero ir a verla|quiero agendar|quiero hacer una oferta)\b", re.I
 )
-_URGENT = re.compile(r"\b(?:pronto|urgente|apurad|cuanto antes|otras visit|esta semana)\w*", re.I)
-_CONFIRM = re.compile(r"\b(?:ya quedo|quedo agend|esta confirm|confirmaste|reservad)\w*", re.I)
+_URGENT = re.compile(r"\b(?:pronto|urgente|apurad|cuanto antes|otras visit|otras vist|esta semana)\w*", re.I)
+_CONFIRM = re.compile(r"\b(?:ya quedo|quedo agend|esta confirm|se confirm|confirmaste|confirmaron|reservad)\w*", re.I)
 
 
 def _recent_visit_preference(history: list[dict], parse_parts: Callable) -> dict:
@@ -77,6 +77,9 @@ def followup_reply(
     handler, but this response must not claim they have already been sent.
     """
     message = _plain(text)
+    if re.search(r"\\b(?:no me interesa|no quiero (?:visitar|visita|que me contacten)|"
+                 r"ya no quiero ir|no me escriban|stop|darme de baja)\\b", message):
+        return None
     contact = bool(_CONTACT.search(message))
     visit = bool(_VISIT.search(message))
     interest = bool(_INTEREST.search(message))

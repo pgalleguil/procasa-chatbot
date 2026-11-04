@@ -2593,3 +2593,72 @@ def test_v11_each_role_has_separate_durable_delivery_result(monkeypatch):
         "ADMIN": "ALREADY_ATTEMPTED", "EXECUTIVE": "ALREADY_ATTEMPTED"
     }
     assert len(calls) == 2
+
+
+def _v13_setup(monkeypatch):
+    """Test-only Mongo collections: access to live CRM raises immediately."""
+    from chatbot.price_drop_pilot_guard_v13 import VERSION
+    monkeypatch.setenv("PRICE_DROP_PILOT_ENABLED", "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_PHONE", PHONE)
+    monkeypatch.setenv("PRICE_DROP_PILOT_EXEC_NOTICE_SIMULATION", "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_NATIVE_CONVERSATION", "true")
+    db = db_case()
+    db["crm_price_drop_pilot_v1"].docs[0]["campaign_version"] = VERSION
+    return db
+
+
+def test_v13_real_dialogue_replay_through_isolated_webhook_handler(monkeypatch):
+    """Reproduce actual V12 user words, with at-most-once test-only alerts."""
+    db = _v13_setup(monkeypatch)
+    bot_sender, bot_calls = sender_spy()
+    alert_calls = []
+    def alert_sender(phone, message):
+        assert phone == PHONE
+        alert_calls.append(message)
+        return {"success": True,
+                "provider_message_id": "v13-alert-" + str(len(alert_calls))}
+    dialogue = [
+        ("que propeidad e sno recuerdo", ("6436", "San Miguel")),
+        ("cuando bajo?", ("fecha exacta",)),
+        ("te pregundo cuanto bajo de precio", ("100 UF",)),
+        ("me interesa, es negociable?", ("negociación", "2.690")),
+        ("oka, cuando se puede ir a vecfbrv", ("Qué día",)),
+        ("mañana a las 4 de ña mañana", ("04:00", "horario poco habitual")),
+        ("quien me contactara?", ("dos avisos internos", "no a un ejecutivo real")),
+    ]
+    for i, (phrase, expected) in enumerate(dialogue):
+        result = process_test_inbound(
+            db, PHONE, f"v13-dialogue-{i}", phrase,
+            sender=bot_sender, exec_notice_sender=alert_sender,
+        )
+        assert result["status"] == "test_reply_sent", (phrase, result)
+        answer = bot_calls[-1][1]
+        for fragment in expected:
+            assert fragment.casefold() in answer.casefold(), (phrase, answer)
+        assert "ejecutivo asignado te contacta" not in answer.casefold()
+    assert len(bot_calls) == len(dialogue)
+    assert len(alert_calls) == 2
+    assert all(PHONE in alert for alert in alert_calls)
+    assert set(db.keys()) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+def test_v13_never_sends_unsafe_llm_promise_through_provider(monkeypatch):
+    import chatbot.price_drop_pilot_isolation as iso
+    db = _v13_setup(monkeypatch)
+    monkeypatch.setattr(iso, "build_native_pilot_reply", lambda *a, **kw: (
+        "Claro, con gusto coordinamos una visita y el ejecutivo asignado te contacta."
+    ))
+    send, calls = sender_spy()
+    result = process_test_inbound(
+        db, PHONE, "v13-unsafe", "Necesito ayuda con eso",
+        sender=send, exec_notice_sender=lambda *args: (_ for _ in ()).throw(
+            AssertionError("Neutral message must not alert an executive")
+        ),
+    )
+    assert result["status"] == "test_reply_sent"
+    assert len(calls) == 1
+    assert "ejecutivo asignado" not in calls[0][1]
+    assert "no hay una visita confirmada" in calls[0][1]

@@ -44,7 +44,7 @@ H_YES = [{"customer_text": "quiero verla", "bot_text": "¿Te interesa visitar el
     ("tengo otras visitas, que me contacte pronto", H_TIME, ("ADMIN", "EXECUTIVE"), "urge"),
     ("sí", H_YES, (), "Qué bueno"),
     ("claro", H_YES, (), "Qué bueno"),
-    ("quiero ir a verlo", H_VISIT, (), "visitarlo"),
+    ("quiero ir a verlo", H_VISIT, (), "Qué día"),
 ])
 def test_24_commercial_scenarios(customer, history, roles, expected):
     reply = followup_reply(customer, history, parse_parts=_visit_parts, notice_roles=roles)

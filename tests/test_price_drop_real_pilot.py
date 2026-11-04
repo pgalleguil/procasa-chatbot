@@ -729,3 +729,29 @@ def test_campaign_reply_queues_one_notice_but_does_not_send_without_gate(db, mon
     attempts = []
     assert process_one_exec_notice(db, sender=lambda *_: attempts.append(1))["status"] == "DISABLED"
     assert not attempts
+
+def test_campaign_exec_notice_sends_once_to_current_owner(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import (
+        GATE, process_one_exec_notice,
+    )
+    lead, owner_phone = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    record_inbound(
+        db, phone=lead["contact_phone_normalized"], provider_message_id="call-1",
+        text="Quiero que me llame un ejecutivo",
+        received_at=START + timedelta(minutes=1),
+    )
+    monkeypatch.setenv(GATE, "true")
+    notices = []
+    def fake_sender(phone, message):
+        notices.append((phone, message))
+        return {"success": True, "provider_message_id": "notice-1"}
+    assert process_one_exec_notice(db, sender=fake_sender)["status"] == "SENT"
+    assert notices[0][0] == owner_phone
+    assert "6436" in notices[0][1]
+    assert process_one_exec_notice(db, sender=fake_sender)["status"] == "IDLE"
+    assert len(notices) == 1
+

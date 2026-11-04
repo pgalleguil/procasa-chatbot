@@ -683,3 +683,49 @@ def test_cold_lead_response_is_post_send_engagement_not_automatic_crm_hot(
     assert report["rows"][0]["campaign_origin"] == "PRICE_DROP"
     assert report["rows"][0]["attribution_basis"] == "same_phone_after_accepted_send_window"
     assert db["leads"].find_one({"_id": lead_id})["lead_temperature_effective"] == "COLD"
+
+
+def _campaign_notify_owner(db):
+    lead = db["leads"].find_one({"prospecto.codigo": "6436"})
+    user_id = ObjectId("690000000000000000000090")
+    owner_phone = "+56984517639"
+    db["usuarios"].insert_one({
+        "_id": user_id, "nombre": "Ejecutiva Prueba", "telefono": owner_phone,
+        "is_active": True,
+    })
+    db["crm_assignment_cycles"].insert_one({
+        "lead_id": lead["_id"], "assignment_cycle_id": "campaign-cycle-1",
+        "assigned_to_user_id": str(user_id),
+        "assigned_to_display_name": "Ejecutiva Prueba",
+        "property_code": "6436", "unassigned_at": None,
+        "cycle_status": "active",
+    })
+    db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
+        "lifecycle.current_assignment_cycle_id": "campaign-cycle-1",
+        "lifecycle.assigned_to_user_id": str(user_id),
+        "ejecutivo_asignado": "Ejecutiva Prueba",
+        "prospecto.ejecutivo": "Ejecutiva Prueba",
+    }})
+    return lead, owner_phone
+
+
+def test_campaign_reply_queues_one_notice_but_does_not_send_without_gate(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import (
+        COLLECTION, process_one_exec_notice,
+    )
+    lead, owner_phone = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    phone = lead["contact_phone_normalized"]
+    record_inbound(db, phone=phone, provider_message_id="visit-1",
+                   text="Quiero visitar el departamento",
+                   received_at=START + timedelta(minutes=1))
+    record_inbound(db, phone=phone, provider_message_id="visit-1",
+                   text="Quiero visitar el departamento",
+                   received_at=START + timedelta(minutes=1))
+    assert db[COLLECTION].count_documents({"status": "PENDING"}) == 1
+    attempts = []
+    assert process_one_exec_notice(db, sender=lambda *_: attempts.append(1))["status"] == "DISABLED"
+    assert not attempts

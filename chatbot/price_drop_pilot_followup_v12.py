@@ -9,6 +9,8 @@ import re
 import unicodedata
 from typing import Callable
 
+VERSION = "price_drop_pilot_v12_followup_test"
+
 
 def _plain(value: str) -> str:
     value = "".join(

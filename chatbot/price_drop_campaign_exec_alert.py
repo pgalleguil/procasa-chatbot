@@ -9,7 +9,8 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from typing import Any, Callable
-from bson import ObjectId
+from .mongo_identity import mongo_id_variants
+from .lead_router import build_secure_crm_url
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
@@ -75,33 +76,49 @@ def _resolve_current_owner(db: Any, row: dict) -> dict:
     owner_name = str(cycle.get("assigned_to_display_name") or "")
     if not owner_id or not owner_name:
         return {"status": "owner_missing"}
-    user = None
-    try:
-        user = db["usuarios"].find_one({"_id": ObjectId(owner_id), "is_active": {"$ne": False}})
-    except Exception:
-        pass
+    # The CURRENT active cycle is canonical after all redistributions.
+    # Never fall back to the original card owner, a stale display name or
+    # the first executive in the assignment history.
+    variants = list(mongo_id_variants(owner_id))
+    if not variants:
+        return {"status": "owner_user_id_invalid"}
+    user = db["usuarios"].find_one({
+        "_id": {"$in": variants}, "is_active": {"$ne": False},
+    })
     if not user:
-        user = db["usuarios"].find_one({
-            "nombre": owner_name, "is_active": {"$ne": False},
-        })
-    if not user:
-        return {"status": "owner_not_found"}
+        return {"status": "current_cycle_owner_not_found"}
+    if str(user.get("nombre") or "").strip() != owner_name:
+        return {"status": "current_cycle_owner_identity_conflict"}
     phone = normalize_phone_strict(
         user.get("telefono") or user.get("tel") or user.get("movil") or ""
     )
     if not phone or not has_real_phone(phone):
         return {"status": "owner_phone_invalid"}
+    crm_url = build_secure_crm_url(lead)
+    if not crm_url.startswith(("https://", "http://")) or "/crm/lead-id/" not in crm_url:
+        return {"status": "secure_crm_link_unavailable"}
     return {
         "status": "ready", "name": owner_name, "phone": phone,
+        "owner_user_id": owner_id,
         "cycle_id": str(cycle.get("assignment_cycle_id") or ""),
+        "crm_url": crm_url,
     }
 
 
 def _notice_text(row: dict, owner: dict, dispatch: dict) -> str:
     code = str(row["property_code"])
     label = str(row["campaign_response_classification"])
-    action = ("solicita visita, llamada u oferta" if label == "PRIORIDAD_COMERCIAL"
-              else "expresó interés por la rebaja")
+    intent = str(dispatch.get("last_turn_intent") or "")
+    action_by_intent = {
+        "ASK_VISIT": "solicitó coordinar una visita",
+        "ASK_CONTACT": "solicitó contacto de un ejecutivo",
+        "GIVE_OFFER": "quiere presentar una oferta",
+    }
+    action = (
+        action_by_intent.get(intent, "solicitó atención comercial")
+        if label == "PRIORIDAD_COMERCIAL"
+        else "expresó interés por la rebaja"
+    )
     old_price = dispatch.get("old_price_uf")
     new_price = dispatch.get("new_price_uf")
     if not isinstance(old_price, (float, int)) or not isinstance(new_price, (float, int)):
@@ -115,6 +132,7 @@ def _notice_text(row: dict, owner: dict, dispatch: dict) -> str:
         f"Cliente: {dispatch.get('phone_normalized') or 'Consulta el CRM'}\n"
         f"Motivo: {action}.\n\n"
         f"{owner['name']}, revisa el lead existente en CRM y gestiona su interés.\n"
+        f"\n🔗 *Abrir lead en CRM:*\n{owner['crm_url']}\n\n"
         "Es seguimiento de una campaña, NO un lead nuevo ni una reasignación."
     )
 
@@ -169,10 +187,28 @@ def process_one_exec_notice(
         return {"status": "BLOCKED_ASSIGNMENT", "reason": owner["status"]}
     try:
         message = _notice_text(row, owner, dispatch)
-    except ValueError as exc:
+    except (ValueError, KeyError) as exc:
         db[COLLECTION].update_one(
             {"_id": row["_id"]}, {"$set": {"status": "BLOCKED_DATA", "reason": str(exc)}})
         return {"status": "BLOCKED_DATA"}
+    # Recheck ownership immediately before the provider call. A concurrent
+    # SLA redistribution must not send to the executive who just lost the lead.
+    fresh = _resolve_current_owner(db, row)
+    if (
+        fresh.get("status") != "ready"
+        or fresh.get("owner_user_id") != owner.get("owner_user_id")
+        or fresh.get("cycle_id") != owner.get("cycle_id")
+        or fresh.get("phone") != owner.get("phone")
+    ):
+        db[COLLECTION].update_one(
+            {"_id": row["_id"], "status": "CLAIMED"},
+            {"$set": {
+                "status": "BLOCKED_ASSIGNMENT",
+                "reason": "assignment_changed_during_notification",
+                "blocked_at": stamp,
+            }},
+        )
+        return {"status": "BLOCKED_ASSIGNMENT", "reason": "assignment_changed_during_notification"}
     if sender is None:
         from .whatsapp_client import send_whatsapp_message_detailed_sync
         sender = send_whatsapp_message_detailed_sync
@@ -190,6 +226,7 @@ def process_one_exec_notice(
         "$set": {
             "status": status,
             "target_owner_name": owner["name"],
+            "target_owner_user_id": owner["owner_user_id"],
             "target_owner_cycle_id": owner["cycle_id"],
             "target_owner_phone_last4": owner["phone"][-4:],
             "provider_message_id": receipt.get("provider_message_id"),

@@ -752,6 +752,12 @@ def test_campaign_exec_notice_sends_once_to_current_owner(db, monkeypatch):
     assert process_one_exec_notice(db, sender=fake_sender)["status"] == "SENT"
     assert notices[0][0] == owner_phone
     assert "6436" in notices[0][1]
+    from chatbot.lead_router import build_secure_crm_url
+    assert "*Abrir lead en CRM:*" in notices[0][1]
+    assert build_secure_crm_url(lead) in notices[0][1]
+    assert f"/crm/lead-id/{lead['_id']}" in notices[0][1]
+    assert "/crm/lead/+569" not in notices[0][1]
+    assert "solicitó contacto de un ejecutivo" in notices[0][1]
     assert process_one_exec_notice(db, sender=fake_sender)["status"] == "IDLE"
     assert len(notices) == 1
 
@@ -825,3 +831,142 @@ def test_campaign_exec_notice_unknown_delivery_is_not_retried(db, monkeypatch):
     assert len(attempts) == 1
     assert db[COLLECTION].find_one({})["status"] == "DELIVERY_UNKNOWN"
 
+
+
+def _campaign_reassign_to_latest_owner(db, lead_id):
+    from datetime import timezone
+    db["crm_assignment_cycles"].update_one(
+        {"lead_id": lead_id, "assignment_cycle_id": "campaign-cycle-1"},
+        {"$set": {
+            "cycle_status": "closed",
+            "unassigned_at": datetime(2026, 11, 5, 14, 1, tzinfo=timezone.utc),
+        }},
+    )
+    latest_user_id = ObjectId("690000000000000000000091")
+    db["usuarios"].insert_one({
+        "_id": latest_user_id,
+        "nombre": "Ejecutiva Última",
+        "telefono": "+56985243811",
+        "is_active": True,
+    })
+    db["crm_assignment_cycles"].insert_one({
+        "lead_id": lead_id, "assignment_cycle_id": "campaign-cycle-2",
+        "assigned_to_user_id": str(latest_user_id),
+        "assigned_to_display_name": "Ejecutiva Última",
+        "property_code": "6436", "unassigned_at": None,
+        "cycle_status": "active",
+    })
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "lifecycle.current_assignment_cycle_id": "campaign-cycle-2",
+        "lifecycle.assigned_to_user_id": str(latest_user_id),
+        "ejecutivo_asignado": "Ejecutiva Última",
+        "prospecto.ejecutivo": "Ejecutiva Última",
+    }})
+    return "+56985243811"
+
+
+def test_price_drop_alert_reassignment_uses_latest_owner_not_first(
+        db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import GATE, process_one_exec_notice
+    from chatbot.lead_router import build_secure_crm_url
+    lead, old_phone = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(
+        db, "piloto6436_20261105", now=START,
+        sender=lambda *_: {"success": True, "provider_message_id": "campaign-notice-accepted"},
+    )
+    # Customer replies while the first executive owns the lead.
+    record_inbound(
+        db, phone=lead["contact_phone_normalized"], provider_message_id="redistributed-inbound",
+        text="Me interesa, cuéntame más",
+        received_at=START + timedelta(minutes=1),
+    )
+    # Before the campaign notice is dispatched, CRM redistributes it.
+    new_phone = _campaign_reassign_to_latest_owner(db, lead["_id"])
+    monkeypatch.setenv(GATE, "true")
+    attempted = []
+    def fake_send(phone, msg):
+        attempted.append((phone, msg))
+        return {"success": True, "provider_message_id": "exec-latest"}
+    result = process_one_exec_notice(
+        db, sender=fake_send, now=START + timedelta(minutes=3),
+    )
+    assert result["status"] == "SENT"
+    assert result["owner_name"] == "Ejecutiva Última"
+    assert attempted[0][0] == new_phone
+    assert attempted[0][0] != old_phone
+    from chatbot.price_drop_campaign_exec_alert import COLLECTION
+    audit = db[COLLECTION].find_one({"provider_message_id": "exec-latest"})
+    assert audit["target_owner_cycle_id"] == "campaign-cycle-2"
+    assert audit["target_owner_user_id"] == "690000000000000000000091"
+    assert "Ejecutiva Última" in attempted[0][1]
+    assert build_secure_crm_url(lead) in attempted[0][1]
+    assert "NO un lead nuevo" in attempted[0][1]
+
+
+def test_price_drop_alert_reassignment_race_blocks_old_owner(db, monkeypatch):
+    import chatbot.price_drop_campaign_exec_alert as alerts
+    lead, old_phone = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(
+        db, "piloto6436_20261105", now=START,
+        sender=lambda *_: {"success": True, "provider_message_id": "campaign-accepted"},
+    )
+    record_inbound(
+        db, phone=lead["contact_phone_normalized"], provider_message_id="race-visit",
+        text="Quiero coordinar una visita",
+        received_at=START + timedelta(minutes=1),
+    )
+    original = alerts._notice_text
+    def reassign_while_building(notice, owner, dispatch):
+        text = original(notice, owner, dispatch)
+        _campaign_reassign_to_latest_owner(db, lead["_id"])
+        return text
+    monkeypatch.setattr(alerts, "_notice_text", reassign_while_building)
+    monkeypatch.setenv(alerts.GATE, "true")
+    attempts = []
+    result = alerts.process_one_exec_notice(
+        db, sender=lambda *_: attempts.append(True),
+        now=START + timedelta(minutes=2),
+    )
+    assert result["status"] == "BLOCKED_ASSIGNMENT"
+    assert result["reason"] == "assignment_changed_during_notification"
+    assert not attempts
+
+
+def test_price_drop_alert_does_not_route_by_stale_owner_name_only(
+        db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import GATE, process_one_exec_notice
+    lead, old_phone = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(
+        db, "piloto6436_20261105", now=START,
+        sender=lambda *_: {"success": True, "provider_message_id": "campaign-accepted"},
+    )
+    record_inbound(
+        db, phone=lead["contact_phone_normalized"], provider_message_id="name-only",
+        text="Quiero coordinar una visita",
+        received_at=START + timedelta(minutes=1),
+    )
+    # The cycle may name the old executive, but its user ID no longer exists.
+    # A name-only fallback could misroute a private lead to the wrong user.
+    db["crm_assignment_cycles"].update_one(
+        {"lead_id": lead["_id"], "assignment_cycle_id": "campaign-cycle-1"},
+        {"$set": {"assigned_to_user_id": "690000000000000000000099"}},
+    )
+    db["leads"].update_one(
+        {"_id": lead["_id"]},
+        {"$set": {"lifecycle.assigned_to_user_id": "690000000000000000000099"}},
+    )
+    monkeypatch.setenv(GATE, "true")
+    attempts = []
+    result = process_one_exec_notice(
+        db, sender=lambda *_: attempts.append(True),
+        now=START + timedelta(minutes=2),
+    )
+    assert result["status"] == "BLOCKED_ASSIGNMENT"
+    assert result["reason"] == "current_cycle_owner_not_found"
+    assert not attempts

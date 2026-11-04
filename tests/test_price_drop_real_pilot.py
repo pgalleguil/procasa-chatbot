@@ -755,3 +755,24 @@ def test_campaign_exec_notice_sends_once_to_current_owner(db, monkeypatch):
     assert process_one_exec_notice(db, sender=fake_sender)["status"] == "IDLE"
     assert len(notices) == 1
 
+
+def test_campaign_exec_notice_rejects_stale_assignment(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import GATE, process_one_exec_notice
+    lead, _ = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    record_inbound(db, phone=lead["contact_phone_normalized"],
+                   provider_message_id="call-2", text="Quiero que me llame un ejecutivo",
+                   received_at=START + timedelta(minutes=1))
+    db["leads"].update_one(
+        {"_id": lead["_id"]}, {"$set": {"ejecutivo_asignado": "Otro"}},
+    )
+    monkeypatch.setenv(GATE, "true")
+    attempts = []
+    assert process_one_exec_notice(
+        db, sender=lambda *_: attempts.append(True),
+    )["status"] == "BLOCKED_ASSIGNMENT"
+    assert not attempts
+

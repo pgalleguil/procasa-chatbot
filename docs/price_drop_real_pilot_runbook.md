@@ -190,3 +190,16 @@ python scripts/price_drop_campaign_real_pilot.py --report ID_DE_CAMPAÑA
 - Estados: `PENDING`, `CLAIMED`, `SENT`, `DELIVERY_UNKNOWN`, `BLOCKED_ASSIGNMENT`, `SKIPPED`. No hay reintentos automáticos ante entrega desconocida. `SENT` indica aceptación del proveedor y no confirma entrega al ejecutivo.
 - No afecta temperatura oficial, SLA, asignación ni crea otro lead. Mantener el interruptor apagado hasta la autorización de la prueba comercial.
 
+
+
+## Enlace CRM y último ejecutivo tras redistribuciones
+
+Las notificaciones de respuestas positivas de la campaña incorporan el mismo **enlace autenticado y seguro** que los avisos de nuevos leads: `build_secure_crm_url(lead)`, con ruta `/crm/lead-id/<ID Mongo del lead>`. No se coloca el teléfono del cliente en la URL; el CRM comprueba el acceso del ejecutivo.
+
+El destinatario se resuelve **justo al procesar el aviso** desde el **único ciclo de asignación activo** de `crm_assignment_cycles`, no desde el primer ejecutivo, captador de la ficha ni el responsable anotado cuando se programó la campaña. Después de una redistribución válida, gana el último titular vigente del ciclo, siempre que los campos espejo del lead y el usuario activo coincidan.
+
+Si hay conflicto, dos ciclos activos, titular dado de baja, usuario inexistente, identidad discrepante o una nueva redistribución justo antes del envío, se bloquea la alerta (sin enviarla al anterior). No se permite seleccionar destinatarios basándose únicamente en nombres. El caso queda en la cola para revisión del supervisor.
+
+La leyenda del WhatsApp indica que se trata del **seguimiento a una rebaja de precio**, no de un lead nuevo, e incluye el código de propiedad, precio anterior y nuevo, intención comercial específica y enlace directo CRM. No contiene dirección exacta ni atributos sensibles de Prop360.
+
+Nota semántica: `último ejecutivo` para estos avisos significa **titular del último ciclo de asignación vigente**. Un actor humano que registró una gestión en un ciclo antiguo ya cerrado no prevalece sobre una redistribución posterior.

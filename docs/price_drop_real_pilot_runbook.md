@@ -215,3 +215,16 @@ Para recuperar **solamente el aviso V10 omitido**, sin reenviar la rebaja y sin 
 La recuperación inspecciona únicamente el histórico aislado V10 de ese teléfono, detecta la primera expresión de interés y envía una sola notificación **al mismo teléfono de prueba**, rotulada `PRUEBA INTERNA — AVISO SIMULADO AL EJECUTIVO`. Reserva un identificador único antes de contactar al proveedor y no reintenta resultados inciertos.
 
 Después de verificar la aceptación por el proveedor, volver `PRICE_DROP_PILOT_EXEC_RECOVER_ON_START=false`. Los flags de campaña real y aviso a ejecutivos reales siguen `false`. Una prueba aislada no puede ni debe validar el nombre ni el teléfono del verdadero último ejecutivo: esa parte está cubierta por pruebas separadas de ciclos de asignación.
+
+
+## V11: nueva conversación aislada y dos avisos de prueba al mismo número
+
+La versión de prueba `price_drop_pilot_v11_dual_notice_test` utiliza un identificador de campaña nuevo, de modo que **no** mezcla los turnos de V9/V10. El envío inicial reutiliza la propiedad 6436 y se dirige únicamente al teléfono autorizado en `PRICE_DROP_PILOT_TEST_PHONE`. Cada nueva respuesta se registra en `crm_price_drop_pilot_test_turns_v1`, vinculada al ID de la nueva campaña.
+
+Cuando se confirma interés explícito, `chatbot/price_drop_pilot_dual_notice_sim.py` genera dos WhatsApp distintos:
+- **PRUEBA — AVISO AL ADMINISTRADOR:** copia corta con código de propiedad, precios anterior y nuevo, teléfono **completo** del cliente de prueba, clasificación e intervención registrada.
+- **PRUEBA — AVISO AL EJECUTIVO:** copia corta con los mismos datos y la instrucción de revisar el lead y contactar al cliente.
+
+**Ambos mensajes se envían al mismo teléfono de prueba**, nunca a teléfonos reales del administrador, ejecutivos ni clientes. La simulación no consulta identidad, gestiones históricas ni asignaciones del CRM; por tanto no demuestra la identificación del último ejecutivo que atendió ni puede proporcionar un enlace auténtico del lead. Esa integración deberá auditarse separadamente antes del piloto real.
+
+Cada aviso guarda un identificador de intento individual (por campaña y rol) antes de contactar al proveedor. No hay reintentos automáticos ni doble notificación por una conversación posterior. El envío inicial requiere `PRICE_DROP_PILOT_SEND_ON_START=true` únicamente durante la puesta en marcha y se desactiva después de comprobar el resultado. Los interruptores `PRICE_DROP_REAL_PILOT_ENABLED` y `PRICE_DROP_CAMPAIGN_EXEC_NOTIFY_ENABLED` permanecen desactivados.

@@ -608,7 +608,7 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
 
 def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded():
     from scripts import price_drop_pilot_test as sender
-    assert sender.TEST_ID == "20261104-6436-price-drop-pilot-v10-exec-sim-single-test"
+    assert sender.TEST_ID == "20261104-6436-price-drop-pilot-v11-admin-exec-single-test"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
     ).read_text()
@@ -628,7 +628,7 @@ def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded(
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v10_exec_notice_test"' in source
+    assert '"campaign_version": "price_drop_pilot_v11_dual_notice_test"' in source
     assert 'if not is_test_phone(phone)' in source
 
 
@@ -2460,3 +2460,136 @@ def test_v10_recovery_does_not_send_for_old_campaign(monkeypatch):
     )
     assert result["status"] != "SENT"
     assert sent == []
+
+
+def _v11_sim_setup(monkeypatch):
+    from chatbot.price_drop_pilot_dual_notice_sim import VERSION
+    monkeypatch.setenv("PRICE_DROP_PILOT_ENABLED", "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_PHONE", PHONE)
+    monkeypatch.setenv("PRICE_DROP_PILOT_EXEC_NOTICE_SIMULATION", "true")
+    db = db_case()
+    db["crm_price_drop_pilot_v1"].docs[0]["campaign_version"] = VERSION
+    return db
+
+
+def test_v11_new_chat_separate_admin_exec_messages_to_tester(monkeypatch):
+    db = _v11_sim_setup(monkeypatch)
+    bot_sender, bot_calls = sender_spy()
+    alerts = []
+    def alert_sender(phone, msg):
+        alerts.append((phone, msg))
+        return {"success": True, "provider_message_id": f"test-role-{len(alerts)}"}
+    for i, phrase in enumerate(("Hola", "¿Cuánto bajó?")):
+        result = process_test_inbound(
+            db, PHONE, f"v11-neutral-{i}", phrase,
+            sender=bot_sender, exec_notice_sender=alert_sender,
+        )
+        assert result == {"status": "test_reply_sent"}
+        assert alerts == []
+    response = process_test_inbound(
+        db, PHONE, "v11-interested", "OK, ME INTERESA",
+        sender=bot_sender, exec_notice_sender=alert_sender,
+    )
+    assert response["test_dual_notice_statuses"] == {
+        "ADMIN": "SENT", "EXECUTIVE": "SENT"
+    }
+    assert len(alerts) == 2
+    assert all(phone == PHONE for phone, _ in alerts)
+    assert "AVISO AL ADMINISTRADOR" in alerts[0][1]
+    assert "AVISO AL EJECUTIVO" in alerts[1][1]
+    assert PHONE in alerts[0][1] and PHONE in alerts[1][1]
+    assert "OK, ME INTERESA" in alerts[0][1] and "OK, ME INTERESA" in alerts[1][1]
+    assert "UF 2.790" in alerts[0][1] and "UF 2.690" in alerts[1][1]
+    assert "sin enlace real" in alerts[0][1]
+    assert "no a un administrador ni a un ejecutivo real" not in alerts[0][1]
+    assert len(bot_calls) == 3
+    assert "crm_assignment_cycles" not in db
+    docs = [d for d in db["crm_price_drop_pilot_test_turns_v1"].docs
+            if d.get("test_notification_role")]
+    assert len(docs) == 2
+    assert {d["test_notification_role"] for d in docs} == {"ADMIN", "EXECUTIVE"}
+    assert all(d["status"] == "NOTICE_SENT" for d in docs)
+
+
+def test_v11_no_duplicate_notices_after_visit_followup(monkeypatch):
+    db = _v11_sim_setup(monkeypatch)
+    bot_sender, _ = sender_spy()
+    alerts = []
+    def alert_sender(phone, msg):
+        alerts.append((phone, msg))
+        return {"success": True, "provider_message_id": f"role-{len(alerts)}"}
+    first = process_test_inbound(
+        db, PHONE, "interest-first", "ME INTERESA",
+        sender=bot_sender, exec_notice_sender=alert_sender,
+    )
+    assert first["test_dual_notice_statuses"] == {"ADMIN": "SENT", "EXECUTIVE": "SENT"}
+    second = process_test_inbound(
+        db, PHONE, "visit-second", "Quiero agendar una visita",
+        sender=bot_sender, exec_notice_sender=alert_sender,
+    )
+    assert second["test_dual_notice_statuses"] == {
+        "ADMIN": "ALREADY_ATTEMPTED", "EXECUTIVE": "ALREADY_ATTEMPTED"
+    }
+    assert len(alerts) == 2
+
+
+def test_v11_neutral_or_negative_never_notifies(monkeypatch):
+    db = _v11_sim_setup(monkeypatch)
+    sender, _ = sender_spy()
+    alerts = []
+    for i, phrase in enumerate(("Solo quiero saber cuánto cuesta",
+                                "No me interesa", "¿Tiene estacionamiento?")):
+        process_test_inbound(
+            db, PHONE, f"v11-neutral-question-{i}", phrase,
+            sender=sender, exec_notice_sender=lambda *x: alerts.append(x),
+        )
+    assert not alerts
+
+
+def test_v11_no_crm_lookup_and_always_only_test_phone(monkeypatch):
+    from chatbot.price_drop_pilot_dual_notice_sim import send_dual_test_notices
+    db = _v11_sim_setup(monkeypatch)
+    ctx = load_test_context(db, PHONE)
+    attempts = []
+    result = send_dual_test_notices(
+        db, ctx=ctx, phone="+56988889999", customer_text="Me interesa",
+        history=[], inbound_message_id="v11-unapproved",
+        sender=lambda *x: attempts.append(x),
+    )
+    assert result["status"] == "OUTSIDE_TEST_ALLOWLIST"
+    assert not attempts
+    assert set(db.keys()) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1"
+    }
+
+
+def test_v11_each_role_has_separate_durable_delivery_result(monkeypatch):
+    db = _v11_sim_setup(monkeypatch)
+    bot_sender, _ = sender_spy()
+    calls = []
+    def partly_unavailable(phone, text):
+        calls.append((phone, text))
+        if len(calls) == 1:
+            raise TimeoutError("admin provider outcome unknown")
+        return {"success": True, "provider_message_id": "exec-ok"}
+    result = process_test_inbound(
+        db, PHONE, "v11-interest-once", "Me interesa",
+        sender=bot_sender, exec_notice_sender=partly_unavailable,
+    )
+    assert result["test_dual_notice_statuses"] == {
+        "ADMIN": "DELIVERY_UNKNOWN", "EXECUTIVE": "SENT"
+    }
+    saved = [d for d in db["crm_price_drop_pilot_test_turns_v1"].docs
+             if d.get("test_notification_role")]
+    assert {d["test_notification_role"]: d["status"] for d in saved} == {
+        "ADMIN": "NOTICE_DELIVERY_UNKNOWN", "EXECUTIVE": "NOTICE_SENT"
+    }
+    result2 = process_test_inbound(
+        db, PHONE, "v11-repeat-reply", "Quiero visitar",
+        sender=bot_sender, exec_notice_sender=partly_unavailable,
+    )
+    assert result2["test_dual_notice_statuses"] == {
+        "ADMIN": "ALREADY_ATTEMPTED", "EXECUTIVE": "ALREADY_ATTEMPTED"
+    }
+    assert len(calls) == 2

@@ -802,3 +802,26 @@ def test_campaign_notice_escalation_supersedes_older_interest(db, monkeypatch):
     assert len(sends) == 1
     assert db[COLLECTION].count_documents({"status": "SENT"}) == 1
 
+
+def test_campaign_exec_notice_unknown_delivery_is_not_retried(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import (
+        COLLECTION, GATE, process_one_exec_notice,
+    )
+    lead, _ = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    record_inbound(db, phone=lead["contact_phone_normalized"],
+                   provider_message_id="interested-1", text="Me interesa",
+                   received_at=START + timedelta(minutes=1))
+    monkeypatch.setenv(GATE, "true")
+    attempts = []
+    def uncertain(*_):
+        attempts.append(True)
+        raise TimeoutError("unknown provider acceptance")
+    assert process_one_exec_notice(db, sender=uncertain)["status"] == "DELIVERY_UNKNOWN"
+    assert process_one_exec_notice(db, sender=uncertain)["status"] == "IDLE"
+    assert len(attempts) == 1
+    assert db[COLLECTION].find_one({})["status"] == "DELIVERY_UNKNOWN"
+

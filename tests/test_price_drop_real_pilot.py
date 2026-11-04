@@ -313,3 +313,59 @@ def test_no_tracking_queries_when_campaign_not_enabled(db, monkeypatch):
         now=START,
     )["status"] == "DISABLED"
     assert db[TURNS].count_documents({}) == 0
+
+def test_render_bootstrap_preview_prepare_approve_are_separate_no_send(db, monkeypatch):
+    import json
+    from chatbot.price_drop_campaign_bootstrap import run_bootstrap
+    from chatbot.price_drop_campaign_real import APPROVED_ID_FLAG
+    p = plan(db, n=1)
+    env = {
+        "PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE": "preview",
+        "PRICE_DROP_REAL_PILOT_PLAN_JSON": json.dumps(p),
+        "PRICE_DROP_REAL_PILOT_REVIEWER": "Supervisor PROCASA",
+        APPROVED_ID_FLAG: p["campaign_id"],
+    }
+    viewed = run_bootstrap(db, env=env)
+    assert viewed["status"] == "READY"
+    assert viewed["approved_count"] == 1
+    assert not db[CAMPAIGNS].count_documents({})
+    assert not db[DISPATCHES].count_documents({})
+    assert "phone_normalized" not in str(viewed)
+    env["PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE"] = "prepare"
+    created = run_bootstrap(db, env=env)
+    assert created["status"] == "PLANNED"
+    assert db[CAMPAIGNS].find_one({"_id": p["campaign_id"]})["status"] == "PLANNED"
+    env["PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE"] = "approve"
+    assert run_bootstrap(db, env=env)["status"] == "APPROVED"
+    # Approval is not activation; outbound is still blocked.
+    monkeypatch.delenv("PRICE_DROP_REAL_PILOT_ENABLED", raising=False)
+    assert send_one_due(db, p["campaign_id"], now=START)["status"] == "DISABLED"
+
+
+def test_render_bootstrap_rejects_mismatched_or_missing_approval(db):
+    import json
+    from chatbot.price_drop_campaign_bootstrap import run_bootstrap
+    from chatbot.price_drop_campaign_real import APPROVED_ID_FLAG
+    p = plan(db, n=1)
+    env = {
+        "PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE": "prepare",
+        "PRICE_DROP_REAL_PILOT_PLAN_JSON": json.dumps(p),
+        "PRICE_DROP_REAL_PILOT_REVIEWER": "Supervisor PROCASA",
+        APPROVED_ID_FLAG: "another_campaign_20261105",
+    }
+    with pytest.raises(CampaignBlocked, match="approved_campaign_id_mismatch"):
+        run_bootstrap(db, env=env)
+    assert db[CAMPAIGNS].count_documents({}) == 0
+    env[APPROVED_ID_FLAG] = p["campaign_id"]
+    env["PRICE_DROP_REAL_PILOT_REVIEWER"] = ""
+    with pytest.raises(CampaignBlocked, match="reviewer_required"):
+        run_bootstrap(db, env=env)
+    assert db[CAMPAIGNS].count_documents({}) == 0
+
+
+def test_render_bootstrap_off_does_no_database_work():
+    from chatbot.price_drop_campaign_bootstrap import run_bootstrap
+    class ForbiddenDB:
+        def __getitem__(self, name):
+            raise AssertionError("Disabled bootstrap queried a database")
+    assert run_bootstrap(ForbiddenDB(), env={}) == {"status": "DISABLED"}

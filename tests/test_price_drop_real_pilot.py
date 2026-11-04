@@ -77,6 +77,7 @@ def approve(db, n=2, campaign_id="piloto6436_20261105"):
 def enable(monkeypatch, campaign_id="piloto6436_20261105"):
     monkeypatch.setenv("PRICE_DROP_REAL_PILOT_ENABLED", "true")
     monkeypatch.setenv("PRICE_DROP_REAL_PILOT_APPROVED_ID", campaign_id)
+    monkeypatch.setenv("PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED", "true")
 
 
 def test_preview_read_only_and_paced_by_12_minutes(db):

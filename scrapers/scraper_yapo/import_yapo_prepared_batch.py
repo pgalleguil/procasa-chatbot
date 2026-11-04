@@ -7,6 +7,7 @@ require both --apply and an explicit approval ID and target confirmation.
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import hashlib
 import json
 import os
@@ -28,6 +29,7 @@ EXPECTED_STATE_COUNTS = {
     "DUEÑO_PROBABLE": 10,
     "INCIERTO": 92,
 }
+EXPECTED_STAGING_CANONICAL_SHA256 = "dc9bda51a093abd9a1d7c6a741eeacac275724ea74b29ad4cc2a8bba558e12bf"
 CRM_PROTECTED_FIELDS = {
     "_id", "created_at", "gestion", "asignacion", "asignaciones", "executive_assignments",
     "assigned_to", "assigned_executive", "historial_gestion", "management_history",
@@ -202,8 +204,32 @@ def _sha256_file(path: Path) -> str:
 
 
 def _mongo_import_payload(record: dict[str, Any]) -> dict[str, Any]:
-    """Convert ISO capture timestamps to BSON Date fields used by Yapo docs."""
-    payload = dict(record)
+    """Convert staging snapshots to the operational schema without dropping audit data."""
+    payload = deepcopy(record)
+    staging_fields = (
+        "staging_only", "crm_promotion_allowed", "distribution_blocked", "assignment_ready",
+        "staging_batch_id", "staging_created_at", "staging_last_batch_id",
+        "staging_last_imported_at", "canonical_source_sha256",
+    )
+    if any(field in payload for field in staging_fields):
+        payload["yapo_ingestion"] = {
+            **(payload.get("yapo_ingestion") if isinstance(payload.get("yapo_ingestion"), dict) else {}),
+            "source_collection": "URLS.yapo_preimportacion",
+            "source_batch_id": payload.get("staging_batch_id") or "",
+            "source_created_at": payload.get("staging_created_at") or "",
+            "source_last_batch_id": payload.get("staging_last_batch_id") or "",
+            "source_last_imported_at": payload.get("staging_last_imported_at") or "",
+            "canonical_source_sha256": payload.get("canonical_source_sha256") or "",
+            "staging_controls": {
+                key: payload.get(key)
+                for key in ("staging_only", "crm_promotion_allowed", "distribution_blocked", "assignment_ready")
+                if key in payload
+            },
+        }
+        for field in staging_fields:
+            payload.pop(field, None)
+        if payload.get("source") != "owner_hunt":
+            payload["source"] = "owner_hunt"
     for field in ("fecha_scraping", "fecha_captura", "first_seen", "first_seen_at", "captacion_sort_date"):
         value = payload.get(field)
         if isinstance(value, str) and value.strip():
@@ -623,6 +649,89 @@ def _upsert_one(collection: Any, store: MongoStore, record: dict[str, Any]) -> d
             "upserted_id": str(result.upserted_id) if result.upserted_id is not None else None}
 
 
+def _backup_matching_documents(collection: Any, docs: list[dict[str, Any]], output_dir: Path,
+                               batch_sha256: str) -> Path:
+    """Back up only documents this batch could touch, before its first write."""
+    from bson import json_util
+
+    store_docs: dict[str, dict[str, Any]] = {}
+    store = MongoStore(AppConfig())
+    for doc in docs:
+        query = store._yapo_identity_query(doc)
+        for existing in collection.find(query):
+            store_docs[str(existing.get("_id"))] = existing
+    backup_path = output_dir / "backups" / f"yapo_import_existing_{batch_sha256[:16]}.json"
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = backup_path.with_suffix(backup_path.suffix + ".tmp")
+    temporary.write_text(json_util.dumps({
+        "target": f"{TARGET_DATABASE}.{TARGET_COLLECTION}",
+        "batch_sha256": batch_sha256,
+        "documents_before_import": list(store_docs.values()),
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(backup_path)
+    return backup_path
+
+
+def _verify_import_readback(collection: Any, docs: list[dict[str, Any]], store: MongoStore) -> dict[str, Any]:
+    ids = [_id_text(doc.get("listing_id")) for doc in docs]
+    rows = list(collection.find({"origen": "yapo", "listing_id": {"$in": ids}}))
+    by_id: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        by_id[_id_text(row.get("listing_id"))].append(row)
+    missing = sorted(value for value in ids if not by_id.get(value))
+    duplicates = sorted(value for value, matches in by_id.items() if len(matches) > 1)
+    fields_to_compare = (
+        "url", "canonical_url", "title", "description", "comuna", "operacion", "tipo_propiedad",
+        "precio_raw", "precio_uf_normalizado", "precio_clp_normalizado", "images", "image_urls",
+        "enlaces_fotos", "classification", "classification_original", "classification_v3",
+        "classification_debug", "manual_audit_observations", "manual_review_batches",
+        "availability_status", "availability_checked_at", "availability_source",
+        "availability_evidence", "availability_checks", "details", "yapo_ingestion",
+    )
+    mismatches: list[dict[str, str]] = []
+    staging_controls_found: list[str] = []
+    assignment_ready_ids: list[str] = []
+    for source in docs:
+        listing_id = _id_text(source.get("listing_id"))
+        matches = by_id.get(listing_id, [])
+        if len(matches) != 1:
+            continue
+        target = matches[0]
+        expected = _mongo_import_payload(source)
+        for field in fields_to_compare:
+            if field not in expected:
+                continue
+            value = expected[field]
+            if value in EMPTY and target.get(field) not in EMPTY:
+                continue
+            if field == "classification" and store._human_confirmed_classification(target.get(field)):
+                continue
+            if target.get(field) != value:
+                mismatches.append({"listing_id": listing_id, "field": field})
+        for field in ("staging_only", "crm_promotion_allowed", "staging_batch_id", "staging_created_at",
+                      "staging_last_batch_id", "staging_last_imported_at", "canonical_source_sha256"):
+            if field in target:
+                staging_controls_found.append(f"{listing_id}:{field}")
+        if (target.get("classification") or {}).get("assignment_ready") is True:
+            assignment_ready_ids.append(listing_id)
+    unique_index = any(
+        info.get("key") == [("origen", 1), ("listing_id", 1)] and info.get("unique") is True
+        for info in collection.index_information().values()
+    )
+    result = {
+        "documents_read_back": len(rows),
+        "expected_documents": len(docs),
+        "missing_ids": missing,
+        "duplicate_ids": duplicates,
+        "field_mismatches": mismatches,
+        "staging_controls_remaining": staging_controls_found,
+        "assignment_ready_ids": assignment_ready_ids,
+        "unique_origen_listing_id_index": unique_index,
+    }
+    result["passed"] = not any((missing, duplicates, mismatches, staging_controls_found, assignment_ready_ids)) and unique_index
+    return result
+
+
 def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
                   approval_id: str = "", confirm_target: str = "",
                   expected_sha256: str = "") -> dict[str, Any]:
@@ -632,6 +741,15 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
         raise RuntimeError("SHA-256 del lote no coincide con el registrado en el preflight revisado.")
     if apply and not expected_sha256:
         raise RuntimeError("Escritura bloqueada: --apply requiere --expected-sha256 del lote revisado.")
+    staged_source = [doc for doc in docs if any(key in doc for key in (
+        "staging_only", "staging_batch_id", "canonical_source_sha256",
+    ))]
+    if staged_source and (
+        len(staged_source) != len(docs)
+        or any(str(doc.get("canonical_source_sha256") or "").lower() != EXPECTED_STAGING_CANONICAL_SHA256
+               for doc in staged_source)
+    ):
+        raise RuntimeError("Staged import does not match the approved canonical SHA-256 across all 482 records.")
     config = AppConfig()
     per_record, schema = _read_preflight(docs, config)
     identity_counts = Counter(item["identity_status"] for item in per_record)
@@ -649,12 +767,14 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
         from pymongo import MongoClient
         client = MongoClient(config.mongo_uri, serverSelectionTimeoutMS=20000)
         journal_path = output_dir / f"yapo_maipu_import_{actual_sha256[:16]}.jsonl"
+        store = MongoStore(config)
         try:
             collection = client[TARGET_DATABASE][TARGET_COLLECTION]
-            store = MongoStore(config)
+            backup_path = _backup_matching_documents(collection, docs, output_dir, actual_sha256)
             _append_journal(journal_path, {
                 "event": "import_started_or_resumed", "batch_sha256": actual_sha256,
                 "expected_sha256": expected_sha256, "record_count": len(docs),
+                "pre_write_backup": str(backup_path),
                 "started_at": datetime.now(timezone.utc).isoformat(),
             })
             outcomes = []
@@ -668,10 +788,23 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
                     "upserted_id": outcome["upserted_id"],
                     "completed_at": datetime.now(timezone.utc).isoformat(),
                 })
+            post_write_verification = _verify_import_readback(collection, docs, store)
+            _append_journal(journal_path, {
+                "event": "post_write_verification",
+                "passed": post_write_verification["passed"],
+                "missing_ids": post_write_verification["missing_ids"],
+                "duplicate_ids": post_write_verification["duplicate_ids"],
+                "field_mismatch_count": len(post_write_verification["field_mismatches"]),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            })
+            if not post_write_verification["passed"]:
+                raise RuntimeError("Post-import readback verification failed; staging was not deleted.")
         finally:
             client.close()
     else:
         outcomes = []
+        backup_path = None
+        post_write_verification = {"passed": False, "not_run": True}
 
     duplicate_peer_ids: dict[str, set[str]] = defaultdict(set)
     source_json = json.loads(input_path.read_text(encoding="utf-8-sig"))
@@ -737,6 +870,8 @@ def run_preflight(input_path: Path, output_dir: Path, *, apply: bool = False,
                              "mongo_writes": len(outcomes)},
         "import_route": "scrapers/scraper_yapo/import_yapo_prepared_batch.py",
         "durable_import_journal": str(journal_path if apply else output_dir / f"yapo_maipu_import_{actual_sha256[:16]}.jsonl"),
+        "pre_write_backup": str(backup_path) if backup_path else "",
+        "post_write_verification": post_write_verification,
         "recovery_policy": "Each completed upsert is fsync-journaled; rerun the same SHA-256 batch to resume safely through identity upserts. Conflicts block before writes.",
         "not_run": not apply,
         "records": per_record,

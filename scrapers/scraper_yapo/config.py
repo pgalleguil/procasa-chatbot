@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote, urlsplit, urlunsplit
 
 ROOT_DIR = Path(__file__).resolve().parent
 DATA_DIR = ROOT_DIR / "data"
@@ -78,6 +80,44 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _flashproxy_endpoint_from_env() -> str:
+    """Resolve explicit or legacy FlashProxy config without relabeling generic proxies."""
+    explicit = os.getenv("FLASHPROXY_PROXY_URL", "").strip()
+    candidates = [explicit] if explicit else [
+        item.strip().strip("\"'")
+        for item in re.split(r"[,;\s]+", os.getenv("PROXIES", ""))
+        if item.strip()
+    ]
+    proxy_user = os.getenv("PROXY_USER", "").strip()
+    proxy_pass = os.getenv("PROXY_PASS", "").strip()
+    verified: list[str] = []
+    for candidate in candidates:
+        raw = candidate if "://" in candidate else f"http://{candidate}"
+        try:
+            parsed = urlsplit(raw)
+            host = (parsed.hostname or "").lower().rstrip(".")
+            if parsed.scheme not in {"http", "https"} or not host:
+                continue
+            if host != "flashproxy.io" and not host.endswith(".flashproxy.io"):
+                continue
+            if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+                continue
+            if (parsed.username is None) != (parsed.password is None):
+                continue
+            if parsed.username is None:
+                if not proxy_user or not proxy_pass:
+                    continue
+                authority = f"{quote(proxy_user, safe='')}:{quote(proxy_pass, safe='')}@{parsed.netloc}"
+                raw = urlunsplit((parsed.scheme, authority, "", "", ""))
+            verified.append(raw.rstrip("/"))
+        except ValueError:
+            continue
+    unique = list(dict.fromkeys(verified))
+    # A single endpoint is required so an unattended Yapo run cannot rotate to
+    # an unverified provider from a mixed legacy list.
+    return unique[0] if len(unique) == 1 else ""
+
+
 @dataclass(slots=True)
 class AppConfig:
     root_dir: Path = ROOT_DIR
@@ -130,7 +170,7 @@ class AppConfig:
     proxy_url: str = field(default_factory=lambda: os.getenv("PROXY_URL", "").strip())
     # Profile-history reads use this endpoint exclusively and never fall back
     # to generic proxy variables or a direct connection.
-    flashproxy_proxy_url: str = field(default_factory=lambda: os.getenv("FLASHPROXY_PROXY_URL", "").strip())
+    flashproxy_proxy_url: str = field(default_factory=_flashproxy_endpoint_from_env)
     yapo_profile_max_profiles: int = field(default_factory=lambda: _env_int("YAPO_PROFILE_MAX_PROFILES", 12))
     yapo_profile_max_pages: int = field(default_factory=lambda: _env_int("YAPO_PROFILE_MAX_PAGES", 3))
     extra_headers_raw: str = field(default_factory=lambda: os.getenv("EXTRA_HEADERS_JSON", "").strip())

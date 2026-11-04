@@ -30,6 +30,18 @@ def _normalize_url(url: str) -> str:
     return urlunparse(parsed._replace(fragment=""))
 
 
+def _same_yapo_page_url(left: str, right: str) -> bool:
+    """Compare Yapo page identity despite equivalent query percent-encoding."""
+    left_parsed = urlparse(normalize_yapo_url(left))
+    right_parsed = urlparse(normalize_yapo_url(right))
+    return (
+        (left_parsed.hostname or "").lower() == (right_parsed.hostname or "").lower()
+        and left_parsed.path.rstrip("/") == right_parsed.path.rstrip("/")
+        and sorted(parse_qsl(left_parsed.query, keep_blank_values=True))
+        == sorted(parse_qsl(right_parsed.query, keep_blank_values=True))
+    )
+
+
 def _sanitize_query(text: str) -> str:
     return re.sub(r"\s+", "+", text.strip().lower())
 
@@ -528,7 +540,7 @@ class _YapoClientPagination:
         if (
             not self._initial_html_served
             and request.is_navigation_request()
-            and _normalize_url(request.url) == self._start_url
+            and _same_yapo_page_url(request.url, self._start_url)
         ):
             self._initial_html_served = True
             route.fulfill(

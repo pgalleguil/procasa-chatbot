@@ -8,7 +8,7 @@ import sys
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 _SCRAPER_DIR = Path(__file__).resolve().parent
@@ -619,7 +619,14 @@ def _reclassify_batch_by_exact_profile(records_out: list[dict[str, Any]]) -> Non
         _apply_yapo_availability_hold(record)
 
 
-def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[str, Any]:
+def run_search(
+    search: SearchConfig,
+    config: AppConfig | None = None,
+    *,
+    additional_existing_ids: set[str] | None = None,
+    additional_existing_urls: set[str] | None = None,
+    record_callback: Callable[[dict[str, Any], str], None] | None = None,
+) -> dict[str, Any]:
     """Run the shared read-only search engine; offline simulation is the default."""
     if not isinstance(search, SearchConfig):
         raise TypeError("run_search requiere SearchConfig validado.")
@@ -644,6 +651,7 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
         "ads_discovered": 0, "batch_duplicates": 0, "mongo_existing": 0,
         "new_ads": 0, "mongo_dedup_verified": False,
         "mongo_dedup_status": "not_attempted", "filter_matches": 0,
+        "staging_existing": 0, "staging_upsert_callbacks": 0,
         "excluded_out_of_filter": 0, "pending_filter_validation": 0,
         "commercial_candidate_count": 0, "broker_excluded_count": 0,
         "preliminary_classification_counts": {}, "extraction_error_counts": {},
@@ -659,6 +667,17 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
         "commercial_result_available": False,
     }
     records_out: list[dict[str, Any]] = []
+
+    def emit_staging_checkpoint(record: dict[str, Any], phase: str) -> None:
+        if record_callback is None:
+            return
+        try:
+            record_callback(record, phase)
+            summary["staging_upsert_callbacks"] += 1
+        except Exception as exc:
+            listing_id = str(record.get("listing_id") or "unknown")
+            raise RuntimeError(f"yapo_staging_checkpoint_failed:{listing_id}:{type(exc).__name__}") from None
+
     if not search.live:
         summary["pagination_cause"] = "offline_simulation_no_requests"
         summary["files"] = _save_search_outputs(summary, records_out, output_dir)
@@ -760,8 +779,23 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
             urls = [str(value) for row in unique for value in (row.get("url"), row.get("canonical_url")) if value]
             existing_ids = store.existing_listing_ids(ids)
             existing_urls = store.existing_listing_urls(urls)
+            staging_ids = {str(value) for value in (additional_existing_ids or set()) if str(value)}
+            staging_urls = {
+                normalize_yapo_url(str(value))
+                for value in (additional_existing_urls or set())
+                if normalize_yapo_url(str(value))
+            }
+            summary["staging_existing"] = sum(
+                row["listing_id"] in staging_ids or normalize_yapo_url(row["url"]) in staging_urls
+                for row in unique
+            )
+            existing_ids = set(existing_ids) | staging_ids
+            existing_urls = set(existing_urls) | staging_urls
             summary["mongo_dedup_verified"] = True
-            summary["mongo_dedup_status"] = "verified_read_only"
+            summary["mongo_dedup_status"] = (
+                "verified_read_only_main_and_staging"
+                if staging_ids or staging_urls else "verified_read_only"
+            )
             summary["mongo_existing"] = sum(
                 row["listing_id"] in existing_ids or normalize_yapo_url(row["url"]) in existing_urls
                 for row in unique
@@ -805,6 +839,7 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
                         "extraction_issues": ["listing_blocked"], "detail_error": "blocked",
                         **availability,
                     })
+                    emit_staging_checkpoint(records_out[-1], "preliminary")
                     continue
                 if validation["status"] in {"INVALID", "LISTING_REMOVED"}:
                     summary["invalid_or_removed_ads"] += 1
@@ -816,6 +851,7 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
                         "extraction_issues": [f"html_{validation['status'].lower()}"],
                         **availability,
                     })
+                    emit_staging_checkpoint(records_out[-1], "preliminary")
                     continue
                 extracted = extract_listing_fields(downloaded.html, source_url=row["url"])
                 detail_commune_source = str(extracted.get("comuna") or "")
@@ -978,12 +1014,25 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
                     "mongo_write_executed": False,
                 }
                 records_out.append(result)
+                emit_staging_checkpoint(result, "preliminary")
                 if filter_validation["status"] == "PASA":
                     summary["filter_matches"] += 1
                 elif filter_validation["status"] == "FUERA_DE_FILTRO":
                     summary["excluded_out_of_filter"] += 1
                 else:
                     summary["pending_filter_validation"] += 1
+            except RuntimeError as exc:
+                if str(exc).startswith("yapo_staging_checkpoint_failed:"):
+                    raise
+                summary["errors_or_blocks"].append(f"detail_error:{row['listing_id']}:{type(exc).__name__}")
+                records_out.append({
+                    **row, "filter_status": "PENDIENTE_VALIDACION",
+                    "filter_validation": {"status": "PENDIENTE_VALIDACION", "reasons": ["detail_extraction_error"]},
+                    "classification": {}, "classification_evidence": [],
+                    "extraction_issues": [f"detail_error:{type(exc).__name__}"],
+                    "detail_error": f"{type(exc).__name__}: {exc}",
+                })
+                emit_staging_checkpoint(records_out[-1], "preliminary")
             except Exception as exc:
                 summary["errors_or_blocks"].append(f"detail_error:{row['listing_id']}:{type(exc).__name__}")
                 records_out.append({
@@ -993,6 +1042,7 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
                     "extraction_issues": [f"detail_error:{type(exc).__name__}"],
                     "detail_error": f"{type(exc).__name__}: {exc}",
                 })
+                emit_staging_checkpoint(records_out[-1], "preliminary")
 
     commercial_states = {"DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"}
     summary["publisher_profile_metrics"] = enrich_batch_publisher_profiles(
@@ -1001,6 +1051,8 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
         batch_id=batch_id,
     )
     _reclassify_batch_by_exact_profile(records_out)
+    for item in records_out:
+        emit_staging_checkpoint(item, "final")
     class_counts: dict[str, int] = {}
     availability_counts: dict[str, int] = {}
     summary["commercial_candidates"] = []

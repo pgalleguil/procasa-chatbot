@@ -564,3 +564,24 @@ def test_reply_for_different_property_not_misattributed(db, monkeypatch):
     assert db[TURNS].count_documents({}) == 0
     assert db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})[
         "reply_count"] == 0
+
+
+def test_first_client_reply_timestamp_is_recorded_even_for_optout(db, monkeypatch):
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "sent-optout"})
+    instant = START + timedelta(minutes=3)
+    result = record_inbound(
+        db, phone="+56930000001", provider_message_id="stop-immediate",
+        text="No me escriban más", received_at=instant,
+    )
+    assert result["status"] == "OPTED_OUT"
+    row = db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})
+    assert row["first_response_at"].replace(tzinfo=UTC) == instant
+    assert row.get("first_positive_response_at") is None
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["responded"] == 1
+    assert report["rows"][0]["minutes_to_first_reply"] == 3.0
+    assert report["hot"] == 0 and report["normal"] == 0
+    assert report["pending_human_review"] == 0

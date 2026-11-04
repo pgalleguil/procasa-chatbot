@@ -12,6 +12,7 @@ from .phone_utils import normalize_phone_strict
 from .price_drop_pilot_exec_notice_sim import FLAG, TURNS, should_simulate
 
 VERSION = "price_drop_pilot_v11_dual_notice_test"
+V12_VERSION = "price_drop_pilot_v12_followup_test"
 
 
 def _text(ctx, phone, answer, role):
@@ -43,7 +44,7 @@ def send_dual_test_notices(db, *, ctx, phone, customer_text, history,
                            inbound_message_id, sender=None):
     if os.getenv(FLAG, "").lower() not in {"1", "true", "yes"}:
         return {"status": "DISABLED"}
-    if ctx.get("campaign_version") != VERSION:
+    if ctx.get("campaign_version") not in {VERSION, V12_VERSION}:
         return {"status": "WRONG_VERSION"}
     from .price_drop_pilot_isolation import is_test_phone
     normalized = normalize_phone_strict(phone)
@@ -57,7 +58,8 @@ def send_dual_test_notices(db, *, ctx, phone, customer_text, history,
         sender = send_whatsapp_message_detailed_sync
     outcomes = {}
     for role in ("ADMIN", "EXECUTIVE"):
-        key = "v11-notice:" + hashlib.sha256(
+        prefix = "v12-notice:" if ctx.get("campaign_version") == V12_VERSION else "v11-notice:"
+        key = prefix + hashlib.sha256(
             f"{ctx['campaign_id']}:{role}".encode()
         ).hexdigest()
         now = datetime.now(timezone.utc)

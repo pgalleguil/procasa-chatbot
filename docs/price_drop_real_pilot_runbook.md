@@ -120,3 +120,19 @@ Dejar además `PRICE_DROP_REAL_PILOT_ENABLED=false`. Las llamadas pendientes o d
 - Confirmar recepción, conversación, resultados y baja en las colecciones correspondientes
 - Supervisar entregas/status; pausar si hay un error o una respuesta con datos no confirmados
 - Mantener restringida la lectura de ubicación y datos privados de Prop360. Los permisos de base de datos del chatbot aún requieren separación física por usuario/vista
+
+
+## Preparación y aprobación desde Render (sin terminal)
+
+La conexión MongoDB del asistente puede ser solo lectura. El servicio PROCASA prepara y aprueba el plan con sus credenciales normales y una activación puntual de su arranque.
+
+1. Guardar el JSON revisado (IDs de leads, fechas, fundamentos; **sin teléfonos**) en la variable protegida `PRICE_DROP_REAL_PILOT_PLAN_JSON`.
+2. Configurar `PRICE_DROP_REAL_PILOT_REVIEWER` igual a `reviewed_by` del JSON y `PRICE_DROP_REAL_PILOT_APPROVED_ID` igual al ID exacto de campaña.
+3. Poner `PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE=preview` y realizar un despliegue controlado. Revisar `[PRICE_DROP_REAL_PILOT_BOOTSTRAP]` en los logs: número de elegibles, horarios, teléfonos enmascarados y bloqueos. **Sin escritura ni envío.**
+4. Tras revisión, cambiar a `PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE=prepare` y desplegar. Se insertan cabecera y despachos `PLANNED`. **No envía WhatsApp.**
+5. Tras la aprobación expresa, cambiar a `PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE=approve` y desplegar. Se marca la campaña `APPROVED`. **No envía WhatsApp.**
+6. Volver a `PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE=off` y dejar apagados todos los permisos de envío.
+7. Solo en la fecha autorizada, habilitar `PRICE_DROP_REAL_PILOT_ENABLED=true`, `PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true` y `PRICE_DROP_REAL_PILOT_START_ON_BOOT=true`, y desplegar. El runner realizará **máximo un intento por ventana**, sin cambiar asignaciones ni SLA.
+8. Tras las ventanas o ante una anomalía, volver `PRICE_DROP_REAL_PILOT_ENABLED=false`, `PRICE_DROP_REAL_PILOT_START_ON_BOOT=false` y `PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE=off`. Mantener únicamente `PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true` durante siete días para auditar las respuestas.
+
+**No activar prepare, approve ni el runner sin revisar primero la vista previa y autorizar expresamente cada etapa.**

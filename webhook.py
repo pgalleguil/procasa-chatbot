@@ -1504,6 +1504,23 @@ async def lifespan(app: FastAPI):
     # exact approved ID in the environment and approval stored in MongoDB.
     # This background thread uses no shared web/CRM/SLA worker-pool slot.
     # Fail-closed by default, including normal code deploys.
+    # Separate, operator-controlled staging phase. PREVIEW only reads; PREPARE
+    # creates durable campaign slots but does not send; APPROVE only changes
+    # their approval state. These flags are OFF on normal deployments.
+    bootstrap_mode = str(os.getenv("PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE", "off")).lower()
+    if bootstrap_mode in {"preview", "prepare", "approve"}:
+        try:
+            from chatbot.price_drop_campaign_bootstrap import run_bootstrap
+            from chatbot.storage import get_db as _campaign_bootstrap_db
+            bootstrap_summary = await asyncio.get_running_loop().run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: run_bootstrap(_campaign_bootstrap_db()),
+            )
+            # Summary excludes all full phones, message text and owner data.
+            logger.info("[PRICE_DROP_REAL_PILOT_BOOTSTRAP] summary=%s", bootstrap_summary)
+        except Exception:
+            logger.exception("[PRICE_DROP_REAL_PILOT_BOOTSTRAP] blocked; no sends")
+
     if str(os.getenv("PRICE_DROP_REAL_PILOT_START_ON_BOOT", "")).lower() in {"1", "true", "yes"}:
         cid = str(os.getenv("PRICE_DROP_REAL_PILOT_APPROVED_ID", "")).strip()
         send_enabled = str(os.getenv("PRICE_DROP_REAL_PILOT_ENABLED", "")).lower() in {"1", "true", "yes"}

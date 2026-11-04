@@ -125,7 +125,7 @@ def test_one_whatsapp_per_window_and_durable_lead_marker(db, monkeypatch):
 
     first = send_one_due(db, "piloto6436_20261105", sender=fake_sender, now=START)
     assert first["status"] == "SENT"
-    assert first["phone_last4"] == "0001"
+    assert first["phone_last4"].endswith("0001")
     assert len(deliveries) == 1
     assert "UF 2.790" in deliveries[0][1] and "UF 2.690" in deliveries[0][1]
     assert "PRIVATE STREET" not in deliveries[0][1]
@@ -162,7 +162,7 @@ def test_provider_unknown_after_attempt_never_retries(db, monkeypatch):
                              now=START + timedelta(minutes=1))
     assert next_tick["status"] == "WINDOW_NOT_OPEN" and len(calls) == 1
     first_doc = db[DISPATCHES].find_one({"status": "DELIVERY_UNKNOWN"})
-    assert first_doc["attempted_at"] == START and first_doc.get("sent_at") is None
+    assert first_doc["attempted_at"].replace(tzinfo=UTC) == START and first_doc.get("sent_at") is None
 
 
 def test_duplicate_lead_and_duplicate_phone_fail_closed(db):

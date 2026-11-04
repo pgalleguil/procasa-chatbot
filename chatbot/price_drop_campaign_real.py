@@ -20,6 +20,7 @@ from pymongo.errors import DuplicateKeyError
 
 from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_variants
 from .property_lookup import PROPERTY_COLLECTION_NAME
+from .price_drop_campaign_classifier import classify_price_drop_reply
 
 CAMPAIGNS = "crm_price_drop_campaigns_v1"
 DISPATCHES = "crm_price_drop_campaign_dispatches_v1"
@@ -331,6 +332,13 @@ def persist_plan(db: Any, payload: dict, *, now: datetime | None = None) -> dict
             "visit_requested": False,
             "human_requested": False,
             "interest_signaled": False,
+            "offer_intent": False,
+            "response_classification": "SIN_RESPUESTA",
+            "response_temperature": None,
+            "last_response_intent": None,
+            "positive_reply_count": 0,
+            "followup_status": "SIN_RESPUESTA",
+            "needs_human_review": False,
         })
     header = {
         "_id": cid, "status": "PLANNED",
@@ -489,6 +497,9 @@ def send_one_due(
     )
     if not claimed:
         return {"status": "ALREADY_CLAIMED"}
+    # A real provider call must be timestamped when accepted, not when a
+    # window first opens. Fake senders injected by tests keep the test clock.
+    live_provider = sender is None
     if sender is None:
         from .whatsapp_client import send_whatsapp_message_detailed_sync
         sender = send_whatsapp_message_detailed_sync
@@ -505,6 +516,9 @@ def send_one_due(
         receipt.get("success") and receipt.get("provider_message_id")
         and not receipt.get("provider_call_uncertain")
     )
+    # For live sends use the instant the provider returns acceptance.
+    # UTC BSON and a local Chile timestamp are both durable in the ledger.
+    accepted_at = datetime.now(timezone.utc) if live_provider else now
     status = "SENT" if accepted else "DELIVERY_UNKNOWN"
     patch = {
         "status": status, "provider_delivery_status": str(
@@ -515,7 +529,13 @@ def send_one_due(
         "completed_at": now,
     }
     if accepted:
-        patch.update({"sent_at": now, "expires_at": now + timedelta(days=7)})
+        patch.update({
+            "sent_at": accepted_at,
+            "sent_at_chile": accepted_at.astimezone(CL_TZ).isoformat(),
+            "expires_at": accepted_at + timedelta(days=7),
+            "response_classification": "SIN_RESPUESTA",
+            "followup_status": "SIN_RESPUESTA",
+        })
     db[DISPATCHES].update_one({"_id": claimed["_id"], "status": "SENDING"},
                               {"$set": patch})
     if accepted:
@@ -533,6 +553,8 @@ def send_one_due(
         "lead_id": str(claimed["lead_id"]),
         "phone_last4": _preview_phone(claimed["phone_normalized"]),
         "provider_message_id": receipt.get("provider_message_id"),
+        "sent_at": accepted_at.isoformat() if accepted else None,
+        "sent_at_chile": accepted_at.astimezone(CL_TZ).isoformat() if accepted else None,
     }
 
 

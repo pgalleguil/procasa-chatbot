@@ -1415,25 +1415,36 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
                      "customer_first_name_updated_at": now}
         })
         ctx["customer_first_name"] = introduced
-    # V12: action and visit follow-ups use a deterministic, test-only handoff
-    # contract. Read ONLY isolated notice receipts, never CRM/lead records.
+    # Read only isolated test receipts: no CRM/lead/real-agent lookups.
     from .price_drop_pilot_followup_v12 import VERSION as V12_VERSION, followup_reply
-    response = None
-    if (ctx.get("campaign_version") == V12_VERSION
-            and not (NEGATE_VISIT.search(text) or DECLINE.search(text))):
+    from .price_drop_pilot_guard_v13 import (
+        VERSION as V13_VERSION, reply_v13, safe_outbound_v13,
+    )
+    campaign_version = ctx.get("campaign_version")
+    roles = ()
+    if campaign_version in {V12_VERSION, V13_VERSION}:
         receipts = db[TURN_COLLECTION].find({
             "campaign_id": ctx["campaign_id"], "status": "NOTICE_SENT",
         }, {"test_notification_role": 1})
         roles = tuple(str(row.get("test_notification_role") or "") for row in receipts)
+    response = None
+    if campaign_version == V13_VERSION and not (NEGATE_VISIT.search(text) or DECLINE.search(text)):
+        response = reply_v13(text, ctx, history, parse_parts=_visit_parts,
+                             notice_roles=roles)
+    elif campaign_version == V12_VERSION and not (NEGATE_VISIT.search(text) or DECLINE.search(text)):
         response = followup_reply(text, history, parse_parts=_visit_parts,
                                   notice_roles=roles)
-    # Continue using the existing commercial generator for ordinary inquiries.
-    # V12 intercepts only the consent/visit/handoff branch, not the whole chat.
     if response is None:
         if _native_campaign_enabled() and llm is None:
             response = build_native_pilot_reply(text, ctx, history)
         else:
             response = build_test_reply(text, ctx, history, llm=llm)
+    if campaign_version == V13_VERSION:
+        # Final outbound check also catches unsupported LLM-generated promises.
+        response = safe_outbound_v13(
+            response, text, ctx, history, parse_parts=_visit_parts,
+            notice_roles=roles,
+        )
     answer = _personalize_reply(response, text, ctx, history)
     if not answer:
         db[TURN_COLLECTION].update_one({"_id": key}, {"$set": {"status": "NO_REPLY"}})
@@ -1463,10 +1474,10 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
     }})
     if not accepted:
         return {"status": "delivery_unknown"}
-    # V11 and V12: separate test-only notices to the allowlisted phone.
-    # This never accesses a CRM owner or notifies a real executive.
+    # V11/V12/V13: test-only notifications to the allowlisted tester.
+    # No CRM, current executive owner or real commercial side effects.
     from .price_drop_pilot_dual_notice_sim import VERSION as V11_VERSION
-    if ctx.get("campaign_version") in {V11_VERSION, V12_VERSION}:
+    if campaign_version in {V11_VERSION, V12_VERSION, V13_VERSION}:
         from .price_drop_pilot_dual_notice_sim import send_dual_test_notices
         result = send_dual_test_notices(
             db, ctx=ctx, phone=phone_norm, customer_text=text,

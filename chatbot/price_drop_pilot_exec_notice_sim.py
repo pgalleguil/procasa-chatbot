@@ -58,7 +58,7 @@ def should_simulate(message: str, history: list[dict]) -> bool:
         r"quiero visitar|quiero (?:hacer|presentar) una oferta)\b",
         value, re.I,
     )
-    if info_only and not clear_interest:
+    if classification.label == INTEREST and info_only and not clear_interest:
         return False
     if classification.label in {INTEREST, PRIORITY} and classification.positive:
         return True

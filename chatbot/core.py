@@ -35,6 +35,7 @@ from .utils import parse_bool
 from .alert_service import send_alert_once
 from .classifier import es_propietario, clasificar_corredor_externo
 from .processing_service import LeadProcessingService
+from .property_read_guard import chatbot_safe_property_db
 from .property_lookup import (
     PROPERTY_COLLECTION_NAME,
     canonical_property_context,
@@ -260,6 +261,7 @@ def _buscar_propiedad_en_universo(db, raw_value, portal: str | None = None):
     Intenta resolver una propiedad en universo_cartera usando un valor crudo
     que puede ser código interno, código internacional o URL.
     """
+    db = chatbot_safe_property_db(db)
     if not raw_value:
         return None
 

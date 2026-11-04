@@ -47,6 +47,19 @@ def should_simulate(message: str, history: list[dict]) -> bool:
     )
     value = str(message or "").strip()
     classification = classify_price_drop_reply(value)
+    # "Solo quiero saber cuánto cuesta" is a neutral information request,
+    # despite older campaign rules grouping "quiero saber" under interest.
+    # Do not fire a management notice without an explicit interest statement.
+    info_only = re.search(
+        r"\b(?:quiero|quisiera|me gustar[ií]a)\s+saber\b", value, re.I
+    )
+    clear_interest = re.search(
+        r"\b(?:me interesa|estoy interesad[oa]|quiero agendar|"
+        r"quiero visitar|quiero (?:hacer|presentar) una oferta)\b",
+        value, re.I,
+    )
+    if info_only and not clear_interest:
+        return False
     if classification.label in {INTEREST, PRIORITY} and classification.positive:
         return True
     if not (_YES.fullmatch(value) or _CONTEXTUAL_YES.match(value)):

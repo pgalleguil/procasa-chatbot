@@ -652,29 +652,33 @@ def record_inbound(
     except DuplicateKeyError:
         return {"status": "DUPLICATE_IGNORED"}
 
-    stopped = event["label"] == "BAJA"
-    declined = event["label"] == "RECHAZADO"
-    previous_label = str(row.get("response_classification") or "")
+    stopped = event["label"] == UNSUBSCRIBED
+    declined = event["label"] == DECLINED
+    previous_label = str(row.get("campaign_response_classification") or "")
     previous_pending = bool(row.get("needs_human_review"))
     if stopped:
-        overall_label, overall_temp, followup, pending = (
-            "BAJA", None, "BAJA", False,
+        overall_label, priority, followup, pending = (
+            UNSUBSCRIBED, None, "BAJA", False,
         )
     elif declined:
-        overall_label, overall_temp, followup, pending = (
-            "RECHAZADO", None, "RECHAZADO", False,
+        overall_label, priority, followup, pending = (
+            DECLINED, None, "RECHAZADO", False,
         )
-    elif event["label"] == "HOT" or previous_label == "HOT":
-        overall_label, overall_temp, followup, pending = (
-            "HOT", "HOT", "PENDIENTE_REVISION", True,
+    elif event["label"] == PRIORITY or previous_label == PRIORITY:
+        overall_label, priority, followup, pending = (
+            PRIORITY, "ALTA", "PENDIENTE_REVISION", True,
         )
-    elif event["label"] == "NORMAL" or previous_label == "NORMAL":
-        overall_label, overall_temp = "NORMAL", "NORMAL"
-        pending = previous_pending or bool(event["positive"])
-        followup = "PENDIENTE_REVISION" if pending else "CONSULTA_INFORMATIVA"
+    elif event["label"] == INTEREST or previous_label == INTEREST:
+        overall_label, priority, followup, pending = (
+            INTEREST, "MEDIA", "PENDIENTE_REVISION", True,
+        )
+    elif event["label"] == INFO or previous_label == INFO:
+        overall_label, priority, followup, pending = (
+            INFO, "INFORMATIVA", "CONSULTA_INFORMATIVA", previous_pending,
+        )
     else:
-        overall_label, overall_temp, followup, pending = (
-            "SIN_SENAL", None, "SIN_SENAL", False,
+        overall_label, priority, followup, pending = (
+            NO_SIGNAL, None, "SIN_SENAL", False,
         )
 
     fields = {
@@ -685,8 +689,8 @@ def record_inbound(
         "last_turn_reason": event["reason"],
         "classifier_version": event["classifier_version"],
         "last_classified_at": now,
-        "response_classification": overall_label,
-        "response_temperature": overall_temp,
+        "campaign_response_classification": overall_label,
+        "campaign_response_priority": priority,
         "followup_status": followup,
         "needs_human_review": pending,
     }
@@ -718,10 +722,17 @@ def record_inbound(
             {"_id": row["_id"], "first_positive_response_at": {"$exists": False}},
             {"$set": {"first_positive_response_at": now}},
         )
-    if event["label"] == "HOT":
+    if event["label"] == PRIORITY:
         db[DISPATCHES].update_one(
-            {"_id": row["_id"], "first_hot_response_at": {"$exists": False}},
-            {"$set": {"first_hot_response_at": now}},
+            {"_id": row["_id"], "first_priority_response_at": {"$exists": False}},
+            {"$set": {"first_priority_response_at": now}},
+        )
+    if event["positive"] and row.get("crm_was_hot_before_send") is False:
+        # Post-send engagement of someone who was explicitly NOT CRM Hot
+        # when contacted; temporal association, not proven causation.
+        db[DISPATCHES].update_one(
+            {"_id": row["_id"], "first_positive_after_non_hot_at": {"$exists": False}},
+            {"$set": {"first_positive_after_non_hot_at": now}},
         )
 
     # The lead mirror is namespaced and does NOT overwrite the official
@@ -733,8 +744,15 @@ def record_inbound(
             "OPTED_OUT" if stopped else "RESPONDED",
         "price_drop_campaign_v1.last_response_at": now,
         "price_drop_campaign_v1.last_classified_at": now,
-        "price_drop_campaign_v1.classification": overall_label,
-        "price_drop_campaign_v1.temperature": overall_temp,
+        "price_drop_campaign_v1.response_classification": overall_label,
+        "price_drop_campaign_v1.response_priority": priority,
+        "price_drop_campaign_v1.crm_temperature_before_send":
+            row.get("crm_temperature_before_send"),
+        "price_drop_campaign_v1.crm_was_hot_before_send":
+            row.get("crm_was_hot_before_send"),
+        "price_drop_campaign_v1.origin": "PRICE_DROP",
+        "price_drop_campaign_v1.attribution_basis":
+            "same_phone_after_accepted_send_window",
         "price_drop_campaign_v1.last_intent": event["intent"],
         "price_drop_campaign_v1.classifier_version": event["classifier_version"],
         "price_drop_campaign_v1.followup_status": followup,
@@ -744,8 +762,10 @@ def record_inbound(
     }
     if event["positive"]:
         lead_fields["price_drop_campaign_v1.last_positive_response_at"] = now
-    if event["label"] == "HOT":
-        lead_fields["price_drop_campaign_v1.last_hot_response_at"] = now
+    if event["label"] == PRIORITY:
+        lead_fields["price_drop_campaign_v1.last_priority_response_at"] = now
+    if event["positive"] and row.get("crm_was_hot_before_send") is False:
+        lead_fields["price_drop_campaign_v1.last_positive_after_non_hot_at"] = now
     if stopped:
         lead_fields.update({
             "price_drop_campaign_v1.opted_out": True,
@@ -758,8 +778,9 @@ def record_inbound(
     return {
         "status": "OPTED_OUT" if stopped else "ATTRIBUTED",
         "campaign_id": row["campaign_id"],
-        "classification": overall_label,
-        "temperature": overall_temp,
+        "campaign_classification": overall_label,
+        "campaign_priority": priority,
+        "crm_was_hot_before_send": row.get("crm_was_hot_before_send"),
         "intent": event["intent"],
         "needs_human_review": pending,
     }

@@ -78,6 +78,11 @@ def _load_real_campaign_context(db: Any, phone: str, message: str, *, now=None) 
     This is a read-only context join, NOT a marketing send gate and NOT an
     isolated test interception. Replies use the normal CRM/chatbot workflow.
     """
+    # Do not add a collection lookup to ordinary inbound leads while the
+    # controlled pilot is inactive. Keep this read-only flag enabled for seven
+    # days after sending, even when the send switch is turned back off.
+    if os.getenv("PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED", "").casefold() not in {"1", "true", "yes"}:
+        return None
     from .price_drop_campaign_real import DISPATCHES, _property_valid
     canon = normalize_phone_strict(phone)
     if not canon:

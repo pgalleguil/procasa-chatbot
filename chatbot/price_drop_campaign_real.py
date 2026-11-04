@@ -878,7 +878,9 @@ def campaign_worklist(db: Any, campaign_id: str) -> dict:
     ]
     pending.sort(key=lambda x: (
         priority.get(x["response_classification"], 9),
-        x.get("first_positive_response_at") or datetime.max,
+        _mongo_utc(x["first_positive_response_at"])
+        if x.get("first_positive_response_at")
+        else datetime.max.replace(tzinfo=timezone.utc),
         x["lead_id"],
     ))
     return {

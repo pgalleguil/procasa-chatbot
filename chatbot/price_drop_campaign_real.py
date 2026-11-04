@@ -20,7 +20,10 @@ from pymongo.errors import DuplicateKeyError
 
 from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_variants
 from .property_lookup import PROPERTY_COLLECTION_NAME
-from .price_drop_campaign_classifier import classify_price_drop_reply
+from .price_drop_campaign_classifier import (
+    PRIORITY, INTEREST, INFO, NO_SIGNAL, DECLINED, UNSUBSCRIBED,
+    classify_price_drop_reply,
+)
 
 CAMPAIGNS = "crm_price_drop_campaigns_v1"
 DISPATCHES = "crm_price_drop_campaign_dispatches_v1"
@@ -45,6 +48,8 @@ LEAD_PROJECTION = {
     "prospecto.codigo": 1, "created_at": 1, "messages": 1,
     "conversation_status": 1, "contact_identity_incomplete": 1,
     "phone_is_synthetic": 1, "price_drop_campaign_v1.opted_out": 1,
+    "lead_temperature_effective": 1, "lead_temperature": 1,
+    "lifecycle.hot_since": 1, "last_intent": 1,
 }
 PROP_PROJECTION = {
     "_id": 0, "codigo": 1, "disponible_prop360": 1,
@@ -206,11 +211,22 @@ def _check_recipient(
         "phone_normalized": phone, "opted_out_at": {"$exists": True},
     }, {"_id": 1}):
         raise CampaignBlocked("phone_campaign_opted_out")
+    crm_temperature = lead.get("lead_temperature_effective")
+    if crm_temperature not in {"HOT", "COLD"}:
+        crm_temperature = lead.get("lead_temperature")
+    if crm_temperature not in {"HOT", "COLD"}:
+        crm_temperature = None
     return {
         "lead_id": lid,
         "phone_normalized": phone,
         "inquiry_evidence_at": inquiry_at,
         "consent_basis": str(candidate["consent_basis"])[:180],
+        # Snapshot comes from the official CRM but is never changed by
+        # the campaign. None means unknown: never infer a new reactivation.
+        "crm_temperature_snapshot": crm_temperature,
+        "crm_was_hot_snapshot": crm_temperature == "HOT" if crm_temperature else None,
+        "crm_hot_since_snapshot": (lead.get("lifecycle") or {}).get("hot_since"),
+        "crm_intent_snapshot": lead.get("last_intent"),
     }
 
 
@@ -324,6 +340,9 @@ def persist_plan(db: Any, payload: dict, *, now: datetime | None = None) -> dict
             "new_price_uf": plan["new_price_uf"],
             "inquiry_evidence_at": row["inquiry_evidence_at"],
             "consent_basis": rec["consent_basis"],
+            "crm_temperature_at_selection": rec["crm_temperature_snapshot"],
+            "crm_was_hot_at_selection": rec["crm_was_hot_snapshot"],
+            "crm_hot_since_at_selection": rec["crm_hot_since_snapshot"],
             "scheduled_at": _mongo_utc(row["scheduled_at"]),
             "created_at": now,
             "status": "PLANNED",
@@ -333,9 +352,11 @@ def persist_plan(db: Any, payload: dict, *, now: datetime | None = None) -> dict
             "human_requested": False,
             "interest_signaled": False,
             "offer_intent": False,
-            "response_classification": "SIN_RESPUESTA",
-            "response_temperature": None,
+            "campaign_response_classification": "SIN_RESPUESTA",
+            "campaign_response_priority": None,
             "last_response_intent": None,
+            "campaign_origin": "PRICE_DROP",
+            "campaign_attribution_basis": "same_phone_after_accepted_send_window",
             "positive_reply_count": 0,
             "followup_status": "SIN_RESPUESTA",
             "needs_human_review": False,
@@ -478,6 +499,11 @@ def send_one_due(
             "$set": {"status": "SKIPPED_ELIGIBILITY",
                      "skip_reason": str(exc), "skipped_at": now}})
         return {"status": "SKIPPED_ELIGIBILITY", "reason": str(exc)}
+    # Snapshot the *current* official classification immediately before the
+    # provider attempt, independent of what the same lead was at selection.
+    # This is an audit baseline only: never mutate CRM temperature/SLA.
+    crm_at_send = recipient["crm_temperature_snapshot"]
+    was_hot_at_send = recipient["crm_was_hot_snapshot"]
     # CAS on campaign header is the cross-worker pace/size gate.
     claimed_slot = db[CAMPAIGNS].find_one_and_update(
         {"_id": cid, "status": "APPROVED",
@@ -527,20 +553,25 @@ def send_one_due(
         "outbound_message": message[:1600],
         "provider_message_id": receipt.get("provider_message_id"),
         "completed_at": now,
+        "crm_temperature_before_send": crm_at_send,
+        "crm_was_hot_before_send": was_hot_at_send,
+        "crm_hot_since_before_send": recipient["crm_hot_since_snapshot"],
+        "crm_intent_before_send": recipient["crm_intent_snapshot"],
     }
     if accepted:
         patch.update({
             "sent_at": accepted_at,
             "sent_at_chile": accepted_at.astimezone(CL_TZ).isoformat(),
             "expires_at": accepted_at + timedelta(days=7),
-            "response_classification": "SIN_RESPUESTA",
+            "campaign_response_classification": "SIN_RESPUESTA",
+            "campaign_response_priority": None,
             "followup_status": "SIN_RESPUESTA",
         })
     db[DISPATCHES].update_one({"_id": claimed["_id"], "status": "SENDING"},
                               {"$set": patch})
     if accepted:
         try:
-            _update_lead_marker(db, claimed, status="SENT", now=now)
+            _update_lead_marker(db, claimed, status="SENT", now=accepted_at)
         except Exception:
             # Ledger/provider acceptance remains durable. Never retry on a
             # post-send CRM marker failure.

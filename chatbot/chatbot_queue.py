@@ -966,6 +966,16 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
             "provider_message_id": provider_id,
             "response_len": len(response or ""),
         })
+        # Attribution is independent of the regular durable delivery state.
+        # Failure here must never cause a second WhatsApp send.
+        try:
+            from .price_drop_campaign_real import record_bot_reply
+            await asyncio.to_thread(
+                record_bot_reply, db, phone=claimed["phone"],
+                provider_message_id=str(provider_id), text=response,
+            )
+        except Exception:
+            logger.exception("[PRICE_DROP_CAMPAIGN] bot reply audit unavailable")
         return await asyncio.to_thread(
             finalize_batch, db, batch_id=batch_id, state=ST_RESPONDED,
             outbound_provider_message_id=provider_id, worker_id=worker_id,

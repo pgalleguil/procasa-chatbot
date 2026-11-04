@@ -169,6 +169,28 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
     s = plain(message)
     if not s or _NEGATIVE.search(s):
         return None
+    # A bare 'no' to "¿alcanzaste a ver la publicación?" is NOT an opt-out.
+    # Brief replies are interpreted only using the immediately previous question.
+    previous_bot = plain(history[-1].get("bot_text") or "") if history else ""
+    if s in {"no", "nop", "nope", "no gracias"}:
+        if "alcanzaste a ver" in previous_bot or "viste la publicacion" in previous_bot:
+            return (
+                "No hay problema 😊. Te escribimos porque el departamento de "
+                f"San Miguel bajó de UF {_price(ctx['old_price_uf'])} a "
+                f"UF {_price(ctx['new_price_uf'])}. "
+                f"Esta es la publicación: https://www.procasa.cl/{ctx['property_code']}"
+            )
+        if re.search(r"\b(?:ir a verlo|ir a conocer|visitarlo|te gustaria visitar)\b", previous_bot):
+            return "Entendido, no coordinamos una visita. Si tienes alguna duda sobre el departamento, te ayudo encantada."
+        return "Entendido, gracias por responder. No insistiremos por esta propiedad."
+    if s in {"si", "sip", "claro", "dale", "ok", "oka"}:
+        if re.search(r"\b(?:ir a verlo|ir a conocer|visitarlo|te gustaria visitar)\b", previous_bot):
+            return (
+                "¡Perfecto! 😊 ¿Qué día te acomodaría ir a verlo? "
+                "La disponibilidad debe confirmarla el equipo comercial."
+            )
+        if "alcanzaste a ver" in previous_bot or "viste la publicacion" in previous_bot:
+            return "¡Perfecto! 😊 ¿Cómo ves el nuevo precio del departamento? Si quieres, puedo aclararte detalles."
     # The customer may challenge our own outreach or a previous poor answer.
     if (re.search(r"\b(?:me (?:envi|escrib|mand)\w*|ustedes me escribieron)\b", s)
             and re.search(r"\b(?:informacion|no quieres|no me dices|mensaje)\b", s)):

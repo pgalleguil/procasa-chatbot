@@ -164,8 +164,8 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
     if not s or _NEGATIVE.search(s):
         return None
     # The customer may challenge our own outreach or a previous poor answer.
-    if (re.search(r"\\b(?:me (?:envi|escrib|mand)\\w*|ustedes me escribieron)\\b", s)
-            and re.search(r"\\b(?:informacion|no quieres|no me dices|mensaje)\\b", s)):
+    if (re.search(r"\b(?:me (?:envi|escrib|mand)\w*|ustedes me escribieron)\b", s)
+            and re.search(r"\b(?:informacion|no quieres|no me dices|mensaje)\b", s)):
         return (
             f"Tienes razón: fuimos nosotros quienes te escribimos. Disculpa "
             f"la confusión. Es el departamento de San Miguel (código "

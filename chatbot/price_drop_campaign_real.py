@@ -37,6 +37,7 @@ STOP = re.compile(
 VISIT = re.compile(r"\b(?:visitar|visita|agendar|verlo|verla|conocer el departamento)\b", re.I)
 HUMAN = re.compile(r"\b(?:ejecutiv[oa]|corredor[ae]?|llamad[ao]|contact[oe]|asesor[ae]?)\b", re.I)
 INTEREST = re.compile(r"\b(?:me interesa|interesad[oa]|quiero saber|cuentame|cuéntame|me gustaria|me gustaría)\b", re.I)
+DECLINE = re.compile(r"\b(?:no me interesa|no estoy interesad[oa]|no quiero (?:visitar|visita|verla|verlo)|no me conviene|descarto la propiedad|no gracias)\b", re.I)
 
 LEAD_PROJECTION = {
     "_id": 1, "phone": 1, "contact_phone_normalized": 1,
@@ -568,10 +569,12 @@ def record_inbound(
     except DuplicateKeyError:
         return {"status": "DUPLICATE_IGNORED"}
     is_stop = bool(STOP.search(text))
+    declined = bool(DECLINE.search(text))
     flags = {
-        "visit_requested": bool(VISIT.search(text)),
-        "human_requested": bool(HUMAN.search(text)),
-        "interest_signaled": bool(INTEREST.search(text)),
+        "visit_requested": bool(VISIT.search(text)) and not (declined or is_stop),
+        "human_requested": bool(HUMAN.search(text)) and not (declined or is_stop),
+        "interest_signaled": bool(INTEREST.search(text)) and not (declined or is_stop),
+        "declined": declined,
     }
     update_set = {"last_customer_reply_at": now, **{
         key: True for key, active in flags.items() if active
@@ -676,7 +679,7 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
         "_id": 1, "lead_id": 1, "property_code": 1,
         "status": 1, "phone_normalized": 1, "scheduled_at": 1,
         "sent_at": 1, "first_response_at": 1, "reply_count": 1,
-        "bot_reply_count": 1, "interest_signaled": 1, "visit_requested": 1,
+        "bot_reply_count": 1, "interest_signaled": 1, "declined": 1, "visit_requested": 1,
         "human_requested": 1, "opted_out_at": 1,
         "provider_delivery_status": 1, "provider_message_id": 1,
     }).sort("scheduled_at", 1))
@@ -690,6 +693,7 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
         "sent": len(sent), "responded": len(replied),
         "response_rate": round(len(replied) / len(sent), 3) if sent else 0.0,
         "interested": sum(bool(row.get("interest_signaled")) for row in rows),
+        "declined": sum(bool(row.get("declined")) for row in rows),
         "visits_requested": sum(bool(row.get("visit_requested")) for row in rows),
         "human_requested": sum(bool(row.get("human_requested")) for row in rows),
         "opted_out": sum(bool(row.get("opted_out_at")) for row in rows),
@@ -706,5 +710,9 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
             "reply_count": r.get("reply_count", 0),
             "bot_reply_count": r.get("bot_reply_count", 0),
             "first_response_at": r.get("first_response_at"),
+            "minutes_to_first_reply": (
+                round((r["first_response_at"] - r["sent_at"]).total_seconds() / 60, 1)
+                if r.get("first_response_at") and r.get("sent_at") else None
+            ),
         } for r in rows],
     }

@@ -22,7 +22,7 @@ def _plain(value: str) -> str:
 
 _CONTACT = re.compile(
     r"\b(?:quien (?:me |se )?(?:contact|llam|escrib|coordina)|"
-    r"me (?:van a |pueden |puede )?(?:contact|conatct|llam)|"
+    r"me (?:van a |pueden |puedes |puede )?(?:contact|conatct|llam)|"
     r"que me (?:contact|conatct|llam)|"
     r"(?:contact|conatct)en?\w*|llamen|hablar con (?:un |una )?(?:ejecutiv|asesor))",
     re.I,

@@ -608,7 +608,7 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
 
 def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded():
     from scripts import price_drop_pilot_test as sender
-    assert sender.TEST_ID == "20261103-6436-price-drop-pilot-v9-single-test"
+    assert sender.TEST_ID == "20261104-6436-price-drop-pilot-v10-exec-sim-single-test"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
     ).read_text()
@@ -628,7 +628,7 @@ def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded(
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v9"' in source
+    assert '"campaign_version": "price_drop_pilot_v10_exec_notice_test"' in source
     assert 'if not is_test_phone(phone)' in source
 
 
@@ -2234,3 +2234,125 @@ def test_v10_prompt_redacts_historical_address_before_model(isolated):
     content = " ".join(str(m["content"]) for m in msgs)
     assert "1370" not in content and "1234" not in content
     assert "Séptima Avenida" not in content
+
+
+
+def _v10_sim_setup(monkeypatch):
+    from chatbot.price_drop_pilot_exec_notice_sim import VERSION
+    monkeypatch.setenv("PRICE_DROP_PILOT_ENABLED", "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_PHONE", PHONE)
+    monkeypatch.setenv("PRICE_DROP_PILOT_EXEC_NOTICE_SIMULATION", "true")
+    db = db_case()
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    campaign["campaign_version"] = VERSION
+    history = {
+        "_id": "prior-turn",
+        "campaign_id": campaign["_id"],
+        "customer_text": "Gracias, me interesa conocer más",
+        "bot_text": "¿Te gustaría retomar el departamento con el precio rebajado?",
+        "created_at": datetime.now(timezone.utc) - timedelta(minutes=1),
+        "status": "SENT",
+    }
+    db["crm_price_drop_pilot_test_turns_v1"].docs.append(history)
+    return db
+
+
+def test_v10_exec_sim_notification_sent_only_to_whitelisted_tester_after_yes(monkeypatch):
+    db = _v10_sim_setup(monkeypatch)
+    answer_sender, answer_calls = sender_spy()
+    simulated = []
+    def exec_sender(phone, text):
+        simulated.append((phone, text))
+        return {"success": True, "provider_message_id": "simulated-exec-notice-1"}
+    out = process_test_inbound(
+        db, PHONE, "v10-affirmative-1", "Sí",
+        sender=answer_sender, exec_notice_sender=exec_sender,
+    )
+    assert out == {"status": "test_reply_sent", "test_exec_notice_status": "SENT"}
+    assert len(answer_calls) == 1
+    assert len(simulated) == 1
+    assert simulated[0][0] == PHONE
+    assert "AVISO SIMULADO AL EJECUTIVO" in simulated[0][1]
+    assert "NO" in simulated[0][1] or "No" in simulated[0][1]
+    assert "UF 2.790" in simulated[0][1]
+    assert "UF 2.690" in simulated[0][1]
+    assert "no disponible en esta prueba aislada" in simulated[0][1]
+    assert "no a un ejecutivo" in simulated[0][1]
+    assert db["crm_price_drop_pilot_test_turns_v1"].docs[-1]["status"] == "EXEC_NOTICE_SENT"
+    assert "crm_assignment_cycles" not in db
+
+
+def test_v10_exec_sim_only_after_last_relevant_question(monkeypatch):
+    db = _v10_sim_setup(monkeypatch)
+    simulated = []
+    reply_sender, reply_calls = sender_spy()
+    exec_sender = lambda *x: simulated.append(x)
+    # Not an affirmative. Conversation continues, no notification.
+    out = process_test_inbound(
+        db, PHONE, "v10-hello", "¿Cuántos dormitorios tiene?",
+        sender=reply_sender, exec_notice_sender=exec_sender,
+    )
+    assert out == {"status": "test_reply_sent"}
+    assert simulated == []
+    assert len(reply_calls) == 1
+
+
+def test_v10_exec_sim_requires_prior_question_and_never_sends_for_bare_yes(monkeypatch):
+    db = _v10_sim_setup(monkeypatch)
+    db["crm_price_drop_pilot_test_turns_v1"].docs = []
+    exec_calls = []
+    answer_sender, _ = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "v10-bare-yes", "Sí",
+        sender=answer_sender, exec_notice_sender=lambda *x: exec_calls.append(x),
+    )["status"] == "test_reply_sent"
+    assert exec_calls == []
+
+
+def test_v10_exec_sim_does_not_run_for_old_v9_conversation(monkeypatch):
+    db = _v10_sim_setup(monkeypatch)
+    db["crm_price_drop_pilot_v1"].docs[0]["campaign_version"] = "price_drop_pilot_v9"
+    sent = []
+    answer_sender, _ = sender_spy()
+    assert process_test_inbound(
+        db, PHONE, "v9-yes", "Sí",
+        sender=answer_sender, exec_notice_sender=lambda *x: sent.append(x),
+    )["status"] == "test_reply_sent"
+    assert sent == []
+
+
+def test_v10_exec_simulator_never_retries_ambiguous_provider_delivery(monkeypatch):
+    from chatbot.price_drop_pilot_exec_notice_sim import send_simulated_exec_notice
+    db = _v10_sim_setup(monkeypatch)
+    ctx = load_test_context(db, PHONE)
+    history = list(db["crm_price_drop_pilot_test_turns_v1"].docs)
+    called = []
+    def sender(*_):
+        called.append(1)
+        raise TimeoutError("provider status unknown")
+    x = send_simulated_exec_notice(
+        db, ctx=ctx, phone=PHONE, customer_text="Sí", history=history,
+        inbound_message_id="yes-one", sender=sender,
+    )
+    assert x["status"] == "DELIVERY_UNKNOWN"
+    y = send_simulated_exec_notice(
+        db, ctx=ctx, phone=PHONE, customer_text="Sí", history=history,
+        inbound_message_id="yes-another", sender=sender,
+    )
+    assert y["status"] == "ALREADY_ATTEMPTED"
+    assert called == [1]
+
+
+def test_v10_exec_sim_test_sent_no_new_crm_lead_and_no_real_exec_lookup(monkeypatch):
+    db = _v10_sim_setup(monkeypatch)
+    s, _ = sender_spy()
+    exec_sender, _ = sender_spy()
+    out = process_test_inbound(
+        db, PHONE, "another-yes", "Sí", sender=s,
+        exec_notice_sender=exec_sender,
+    )
+    assert out["test_exec_notice_status"] == "SENT"
+    assert set(db.keys()) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1"
+    }

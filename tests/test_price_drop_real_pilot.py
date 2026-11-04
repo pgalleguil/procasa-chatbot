@@ -585,3 +585,101 @@ def test_first_client_reply_timestamp_is_recorded_even_for_optout(db, monkeypatc
     assert report["rows"][0]["minutes_to_first_reply"] == 3.0
     assert report["priority_responses"] == 0 and report["declared_interest"] == 0
     assert report["pending_human_review"] == 0
+
+
+def test_preexisting_crm_hot_remains_distinct_from_campaign_reply(db, monkeypatch):
+    """An old HOT lead can answer after a price reduction without becoming a new HOT."""
+    from chatbot.price_drop_campaign_real import campaign_worklist
+    original = db["leads"].find_one({"contact_phone_normalized": "+56930000001"})
+    db["leads"].update_one({"_id": original["_id"]}, {"$set": {
+        "lead_temperature_effective": "HOT",
+        "lifecycle.hot_since": "2026-11-04T09:10:00-03:00",
+        "last_intent": "ASK_VISIT",
+    }})
+    approve(db, n=1)
+    enable(monkeypatch)
+    # Existing CRM HOT was present before send.
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "existing-hot-send"})
+    row = db[DISPATCHES].find_one({"provider_message_id": "existing-hot-send"})
+    assert row["crm_temperature_before_send"] == "HOT"
+    assert row["crm_was_hot_before_send"] is True
+    mark = db["leads"].find_one({"_id": original["_id"]})
+    assert mark["price_drop_campaign_v1"]["crm_was_hot_before_send"] is True
+    assert mark["lead_temperature_effective"] == "HOT"
+    assert mark["lifecycle"]["hot_since"] == "2026-11-04T09:10:00-03:00"
+
+    answer = record_inbound(
+        db, phone="+56930000001", provider_message_id="already-hot-responds",
+        text="Quiero visitar el departamento", received_at=START + timedelta(minutes=1),
+    )
+    assert answer["campaign_classification"] == "PRIORIDAD_COMERCIAL"
+    assert answer["crm_was_hot_before_send"] is True
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["already_hot_before_send"] == 1
+    assert report["positive_response_after_non_hot"] == 0
+    assert report["priority_responses"] == 1  # campaign reply, NOT a new CRM HOT
+    worklist = campaign_worklist(db, "piloto6436_20261105")
+    assert worklist["already_hot_before_send"] == 1
+    assert worklist["leads"][0]["crm_temperature_before_send"] == "HOT"
+    assert worklist["leads"][0]["campaign_response_classification"] == "PRIORIDAD_COMERCIAL"
+    assert db["leads"].find_one({"_id": original["_id"]})["lead_temperature_effective"] == "HOT"
+
+
+def test_hot_arrives_after_selection_but_before_campaign_send(db, monkeypatch):
+    """Avoid crediting the campaign for an independently Hot lead."""
+    p = plan(db, n=1)
+    lead_id = ObjectId(p["recipients"][0]["lead_id"])
+    db["leads"].update_one({"_id": lead_id}, {"$set": {"lead_temperature_effective": "COLD"}})
+    approve(db, n=1)
+    planned = db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})
+    assert planned["crm_temperature_at_selection"] == "COLD"
+    # Independently turns HOT while the campaign is queued.
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "lead_temperature_effective": "HOT",
+        "lifecycle.hot_since": "2026-11-05T10:45:00-03:00",
+    }})
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "hot-preexisting"})
+    record_inbound(db, phone="+56930000001", provider_message_id="interested-after-notice",
+                   text="Me interesa, cuéntame más",
+                   received_at=START + timedelta(minutes=2))
+    row = db[DISPATCHES].find_one({"provider_message_id": "hot-preexisting"})
+    assert row["crm_temperature_at_selection"] == "COLD"
+    assert row["crm_temperature_before_send"] == "HOT"
+    assert row["crm_was_hot_before_send"] is True
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["positive_responses_after_notice"] == 1
+    assert report["positive_response_after_non_hot"] == 0
+    assert report["already_hot_before_send"] == 1
+
+
+def test_cold_lead_response_is_post_send_engagement_not_automatic_crm_hot(
+        db, monkeypatch):
+    lead_id = ObjectId("690000000000000000000001")
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "lead_temperature_effective": "COLD",
+        "last_intent": "ASK_INFO",
+    }})
+    approve(db, n=1)
+    enable(monkeypatch)
+    # Before the first accepted campaign message: no post-notice classification.
+    assert record_inbound(
+        db, phone="+56930000001", provider_message_id="before-send", text="Quiero visitar",
+        received_at=START - timedelta(minutes=1),
+    )["status"] == "NOT_CAMPAIGN_REPLY"
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted-send"})
+    answer = record_inbound(
+        db, phone="+56930000001", provider_message_id="after-send",
+        text="Quiero coordinar una visita", received_at=START + timedelta(minutes=3),
+    )
+    assert answer["campaign_classification"] == "PRIORIDAD_COMERCIAL"
+    assert answer["crm_was_hot_before_send"] is False
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["positive_response_after_non_hot"] == 1
+    assert report["already_hot_before_send"] == 0
+    assert report["rows"][0]["campaign_origin"] == "PRICE_DROP"
+    assert report["rows"][0]["attribution_basis"] == "same_phone_after_accepted_send_window"
+    assert db["leads"].find_one({"_id": lead_id})["lead_temperature_effective"] == "COLD"

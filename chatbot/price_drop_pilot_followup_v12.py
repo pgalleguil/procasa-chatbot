@@ -28,7 +28,7 @@ _CONTACT = re.compile(
     re.I,
 )
 _VISIT = re.compile(
-    r"\b(?:visitar|visita|agendar|coordinar|ver el (?:depto|departamento)|"
+    r"\b(?:visitar|visistar|visidta|visilta|visista|visita|agendar|coordinar|ver el (?:depto|departamento)|"
     r"ir a verlo|ir a verla|quiero (?:verlo|verla)|conocer el departamento)\b", re.I
 )
 _INTEREST = re.compile(
@@ -80,6 +80,10 @@ def followup_reply(
     contact = bool(_CONTACT.search(message))
     visit = bool(_VISIT.search(message))
     interest = bool(_INTEREST.search(message))
+    # Short acceptance follows the latest bot question about visiting.
+    if not interest and re.fullmatch(r"(?:si|sip|claro|dale|ok|okay)", message):
+        previous_bot = _plain((history[-1].get("bot_text") or "") if history else "")
+        interest = bool(re.search(r"visita|conocerlo|ir a verlo|interes", previous_bot))
     urgent = bool(_URGENT.search(message))
     asks_confirmation = bool(_CONFIRM.search(message))
     current = parse_parts(message)
@@ -119,8 +123,7 @@ def followup_reply(
         if preference.get("day") and (preference.get("time") or preference.get("period")):
             return (
                 f"Perfecto, tengo anotado en esta conversación que te acomoda {detail}. "
-                "Es tu horario preferido, no una visita confirmada; "
-                "en esta prueba no se agenda ni se deriva al equipo real."
+                "Es tu horario preferido, no una visita confirmada."
             )
         if preference.get("day"):
             return (
@@ -137,12 +140,11 @@ def followup_reply(
         if reported:
             return (
                 f"Entiendo que te gustaría visitarlo y que te acomoda {reported}. "
-                "Es una preferencia, no una reserva; en este piloto no se agenda "
-                "con un ejecutivo real."
+                "Es una preferencia, no una reserva confirmada."
             )
         return (
             "¡Claro! ¿Qué día te acomodaría ir a verlo? "
-            "No puedo confirmar disponibilidad ni agendar una visita desde esta prueba."
+            "El equipo debe confirmar disponibilidad antes de agendar."
         )
 
     if interest:
@@ -153,7 +155,6 @@ def followup_reply(
             )
         return (
             "¡Qué bueno! 😊 ¿Te gustaría conocerlo en persona? "
-            "Puedo conversar contigo sobre el día que te acomodaría, "
-            "pero esta prueba no agenda visitas reales."
+            "Podemos ver qué día te acomodaría, aunque aún no hay visita confirmada."
         )
     return None

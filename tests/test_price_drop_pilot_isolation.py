@@ -608,7 +608,7 @@ def test_freeform_model_must_not_claim_it_saved_customer_preference(isolated):
 
 def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded():
     from scripts import price_drop_pilot_test as sender
-    assert sender.TEST_ID == "20261104-6436-price-drop-pilot-v11-admin-exec-single-test"
+    assert sender.TEST_ID == "20261104-6436-price-drop-pilot-v12-followup-single-test"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
     ).read_text()

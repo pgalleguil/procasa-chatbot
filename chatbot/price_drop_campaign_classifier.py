@@ -37,7 +37,7 @@ _DECLINE = re.compile(
     r"\b(?:no me interesa|no estoy interesado|no estoy interesada|"
     r"ya no me interesa|no gracias|no me conviene|"
     r"descarto (?:el|la) (?:departamento|propiedad)|"
-    r"no quiero (?:agendar|visitar|una visita|ir a ver|comprar|verlo|verla))\b",
+    r"no quiero (?:agendar|coordinar|visitar|visita|una visita|ir a ver|comprar|verlo|verla))\b",
 )
 _OFFER = re.compile(
     r"\b(?:quiero (?:hacer|presentar|enviar) (?:una )?oferta|"
@@ -49,8 +49,8 @@ _OFFER = re.compile(
 )
 _VISIT = re.compile(
     r"\b(?:quiero|quisiera|deseo|necesito|me gustaria|podemos|podria|puedo|"
-    r"me interesa|quiero coordinar)\b.{0,50}"
-    r"\b(?:visitar|visita|verlo|verla|ir a ver|conocerlo|conocerla|agendar)\b"
+    r"me interesa|estoy interesado|estoy interesada|quiero coordinar)\b.{0,50}"
+    r"\b(?:visitar|visita|verlo|verla|ver el departamento|ir a ver|conocerlo|conocerla|agendar)\b"
     r"|"
     r"\b(?:agendemos|coordinemos|reservemos) (?:una )?visita\b"
     r"|"
@@ -129,6 +129,21 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
     if _DECLINE.search(message):
         return CampaignClassification(
             DECLINED, None, "OTHER", "explicit_rejection", False, False,
+        )
+    # Negated hypothetical requests must not generate a HOT opportunity.
+    if re.search(
+        r"\bno (?:puedo|podemos|voy a|me gustaria|necesito|"
+        r"me interesa)\b.{0,35}"
+        r"\b(?:visitar|visita|verlo|verla|ir a ver|agendar|"
+        r"que me llamen|llamar)\b",
+        message,
+    ):
+        if _INTEREST.search(message) or _INFORMATION.search(message) or "?" in str(text):
+            return CampaignClassification(
+                NORMAL, NORMAL, "ASK_INFO", "negated_action_information", False, False,
+            )
+        return CampaignClassification(
+            NO_SIGNAL, None, "OTHER", "negated_action_not_positive", False, False,
         )
 
     if _OFFER.search(message):

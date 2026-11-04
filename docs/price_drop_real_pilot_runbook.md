@@ -180,3 +180,13 @@ python scripts/price_drop_campaign_real_pilot.py --report ID_DE_CAMPAÑA
 ```
 
 **Estas operaciones son solo lectura.** `PENDIENTE_REVISION` no implica contacto humano, gestión efectiva, visita confirmada ni inicio/cierre de SLA. La responsabilidad de clasificar y gestionar la temperatura oficial permanece en las rutas normales del CRM.
+
+## Aviso de respuesta al ejecutivo por WhatsApp
+
+- Una respuesta de campaña con interés declarado o prioridad comercial crea un único registro en `crm_price_drop_campaign_exec_notices_v1`. Si el interés escala a solicitud de visita, llamada u oferta, puede emitirse un segundo aviso de prioridad. Si ambos ocurren antes del primer envío se notifica solo la prioridad.
+- El destinatario se valida usando el **ciclo de asignación vigente** del CRM. Ante conflicto, el aviso queda `BLOCKED_ASSIGNMENT`, sin envío ni reasignación.
+- El mensaje identifica expresamente la **campaña de rebaja de precio**, código, UF anterior/actual y lead, sin dirección exacta ni atributos privados.
+- El envío está apagado por defecto; requiere `PRICE_DROP_CAMPAIGN_EXEC_NOTIFY_ENABLED=true` y `PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true`. La cola procesa como máximo un aviso por pasada del loop, normalmente cada 60 segundos.
+- Estados: `PENDING`, `CLAIMED`, `SENT`, `DELIVERY_UNKNOWN`, `BLOCKED_ASSIGNMENT`, `SKIPPED`. No hay reintentos automáticos ante entrega desconocida. `SENT` indica aceptación del proveedor y no confirma entrega al ejecutivo.
+- No afecta temperatura oficial, SLA, asignación ni crea otro lead. Mantener el interruptor apagado hasta la autorización de la prueba comercial.
+

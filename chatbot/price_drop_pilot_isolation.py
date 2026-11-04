@@ -1451,9 +1451,22 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
     }})
     if not accepted:
         return {"status": "delivery_unknown"}
-    # Only the new V10 and an affirmative answer to a relevant bot question
-    # can trigger an executive-notification simulation. It goes exclusively
-    # to THIS whitelisted test phone, never to any CRM executive.
+    # V11 test: notify both supervisor and executive roles separately.
+    # Both simulated messages go ONLY to the same whitelisted test phone;
+    # neither real CRM owners nor any other contact is accessed.
+    from .price_drop_pilot_dual_notice_sim import VERSION as V11_VERSION
+    if ctx.get("campaign_version") == V11_VERSION:
+        from .price_drop_pilot_dual_notice_sim import send_dual_test_notices
+        result = send_dual_test_notices(
+            db, ctx=ctx, phone=phone_norm, customer_text=text,
+            history=history, inbound_message_id=str(provider_message_id),
+            sender=exec_notice_sender,
+        )
+        if result.get("status") == "PROCESSED":
+            return {"status": "test_reply_sent", "test_dual_notice_statuses": result["roles"]}
+        return {"status": "test_reply_sent"}
+
+    # Previous V10 behavior remains only for V10 test conversations.
     from .price_drop_pilot_exec_notice_sim import send_simulated_exec_notice
     notice = send_simulated_exec_notice(
         db, ctx=ctx, phone=phone_norm,

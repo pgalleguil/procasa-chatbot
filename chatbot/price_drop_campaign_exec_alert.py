@@ -226,6 +226,7 @@ def process_one_exec_notice(
         "$set": {
             "status": status,
             "target_owner_name": owner["name"],
+            "target_owner_user_id": owner["owner_user_id"],
             "target_owner_cycle_id": owner["cycle_id"],
             "target_owner_phone_last4": owner["phone"][-4:],
             "provider_message_id": receipt.get("provider_message_id"),

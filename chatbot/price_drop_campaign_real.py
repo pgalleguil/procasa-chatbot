@@ -20,6 +20,7 @@ from pymongo.errors import DuplicateKeyError
 
 from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_variants
 from .property_lookup import PROPERTY_COLLECTION_NAME
+from .price_drop_campaign_classifier import classify_price_drop_reply
 
 CAMPAIGNS = "crm_price_drop_campaigns_v1"
 DISPATCHES = "crm_price_drop_campaign_dispatches_v1"
@@ -331,6 +332,13 @@ def persist_plan(db: Any, payload: dict, *, now: datetime | None = None) -> dict
             "visit_requested": False,
             "human_requested": False,
             "interest_signaled": False,
+            "offer_intent": False,
+            "response_classification": "SIN_RESPUESTA",
+            "response_temperature": None,
+            "last_response_intent": None,
+            "positive_reply_count": 0,
+            "followup_status": "SIN_RESPUESTA",
+            "needs_human_review": False,
         })
     header = {
         "_id": cid, "status": "PLANNED",
@@ -489,6 +497,9 @@ def send_one_due(
     )
     if not claimed:
         return {"status": "ALREADY_CLAIMED"}
+    # A real provider call must be timestamped when accepted, not when a
+    # window first opens. Fake senders injected by tests keep the test clock.
+    live_provider = sender is None
     if sender is None:
         from .whatsapp_client import send_whatsapp_message_detailed_sync
         sender = send_whatsapp_message_detailed_sync
@@ -505,6 +516,9 @@ def send_one_due(
         receipt.get("success") and receipt.get("provider_message_id")
         and not receipt.get("provider_call_uncertain")
     )
+    # For live sends use the instant the provider returns acceptance.
+    # UTC BSON and a local Chile timestamp are both durable in the ledger.
+    accepted_at = datetime.now(timezone.utc) if live_provider else now
     status = "SENT" if accepted else "DELIVERY_UNKNOWN"
     patch = {
         "status": status, "provider_delivery_status": str(
@@ -515,7 +529,13 @@ def send_one_due(
         "completed_at": now,
     }
     if accepted:
-        patch.update({"sent_at": now, "expires_at": now + timedelta(days=7)})
+        patch.update({
+            "sent_at": accepted_at,
+            "sent_at_chile": accepted_at.astimezone(CL_TZ).isoformat(),
+            "expires_at": accepted_at + timedelta(days=7),
+            "response_classification": "SIN_RESPUESTA",
+            "followup_status": "SIN_RESPUESTA",
+        })
     db[DISPATCHES].update_one({"_id": claimed["_id"], "status": "SENDING"},
                               {"$set": patch})
     if accepted:
@@ -533,6 +553,8 @@ def send_one_due(
         "lead_id": str(claimed["lead_id"]),
         "phone_last4": _preview_phone(claimed["phone_normalized"]),
         "provider_message_id": receipt.get("provider_message_id"),
+        "sent_at": accepted_at.isoformat() if accepted else None,
+        "sent_at_chile": accepted_at.astimezone(CL_TZ).isoformat() if accepted else None,
     }
 
 
@@ -551,17 +573,37 @@ def _active_dispatch(db: Any, phone: str, now: datetime, *, needs_reply=False):
     return db[DISPATCHES].find_one(query, sort=[("sent_at", -1)])
 
 
+
 def record_inbound(
     db: Any, *, phone: str, provider_message_id: str,
     text: str, received_at: datetime | None = None,
 ) -> dict:
-    """Observe the normal pipeline, never intercept CRM/SLA or send a reply."""
+    """Classify each client turn and persist the campaign outcome.
+
+    The canonical CRM pipeline still owns lead_temperature_effective, hot_since,
+    assignment and SLA. This separate campaign label is actionable for
+    supervisors but never constitutes a human management event.
+    """
     if not _tracking_enabled():
         return {"status": "DISABLED"}
     now = _utc(received_at or datetime.now(timezone.utc))
     row = _active_dispatch(db, phone, now)
     if not row or not provider_message_id or not text:
         return {"status": "NOT_CAMPAIGN_REPLY"}
+    if row.get("status") == "OPTED_OUT":
+        return {"status": "ALREADY_OPTED_OUT"}
+
+    # Do not attribute an explicit inquiry for a different listing to this
+    # campaign. The normal CRM/chatbot still processes it independently.
+    other_code = re.search(
+        r"\b(?:cod(?:igo)?|propiedad)\s*[:#]?\s*(\d{4,6})\b",
+        str(text or ""), re.I,
+    )
+    if other_code and other_code.group(1) != str(row["property_code"]):
+        return {"status": "OTHER_PROPERTY_NOT_ATTRIBUTED"}
+
+    classification = classify_price_drop_reply(text)
+    event = classification.as_dict()
     key = hashlib.sha256(
         f"{row['_id']}:inbound:{provider_message_id}".encode()
     ).hexdigest()
@@ -570,50 +612,126 @@ def record_inbound(
             "_id": key, "campaign_id": row["campaign_id"],
             "dispatch_id": row["_id"], "lead_id": row["lead_id"],
             "property_code": row["property_code"],
-            "direction": "inbound", "provider_message_id": str(provider_message_id),
+            "direction": "inbound",
+            "provider_message_id": str(provider_message_id),
             "text": str(text)[:1600], "created_at": now,
+            "created_at_chile": now.astimezone(CL_TZ).isoformat(),
+            "classification": event,
         })
     except DuplicateKeyError:
         return {"status": "DUPLICATE_IGNORED"}
-    is_stop = bool(STOP.search(text))
-    declined = bool(DECLINE.search(text))
-    flags = {
-        "visit_requested": bool(VISIT.search(text)) and not (declined or is_stop),
-        "human_requested": bool(HUMAN.search(text)) and not (declined or is_stop),
-        "interest_signaled": bool(INTEREST.search(text)) and not (declined or is_stop),
-        "declined": declined,
-    }
-    update_set = {"last_customer_reply_at": now, **{
-        key: True for key, active in flags.items() if active
-    }}
-    if is_stop:
-        update_set.update({"status": "OPTED_OUT", "opted_out_at": now})
+
+    stopped = event["label"] == "BAJA"
+    declined = event["label"] == "RECHAZADO"
+    previous_label = str(row.get("response_classification") or "")
+    previous_pending = bool(row.get("needs_human_review"))
+    if stopped:
+        overall_label, overall_temp, followup, pending = (
+            "BAJA", None, "BAJA", False,
+        )
+    elif declined:
+        overall_label, overall_temp, followup, pending = (
+            "RECHAZADO", None, "RECHAZADO", False,
+        )
+    elif event["label"] == "HOT" or previous_label == "HOT":
+        overall_label, overall_temp, followup, pending = (
+            "HOT", "HOT", "PENDIENTE_REVISION", True,
+        )
+    elif event["label"] == "NORMAL" or previous_label == "NORMAL":
+        overall_label, overall_temp = "NORMAL", "NORMAL"
+        pending = previous_pending or bool(event["positive"])
+        followup = "PENDIENTE_REVISION" if pending else "CONSULTA_INFORMATIVA"
     else:
-        # Do not undo an opt-out.
-        if row["status"] == "SENT":
-            update_set.update({"status": "RESPONDED", "first_response_at": now})
-    db[DISPATCHES].update_one({"_id": row["_id"]}, {
-        "$inc": {"reply_count": 1},
-        "$set": update_set,
-    })
-    if is_stop:
-        # One opt-out blocks all pending campaigns to this phone.
+        overall_label, overall_temp, followup, pending = (
+            "SIN_SENAL", None, "SIN_SENAL", False,
+        )
+
+    fields = {
+        "last_customer_reply_at": now,
+        "last_customer_reply_at_chile": now.astimezone(CL_TZ).isoformat(),
+        "last_turn_classification": event["label"],
+        "last_turn_intent": event["intent"],
+        "last_turn_reason": event["reason"],
+        "classifier_version": event["classifier_version"],
+        "last_classified_at": now,
+        "response_classification": overall_label,
+        "response_temperature": overall_temp,
+        "followup_status": followup,
+        "needs_human_review": pending,
+    }
+    for attr in ("visit_requested", "human_requested", "interest_signaled",
+                 "offer_intent"):
+        if event.get(attr):
+            fields[attr] = True
+    if declined:
+        fields["declined"] = True
+        fields["declined_at"] = now
+    # The first customer response includes refusals and unsubscribe events;
+    # it is not the same as a first positive response.
+    if row["status"] == "SENT":
+        fields["first_response_at"] = now
+    if stopped:
+        fields.update({"status": "OPTED_OUT", "opted_out_at": now})
+    elif row["status"] == "SENT":
+        fields["status"] = "RESPONDED"
+
+    increment = {"reply_count": 1}
+    if event["positive"]:
+        increment["positive_reply_count"] = 1
+        fields["last_positive_response_at"] = now
+    update = {"$inc": increment, "$set": fields}
+    db[DISPATCHES].update_one({"_id": row["_id"]}, update)
+
+    if event["positive"]:
+        db[DISPATCHES].update_one(
+            {"_id": row["_id"], "first_positive_response_at": {"$exists": False}},
+            {"$set": {"first_positive_response_at": now}},
+        )
+    if event["label"] == "HOT":
+        db[DISPATCHES].update_one(
+            {"_id": row["_id"], "first_hot_response_at": {"$exists": False}},
+            {"$set": {"first_hot_response_at": now}},
+        )
+
+    # The lead mirror is namespaced and does NOT overwrite the official
+    # CRM HOT/NORMAL/SLA/assignment lifecycle.
+    lead_fields = {
+        "price_drop_campaign_v1.last_campaign_id": row["campaign_id"],
+        "price_drop_campaign_v1.last_property_code": row["property_code"],
+        "price_drop_campaign_v1.last_status":
+            "OPTED_OUT" if stopped else "RESPONDED",
+        "price_drop_campaign_v1.last_response_at": now,
+        "price_drop_campaign_v1.last_classified_at": now,
+        "price_drop_campaign_v1.classification": overall_label,
+        "price_drop_campaign_v1.temperature": overall_temp,
+        "price_drop_campaign_v1.last_intent": event["intent"],
+        "price_drop_campaign_v1.classifier_version": event["classifier_version"],
+        "price_drop_campaign_v1.followup_status": followup,
+        "price_drop_campaign_v1.needs_human_review": pending,
+        "price_drop_campaign_v1.has_positive_response":
+            bool(event["positive"] or row.get("first_positive_response_at")),
+    }
+    if event["positive"]:
+        lead_fields["price_drop_campaign_v1.last_positive_response_at"] = now
+    if event["label"] == "HOT":
+        lead_fields["price_drop_campaign_v1.last_hot_response_at"] = now
+    if stopped:
+        lead_fields.update({
+            "price_drop_campaign_v1.opted_out": True,
+            "price_drop_campaign_v1.opted_out_at": now,
+        })
         db[DISPATCHES].update_many({
             "phone_normalized": row["phone_normalized"], "status": "PLANNED",
         }, {"$set": {"status": "SKIPPED_OPT_OUT", "skipped_at": now}})
-        db["leads"].update_one({"_id": row["lead_id"]}, {"$set": {
-            "price_drop_campaign_v1.opted_out": True,
-            "price_drop_campaign_v1.opted_out_at": now,
-            "price_drop_campaign_v1.last_status": "OPTED_OUT",
-            "price_drop_campaign_v1.last_response_at": now,
-        }})
-    else:
-        db["leads"].update_one({"_id": row["lead_id"]}, {"$set": {
-            "price_drop_campaign_v1.last_status": "RESPONDED",
-            "price_drop_campaign_v1.last_response_at": now,
-        }})
-    return {"status": "OPTED_OUT" if is_stop else "ATTRIBUTED",
-            "campaign_id": row["campaign_id"]}
+    db["leads"].update_one({"_id": row["lead_id"]}, {"$set": lead_fields})
+    return {
+        "status": "OPTED_OUT" if stopped else "ATTRIBUTED",
+        "campaign_id": row["campaign_id"],
+        "classification": overall_label,
+        "temperature": overall_temp,
+        "intent": event["intent"],
+        "needs_human_review": pending,
+    }
 
 
 def record_bot_reply(
@@ -689,9 +807,16 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
     rows = list(db[DISPATCHES].find({"campaign_id": cid}, {
         "_id": 1, "lead_id": 1, "property_code": 1,
         "status": 1, "phone_normalized": 1, "scheduled_at": 1,
-        "sent_at": 1, "first_response_at": 1, "reply_count": 1,
-        "bot_reply_count": 1, "interest_signaled": 1, "declined": 1, "visit_requested": 1,
-        "human_requested": 1, "opted_out_at": 1,
+        "attempted_at": 1, "sent_at": 1, "sent_at_chile": 1,
+        "first_response_at": 1, "last_customer_reply_at": 1,
+        "first_positive_response_at": 1, "first_hot_response_at": 1,
+        "reply_count": 1, "positive_reply_count": 1, "bot_reply_count": 1,
+        "interest_signaled": 1, "declined": 1, "visit_requested": 1,
+        "human_requested": 1, "offer_intent": 1, "opted_out_at": 1,
+        "response_classification": 1, "response_temperature": 1,
+        "last_turn_intent": 1, "last_turn_reason": 1,
+        "last_classified_at": 1, "classifier_version": 1,
+        "followup_status": 1, "needs_human_review": 1,
         "provider_delivery_status": 1, "provider_message_id": 1,
     }).sort("scheduled_at", 1))
     counts = Counter(row.get("status") or "UNKNOWN" for row in rows)
@@ -703,8 +828,14 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
         "attempted": header.get("attempts_started", 0),
         "sent": len(sent), "responded": len(replied),
         "response_rate": round(len(replied) / len(sent), 3) if sent else 0.0,
-        "interested": sum(bool(row.get("interest_signaled")) for row in rows),
-        "declined": sum(bool(row.get("declined")) for row in rows),
+        "interested": sum(
+            row.get("response_classification") in {"HOT", "NORMAL"}
+            and bool(row.get("first_positive_response_at")) for row in rows
+        ),
+        "hot": sum(row.get("response_classification") == "HOT" for row in rows),
+        "normal": sum(row.get("response_classification") == "NORMAL" for row in rows),
+        "pending_human_review": sum(bool(row.get("needs_human_review")) for row in rows),
+        "declined": sum(row.get("response_classification") == "RECHAZADO" for row in rows),
         "visits_requested": sum(bool(row.get("visit_requested")) for row in rows),
         "human_requested": sum(bool(row.get("human_requested")) for row in rows),
         "opted_out": sum(bool(row.get("opted_out_at")) for row in rows),
@@ -715,8 +846,19 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
             "property_code": r["property_code"],
             "status": r["status"],
             "scheduled_at": r.get("scheduled_at"),
+            "attempted_at": r.get("attempted_at"),
             "sent_at": r.get("sent_at"),
+            "sent_at_chile": r.get("sent_at_chile"),
             "provider_message_id": r.get("provider_message_id"),
+            "response_classification": r.get("response_classification") or "SIN_RESPUESTA",
+            "response_temperature": r.get("response_temperature"),
+            "last_turn_intent": r.get("last_turn_intent"),
+            "last_turn_reason": r.get("last_turn_reason"),
+            "first_positive_response_at": r.get("first_positive_response_at"),
+            "first_hot_response_at": r.get("first_hot_response_at"),
+            "last_customer_reply_at": r.get("last_customer_reply_at"),
+            "needs_human_review": bool(r.get("needs_human_review")),
+            "followup_status": r.get("followup_status"),
             "provider_delivery_status": r.get("provider_delivery_status"),
             "reply_count": r.get("reply_count", 0),
             "bot_reply_count": r.get("bot_reply_count", 0),
@@ -726,4 +868,34 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
                 if r.get("first_response_at") and r.get("sent_at") else None
             ),
         } for r in rows],
+    }
+
+
+def campaign_worklist(db: Any, campaign_id: str) -> dict:
+    """Read-only human follow-up queue; never marks a CRM lead as managed."""
+    report = campaign_report(db, campaign_id)
+    priority = {"HOT": 0, "NORMAL": 1}
+    pending = [
+        row for row in report["rows"]
+        if row.get("needs_human_review")
+        and row.get("response_classification") in priority
+    ]
+    pending.sort(key=lambda x: (
+        priority.get(x["response_classification"], 9),
+        _mongo_utc(x["first_positive_response_at"])
+        if x.get("first_positive_response_at")
+        else datetime.max.replace(tzinfo=timezone.utc),
+        x["lead_id"],
+    ))
+    return {
+        "campaign_id": report["campaign_id"],
+        "property_code": report["property_code"],
+        "pending": len(pending),
+        "hot": sum(r["response_classification"] == "HOT" for r in pending),
+        "normal": sum(r["response_classification"] == "NORMAL" for r in pending),
+        "leads": pending,
+        "note": (
+            "Pendientes de revisión comercial. Esta lista NO constituye "
+            "una gestión humana, reasignación o modificación del SLA."
+        ),
     }

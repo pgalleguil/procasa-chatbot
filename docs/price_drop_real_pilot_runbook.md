@@ -136,3 +136,28 @@ La conexión MongoDB del asistente puede ser solo lectura. El servicio PROCASA p
 8. Tras las ventanas o ante una anomalía, volver `PRICE_DROP_REAL_PILOT_ENABLED=false`, `PRICE_DROP_REAL_PILOT_START_ON_BOOT=false` y `PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE=off`. Mantener únicamente `PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true` durante siete días para auditar las respuestas.
 
 **No activar prepare, approve ni el runner sin revisar primero la vista previa y autorizar expresamente cada etapa.**
+
+
+## Auditoría de horas, clasificación Hot/Normal y seguimiento
+
+Cada registro en `crm_price_drop_campaign_dispatches_v1` conserva `scheduled_at` (programada), `attempted_at` (intento), `sent_at` (aceptación del proveedor en UTC) y `sent_at_chile` (aceptación en horario Chile). **SENT confirma aceptación del proveedor, no entrega al destinatario.** También conserva `provider_message_id`, `provider_delivery_status`, `first_response_at`, `first_positive_response_at`, `first_hot_response_at` y `last_customer_reply_at`.
+
+Cada mensaje real del cliente registra además en `crm_price_drop_campaign_turns_v1` su texto, fecha, ID del proveedor y clasificación (`classifier_version`, `intent`, `reason`, `positive`, `needs_human_review`). Se conservan eventos incluso si posteriormente rechaza la propiedad.
+
+El clasificador de campaña utiliza los mismos intents HOT del CRM: `ASK_VISIT`, `ASK_CONTACT`, `GIVE_OFFER`. Una solicitud de visita/contacto/oferta es **HOT**; una pregunta informativa o un interés general es **NORMAL**. Un interés general explícito queda pendiente para revisión humana, mientras que una pregunta informativa aislada no crea tarea comercial. Las respuestas ambiguas como «Sí» sin contexto no se consideran oportunidades. `RECHAZADO` cancela la revisión pendiente, y `BAJA` bloquea nuevos contactos.
+
+Estos resultados son **específicos de la campaña**. Se reflejan en `leads.price_drop_campaign_v1` pero **nunca** modifican `lead_temperature_effective`, `lifecycle.hot_since`, stage, asignaciones ni SLA. La clasificación oficial sigue siendo responsabilidad del flujo normal del chatbot y del CRM.
+
+Para obtener la bandeja priorizada por Hot primero y Normal positivo después:
+
+```shell
+python scripts/price_drop_campaign_real_pilot.py --worklist ID_DE_CAMPAÑA
+```
+
+Para revisar fechas de envío, estados, respuestas y conversiones:
+
+```shell
+python scripts/price_drop_campaign_real_pilot.py --report ID_DE_CAMPAÑA
+```
+
+Ambas operaciones son de **solo lectura**. El estado `PENDIENTE_REVISION` significa que el equipo debe revisar ese lead; no acredita gestión humana ni visita agendada. Una negativa posterior limpia el pendiente, manteniendo la historia anterior.

@@ -15,8 +15,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from chatbot.price_drop_campaign_real import (
-    CAMPAIGNS, CampaignBlocked, approve_campaign, campaign_report, halt_campaign,
-    persist_plan, preview_plan, send_one_due,
+    CAMPAIGNS, CampaignBlocked, approve_campaign, campaign_report, campaign_worklist,
+    halt_campaign, persist_plan, preview_plan, send_one_due,
 )
 from chatbot.storage import get_db
 
@@ -72,6 +72,7 @@ def main(argv=None) -> int:
     action.add_argument("--watch", metavar="CAMPAIGN_ID", help="Run sequential due windows, in the foreground")
     action.add_argument("--halt", metavar="CAMPAIGN_ID", help="Immediate DB stop switch")
     action.add_argument("--report", metavar="CAMPAIGN_ID", help="Read-only outcomes")
+    action.add_argument("--worklist", metavar="CAMPAIGN_ID", help="HOT-first list of leads pending commercial review")
     parser.add_argument("--file", type=Path, help="Local JSON with approved lead IDs")
     parser.add_argument("--operator", default="", help="Responsible reviewer/approver")
     parser.add_argument("--send", action="store_true", help="Mandatory explicit send confirmation")
@@ -92,6 +93,8 @@ def main(argv=None) -> int:
             output = run_approved_windows(db, args.watch)
         elif args.report:
             output = campaign_report(db, args.report)
+        elif args.worklist:
+            output = campaign_worklist(db, args.worklist)
         else:
             if not args.file:
                 parser.error("--file required for preview/prepare")

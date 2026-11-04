@@ -72,7 +72,7 @@ def main(argv=None) -> int:
     action.add_argument("--watch", metavar="CAMPAIGN_ID", help="Run sequential due windows, in the foreground")
     action.add_argument("--halt", metavar="CAMPAIGN_ID", help="Immediate DB stop switch")
     action.add_argument("--report", metavar="CAMPAIGN_ID", help="Read-only outcomes")
-    action.add_argument("--worklist", metavar="CAMPAIGN_ID", help="HOT-first list of leads pending commercial review")
+    action.add_argument("--worklist", metavar="CAMPAIGN_ID", help="Price-drop responses requiring review, separately from CRM Hot")
     parser.add_argument("--file", type=Path, help="Local JSON with approved lead IDs")
     parser.add_argument("--operator", default="", help="Responsible reviewer/approver")
     parser.add_argument("--send", action="store_true", help="Mandatory explicit send confirmation")

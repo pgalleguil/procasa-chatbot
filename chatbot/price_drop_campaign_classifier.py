@@ -1,9 +1,8 @@
-"""Campaign-only commercial response classifier.
+"""Campaign-specific response intent, separate from canonical CRM temperature.
 
-Aligns HOT with the existing canonical lead_temperature.HOT_INTENTS,
-without mutating the canonical CRM lead temperature, owners or SLA cycles.
-All decisions are explicit, deterministic and explainable. Unknown/ambiguous
-phrases are not promoted to HOT or counted as a positive opportunity.
+Reuses the CRM's strong-action intent semantics without using CRM HOT/NORMAL
+labels, changing its lifecycle, or treating pre-existing HOT as newly reactivated.
+Only replies after an accepted campaign send are classified by the caller.
 """
 from __future__ import annotations
 
@@ -11,10 +10,13 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from .lead_temperature import HOT, HOT_INTENTS
+from .lead_temperature import HOT_INTENTS
 
-CLASSIFIER_VERSION = "price_drop_response_rules_v1"
-NORMAL = "NORMAL"
+CLASSIFIER_VERSION = "price_drop_response_rules_v2"
+# Never reuse the CRM's HOT/COLD/NORMAL labels for a campaign.
+PRIORITY = "PRIORIDAD_COMERCIAL"
+INTEREST = "INTERES_DECLARADO"
+INFO = "CONSULTA_INFORMATIVA"
 NO_SIGNAL = "SIN_SENAL"
 DECLINED = "RECHAZADO"
 UNSUBSCRIBED = "BAJA"
@@ -92,7 +94,7 @@ _INFORMATION = re.compile(
 @dataclass(frozen=True)
 class CampaignClassification:
     label: str
-    temperature: str | None
+    campaign_priority: str | None
     intent: str
     reason: str
     positive: bool
@@ -104,7 +106,7 @@ class CampaignClassification:
     def as_dict(self) -> dict:
         return {
             "label": self.label,
-            "temperature": self.temperature,
+            "campaign_priority": self.campaign_priority,
             "intent": self.intent,
             "reason": self.reason,
             "positive": self.positive,
@@ -140,7 +142,7 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
     ):
         if _INTEREST.search(message) or _INFORMATION.search(message) or "?" in str(text):
             return CampaignClassification(
-                NORMAL, NORMAL, "ASK_INFO", "negated_action_information", False, False,
+                INFO, "INFORMATIVA", "ASK_INFO", "negated_action_information", False, False,
             )
         return CampaignClassification(
             NO_SIGNAL, None, "OTHER", "negated_action_not_positive", False, False,
@@ -149,25 +151,25 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
     if _OFFER.search(message):
         intent, reason = "GIVE_OFFER", "explicit_offer"
         result = CampaignClassification(
-            HOT, HOT, intent, reason, True, True, explicit_offer=True,
+            PRIORITY, "ALTA", intent, reason, True, True, explicit_offer=True,
         )
     elif _VISIT.search(message):
         intent, reason = "ASK_VISIT", "explicit_visit_request"
         result = CampaignClassification(
-            HOT, HOT, intent, reason, True, True, explicit_visit=True,
+            PRIORITY, "ALTA", intent, reason, True, True, explicit_visit=True,
         )
     elif _CONTACT.search(message):
         intent, reason = "ASK_CONTACT", "explicit_human_contact_request"
         result = CampaignClassification(
-            HOT, HOT, intent, reason, True, True, explicit_contact=True,
+            PRIORITY, "ALTA", intent, reason, True, True, explicit_contact=True,
         )
     elif _INTEREST.search(message):
         result = CampaignClassification(
-            NORMAL, NORMAL, "ASK_INFO", "explicit_general_interest", True, True,
+            INTEREST, "MEDIA", "ASK_INFO", "explicit_general_interest", True, True,
         )
     elif "?" in str(text or "") or _INFORMATION.search(message):
         result = CampaignClassification(
-            NORMAL, NORMAL, "ASK_INFO", "information_question", False, False,
+            INFO, "INFORMATIVA", "ASK_INFO", "information_question", False, False,
         )
     else:
         result = CampaignClassification(
@@ -175,6 +177,6 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
         )
 
     # Never diverge silently from the canonical CRM HOT intent definition.
-    if result.temperature == HOT and result.intent not in HOT_INTENTS:
-        raise RuntimeError("campaign_hot_intent_not_canonical")
+    if result.label == PRIORITY and result.intent not in HOT_INTENTS:
+        raise RuntimeError("campaign_high_intent_not_canonical")
     return result

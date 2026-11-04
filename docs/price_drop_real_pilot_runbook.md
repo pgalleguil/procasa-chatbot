@@ -138,26 +138,45 @@ La conexión MongoDB del asistente puede ser solo lectura. El servicio PROCASA p
 **No activar prepare, approve ni el runner sin revisar primero la vista previa y autorizar expresamente cada etapa.**
 
 
-## Auditoría de horas, clasificación Hot/Normal y seguimiento
+## Clasificación exclusiva de campaña (no confundir con Hot del CRM)
 
-Cada registro en `crm_price_drop_campaign_dispatches_v1` conserva `scheduled_at` (programada), `attempted_at` (intento), `sent_at` (aceptación del proveedor en UTC) y `sent_at_chile` (aceptación en horario Chile). **SENT confirma aceptación del proveedor, no entrega al destinatario.** También conserva `provider_message_id`, `provider_delivery_status`, `first_response_at`, `first_positive_response_at`, `first_hot_response_at` y `last_customer_reply_at`.
+**CRM y campaña son dos dimensiones distintas.** El CRM conserva su `lead_temperature_effective` y su historial `lifecycle.hot_since` sin intervención del clasificador de campaña. El seguimiento de la rebaja utiliza únicamente `campaign_response_classification` y `campaign_response_priority`, dentro de `crm_price_drop_campaign_dispatches_v1`. La marca `leads.price_drop_campaign_v1` también usa los nombres de campaña, nunca `temperature` ni `classification` genéricos.
 
-Cada mensaje real del cliente registra además en `crm_price_drop_campaign_turns_v1` su texto, fecha, ID del proveedor y clasificación (`classifier_version`, `intent`, `reason`, `positive`, `needs_human_review`). Se conservan eventos incluso si posteriormente rechaza la propiedad.
+| Mensaje tras el aviso | Etiqueta EXCLUSIVA de campaña | Prioridad de revisión |
+| --- | --- | --- |
+| Solicita visita, llamada u oferta | `PRIORIDAD_COMERCIAL` | Alta |
+| Expresa interés general | `INTERES_DECLARADO` | Media |
+| Hace preguntas informativas | `CONSULTA_INFORMATIVA` | Sin seguimiento obligatorio |
+| No hay evidencia suficiente | `SIN_SENAL` | Sin seguimiento |
+| Rechaza expresamente | `RECHAZADO` | Cerrar pendiente de campaña |
+| Pide no recibir mensajes | `BAJA` | Bloquear campañas posteriores |
 
-El clasificador de campaña utiliza los mismos intents HOT del CRM: `ASK_VISIT`, `ASK_CONTACT`, `GIVE_OFFER`. Una solicitud de visita/contacto/oferta es **HOT**; una pregunta informativa o un interés general es **NORMAL**. Un interés general explícito queda pendiente para revisión humana, mientras que una pregunta informativa aislada no crea tarea comercial. Las respuestas ambiguas como «Sí» sin contexto no se consideran oportunidades. `RECHAZADO` cancela la revisión pendiente, y `BAJA` bloquea nuevos contactos.
+Solo se clasifican mensajes posteriores a un envío efectivamente aceptado por WhatsApp, durante los siete días de seguimiento y para el mismo teléfono, descartando menciones explícitas a otras propiedades. La correlación temporal **no demuestra por sí sola que el aviso haya causado la respuesta**: se documenta `campaign_attribution_basis=same_phone_after_accepted_send_window`.
 
-Estos resultados son **específicos de la campaña**. Se reflejan en `leads.price_drop_campaign_v1` pero **nunca** modifican `lead_temperature_effective`, `lifecycle.hot_since`, stage, asignaciones ni SLA. La clasificación oficial sigue siendo responsabilidad del flujo normal del chatbot y del CRM.
+### Distinguir los leads que ya eran Hot ANTES del aviso
 
-Para obtener la bandeja priorizada por Hot primero y Normal positivo después:
+Al seleccionar se conserva `crm_temperature_at_selection`; inmediatamente ANTES de llamar al proveedor se toma otra fotografía del CRM, `crm_temperature_before_send` y `crm_was_hot_before_send`. Así, un lead que entró Hot durante la mañana, antes de recibir la rebaja, queda como **Hot preexistente**, aunque después responda al mensaje.
+
+Los reportes separan:
+
+- `already_hot_before_send`: Hot del CRM al momento del envío (no es reactivación nueva).
+- `positive_responses_after_notice`: respuesta positiva posterior al aviso, independientemente del estado previo.
+- `positive_response_after_non_hot`: respuesta positiva posterior de quien tenía temperatura CRM conocida y **no** era Hot en el momento del envío; mide secuencia temporal, no causalidad.
+- `priority_responses` e `declared_interest`: categorías propias del aviso, sin llamarlas Hot/Normal.
+- `pending_human_review`: casos comerciales pendientes de revisión, no gestiones humanas realizadas.
+
+Cada mensaje tiene su clasificación propia en `crm_price_drop_campaign_turns_v1` y conserva ID del proveedor y fecha. El despacho guarda `scheduled_at` (prevista), `attempted_at` (intento), `sent_at` (aceptación UTC), `sent_at_chile`, `first_response_at`, `first_positive_response_at` y `first_priority_response_at`. `SENT` confirma aceptación del proveedor, **no** entrega al destinatario.
+
+Para revisar las respuestas comerciales en orden de prioridad, sin alterar CRM ni SLA:
 
 ```shell
 python scripts/price_drop_campaign_real_pilot.py --worklist ID_DE_CAMPAÑA
 ```
 
-Para revisar fechas de envío, estados, respuestas y conversiones:
+Para comparar estados previos, horas, respuestas y resultados:
 
 ```shell
 python scripts/price_drop_campaign_real_pilot.py --report ID_DE_CAMPAÑA
 ```
 
-Ambas operaciones son de **solo lectura**. El estado `PENDIENTE_REVISION` significa que el equipo debe revisar ese lead; no acredita gestión humana ni visita agendada. Una negativa posterior limpia el pendiente, manteniendo la historia anterior.
+**Estas operaciones son solo lectura.** `PENDIENTE_REVISION` no implica contacto humano, gestión efectiva, visita confirmada ni inicio/cierre de SLA. La responsabilidad de clasificar y gestionar la temperatura oficial permanece en las rutas normales del CRM.

@@ -225,7 +225,7 @@ def test_inbound_conversation_bot_reply_and_metrics(db, monkeypatch):
     assert report["sent"] == 1
     assert report["responded"] == 1
     assert report["response_rate"] == 1
-    assert report["interested"] == 1
+    assert report["positive_responses_after_notice"] == 1
     assert report["visits_requested"] == 1
     assert report["rows"][0]["reply_count"] == 1
     lead = db["leads"].find_one({"_id": ObjectId("690000000000000000000001")})
@@ -293,7 +293,7 @@ def test_negative_reply_is_not_falsely_counted_as_interest_or_visit(db, monkeypa
     assert response["status"] == "ATTRIBUTED"
     report = campaign_report(db, "piloto6436_20261105")
     assert report["responded"] == 1
-    assert report["interested"] == 0
+    assert report["positive_responses_after_notice"] == 0
     assert report["visits_requested"] == 0
     assert report["declined"] == 1
     assert report["rows"][0]["minutes_to_first_reply"] == 2
@@ -372,17 +372,17 @@ def test_render_bootstrap_off_does_no_database_work():
 
 
 @pytest.mark.parametrize("text,label,intent,positive,review", [
-    ("Quiero visitar el departamento", "HOT", "ASK_VISIT", True, True),
-    ("Me gustaría coordinar una visita mañana", "HOT", "ASK_VISIT", True, True),
-    ("¿Puedo visitar mañana?", "HOT", "ASK_VISIT", True, True),
-    ("Quiero que me llame un ejecutivo", "HOT", "ASK_CONTACT", True, True),
-    ("Me puede llamar una asesora", "HOT", "ASK_CONTACT", True, True),
-    ("Quiero hacer una oferta", "HOT", "GIVE_OFFER", True, True),
-    ("Estoy interesado en coordinar una visita", "HOT", "ASK_VISIT", True, True),
-    ("¿Podemos ver el departamento?", "HOT", "ASK_VISIT", True, True),
-    ("Me interesa, cuéntame más", "NORMAL", "ASK_INFO", True, True),
-    ("¿Cuáles son los gastos comunes?", "NORMAL", "ASK_INFO", False, False),
-    ("¿Quién me contactará?", "NORMAL", "ASK_INFO", False, False),
+    ("Quiero visitar el departamento", "PRIORIDAD_COMERCIAL", "ASK_VISIT", True, True),
+    ("Me gustaría coordinar una visita mañana", "PRIORIDAD_COMERCIAL", "ASK_VISIT", True, True),
+    ("¿Puedo visitar mañana?", "PRIORIDAD_COMERCIAL", "ASK_VISIT", True, True),
+    ("Quiero que me llame un ejecutivo", "PRIORIDAD_COMERCIAL", "ASK_CONTACT", True, True),
+    ("Me puede llamar una asesora", "PRIORIDAD_COMERCIAL", "ASK_CONTACT", True, True),
+    ("Quiero hacer una oferta", "PRIORIDAD_COMERCIAL", "GIVE_OFFER", True, True),
+    ("Estoy interesado en coordinar una visita", "PRIORIDAD_COMERCIAL", "ASK_VISIT", True, True),
+    ("¿Podemos ver el departamento?", "PRIORIDAD_COMERCIAL", "ASK_VISIT", True, True),
+    ("Me interesa, cuéntame más", "INTERES_DECLARADO", "ASK_INFO", True, True),
+    ("¿Cuáles son los gastos comunes?", "CONSULTA_INFORMATIVA", "ASK_INFO", False, False),
+    ("¿Quién me contactará?", "CONSULTA_INFORMATIVA", "ASK_INFO", False, False),
     ("No me interesa", "RECHAZADO", "OTHER", False, False),
     ("No me interesa una visita", "RECHAZADO", "OTHER", False, False),
     ("No quiero agendar, gracias", "RECHAZADO", "OTHER", False, False),
@@ -402,8 +402,8 @@ def test_campaign_classifier_uses_canonical_hot_intents_without_overcalling(
     assert result.intent == intent
     assert result.positive is positive
     assert result.needs_human_review is review
-    assert result.temperature == ("HOT" if label == "HOT" else
-                                  "NORMAL" if label == "NORMAL" else None)
+    assert result.campaign_priority == ({"PRIORIDAD_COMERCIAL": "ALTA", "INTERES_DECLARADO": "MEDIA",
+                                       "CONSULTA_INFORMATIVA": "INFORMATIVA"}.get(label))
 
 
 def test_campaign_send_accepted_timestamp_and_chile_timezone(db, monkeypatch):
@@ -418,7 +418,7 @@ def test_campaign_send_accepted_timestamp_and_chile_timezone(db, monkeypatch):
     assert row["sent_at_chile"].startswith("2026-11-05T11:00:00")
     assert row["attempted_at"].replace(tzinfo=UTC) == START
     assert row["sent_at"].replace(tzinfo=UTC) == START
-    assert row["response_classification"] == "SIN_RESPUESTA"
+    assert row["campaign_response_classification"] == "SIN_RESPUESTA"
 
 
 def test_campaign_hot_reply_creates_actionable_marker_without_crm_hot_write(
@@ -442,27 +442,27 @@ def test_campaign_hot_reply_creates_actionable_marker_without_crm_hot_write(
         text="Quiero visitar el departamento, ¿podemos coordinar?",
         received_at=at,
     )
-    assert result["classification"] == "HOT"
-    assert result["temperature"] == "HOT"
+    assert result["campaign_classification"] == "PRIORIDAD_COMERCIAL"
+    assert result["campaign_priority"] == "ALTA"
     assert result["intent"] == "ASK_VISIT"
     assert result["needs_human_review"] is True
     doc = db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})
-    assert doc["response_classification"] == "HOT"
-    assert doc["first_hot_response_at"].replace(tzinfo=UTC) == at
+    assert doc["campaign_response_classification"] == "PRIORIDAD_COMERCIAL"
+    assert doc["first_priority_response_at"].replace(tzinfo=UTC) == at
     assert doc["first_positive_response_at"].replace(tzinfo=UTC) == at
     assert doc["followup_status"] == "PENDIENTE_REVISION"
     turn = db[TURNS].find_one({"provider_message_id": "cust-hot-1"})
     assert turn["classification"]["intent"] == "ASK_VISIT"
     assert turn["classification"]["classifier_version"]
     lead = db["leads"].find_one({"_id": doc["lead_id"]})
-    assert lead["price_drop_campaign_v1"]["temperature"] == "HOT"
+    assert lead["price_drop_campaign_v1"]["response_priority"] == "ALTA"
     assert lead["price_drop_campaign_v1"]["needs_human_review"] is True
     assert lead["lead_temperature_effective"] == "COLD"
     assert lead["lifecycle"]["hot_since"] == "2026-01-01T10:00:00-03:00"
     assert lead["sla_status"] == "ok"
     assert lead["ejecutivo_asignado"] == "Actual"
     worklist = campaign_worklist(db, "piloto6436_20261105")
-    assert worklist["hot"] == 1 and worklist["pending"] == 1
+    assert worklist["priority_responses"] == 1 and worklist["pending"] == 1
     assert worklist["leads"][0]["lead_id"] == str(doc["lead_id"])
 
 
@@ -475,7 +475,7 @@ def test_campaign_normal_questions_vs_positive_reply(db, monkeypatch):
         db, phone="+56930000001", provider_message_id="info-1",
         text="¿Cuánto son los gastos comunes?", received_at=START + timedelta(minutes=1),
     )
-    assert info["classification"] == "NORMAL"
+    assert info["campaign_classification"] == "CONSULTA_INFORMATIVA"
     assert info["needs_human_review"] is False
     assert db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})[
         "followup_status"] == "CONSULTA_INFORMATIVA"
@@ -483,11 +483,11 @@ def test_campaign_normal_questions_vs_positive_reply(db, monkeypatch):
         db, phone="+56930000001", provider_message_id="interest-2",
         text="Me interesa, cuéntame más", received_at=START + timedelta(minutes=2),
     )
-    assert interest["classification"] == "NORMAL"
+    assert interest["campaign_classification"] == "INTERES_DECLARADO"
     assert interest["needs_human_review"] is True
     report = campaign_report(db, "piloto6436_20261105")
-    assert report["normal"] == 1 and report["hot"] == 0
-    assert report["interested"] == 1 and report["pending_human_review"] == 1
+    assert report["declared_interest"] == 1 and report["priority_responses"] == 0
+    assert report["positive_responses_after_notice"] == 1 and report["pending_human_review"] == 1
     assert db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})[
         "positive_reply_count"] == 1
 
@@ -505,12 +505,12 @@ def test_campaign_decline_clears_pending_but_keeps_historical_events(db, monkeyp
         text="No me interesa, no quiero visita",
         received_at=START + timedelta(minutes=2),
     )
-    assert outcome["classification"] == "RECHAZADO"
+    assert outcome["campaign_classification"] == "RECHAZADO"
     assert outcome["needs_human_review"] is False
     report = campaign_report(db, "piloto6436_20261105")
-    assert report["hot"] == 0 and report["pending_human_review"] == 0
+    assert report["priority_responses"] == 0 and report["pending_human_review"] == 0
     assert report["declined"] == 1
-    assert report["rows"][0]["first_hot_response_at"] is not None
+    assert report["rows"][0]["first_priority_response_at"] is not None
     assert campaign_worklist(db, "piloto6436_20261105")["pending"] == 0
 
 
@@ -521,7 +521,7 @@ def test_campaign_inbound_duplicate_never_increments_or_reopens_followup(db, mon
                  sender=lambda *_: {"success": True, "provider_message_id": "msg-first"})
     received = dict(phone="+56930000001", provider_message_id="unique-visit",
                     text="Quiero agendar una visita", received_at=START + timedelta(minutes=1))
-    assert record_inbound(db, **received)["classification"] == "HOT"
+    assert record_inbound(db, **received)["campaign_classification"] == "PRIORIDAD_COMERCIAL"
     assert record_inbound(db, **received)["status"] == "DUPLICATE_IGNORED"
     row = db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})
     assert row["reply_count"] == 1 and row["positive_reply_count"] == 1
@@ -544,9 +544,9 @@ def test_campaign_worklist_prioritizes_hot_before_normal(db, monkeypatch):
                    received_at=START + timedelta(minutes=15))
     worklist = campaign_worklist(db, "piloto6436_20261105")
     assert worklist["pending"] == 2
-    assert worklist["hot"] == 1 and worklist["normal"] == 1
-    assert [r["response_classification"] for r in worklist["leads"]] == [
-        "HOT", "NORMAL",
+    assert worklist["priority_responses"] == 1 and worklist["declared_interest"] == 1
+    assert [r["campaign_response_classification"] for r in worklist["leads"]] == [
+        "PRIORIDAD_COMERCIAL", "INTERES_DECLARADO",
     ]
 
 
@@ -583,5 +583,103 @@ def test_first_client_reply_timestamp_is_recorded_even_for_optout(db, monkeypatc
     report = campaign_report(db, "piloto6436_20261105")
     assert report["responded"] == 1
     assert report["rows"][0]["minutes_to_first_reply"] == 3.0
-    assert report["hot"] == 0 and report["normal"] == 0
+    assert report["priority_responses"] == 0 and report["declared_interest"] == 0
     assert report["pending_human_review"] == 0
+
+
+def test_preexisting_crm_hot_remains_distinct_from_campaign_reply(db, monkeypatch):
+    """An old HOT lead can answer after a price reduction without becoming a new HOT."""
+    from chatbot.price_drop_campaign_real import campaign_worklist
+    original = db["leads"].find_one({"contact_phone_normalized": "+56930000001"})
+    db["leads"].update_one({"_id": original["_id"]}, {"$set": {
+        "lead_temperature_effective": "HOT",
+        "lifecycle.hot_since": "2026-11-04T09:10:00-03:00",
+        "last_intent": "ASK_VISIT",
+    }})
+    approve(db, n=1)
+    enable(monkeypatch)
+    # Existing CRM HOT was present before send.
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "existing-hot-send"})
+    row = db[DISPATCHES].find_one({"provider_message_id": "existing-hot-send"})
+    assert row["crm_temperature_before_send"] == "HOT"
+    assert row["crm_was_hot_before_send"] is True
+    mark = db["leads"].find_one({"_id": original["_id"]})
+    assert mark["price_drop_campaign_v1"]["crm_was_hot_before_send"] is True
+    assert mark["lead_temperature_effective"] == "HOT"
+    assert mark["lifecycle"]["hot_since"] == "2026-11-04T09:10:00-03:00"
+
+    answer = record_inbound(
+        db, phone="+56930000001", provider_message_id="already-hot-responds",
+        text="Quiero visitar el departamento", received_at=START + timedelta(minutes=1),
+    )
+    assert answer["campaign_classification"] == "PRIORIDAD_COMERCIAL"
+    assert answer["crm_was_hot_before_send"] is True
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["already_hot_before_send"] == 1
+    assert report["positive_response_after_non_hot"] == 0
+    assert report["priority_responses"] == 1  # campaign reply, NOT a new CRM HOT
+    worklist = campaign_worklist(db, "piloto6436_20261105")
+    assert worklist["already_hot_before_send"] == 1
+    assert worklist["leads"][0]["crm_temperature_before_send"] == "HOT"
+    assert worklist["leads"][0]["campaign_response_classification"] == "PRIORIDAD_COMERCIAL"
+    assert db["leads"].find_one({"_id": original["_id"]})["lead_temperature_effective"] == "HOT"
+
+
+def test_hot_arrives_after_selection_but_before_campaign_send(db, monkeypatch):
+    """Avoid crediting the campaign for an independently Hot lead."""
+    p = plan(db, n=1)
+    lead_id = ObjectId(p["recipients"][0]["lead_id"])
+    db["leads"].update_one({"_id": lead_id}, {"$set": {"lead_temperature_effective": "COLD"}})
+    approve(db, n=1)
+    planned = db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})
+    assert planned["crm_temperature_at_selection"] == "COLD"
+    # Independently turns HOT while the campaign is queued.
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "lead_temperature_effective": "HOT",
+        "lifecycle.hot_since": "2026-11-05T10:45:00-03:00",
+    }})
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "hot-preexisting"})
+    record_inbound(db, phone="+56930000001", provider_message_id="interested-after-notice",
+                   text="Me interesa, cuéntame más",
+                   received_at=START + timedelta(minutes=2))
+    row = db[DISPATCHES].find_one({"provider_message_id": "hot-preexisting"})
+    assert row["crm_temperature_at_selection"] == "COLD"
+    assert row["crm_temperature_before_send"] == "HOT"
+    assert row["crm_was_hot_before_send"] is True
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["positive_responses_after_notice"] == 1
+    assert report["positive_response_after_non_hot"] == 0
+    assert report["already_hot_before_send"] == 1
+
+
+def test_cold_lead_response_is_post_send_engagement_not_automatic_crm_hot(
+        db, monkeypatch):
+    lead_id = ObjectId("690000000000000000000001")
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "lead_temperature_effective": "COLD",
+        "last_intent": "ASK_INFO",
+    }})
+    approve(db, n=1)
+    enable(monkeypatch)
+    # Before the first accepted campaign message: no post-notice classification.
+    assert record_inbound(
+        db, phone="+56930000001", provider_message_id="before-send", text="Quiero visitar",
+        received_at=START - timedelta(minutes=1),
+    )["status"] == "NOT_CAMPAIGN_REPLY"
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted-send"})
+    answer = record_inbound(
+        db, phone="+56930000001", provider_message_id="after-send",
+        text="Quiero coordinar una visita", received_at=START + timedelta(minutes=3),
+    )
+    assert answer["campaign_classification"] == "PRIORIDAD_COMERCIAL"
+    assert answer["crm_was_hot_before_send"] is False
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["positive_response_after_non_hot"] == 1
+    assert report["already_hot_before_send"] == 0
+    assert report["rows"][0]["campaign_origin"] == "PRICE_DROP"
+    assert report["rows"][0]["attribution_basis"] == "same_phone_after_accepted_send_window"
+    assert db["leads"].find_one({"_id": lead_id})["lead_temperature_effective"] == "COLD"

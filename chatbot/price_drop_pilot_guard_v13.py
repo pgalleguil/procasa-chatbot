@@ -116,6 +116,9 @@ def _time_review(text: str) -> tuple[str | None, str | None]:
     m = _TIME.search(s)
     if not m:
         return None, None
+    # Keep 10 or 11 as two discrete choices rather than silently dropping 11.
+    if re.search(r"\b(?:a las|alas)\s+\d{1,2}(?::\d{2})?\s+o\s+(?:a las\s+)?\d{1,2}", s):
+        return None, None
     hour = int(m.group(1))
     minute = int(m.group(2) or "0")
     part = m.group(3)
@@ -184,6 +187,13 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
     current_parts = parse_parts(s)
     active_visit = visit or _visit_history(history)
     schedule_update = bool(current_parts) and active_visit
+
+    if re.search(r"\b(?:tan directo|muy directo|que seco|que brusco)\b", s):
+        return (
+            "Perdona, sonó demasiado directo 😊. Te escribimos para contarte "
+            "que bajó el precio del departamento de San Miguel. ¿Alcanzaste "
+            "a verlo o prefieres que te recuerde los detalles?"
+        )
 
     if s in {"como", "como?", "como estas", "como estas?"} and not any(
         (property_question, amount, date, negotiate, contact, visit, interest)

@@ -1,0 +1,703 @@
+"""Small, explicitly approved price-drop WhatsApp campaign.
+
+Three independent gates: prepared audience, human approval, runtime enablement.
+No general marketing blast, no CRM assignment/SLA writes, no automatic retry.
+Dedicated campaign/dispatch/turn collections provide auditable outcomes.
+"""
+from __future__ import annotations
+
+import hashlib
+import os
+import re
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable
+from zoneinfo import ZoneInfo
+
+from bson import ObjectId
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
+
+from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_variants
+from .property_lookup import PROPERTY_COLLECTION_NAME
+
+CAMPAIGNS = "crm_price_drop_campaigns_v1"
+DISPATCHES = "crm_price_drop_campaign_dispatches_v1"
+TURNS = "crm_price_drop_campaign_turns_v1"
+FLAG = "PRICE_DROP_REAL_PILOT_ENABLED"
+APPROVED_ID_FLAG = "PRICE_DROP_REAL_PILOT_APPROVED_ID"
+CL_TZ = ZoneInfo("America/Santiago")
+MAX_RECIPIENTS = 5
+MIN_GAP_MINUTES = 10
+STOP = re.compile(
+    r"\b(?:stop|baja|no me escriban|dejen de escribir|no quiero (?:mas |más )?mensajes|"
+    r"no me contacten|no contactarme|eliminar mi numero|eliminar mi número)\b",
+    re.I,
+)
+VISIT = re.compile(r"\b(?:visitar|visita|agendar|verlo|verla|conocer el departamento)\b", re.I)
+HUMAN = re.compile(r"\b(?:ejecutiv[oa]|corredor[ae]?|llamad[ao]|contact[oe]|asesor[ae]?)\b", re.I)
+INTEREST = re.compile(r"\b(?:me interesa|interesad[oa]|quiero saber|cuentame|cuéntame|me gustaria|me gustaría)\b", re.I)
+
+LEAD_PROJECTION = {
+    "_id": 1, "phone": 1, "contact_phone_normalized": 1,
+    "prospecto.codigo": 1, "created_at": 1, "messages": 1,
+    "conversation_status": 1, "contact_identity_incomplete": 1,
+    "phone_is_synthetic": 1, "price_drop_campaign_v1.opted_out": 1,
+}
+PROP_PROJECTION = {
+    "_id": 0, "codigo": 1, "disponible_prop360": 1,
+    "estado.oficina": 1, "tipo_operacion.venta": 1,
+    "tipo_operacion.precio_venta.precio_uf": 1,
+}
+
+
+class CampaignBlocked(ValueError):
+    pass
+
+
+def _utc(value: Any) -> datetime:
+    if isinstance(value, str):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise CampaignBlocked("timestamp_invalid") from exc
+    if not isinstance(value, datetime) or value.tzinfo is None:
+        raise CampaignBlocked("timestamp_requires_timezone")
+    return value.astimezone(timezone.utc)
+
+
+def _lead_id(raw: Any):
+    value = str(raw or "").strip()
+    if not value:
+        raise CampaignBlocked("lead_id_required")
+    if ObjectId.is_valid(value):
+        return ObjectId(value)
+    # Some older lead records use string IDs.
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9:_-]{3,79}", value):
+        raise CampaignBlocked("lead_id_invalid")
+    return value
+
+
+def _campaign_id(raw: Any) -> str:
+    value = str(raw or "").strip()
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{5,79}", value):
+        raise CampaignBlocked("campaign_id_invalid")
+    return value
+
+
+def _property_code(raw: Any) -> str:
+    value = str(raw or "").strip()
+    if not re.fullmatch(r"\d{4,6}", value):
+        raise CampaignBlocked("property_code_invalid")
+    return value
+
+
+def _preview_phone(phone: str) -> str:
+    return "***" + str(phone)[-4:]
+
+
+def _eligible_window(dt: datetime) -> bool:
+    local = _utc(dt).astimezone(CL_TZ)
+    # One daytime campaign at a time; Monday–Friday, 10:00–18:00 Chile.
+    return local.weekday() < 5 and (10 <= local.hour < 18)
+
+
+def _is_enabled(campaign_id: str) -> bool:
+    return (
+        os.getenv(FLAG, "").casefold() in {"true", "1", "yes"}
+        and os.getenv(APPROVED_ID_FLAG, "") == campaign_id
+    )
+
+
+def _property_valid(db: Any, code: str, expected_price: float) -> bool:
+    prop = db[PROPERTY_COLLECTION_NAME].find_one({"codigo": code}, PROP_PROJECTION) or {}
+    operation = prop.get("tipo_operacion") or {}
+    price = (operation.get("precio_venta") or {}).get("precio_uf")
+    return (
+        str(prop.get("codigo") or "") == code
+        and prop.get("disponible_prop360") is True
+        and (prop.get("estado") or {}).get("oficina") == "PROCASA SUCRE"
+        and operation.get("venta") is True
+        and isinstance(price, (int, float)) and not isinstance(price, bool)
+        and abs(float(price) - expected_price) < 0.01
+    )
+
+
+def _inquiry_evidence(lead: dict, code: str, drop_at: datetime) -> str | None:
+    """A dated customer turn + matching single-property CRM reference.
+
+    An old lead creation date alone does NOT prove a prior property inquiry.
+    We require a customer message in the same lead before the reduction.
+    """
+    if str((lead.get("prospecto") or {}).get("codigo") or "") != code:
+        return None
+    for item in lead.get("messages") or []:
+        if not isinstance(item, dict) or item.get("role") not in {"user", "customer"}:
+            continue
+        if not str(item.get("content") or "").strip():
+            continue
+        try:
+            when = _utc(item.get("timestamp"))
+        except CampaignBlocked:
+            continue
+        if when < drop_at:
+            return when.isoformat()
+    return None
+
+
+def _check_recipient(
+    db: Any, candidate: dict, code: str, drop_at: datetime, *,
+    check_duplicates: bool = True,
+) -> dict:
+    lid = _lead_id(candidate.get("lead_id"))
+    if candidate.get("consent_reviewed") is not True:
+        raise CampaignBlocked("recipient_consent_review_missing")
+    if not str(candidate.get("consent_basis") or "").strip():
+        raise CampaignBlocked("recipient_consent_basis_missing")
+    lead = db["leads"].find_one({"_id": lid}, LEAD_PROJECTION)
+    if not lead:
+        raise CampaignBlocked("lead_not_found")
+    if lead.get("phone_is_synthetic") or lead.get("contact_identity_incomplete"):
+        raise CampaignBlocked("lead_contact_identity_incomplete")
+    if (lead.get("conversation_status") or "") in {
+        "STOPPED_BY_CLIENT", "BLOCKED_EXTERNAL_BROKER", "STOPPED", "BLOCKED",
+    } or (lead.get("price_drop_campaign_v1") or {}).get("opted_out") is True:
+        raise CampaignBlocked("lead_opted_out_or_blocked")
+    phone = normalize_phone_strict(
+        lead.get("contact_phone_normalized") or lead.get("phone") or ""
+    )
+    if not phone or not has_real_phone(phone):
+        raise CampaignBlocked("lead_phone_invalid")
+    # Reject ambiguous phone-to-lead identity. Prevent contacting brokers.
+    variants = phone_identity_variants(phone)
+    duplicates = list(db["leads"].find({
+        "$or": [
+            {"phone": {"$in": variants}},
+            {"contact_phone_normalized": {"$in": variants}},
+        ],
+    }, {"_id": 1}).limit(2))
+    if len(duplicates) != 1 or str(duplicates[0]["_id"]) != str(lid):
+        raise CampaignBlocked("lead_phone_ambiguous")
+    inquiry_at = _inquiry_evidence(lead, code, drop_at)
+    if not inquiry_at:
+        raise CampaignBlocked("pre_drop_inquiry_not_verified")
+    if check_duplicates and db[DISPATCHES].find_one({
+        "$or": [
+            {"lead_id": lid, "property_code": code},
+            {"phone_normalized": phone, "property_code": code},
+        ],
+    }, {"_id": 1}):
+        raise CampaignBlocked("property_campaign_already_recorded")
+    if db[DISPATCHES].find_one({
+        "phone_normalized": phone, "opted_out_at": {"$exists": True},
+    }, {"_id": 1}):
+        raise CampaignBlocked("phone_campaign_opted_out")
+    return {
+        "lead_id": lid,
+        "phone_normalized": phone,
+        "inquiry_evidence_at": inquiry_at,
+        "consent_basis": str(candidate["consent_basis"])[:180],
+    }
+
+
+def _message(code: str, old: float, new: float) -> str:
+    f = lambda n: f"{n:,.0f}".replace(",", ".")
+    return (
+        "Hola, ¿cómo estás? Soy de PROCASA 😊\n\n"
+        f"Te escribo porque el departamento que consultaste (código {code}) "
+        f"bajó de UF {f(old)} a UF {f(new)}.\n\n"
+        "Con este nuevo valor quizás valga la pena darle otra mirada. "
+        f"Acá está la publicación actualizada: https://www.procasa.cl/{code}\n\n"
+        "¿Cómo lo ves con este nuevo precio?"
+    )
+
+
+def preview_plan(db: Any, payload: dict, *, now: datetime | None = None) -> dict:
+    """Read-only. Report every rejection; no writes, no provider calls."""
+    now = _utc(now or datetime.now(timezone.utc))
+    cid = _campaign_id(payload.get("campaign_id"))
+    code = _property_code(payload.get("property_code"))
+    try:
+        old, new = float(payload["old_price_uf"]), float(payload["new_price_uf"])
+    except (ValueError, TypeError, KeyError) as exc:
+        raise CampaignBlocked("price_invalid") from exc
+    if not (2000 <= new <= 5000 and old > new and 0 < old - new < 5000):
+        raise CampaignBlocked("discount_not_eligible")
+    drop_at = _utc(payload.get("price_drop_at"))
+    start_at = _utc(payload.get("start_at"))
+    if start_at <= now:
+        raise CampaignBlocked("schedule_must_be_future")
+    if not now >= drop_at:
+        raise CampaignBlocked("drop_in_future")
+    if not str(payload.get("price_change_evidence") or "").strip():
+        raise CampaignBlocked("audited_price_change_evidence_required")
+    gap = payload.get("gap_minutes", 12)
+    if type(gap) is not int or not MIN_GAP_MINUTES <= gap <= 120:
+        raise CampaignBlocked("invalid_spacing")
+    recipients = payload.get("recipients")
+    if not isinstance(recipients, list) or not 1 <= len(recipients) <= MAX_RECIPIENTS:
+        raise CampaignBlocked("pilot_size_invalid")
+    if not str(payload.get("reviewed_by") or "").strip():
+        raise CampaignBlocked("operator_review_required")
+    if not _property_valid(db, code, new):
+        raise CampaignBlocked("current_property_status_or_price_invalid")
+    if db[CAMPAIGNS].find_one({"_id": cid}, {"_id": 1}):
+        raise CampaignBlocked("campaign_id_already_exists")
+    approved = []
+    blocked = []
+    ids, phones = set(), set()
+    for offset, recipient in enumerate(recipients):
+        if not isinstance(recipient, dict):
+            blocked.append({"slot": offset + 1, "reason": "recipient_invalid"})
+            continue
+        try:
+            selected = _check_recipient(db, recipient, code, drop_at)
+            if str(selected["lead_id"]) in ids or selected["phone_normalized"] in phones:
+                raise CampaignBlocked("duplicate_recipient_in_batch")
+            ids.add(str(selected["lead_id"]))
+            phones.add(selected["phone_normalized"])
+            scheduled = start_at + timedelta(minutes=gap * offset)
+            if not _eligible_window(scheduled):
+                raise CampaignBlocked("slot_outside_chilean_business_hours")
+            approved.append({
+                "slot": offset + 1,
+                "lead_id": str(selected["lead_id"]),
+                "phone_last4": _preview_phone(selected["phone_normalized"]),
+                "inquiry_evidence_at": selected["inquiry_evidence_at"],
+                "scheduled_at": scheduled.isoformat(),
+                "_recipient": selected,
+            })
+        except CampaignBlocked as exc:
+            blocked.append({
+                "slot": offset + 1,
+                "lead_id": str(recipient.get("lead_id") or "")[-6:],
+                "reason": str(exc),
+            })
+    return {
+        "campaign_id": cid,
+        "property_code": code,
+        "old_price_uf": old,
+        "new_price_uf": new,
+        "price_drop_at": drop_at.isoformat(),
+        "price_change_evidence": str(payload["price_change_evidence"])[:200],
+        "start_at": start_at.isoformat(),
+        "gap_minutes": gap,
+        "reviewed_by": str(payload["reviewed_by"])[:80],
+        "approved": approved,
+        "blocked": blocked,
+        "ready_to_plan": len(approved) == len(recipients) and not blocked,
+        "preview_message": _message(code, old, new),
+    }
+
+
+def persist_plan(db: Any, payload: dict, *, now: datetime | None = None) -> dict:
+    """Create immutable, individually approved dispatch slots; never send."""
+    now = _utc(now or datetime.now(timezone.utc))
+    plan = preview_plan(db, payload, now=now)
+    if not plan["ready_to_plan"]:
+        raise CampaignBlocked("audience_contains_blocked_recipient")
+    cid = plan["campaign_id"]
+    docs = []
+    for row in plan["approved"]:
+        rec = row["_recipient"]
+        docs.append({
+            "_id": f"{cid}:{plan['property_code']}:{rec['lead_id']}",
+            "campaign_id": cid,
+            "lead_id": rec["lead_id"],
+            "phone_normalized": rec["phone_normalized"],
+            "property_code": plan["property_code"],
+            "old_price_uf": plan["old_price_uf"],
+            "new_price_uf": plan["new_price_uf"],
+            "inquiry_evidence_at": row["inquiry_evidence_at"],
+            "consent_basis": rec["consent_basis"],
+            "scheduled_at": _utc(row["scheduled_at"]),
+            "created_at": now,
+            "status": "PLANNED",
+            "reply_count": 0,
+            "bot_reply_count": 0,
+            "visit_requested": False,
+            "human_requested": False,
+            "interest_signaled": False,
+        })
+    header = {
+        "_id": cid, "status": "PLANNED",
+        "property_code": plan["property_code"],
+        "old_price_uf": plan["old_price_uf"],
+        "new_price_uf": plan["new_price_uf"],
+        "price_drop_at": _utc(plan["price_drop_at"]),
+        "price_change_evidence": plan["price_change_evidence"],
+        "start_at": _utc(plan["start_at"]),
+        "gap_minutes": plan["gap_minutes"],
+        "max_attempts": len(docs), "attempts_started": 0,
+        "next_allowed_at": _utc(plan["start_at"]),
+        "reviewed_by": plan["reviewed_by"],
+        "created_at": now,
+        "approved_at": None,
+    }
+    # Header is reserved first; duplicate campaign fails closed even if partial.
+    db[CAMPAIGNS].insert_one(header)
+    try:
+        db[DISPATCHES].insert_many(docs, ordered=True)
+    except Exception:
+        db[CAMPAIGNS].update_one({"_id": cid}, {"$set": {
+            "status": "PREPARATION_INCOMPLETE", "halted_at": now,
+        }})
+        raise
+    return {
+        "status": "PLANNED", "campaign_id": cid,
+        "recipients": len(docs), "first_slot": plan["start_at"],
+        "gap_minutes": plan["gap_minutes"], "sent": 0,
+    }
+
+
+def approve_campaign(db: Any, campaign_id: str, *, operator: str, now=None) -> dict:
+    """Separate human approval; cannot self-approve by preparing the plan."""
+    cid = _campaign_id(campaign_id)
+    if not operator or not str(operator).strip():
+        raise CampaignBlocked("approver_required")
+    header = db[CAMPAIGNS].find_one({"_id": cid, "status": "PLANNED"})
+    if not header:
+        raise CampaignBlocked("campaign_not_in_planned_state")
+    count = db[DISPATCHES].count_documents({"campaign_id": cid, "status": "PLANNED"})
+    if count != header["max_attempts"]:
+        raise CampaignBlocked("incomplete_audience_or_ledger")
+    if not 1 <= count <= MAX_RECIPIENTS:
+        raise CampaignBlocked("size_limit_broken")
+    now = _utc(now or datetime.now(timezone.utc))
+    if _utc(header["start_at"]) <= now:
+        raise CampaignBlocked("campaign_schedule_expired")
+    result = db[CAMPAIGNS].update_one(
+        {"_id": cid, "status": "PLANNED"},
+        {"$set": {
+            "status": "APPROVED",
+            "approved_at": now,
+            "approved_by": str(operator)[:80],
+        }},
+    )
+    if result.modified_count != 1:
+        raise CampaignBlocked("approval_concurrent_change")
+    return {"status": "APPROVED", "campaign_id": cid, "recipients": count}
+
+
+def halt_campaign(db: Any, campaign_id: str, *, operator: str, now=None) -> dict:
+    now = _utc(now or datetime.now(timezone.utc))
+    cid = _campaign_id(campaign_id)
+    result = db[CAMPAIGNS].update_one(
+        {"_id": cid, "status": {"$in": ["APPROVED", "PLANNED"]}},
+        {"$set": {"status": "HALTED", "halted_at": now,
+                  "halted_by": str(operator or "operator")[:80]}},
+    )
+    return {"status": "HALTED" if result.modified_count else "NOT_ACTIVE",
+            "campaign_id": cid}
+
+
+def _update_lead_marker(db: Any, row: dict, *, status: str, now: datetime) -> None:
+    """Campaign namespace only; do not mutate routing, stage or SLA."""
+    db["leads"].update_one({"_id": row["lead_id"]}, {
+        "$set": {
+            "price_drop_campaign_v1.last_campaign_id": row["campaign_id"],
+            "price_drop_campaign_v1.last_property_code": row["property_code"],
+            "price_drop_campaign_v1.last_status": status,
+            "price_drop_campaign_v1.last_sent_at": now,
+            "price_drop_campaign_v1.has_received": status == "SENT",
+        },
+        "$addToSet": {
+            "price_drop_campaign_v1.campaign_ids": row["campaign_id"],
+        },
+    })
+
+
+def send_one_due(
+    db: Any, campaign_id: str, *,
+    sender: Callable[[str, str], dict] | None = None,
+    now: datetime | None = None,
+) -> dict:
+    """One due window/one recipient per call, exactly-once attempt semantics.
+
+    A startup/restarted worker can never automatically send: runtime flag AND
+    approved campaign ID AND campaign approval AND per-slot time must match.
+    """
+    cid = _campaign_id(campaign_id)
+    if not _is_enabled(cid):
+        return {"status": "DISABLED"}
+    now = _utc(now or datetime.now(timezone.utc))
+    if not _eligible_window(now):
+        return {"status": "OUTSIDE_ALLOWED_HOURS"}
+    header = db[CAMPAIGNS].find_one({"_id": cid, "status": "APPROVED"})
+    if not header:
+        return {"status": "NOT_APPROVED_OR_HALTED"}
+    if _utc(header["next_allowed_at"]) > now:
+        return {"status": "WINDOW_NOT_OPEN"}
+    row = db[DISPATCHES].find_one({
+        "campaign_id": cid, "status": "PLANNED",
+        "scheduled_at": {"$lte": now},
+    }, sort=[("scheduled_at", 1)])
+    if not row:
+        return {"status": "NO_DUE_RECIPIENT"}
+    # Late jobs are held for manual review instead of sending on another day.
+    if now - _utc(row["scheduled_at"]) > timedelta(minutes=45):
+        db[DISPATCHES].update_one({"_id": row["_id"], "status": "PLANNED"}, {
+            "$set": {"status": "EXPIRED_WINDOW", "skipped_at": now}})
+        return {"status": "EXPIRED_WINDOW"}
+    if not _property_valid(db, row["property_code"], float(row["new_price_uf"])):
+        db[DISPATCHES].update_one({"_id": row["_id"], "status": "PLANNED"}, {
+            "$set": {"status": "SKIPPED_PRICE_CHANGE", "skipped_at": now}})
+        return {"status": "SKIPPED_PRICE_CHANGE"}
+    try:
+        recipient = _check_recipient(
+            db, {"lead_id": row["lead_id"], "consent_reviewed": True,
+                 "consent_basis": row["consent_basis"]},
+            row["property_code"], _utc(header["price_drop_at"]),
+            check_duplicates=False,
+        )
+        if recipient["phone_normalized"] != row["phone_normalized"]:
+            raise CampaignBlocked("lead_phone_changed")
+    except CampaignBlocked as exc:
+        db[DISPATCHES].update_one({"_id": row["_id"], "status": "PLANNED"}, {
+            "$set": {"status": "SKIPPED_ELIGIBILITY",
+                     "skip_reason": str(exc), "skipped_at": now}})
+        return {"status": "SKIPPED_ELIGIBILITY", "reason": str(exc)}
+    # CAS on campaign header is the cross-worker pace/size gate.
+    claimed_slot = db[CAMPAIGNS].find_one_and_update(
+        {"_id": cid, "status": "APPROVED",
+         "next_allowed_at": {"$lte": now},
+         "attempts_started": {"$lt": header["max_attempts"]}},
+        {"$inc": {"attempts_started": 1},
+         "$set": {"next_allowed_at": now + timedelta(minutes=header["gap_minutes"]),
+                  "last_attempt_started_at": now}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not claimed_slot:
+        return {"status": "WINDOW_LOCKED"}
+    claimed = db[DISPATCHES].find_one_and_update(
+        {"_id": row["_id"], "status": "PLANNED"},
+        {"$set": {"status": "SENDING", "attempted_at": now}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not claimed:
+        return {"status": "ALREADY_CLAIMED"}
+    if sender is None:
+        from .whatsapp_client import send_whatsapp_message_detailed_sync
+        sender = send_whatsapp_message_detailed_sync
+    message = _message(
+        claimed["property_code"], float(claimed["old_price_uf"]),
+        float(claimed["new_price_uf"]),
+    )
+    try:
+        receipt = sender(claimed["phone_normalized"], message)
+    except Exception:
+        receipt = {"success": False, "provider_call_uncertain": True,
+                   "delivery_status": "delivery_unknown"}
+    accepted = bool(
+        receipt.get("success") and receipt.get("provider_message_id")
+        and not receipt.get("provider_call_uncertain")
+    )
+    status = "SENT" if accepted else "DELIVERY_UNKNOWN"
+    patch = {
+        "status": status, "provider_delivery_status": str(
+            receipt.get("delivery_status") or "unknown"
+        )[:50], "http_status": receipt.get("http_status"),
+        "outbound_message": message[:1600],
+        "provider_message_id": receipt.get("provider_message_id"),
+        "completed_at": now,
+    }
+    if accepted:
+        patch.update({"sent_at": now, "expires_at": now + timedelta(days=7)})
+    db[DISPATCHES].update_one({"_id": claimed["_id"], "status": "SENDING"},
+                              {"$set": patch})
+    if accepted:
+        try:
+            _update_lead_marker(db, claimed, status="SENT", now=now)
+        except Exception:
+            # Ledger/provider acceptance remains durable. Never retry on a
+            # post-send CRM marker failure.
+            db[DISPATCHES].update_one({"_id": claimed["_id"]}, {"$set": {
+                "lead_marker_sync_pending": True,
+            }})
+    return {
+        "status": status,
+        "campaign_id": cid, "property_code": claimed["property_code"],
+        "lead_id": str(claimed["lead_id"]),
+        "phone_last4": _preview_phone(claimed["phone_normalized"]),
+        "provider_message_id": receipt.get("provider_message_id"),
+    }
+
+
+def _active_dispatch(db: Any, phone: str, now: datetime, *, needs_reply=False):
+    normalized = normalize_phone_strict(phone)
+    if not normalized:
+        return None
+    query = {
+        "phone_normalized": normalized,
+        "status": {"$in": ["SENT", "RESPONDED", "OPTED_OUT"]},
+        "sent_at": {"$lte": now},
+        "expires_at": {"$gt": now},
+    }
+    if needs_reply:
+        query["reply_count"] = {"$gt": 0}
+    return db[DISPATCHES].find_one(query, sort=[("sent_at", -1)])
+
+
+def record_inbound(
+    db: Any, *, phone: str, provider_message_id: str,
+    text: str, received_at: datetime | None = None,
+) -> dict:
+    """Observe the normal pipeline, never intercept CRM/SLA or send a reply."""
+    now = _utc(received_at or datetime.now(timezone.utc))
+    row = _active_dispatch(db, phone, now)
+    if not row or not provider_message_id or not text:
+        return {"status": "NOT_CAMPAIGN_REPLY"}
+    key = hashlib.sha256(
+        f"{row['_id']}:inbound:{provider_message_id}".encode()
+    ).hexdigest()
+    try:
+        db[TURNS].insert_one({
+            "_id": key, "campaign_id": row["campaign_id"],
+            "dispatch_id": row["_id"], "lead_id": row["lead_id"],
+            "property_code": row["property_code"],
+            "direction": "inbound", "provider_message_id": str(provider_message_id),
+            "text": str(text)[:1600], "created_at": now,
+        })
+    except DuplicateKeyError:
+        return {"status": "DUPLICATE_IGNORED"}
+    is_stop = bool(STOP.search(text))
+    flags = {
+        "visit_requested": bool(VISIT.search(text)),
+        "human_requested": bool(HUMAN.search(text)),
+        "interest_signaled": bool(INTEREST.search(text)),
+    }
+    update_set = {"last_customer_reply_at": now, **{
+        key: True for key, active in flags.items() if active
+    }}
+    if is_stop:
+        update_set.update({"status": "OPTED_OUT", "opted_out_at": now})
+    else:
+        # Do not undo an opt-out.
+        if row["status"] == "SENT":
+            update_set.update({"status": "RESPONDED", "first_response_at": now})
+    db[DISPATCHES].update_one({"_id": row["_id"]}, {
+        "$inc": {"reply_count": 1},
+        "$set": update_set,
+    })
+    if is_stop:
+        # One opt-out blocks all pending campaigns to this phone.
+        db[DISPATCHES].update_many({
+            "phone_normalized": row["phone_normalized"], "status": "PLANNED",
+        }, {"$set": {"status": "SKIPPED_OPT_OUT", "skipped_at": now}})
+        db["leads"].update_one({"_id": row["lead_id"]}, {"$set": {
+            "price_drop_campaign_v1.opted_out": True,
+            "price_drop_campaign_v1.opted_out_at": now,
+            "price_drop_campaign_v1.last_status": "OPTED_OUT",
+            "price_drop_campaign_v1.last_response_at": now,
+        }})
+    else:
+        db["leads"].update_one({"_id": row["lead_id"]}, {"$set": {
+            "price_drop_campaign_v1.last_status": "RESPONDED",
+            "price_drop_campaign_v1.last_response_at": now,
+        }})
+    return {"status": "OPTED_OUT" if is_stop else "ATTRIBUTED",
+            "campaign_id": row["campaign_id"]}
+
+
+def record_bot_reply(
+    db: Any, *, phone: str, provider_message_id: str,
+    text: str, sent_at: datetime | None = None,
+) -> dict:
+    """Link delivered chatbot responses to campaign after a real client reply."""
+    now = _utc(sent_at or datetime.now(timezone.utc))
+    row = _active_dispatch(db, phone, now, needs_reply=True)
+    if not row or not provider_message_id:
+        return {"status": "NOT_CAMPAIGN_CONVERSATION"}
+    key = hashlib.sha256(
+        f"{row['_id']}:bot:{provider_message_id}".encode()
+    ).hexdigest()
+    try:
+        db[TURNS].insert_one({
+            "_id": key, "campaign_id": row["campaign_id"],
+            "dispatch_id": row["_id"], "lead_id": row["lead_id"],
+            "property_code": row["property_code"],
+            "direction": "bot", "provider_message_id": str(provider_message_id),
+            "text": str(text or "")[:1600], "created_at": now,
+        })
+    except DuplicateKeyError:
+        return {"status": "DUPLICATE_IGNORED"}
+    db[DISPATCHES].update_one({"_id": row["_id"]}, {
+        "$inc": {"bot_reply_count": 1},
+        "$set": {"last_bot_reply_at": now},
+    })
+    return {"status": "ATTRIBUTED", "campaign_id": row["campaign_id"]}
+
+
+def record_delivery_update(db: Any, payload: dict, *, now=None) -> dict:
+    """Record provider delivery/read receipts without changing the send result."""
+    from .whatsapp_client import normalize_provider_status
+    nested = (payload.get("data") or {})
+    item = nested.get("messages") or nested
+    if isinstance(item, list):
+        item = item[0] if item else {}
+    item = item if isinstance(item, dict) else {}
+    key = item.get("key") or {}
+    msgid = str(
+        key.get("id") or item.get("messageId")
+        or item.get("msgId") or payload.get("messageId") or ""
+    ).strip()
+    if not msgid:
+        return {"status": "UNMATCHED"}
+    row = db[DISPATCHES].find_one({"provider_message_id": msgid},
+                                  {"_id": 1, "provider_delivery_status": 1})
+    if not row:
+        return {"status": "UNMATCHED"}
+    raw_status = item.get("status") or nested.get("status") or payload.get("status")
+    delivery_status = normalize_provider_status(raw_status)
+    if delivery_status in {"unknown", "failed"}:
+        # A transient/uncertain provider status never rewrites SENT.
+        return {"status": "IGNORED"}
+    now = _utc(now or datetime.now(timezone.utc))
+    db[DISPATCHES].update_one({"_id": row["_id"]}, {"$set": {
+        "provider_delivery_status": delivery_status,
+        "last_provider_update_at": now,
+    }})
+    return {"status": "UPDATED"}
+
+
+def campaign_report(db: Any, campaign_id: str) -> dict:
+    cid = _campaign_id(campaign_id)
+    header = db[CAMPAIGNS].find_one({"_id": cid})
+    if not header:
+        raise CampaignBlocked("campaign_not_found")
+    rows = list(db[DISPATCHES].find({"campaign_id": cid}, {
+        "_id": 1, "lead_id": 1, "property_code": 1,
+        "status": 1, "phone_normalized": 1, "scheduled_at": 1,
+        "sent_at": 1, "first_response_at": 1, "reply_count": 1,
+        "bot_reply_count": 1, "interest_signaled": 1, "visit_requested": 1,
+        "human_requested": 1, "opted_out_at": 1,
+        "provider_delivery_status": 1, "provider_message_id": 1,
+    }).sort("scheduled_at", 1))
+    counts = Counter(row.get("status") or "UNKNOWN" for row in rows)
+    sent = [row for row in rows if row.get("sent_at")]
+    replied = [row for row in rows if (row.get("reply_count") or 0) > 0]
+    return {
+        "campaign_id": cid, "property_code": header["property_code"],
+        "campaign_status": header["status"], "total": len(rows),
+        "attempted": header.get("attempts_started", 0),
+        "sent": len(sent), "responded": len(replied),
+        "response_rate": round(len(replied) / len(sent), 3) if sent else 0.0,
+        "interested": sum(bool(row.get("interest_signaled")) for row in rows),
+        "visits_requested": sum(bool(row.get("visit_requested")) for row in rows),
+        "human_requested": sum(bool(row.get("human_requested")) for row in rows),
+        "opted_out": sum(bool(row.get("opted_out_at")) for row in rows),
+        "statuses": dict(counts),
+        "rows": [{
+            "lead_id": str(r["lead_id"]),
+            "phone_last4": _preview_phone(r.get("phone_normalized") or ""),
+            "property_code": r["property_code"],
+            "status": r["status"],
+            "scheduled_at": r.get("scheduled_at"),
+            "sent_at": r.get("sent_at"),
+            "provider_message_id": r.get("provider_message_id"),
+            "provider_delivery_status": r.get("provider_delivery_status"),
+            "reply_count": r.get("reply_count", 0),
+            "bot_reply_count": r.get("bot_reply_count", 0),
+            "first_response_at": r.get("first_response_at"),
+        } for r in rows],
+    }

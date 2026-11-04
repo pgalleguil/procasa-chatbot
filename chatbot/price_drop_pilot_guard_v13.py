@@ -153,7 +153,8 @@ def _preference_text(state: dict, time: str | None) -> str:
     return day or hour or str(state.get("period") or "")
 
 def _visit_history(history: list[dict]) -> bool:
-    for turn in history[-10:]:
+    # Most recent explicit refusal supersedes an older visit request.
+    for turn in reversed(history[-10:]):
         customer = plain(turn.get("customer_text") or "")
         if _NEGATIVE.search(customer):
             return False

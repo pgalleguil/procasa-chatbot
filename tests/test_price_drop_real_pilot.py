@@ -280,3 +280,20 @@ def test_invalid_provider_receipt_is_not_counted_delivered(db, monkeypatch):
     )["status"] == "UPDATED"
     row = db[DISPATCHES].find_one({"provider_message_id": "prov1"})
     assert row["provider_delivery_status"] == "delivered"
+
+def test_negative_reply_is_not_falsely_counted_as_interest_or_visit(db, monkeypatch):
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "prov-negative"})
+    response = record_inbound(
+        db, phone="+56930000001", provider_message_id="negative-inbound",
+        text="No me interesa, no quiero visita", received_at=START + timedelta(minutes=2),
+    )
+    assert response["status"] == "ATTRIBUTED"
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["responded"] == 1
+    assert report["interested"] == 0
+    assert report["visits_requested"] == 0
+    assert report["declined"] == 1
+    assert report["rows"][0]["minutes_to_first_reply"] == 2

@@ -66,6 +66,13 @@ def _utc(value: Any) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _mongo_utc(value: Any) -> datetime:
+    """MongoDB BSON datetimes are UTC, but PyMongo returns them timezone-naive."""
+    if isinstance(value, datetime) and value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return _utc(value)
+
+
 def _lead_id(raw: Any):
     value = str(raw or "").strip()
     if not value:
@@ -310,7 +317,7 @@ def persist_plan(db: Any, payload: dict, *, now: datetime | None = None) -> dict
             "new_price_uf": plan["new_price_uf"],
             "inquiry_evidence_at": row["inquiry_evidence_at"],
             "consent_basis": rec["consent_basis"],
-            "scheduled_at": _utc(row["scheduled_at"]),
+            "scheduled_at": _mongo_utc(row["scheduled_at"]),
             "created_at": now,
             "status": "PLANNED",
             "reply_count": 0,
@@ -364,7 +371,7 @@ def approve_campaign(db: Any, campaign_id: str, *, operator: str, now=None) -> d
     if not 1 <= count <= MAX_RECIPIENTS:
         raise CampaignBlocked("size_limit_broken")
     now = _utc(now or datetime.now(timezone.utc))
-    if _utc(header["start_at"]) <= now:
+    if _mongo_utc(header["start_at"]) <= now:
         raise CampaignBlocked("campaign_schedule_expired")
     result = db[CAMPAIGNS].update_one(
         {"_id": cid, "status": "PLANNED"},
@@ -426,7 +433,7 @@ def send_one_due(
     header = db[CAMPAIGNS].find_one({"_id": cid, "status": "APPROVED"})
     if not header:
         return {"status": "NOT_APPROVED_OR_HALTED"}
-    if _utc(header["next_allowed_at"]) > now:
+    if _mongo_utc(header["next_allowed_at"]) > now:
         return {"status": "WINDOW_NOT_OPEN"}
     row = db[DISPATCHES].find_one({
         "campaign_id": cid, "status": "PLANNED",
@@ -435,7 +442,7 @@ def send_one_due(
     if not row:
         return {"status": "NO_DUE_RECIPIENT"}
     # Late jobs are held for manual review instead of sending on another day.
-    if now - _utc(row["scheduled_at"]) > timedelta(minutes=45):
+    if now - _mongo_utc(row["scheduled_at"]) > timedelta(minutes=45):
         db[DISPATCHES].update_one({"_id": row["_id"], "status": "PLANNED"}, {
             "$set": {"status": "EXPIRED_WINDOW", "skipped_at": now}})
         return {"status": "EXPIRED_WINDOW"}
@@ -447,7 +454,7 @@ def send_one_due(
         recipient = _check_recipient(
             db, {"lead_id": row["lead_id"], "consent_reviewed": True,
                  "consent_basis": row["consent_basis"]},
-            row["property_code"], _utc(header["price_drop_at"]),
+            row["property_code"], _mongo_utc(header["price_drop_at"]),
             check_duplicates=False,
         )
         if recipient["phone_normalized"] != row["phone_normalized"]:

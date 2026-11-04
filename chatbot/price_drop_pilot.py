@@ -72,10 +72,70 @@ def _other_property_referenced(message: str, campaign_code: str) -> bool:
     return bool(bare and bare.group(1) != campaign_code)
 
 
-def load_active_context(db: Any, phone: str, message: str, *, now: datetime | None = None) -> dict | None:
-    """Only one identified test lead, one delivered message and an active sale."""
-    if not _enabled_for_phone(phone):
+def _load_real_campaign_context(db: Any, phone: str, message: str, *, now=None) -> dict | None:
+    """Only a real, accepted, unexpired, explicitly selected lead.
+
+    This is a read-only context join, NOT a marketing send gate and NOT an
+    isolated test interception. Replies use the normal CRM/chatbot workflow.
+    """
+    # Do not add a collection lookup to ordinary inbound leads while the
+    # controlled pilot is inactive. Keep this read-only flag enabled for seven
+    # days after sending, even when the send switch is turned back off.
+    if os.getenv("PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED", "").casefold() not in {"1", "true", "yes"}:
         return None
+    from .price_drop_campaign_real import DISPATCHES, _property_valid
+    canon = normalize_phone_strict(phone)
+    if not canon:
+        return None
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    record = db[DISPATCHES].find_one({
+        "phone_normalized": canon,
+        "status": {"$in": ["SENT", "RESPONDED"]},
+        "provider_message_id": {"$exists": True, "$ne": None},
+        "sent_at": {"$lte": now},
+        "expires_at": {"$gt": now},
+        "opted_out_at": {"$exists": False},
+    }, sort=[("sent_at", -1)])
+    if not record:
+        return None
+    if normalize_phone_strict(record.get("phone_normalized") or "") != canon:
+        return None
+    code = str(record.get("property_code") or "")
+    if _other_property_referenced(message, code):
+        # The original publication link is not a switch to another property.
+        own_url = f"https://www.procasa.cl/{code}"
+        if own_url not in str(message or ""):
+            return None
+    variants = phone_identity_variants(canon)
+    matched = list(db["leads"].find({
+        "$or": [
+            {"phone": {"$in": variants}},
+            {"contact_phone_normalized": {"$in": variants}},
+        ],
+    }, {"_id": 1}).limit(2))
+    if len(matched) != 1 or str(matched[0]["_id"]) != str(record.get("lead_id")):
+        return None
+    old, new = _money(record.get("old_price_uf")), _money(record.get("new_price_uf"))
+    if old is None or new is None or not (old > new and 2000 <= new <= 5000):
+        return None
+    if not _property_valid(db, code, new):
+        return None
+    return {
+        "version": "price_drop_real_pilot_v1",
+        "campaign_id": str(record.get("campaign_id") or ""),
+        "property_code": code,
+        "old_price_uf": float(old),
+        "new_price_uf": float(new),
+        "operation": "Venta",
+    }
+
+
+def load_active_context(db: Any, phone: str, message: str, *, now: datetime | None = None) -> dict | None:
+    """Test-phone isolation or explicitly sent real campaign conversation."""
+    if not _enabled_for_phone(phone):
+        return _load_real_campaign_context(db, phone, message, now=now)
     now = now or datetime.now(timezone.utc)
     variants = phone_identity_variants(phone)
     # Historical duplicates may use +569... or 569...; refuse all ambiguous identities.

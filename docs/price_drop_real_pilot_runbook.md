@@ -4,12 +4,12 @@
 
 ## Colecciones y datos
 
-- \`crm_price_drop_campaigns_v1\`: cabecera, responsable de revisión, fecha de rebaja, propiedad, límite de destinatarios, intervalo, aprobador, contador de intentos y parada de emergencia
-- \`crm_price_drop_campaign_dispatches_v1\`: **un documento por campaña+propiedad+lead**; ID del lead, teléfono, evidencia de consulta previa, auditoría de contacto, código, UF anterior/nueva, fecha y hora programadas, hora de intento, aceptada o incierta, provider ID, estado de entrega, interés, visitas, baja y estadísticas de respuestas
-- \`crm_price_drop_campaign_turns_v1\`: mensajes del cliente y respuestas enviadas del chatbot asociados al despacho, fecha, provider ID, dirección, texto (máximo 1600 caracteres por mensaje), con deduplicación
-- \`leads.price_drop_campaign_v1\`: únicamente una **marca comercial** de campañas recibidas, última propiedad, último estado, fecha y opt-out; no cambia propiedad, ejecutivo, ciclo, etapa, gestión humana ni SLA
+- `crm_price_drop_campaigns_v1`: cabecera, responsable de revisión, fecha de rebaja, propiedad, límite de destinatarios, intervalo, aprobador, contador de intentos y parada de emergencia
+- `crm_price_drop_campaign_dispatches_v1`: **un documento por campaña+propiedad+lead**; ID del lead, teléfono, evidencia de consulta previa, auditoría de contacto, código, UF anterior/nueva, fecha y hora programadas, hora de intento, aceptada o incierta, provider ID, estado de entrega, interés, visitas, baja y estadísticas de respuestas
+- `crm_price_drop_campaign_turns_v1`: mensajes del cliente y respuestas enviadas del chatbot asociados al despacho, fecha, provider ID, dirección, texto (máximo 1600 caracteres por mensaje), con deduplicación
+- `leads.price_drop_campaign_v1`: únicamente una **marca comercial** de campañas recibidas, última propiedad, último estado, fecha y opt-out; no cambia propiedad, ejecutivo, ciclo, etapa, gestión humana ni SLA
 
-Las conversaciones anteriores a la campaña continúan en \`leads.messages\`. Los nuevos mensajes se vinculan al despacho por el ID del proveedor y el teléfono. Revisar acceso de lectura a las colecciones de campaña porque contienen datos personales.
+Las conversaciones anteriores a la campaña continúan en `leads.messages`. Los nuevos mensajes se vinculan al despacho por el ID del proveedor y el teléfono. Revisar acceso de lectura a las colecciones de campaña porque contienen datos personales.
 
 ## Reglas que bloquean el envío
 
@@ -17,11 +17,11 @@ Las conversaciones anteriores a la campaña continúan en \`leads.messages\`. Lo
 2. Campaña y propiedad válidas; venta activa PROCASA SUCRE con el precio actual coincidente con el informado
 3. Un mensaje de **cliente** fechado antes de la rebaja dentro del mismo lead y código Prop360 coincidente (no basta con que el lead sea antiguo)
 4. Teléfono único, válido, no sintético, sin bloqueo, sin baja, ni campaña previa para la misma propiedad
-5. Revisión manual de la legitimidad del contacto (\`consent_reviewed: true\` y descripción \`consent_basis\`)
+5. Revisión manual de la legitimidad del contacto (`consent_reviewed: true` y descripción `consent_basis`)
 6. Ventanas futuras de lunes a viernes **10:00–18:00 hora Chile**, separadas al menos **10 minutos**. Pasados 45 min de la ventana no envía fuera de horario; requiere revisión
-7. **Doble autorización:** aprobación persistida en la colección y variables \`PRICE_DROP_REAL_PILOT_ENABLED=true\` y \`PRICE_DROP_REAL_PILOT_APPROVED_ID=<id exacto>\`. El comando además requiere \`--send\`
-8. Una llamada al proveedor por lead; si se desconoce resultado, \`DELIVERY_UNKNOWN\`, **sin reintentar automáticamente**
-9. \`--halt\` detiene los próximos envíos aunque alguien llame \`--send-due\`
+7. **Doble autorización:** aprobación persistida en la colección y variables `PRICE_DROP_REAL_PILOT_ENABLED=true` y `PRICE_DROP_REAL_PILOT_APPROVED_ID=<id exacto>`. El comando además requiere `--send`
+8. Una llamada al proveedor por lead; si se desconoce resultado, `DELIVERY_UNKNOWN`, **sin reintentar automáticamente**
+9. `--halt` detiene los próximos envíos aunque alguien llame `--send-due`
 
 **Nunca definir esas dos variables de ejecución hasta decidir efectivamente el envío.** No existe un trigger de arranque automático para el piloto real. El script del teléfono 9804 es independiente.
 
@@ -29,7 +29,7 @@ Las conversaciones anteriores a la campaña continúan en \`leads.messages\`. Lo
 
 Ejemplo de estructura, sustituyendo los datos con IDs reales tras auditoría:
 
-\`\`\`json
+```json
 {
   "campaign_id": "sucre_6436_pilot_20261105",
   "property_code": "6436",
@@ -48,7 +48,7 @@ Ejemplo de estructura, sustituyendo los datos con IDs reales tras auditoría:
     }
   ]
 }
-\`\`\`
+```
 
 Los valores de fecha de rebaja del ejemplo **requieren cotejo con la bitácora original**; no pueden asumirse como definitivos. Tampoco hay leads precargados ni envío habilitado.
 
@@ -56,49 +56,58 @@ Los valores de fecha de rebaja del ejemplo **requieren cotejo con la bitácora o
 
 **1. Vista previa, solo lectura**
 
-\`\`\`shell
+```shell
 python scripts/price_drop_campaign_real_pilot.py --file /ruta/segura/piloto.json
-\`\`\`
+```
 
 La respuesta indica cada slot, teléfono enmascarado, fecha de consulta y bloqueos. Ninguna operación de base de datos.
 
 **2. Persistir el plan, sin enviar**
 
-\`\`\`shell
+```shell
 python scripts/price_drop_campaign_real_pilot.py --prepare --file /ruta/segura/piloto.json
-\`\`\`
+```
 
 **3. Aprobación independiente del plan**
 
-\`\`\`shell
+```shell
 python scripts/price_drop_campaign_real_pilot.py --approve sucre_6436_pilot_20261105 --operator supervisor
-\`\`\`
+```
 
-**4. Activar los 2 permisos en el entorno seguro y ejecutar únicamente la ventana debida**
+**4. Activar los permisos de envío y contexto, y ejecutar únicamente la ventana debida**
 
-\`\`\`shell
+```shell
 PRICE_DROP_REAL_PILOT_ENABLED=true
 PRICE_DROP_REAL_PILOT_APPROVED_ID=sucre_6436_pilot_20261105
+PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true
 python scripts/price_drop_campaign_real_pilot.py --send-due sucre_6436_pilot_20261105 --send
-\`\`\`
+```
 
-\`--send-due\` hace **máximo un intento**; volver a invocarlo únicamente en la siguiente ventana (ej., 11:12 y 11:24). Si no existe un programador externo, es manual; no se envía una campaña completa a la vez. No se activan envíos desde el arranque de Render.
+`--send-due` hace **máximo un intento**; volver a invocarlo únicamente en la siguiente ventana (ej., 11:12 y 11:24). Si no existe un programador externo, es manual; no se envía una campaña completa a la vez. No se activan envíos desde el arranque de Render.
+
+Como alternativa para recorrer automáticamente las ventanas **solo mientras el operador mantenga abierto el proceso** (sin daemon y con las mismas protecciones), usar:
+
+```shell
+python scripts/price_drop_campaign_real_pilot.py --watch sucre_6436_pilot_20261105 --send
+```
+
+`--watch` exige los mismos permisos, solo arranca dentro de los 30 minutos previos a la primera ventana y se detiene al agotarse los intentos, vencer las ventanas o recibir `--halt`. Mantener `PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true` durante los siete días posteriores al envío aunque el permiso de *nuevos* envíos se desactive.
 
 **5. Reporte de efectividad**
 
-\`\`\`shell
+```shell
 python scripts/price_drop_campaign_real_pilot.py --report sucre_6436_pilot_20261105
-\`\`\`
+```
 
 Incluye enviados, respondidos, tasa de respuesta, interés, solicitudes de visita, bajas y estados proveedor; no presume que una visita quedó agendada sin confirmación.
 
 **6. Parada inmediata**
 
-\`\`\`shell
+```shell
 python scripts/price_drop_campaign_real_pilot.py --halt sucre_6436_pilot_20261105 --operator supervisor
-\`\`\`
+```
 
-Dejar además \`PRICE_DROP_REAL_PILOT_ENABLED=false\`. Las llamadas pendientes o de resultado desconocido **no** se reintentan.
+Dejar además `PRICE_DROP_REAL_PILOT_ENABLED=false`. Las llamadas pendientes o de resultado desconocido **no** se reintentan.
 
 ## Verificaciones previas al primer cliente
 

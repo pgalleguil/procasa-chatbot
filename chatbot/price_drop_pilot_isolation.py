@@ -36,7 +36,7 @@ PILOT_RECENT_CHAR_BUDGET = 19000
 PILOT_ARCHIVE_CHAR_BUDGET = 10500
 STOP = re.compile(r"\b(?:stop|no me escriban|dejen de escribir|no quiero (?:más |mas )?mensajes|darme de baja|eliminar mi n[uú]mero)\b", re.I)
 DECLINE = re.compile(r"^\s*(?:no\s*[.!?]?\s*$|no gracias\b|no me interesa\b|ya no me interesa\b|no estoy interesado\b|por ahora no\b)", re.I)
-VISIT = re.compile(r"\b(?:visitar(?:la|lo)?|visitas?|agendar|coordinar|quiero verla|ir a ver|conocerla|ver el departamento)\b", re.I)
+VISIT = re.compile(r"\b(?:visitar(?:la|lo)?|visitas?|visidta|visista|visilta|agendar|coordinar|quiero verla|ir a ver|conocerla|ver el departamento)\b", re.I)
 PRICE = re.compile(r"\b(?:precio|cu[aá]nto (?:cuesta|vale|sale)|a cu[aá]nto|rebaja|baj[oó]|uf)\b", re.I)
 NEGOTIATION = re.compile(r"\b(?:ofertas?|negociar|rebajar|aceptan menos|descuento|contraofertas?)\b", re.I)
 YES = re.compile(r"^\s*(?:s[ií](?:,?\s*me interesa)?|claro|ok(?:a|ey)?(?:\s+me interesa)?|dale|por supuesto|me interesa|perfecto|s[ií]\s+claro)\s*[.!]?\s*$", re.I)
@@ -771,6 +771,32 @@ def _native_visit_time_answer(message: str, history: list[dict]) -> str | None:
     # _visit_parts parses normalized weekday tokens; restore Spanish accents
     # in outbound WhatsApp without changing the stored scheduling preference.
     day = day.replace("sabado", "sábado").replace("miercoles", "miércoles")
+    normalized = _plain(message)
+    am_pm = re.search(
+        r"\ba las\s+(\d{1,2})(?::(\d{2}))?\s+(?:de|por) la (manana|tarde|noche)\b",
+        normalized,
+    )
+    if am_pm:
+        hour, minute, part = int(am_pm.group(1)), int(am_pm.group(2) or "0"), am_pm.group(3)
+        if hour > 12:
+            return "¿Me confirmas la hora en formato de 24 horas? No hay visita agendada."
+        if part == "manana":
+            hour = 0 if hour == 12 else hour
+        elif part in {"tarde", "noche"}:
+            hour = hour if hour == 12 else hour + 12
+        if hour < 8 or hour >= 22:
+            return (
+                f"Entiendo que prefieres {day} a las {hour:02d}:{minute:02d}. "
+                "Es un horario poco habitual para una visita. ¿Te acomodaría "
+                "otro horario durante el día? Todavía no hay visita agendada "
+                "ni se ha enviado ninguna solicitud al equipo."
+            )
+        time = f"a las {hour:02d}:{minute:02d}"
+    elif re.fullmatch(r"a las [1-7](?::\d{2})?", time):
+        return (
+            f"¿Te refieres a {day} por la mañana o por la tarde? "
+            "Todavía no hay visita agendada."
+        )
     if " o " in time:
         # Never transform two alternatives into a continuous interval.
         time = time.replace(" o ", " o a las ")
@@ -1058,6 +1084,22 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
     if "no habia consultado" in _plain(clean):
         return "Perdona la confusión. No tengo aquí una consulta anterior verificada. Si no deseas más mensajes, puedes indicárnoslo."
     plain = _plain(clean)
+    if re.search(r"\b(?:te amo|tienes? novio|tienew novio|tienes? pareja|eres humana|eres un bot)\b", plain):
+        return (
+            "Gracias por la buena onda 😊 Soy el asistente virtual de PROCASA, "
+            "así que no tengo vida personal. Si quieres, seguimos conversando "
+            "sobre el departamento."
+        )
+    if re.search(r"\b(?:quien me contactara|quien me llamara|quien me llama|quien coordina la visita)\b", plain):
+        return (
+            "La coordinación real tendría que hacerla el equipo comercial de PROCASA. "
+            "Este piloto no solicita llamadas ni envía avisos a ejecutivos; "
+            "por ahora no hay visita ni contacto programado."
+        )
+    if re.search(r"\b(?:orientacion|hacia donde)\b", plain) and history:
+        prior = _plain(str(history[-1].get("customer_text") or ""))
+        if re.search(r"\b(?:novio|pareja|amor|amas|personal)\b", prior):
+            return "¿Te refieres a la orientación del departamento o a otra cosa?"
     if "deberias darme la direccion" in plain or "sin corredor" in plain:
         return (
             "Entiendo tu observación. Por este canal puedo indicarte el sector, "

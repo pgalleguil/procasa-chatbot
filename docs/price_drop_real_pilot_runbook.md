@@ -23,7 +23,7 @@ Las conversaciones anteriores a la campaña continúan en `leads.messages`. Los 
 8. Una llamada al proveedor por lead; si se desconoce resultado, `DELIVERY_UNKNOWN`, **sin reintentar automáticamente**
 9. `--halt` detiene los próximos envíos aunque alguien llame `--send-due`
 
-**Nunca definir esas dos variables de ejecución hasta decidir efectivamente el envío.** No existe un trigger de arranque automático para el piloto real. El script del teléfono 9804 es independiente.
+**Nunca definir esas dos variables de ejecución hasta decidir efectivamente el envío.** Por defecto no existe ningún trigger activo de arranque para el piloto real. Excepcionalmente puede habilitarse el arranque controlado con `PRICE_DROP_REAL_PILOT_START_ON_BOOT=true`; requiere también los otros dos flags, campaña aprobada y slots válidos, y la propia instancia únicamente ejecuta el control secuencial de ventanas. El script del teléfono 9804 es independiente.
 
 ## Archivo JSON local (no subir teléfonos, IDs ni consentimientos al repositorio)
 
@@ -91,7 +91,9 @@ Como alternativa para recorrer automáticamente las ventanas **solo mientras el 
 python scripts/price_drop_campaign_real_pilot.py --watch sucre_6436_pilot_20261105 --send
 ```
 
-`--watch` exige los mismos permisos, solo arranca dentro de los 30 minutos previos a la primera ventana y se detiene al agotarse los intentos, vencer las ventanas o recibir `--halt`. Mantener `PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true` durante los siete días posteriores al envío aunque el permiso de *nuevos* envíos se desactive.
+`--watch` exige los mismos permisos, solo arranca dentro de los 30 minutos previos a la primera ventana y se detiene al agotarse los intentos, vencer las ventanas o recibir `--halt`.
+
+**Operación desde Render sin terminal:** después de aprobar la audiencia y confirmar el horario, activar `PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true`, `PRICE_DROP_REAL_PILOT_ENABLED=true`, `PRICE_DROP_REAL_PILOT_APPROVED_ID` con el ID exacto y finalmente `PRICE_DROP_REAL_PILOT_START_ON_BOOT=true` antes del despliegue controlado. El arranque crea un runner de bajo impacto que dispara como máximo un destinatario por ventana. Tras finalizar, volver `PRICE_DROP_REAL_PILOT_START_ON_BOOT=false` y `PRICE_DROP_REAL_PILOT_ENABLED=false`, manteniendo `PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true` durante siete días para el seguimiento de respuestas. **Jamás activar esto hoy ni antes de aprobación expresa del primer envío**. Mantener `PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED=true` durante los siete días posteriores al envío aunque el permiso de *nuevos* envíos se desactive.
 
 **5. Reporte de efectividad**
 

@@ -110,6 +110,11 @@ def _eligible_window(dt: datetime) -> bool:
     return local.weekday() < 5 and (10 <= local.hour < 18)
 
 
+def _tracking_enabled() -> bool:
+    """No audit collection query for ordinary leads when pilot is off."""
+    return os.getenv("PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED", "").casefold() in {"true", "1", "yes"}
+
+
 def _is_enabled(campaign_id: str) -> bool:
     return (
         os.getenv(FLAG, "").casefold() in {"true", "1", "yes"}
@@ -551,6 +556,8 @@ def record_inbound(
     text: str, received_at: datetime | None = None,
 ) -> dict:
     """Observe the normal pipeline, never intercept CRM/SLA or send a reply."""
+    if not _tracking_enabled():
+        return {"status": "DISABLED"}
     now = _utc(received_at or datetime.now(timezone.utc))
     row = _active_dispatch(db, phone, now)
     if not row or not provider_message_id or not text:
@@ -614,6 +621,8 @@ def record_bot_reply(
     text: str, sent_at: datetime | None = None,
 ) -> dict:
     """Link delivered chatbot responses to campaign after a real client reply."""
+    if not _tracking_enabled():
+        return {"status": "DISABLED"}
     now = _utc(sent_at or datetime.now(timezone.utc))
     row = _active_dispatch(db, phone, now, needs_reply=True)
     if not row or not provider_message_id:
@@ -640,6 +649,8 @@ def record_bot_reply(
 
 def record_delivery_update(db: Any, payload: dict, *, now=None) -> dict:
     """Record provider delivery/read receipts without changing the send result."""
+    if not _tracking_enabled():
+        return {"status": "DISABLED"}
     from .whatsapp_client import normalize_provider_status
     nested = (payload.get("data") or {})
     item = nested.get("messages") or nested

@@ -453,6 +453,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
         return None
     return {
         "campaign_id": campaign["_id"],
+        "campaign_version": campaign.get("campaign_version"),
         "property_code": str(campaign["property_code"]),
         "old_price_uf": old, "new_price_uf": new,
         "price_drop_date": None,  # Bitácora can contain sensitive location changes; never read
@@ -1362,7 +1363,8 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
 
 
 def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: str,
-                         *, sender: Callable | None = None, llm: Callable | None = None) -> dict:
+                         *, sender: Callable | None = None, llm: Callable | None = None,
+                         exec_notice_sender: Callable | None = None) -> dict:
     """Intercept before commercial queue. All writes confined to test collections.
 
     One provider attempt per inbound ID. An uncertain send is never retried.
@@ -1447,4 +1449,21 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
         "provider_outbound_id": receipt.get("provider_message_id"),
         "sent_at": datetime.now(timezone.utc) if accepted else None,
     }})
-    return {"status": "test_reply_sent" if accepted else "delivery_unknown"}
+    if not accepted:
+        return {"status": "delivery_unknown"}
+    # Only the new V10 and an affirmative answer to a relevant bot question
+    # can trigger an executive-notification simulation. It goes exclusively
+    # to THIS whitelisted test phone, never to any CRM executive.
+    from .price_drop_pilot_exec_notice_sim import send_simulated_exec_notice
+    notice = send_simulated_exec_notice(
+        db, ctx=ctx, phone=phone_norm,
+        customer_text=text, history=history,
+        inbound_message_id=str(provider_message_id),
+        sender=exec_notice_sender,
+    )
+    if notice.get("status") in {"SENT", "DELIVERY_UNKNOWN"}:
+        return {
+            "status": "test_reply_sent",
+            "test_exec_notice_status": notice["status"],
+        }
+    return {"status": "test_reply_sent"}

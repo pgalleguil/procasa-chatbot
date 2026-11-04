@@ -666,10 +666,14 @@ def record_inbound(
     if declined:
         fields["declined"] = True
         fields["declined_at"] = now
+    # The first customer response includes refusals and unsubscribe events;
+    # it is not the same as a first positive response.
+    if row["status"] == "SENT":
+        fields["first_response_at"] = now
     if stopped:
         fields.update({"status": "OPTED_OUT", "opted_out_at": now})
     elif row["status"] == "SENT":
-        fields.update({"status": "RESPONDED", "first_response_at": now})
+        fields["status"] = "RESPONDED"
 
     increment = {"reply_count": 1}
     if event["positive"]:

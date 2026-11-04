@@ -297,3 +297,19 @@ def test_negative_reply_is_not_falsely_counted_as_interest_or_visit(db, monkeypa
     assert report["visits_requested"] == 0
     assert report["declined"] == 1
     assert report["rows"][0]["minutes_to_first_reply"] == 2
+
+def test_no_tracking_queries_when_campaign_not_enabled(db, monkeypatch):
+    monkeypatch.delenv("PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED", raising=False)
+    assert record_inbound(
+        db, phone="+56930000001", provider_message_id="in-off", text="Hola",
+        received_at=START,
+    )["status"] == "DISABLED"
+    assert record_bot_reply(
+        db, phone="+56930000001", provider_message_id="bot-off", text="Hola",
+        sent_at=START,
+    )["status"] == "DISABLED"
+    assert record_delivery_update(
+        db, {"data": {"messages": {"key": {"id": "untracked"}}}},
+        now=START,
+    )["status"] == "DISABLED"
+    assert db[TURNS].count_documents({}) == 0

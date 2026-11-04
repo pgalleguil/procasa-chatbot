@@ -803,9 +803,16 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
     rows = list(db[DISPATCHES].find({"campaign_id": cid}, {
         "_id": 1, "lead_id": 1, "property_code": 1,
         "status": 1, "phone_normalized": 1, "scheduled_at": 1,
-        "sent_at": 1, "first_response_at": 1, "reply_count": 1,
-        "bot_reply_count": 1, "interest_signaled": 1, "declined": 1, "visit_requested": 1,
-        "human_requested": 1, "opted_out_at": 1,
+        "attempted_at": 1, "sent_at": 1, "sent_at_chile": 1,
+        "first_response_at": 1, "last_customer_reply_at": 1,
+        "first_positive_response_at": 1, "first_hot_response_at": 1,
+        "reply_count": 1, "positive_reply_count": 1, "bot_reply_count": 1,
+        "interest_signaled": 1, "declined": 1, "visit_requested": 1,
+        "human_requested": 1, "offer_intent": 1, "opted_out_at": 1,
+        "response_classification": 1, "response_temperature": 1,
+        "last_turn_intent": 1, "last_turn_reason": 1,
+        "last_classified_at": 1, "classifier_version": 1,
+        "followup_status": 1, "needs_human_review": 1,
         "provider_delivery_status": 1, "provider_message_id": 1,
     }).sort("scheduled_at", 1))
     counts = Counter(row.get("status") or "UNKNOWN" for row in rows)
@@ -817,8 +824,14 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
         "attempted": header.get("attempts_started", 0),
         "sent": len(sent), "responded": len(replied),
         "response_rate": round(len(replied) / len(sent), 3) if sent else 0.0,
-        "interested": sum(bool(row.get("interest_signaled")) for row in rows),
-        "declined": sum(bool(row.get("declined")) for row in rows),
+        "interested": sum(
+            row.get("response_classification") in {"HOT", "NORMAL"}
+            and bool(row.get("first_positive_response_at")) for row in rows
+        ),
+        "hot": sum(row.get("response_classification") == "HOT" for row in rows),
+        "normal": sum(row.get("response_classification") == "NORMAL" for row in rows),
+        "pending_human_review": sum(bool(row.get("needs_human_review")) for row in rows),
+        "declined": sum(row.get("response_classification") == "RECHAZADO" for row in rows),
         "visits_requested": sum(bool(row.get("visit_requested")) for row in rows),
         "human_requested": sum(bool(row.get("human_requested")) for row in rows),
         "opted_out": sum(bool(row.get("opted_out_at")) for row in rows),
@@ -829,8 +842,19 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
             "property_code": r["property_code"],
             "status": r["status"],
             "scheduled_at": r.get("scheduled_at"),
+            "attempted_at": r.get("attempted_at"),
             "sent_at": r.get("sent_at"),
+            "sent_at_chile": r.get("sent_at_chile"),
             "provider_message_id": r.get("provider_message_id"),
+            "response_classification": r.get("response_classification") or "SIN_RESPUESTA",
+            "response_temperature": r.get("response_temperature"),
+            "last_turn_intent": r.get("last_turn_intent"),
+            "last_turn_reason": r.get("last_turn_reason"),
+            "first_positive_response_at": r.get("first_positive_response_at"),
+            "first_hot_response_at": r.get("first_hot_response_at"),
+            "last_customer_reply_at": r.get("last_customer_reply_at"),
+            "needs_human_review": bool(r.get("needs_human_review")),
+            "followup_status": r.get("followup_status"),
             "provider_delivery_status": r.get("provider_delivery_status"),
             "reply_count": r.get("reply_count", 0),
             "bot_reply_count": r.get("bot_reply_count", 0),
@@ -840,4 +864,32 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
                 if r.get("first_response_at") and r.get("sent_at") else None
             ),
         } for r in rows],
+    }
+
+
+def campaign_worklist(db: Any, campaign_id: str) -> dict:
+    """Read-only human follow-up queue; never marks a CRM lead as managed."""
+    report = campaign_report(db, campaign_id)
+    priority = {"HOT": 0, "NORMAL": 1}
+    pending = [
+        row for row in report["rows"]
+        if row.get("needs_human_review")
+        and row.get("response_classification") in priority
+    ]
+    pending.sort(key=lambda x: (
+        priority.get(x["response_classification"], 9),
+        x.get("first_positive_response_at") or datetime.max,
+        x["lead_id"],
+    ))
+    return {
+        "campaign_id": report["campaign_id"],
+        "property_code": report["property_code"],
+        "pending": len(pending),
+        "hot": sum(r["response_classification"] == "HOT" for r in pending),
+        "normal": sum(r["response_classification"] == "NORMAL" for r in pending),
+        "leads": pending,
+        "note": (
+            "Pendientes de revisión comercial. Esta lista NO constituye "
+            "una gestión humana, reasignación o modificación del SLA."
+        ),
     }

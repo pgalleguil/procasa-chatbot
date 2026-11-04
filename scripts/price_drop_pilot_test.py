@@ -24,7 +24,7 @@ from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
 PROPERTY_CODE = "6436"
 OLD_UF = 2790.0
 NEW_UF = 2690.0
-TEST_ID = "20261104-6436-price-drop-pilot-v11-admin-exec-single-test"
+TEST_ID = "20261104-6436-price-drop-pilot-v12-followup-single-test"
 
 
 def run_test_once(*, send: bool = False) -> int:
@@ -94,7 +94,7 @@ def run_test_once(*, send: bool = False) -> int:
         "new_price_uf": NEW_UF,
         "operation": "Venta",
         "channel": "whatsapp",
-        "campaign_version": "price_drop_pilot_v11_dual_notice_test",
+        "campaign_version": "price_drop_pilot_v12_followup_test",
         "status": "SENDING",
         "isolation_version": "test_webhook_before_crm_v1",
         "created_at": now,
@@ -110,7 +110,8 @@ def run_test_once(*, send: bool = False) -> int:
         print("DELIVERY_UNKNOWN: provider call raised an exception; no retry")
         return 1
 
-    sent = bool(receipt.get("success") and receipt.get("provider_message_id"))
+    sent = bool(receipt.get("success") and receipt.get("provider_message_id")
+                and not receipt.get("provider_call_uncertain"))
     db[COLLECTION].update_one({"_id": key}, {"$set": {
         "status": "SENT" if sent else "DELIVERY_UNKNOWN",
         "provider_message_id": receipt.get("provider_message_id"),
@@ -124,7 +125,7 @@ def run_test_once(*, send: bool = False) -> int:
     print("SENT: provider accepted one test message; wait for inbound reply verification")
     return 0
 
-    
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--send", action="store_true", help="Perform one real provider attempt")

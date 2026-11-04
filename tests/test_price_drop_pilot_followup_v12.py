@@ -137,3 +137,21 @@ def test_v12_never_sends_to_other_phone(monkeypatch):
         ),
     )
     assert result["status"] == "OUTSIDE_TEST_ALLOWLIST"
+
+
+def test_day_after_simple_interest_prompt_remembers_context():
+    history = [{"customer_text": "ok, me interesa",
+                "bot_text": "¡Qué bueno! ¿Te gustaría conocerlo en persona? "
+                            "Dime qué día te acomodaría."}]
+    reply = followup_reply("lunes a las 10", history, parse_parts=_visit_parts)
+    assert "lunes a las 10" in reply
+    assert "no una visita confirmada" in reply
+
+
+def test_known_visit_preference_not_requested_twice():
+    history = H_TIME
+    reply = followup_reply("¿quién me contactará?", history, parse_parts=_visit_parts,
+                           notice_roles=("ADMIN", "EXECUTIVE"))
+    assert "lunes a las 10" in reply
+    assert "¿Qué día" not in reply
+    assert "avisos de prueba" in reply

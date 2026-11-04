@@ -24,7 +24,7 @@ from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
 PROPERTY_CODE = "6436"
 OLD_UF = 2790.0
 NEW_UF = 2690.0
-TEST_ID = "20261104-6436-price-drop-pilot-v10-exec-sim-single-test"
+TEST_ID = "20261104-6436-price-drop-pilot-v11-admin-exec-single-test"
 
 
 def run_test_once(*, send: bool = False) -> int:

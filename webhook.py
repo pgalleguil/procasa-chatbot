@@ -4100,6 +4100,14 @@ async def webhook(
                 record_sla_reassignment_delivery_status_webhook,
             )
             sla_result = record_sla_reassignment_delivery_status_webhook(data)
+            # Read/write only the dedicated price-drop ledger; never route a
+            # provider status event into a customer conversation.
+            try:
+                from chatbot.price_drop_campaign_real import record_delivery_update
+                from chatbot.storage import get_db as _campaign_db
+                record_delivery_update(_campaign_db(), data)
+            except Exception:
+                logger.exception("[PRICE_DROP_CAMPAIGN] receipt tracking unavailable")
             return weekly_updated, sla_result
 
         weekly_updated, sla_result = await asyncio.get_running_loop().run_in_executor(
@@ -4318,6 +4326,20 @@ async def webhook(
         except Exception:
             logger.exception("[CHATBOT_QUEUE] persistence failed")
             raise HTTPException(status_code=503, detail="Durable queue unavailable")
+        # Customer inbound has already been durably queued. Attribute it to
+        # a prior, explicitly approved price-drop send without altering CRM/SLA.
+        # Tracking failures must not prevent a normal chatbot response.
+        try:
+            from chatbot.price_drop_campaign_real import record_inbound
+            await loop.run_in_executor(
+                _WEB_THREAD_POOL,
+                lambda: record_inbound(
+                    _sync_db(), phone=phone,
+                    provider_message_id=str(provider_message_id), text=text,
+                ),
+            )
+        except Exception:
+            logger.exception("[PRICE_DROP_CAMPAIGN] inbound audit unavailable")
         return JSONResponse({"ok": True, "job_id": str(job_id)}, status_code=200)
 
     if from_me and bot_outbound:

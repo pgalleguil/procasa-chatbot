@@ -2356,3 +2356,107 @@ def test_v10_exec_sim_test_sent_no_new_crm_lead_and_no_real_exec_lookup(monkeypa
         "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
         "crm_price_drop_pilot_test_turns_v1"
     }
+
+
+
+@pytest.mark.parametrize("customer_text,expected", [
+    ("OK, ME INTERESA", True),
+    ("Sí, el día domingo durante la mañana", True),
+    ("Me gustaría coordinar una visita", True),
+    ("Quiero que me llamen", True),
+    ("Quiero que me llame un ejecutivo y quiero saber el precio", True),
+    ("No me interesa", False),
+    ("Solo quiero saber cuánto cuesta", False),
+    ("¿Cuántos dormitorios?", False),
+    ("hola", False),
+])
+def test_v10_natural_commercial_detection(customer_text, expected):
+    from chatbot.price_drop_pilot_exec_notice_sim import should_simulate
+    history = [{
+        "bot_text": "El ejecutivo puede mostrarte el departamento. "
+                    "¿Tienes algún día o momento de la semana que te acomode más?",
+    }]
+    assert should_simulate(customer_text, history) is expected
+
+
+def test_v10_natural_interest_sends_simulated_notice_to_tester_not_executive(monkeypatch):
+    db = _v10_sim_setup(monkeypatch)
+    bot_sender, bot_calls = sender_spy()
+    executive_notices = []
+    def simulated_only_to_test_phone(phone, message):
+        executive_notices.append((phone, message))
+        return {"success": True, "provider_message_id": "sim-natural-1"}
+    result = process_test_inbound(
+        db, PHONE, "natural-interest-1", "OK, ME INTERESA",
+        sender=bot_sender, exec_notice_sender=simulated_only_to_test_phone,
+    )
+    assert result["test_exec_notice_status"] == "SENT"
+    assert len(bot_calls) == 1
+    assert len(executive_notices) == 1
+    assert executive_notices[0][0] == PHONE
+    assert "OK, ME INTERESA" in executive_notices[0][1]
+    assert "PRUEBA INTERNA" in executive_notices[0][1]
+    assert "no disponible en esta prueba aislada" in executive_notices[0][1]
+    assert db["crm_price_drop_pilot_test_turns_v1"].docs[-1]["status"] == "EXEC_NOTICE_SENT"
+    assert "crm_assignment_cycles" not in db
+
+
+def test_v10_one_time_recovery_recovers_prior_unalerted_interest(monkeypatch):
+    from chatbot.price_drop_pilot_exec_notice_sim import recover_v10_exec_notice_once
+    db = _v10_sim_setup(monkeypatch)
+    history = db["crm_price_drop_pilot_test_turns_v1"].docs
+    history[0]["customer_text"] = "¿Cuánto bajó?"
+    history[0]["bot_text"] = "Bajó 100 UF. ¿Te gustaría saber más?"
+    history.append({
+        "_id": "historic-positive-yes",
+        "campaign_id": db["crm_price_drop_pilot_v1"].docs[0]["_id"],
+        "customer_text": "OK, ME INTERESA",
+        "provider_inbound_id": "provider-historic-yes",
+        "bot_text": "Perfecto, ¿qué día te acomoda?",
+        "created_at": datetime.now(timezone.utc),
+        "status": "SENT",
+    })
+    sends = []
+    def sender(phone, message):
+        sends.append((phone, message))
+        return {"success": True, "provider_message_id": "recovery-msg-1"}
+    first = recover_v10_exec_notice_once(db, sender=sender)
+    assert first["status"] == "SENT"
+    assert first["reason"] == "recovered_positive_v10_reply"
+    assert len(sends) == 1
+    assert sends[0][0] == PHONE
+    assert "OK, ME INTERESA" in sends[0][1]
+    assert "UF 2.790" in sends[0][1]
+    assert "no a un ejecutivo" in sends[0][1]
+    second = recover_v10_exec_notice_once(db, sender=sender)
+    assert second["status"] == "ALREADY_ATTEMPTED"
+    assert len(sends) == 1
+    assert "leads" in db and "crm_assignment_cycles" not in db
+
+
+def test_v10_recovery_off_or_unwhitelisted_never_sends(monkeypatch):
+    from chatbot.price_drop_pilot_exec_notice_sim import recover_v10_exec_notice_once, FLAG
+    db = _v10_sim_setup(monkeypatch)
+    sent = []
+    monkeypatch.delenv(FLAG)
+    assert recover_v10_exec_notice_once(
+        db, sender=lambda *x: sent.append(x),
+    )["status"] == "DISABLED"
+    monkeypatch.setenv(FLAG, "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_PHONE", "+56977778888")
+    assert recover_v10_exec_notice_once(
+        db, sender=lambda *x: sent.append(x),
+    )["status"] != "SENT"
+    assert not sent
+
+
+def test_v10_recovery_does_not_send_for_old_campaign(monkeypatch):
+    from chatbot.price_drop_pilot_exec_notice_sim import recover_v10_exec_notice_once
+    db = _v10_sim_setup(monkeypatch)
+    db["crm_price_drop_pilot_v1"].docs[0]["campaign_version"] = "price_drop_pilot_v9"
+    sent = []
+    result = recover_v10_exec_notice_once(
+        db, sender=lambda *x: sent.append(x),
+    )
+    assert result["status"] != "SENT"
+    assert sent == []

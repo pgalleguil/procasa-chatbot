@@ -1,8 +1,8 @@
 """V10 isolated executive WhatsApp notice, always addressed to the test phone.
 
 No CRM, leads, assignments, real executive phone or production campaign collection
-is ever read or written here. One simulation after an unambiguous YES to a
-relevant question in the new V10 pilot conversation, never for V9 or live leads.
+is ever read or written here. One simulation after a clearly positive property
+response in the V10 conversation, never for V9 or live leads.
 """
 from __future__ import annotations
 
@@ -27,38 +27,72 @@ _YES = re.compile(
 _RELEVANT = re.compile(
     r"(?:interes|visita|visitar|agendar|coordinar|verlo|verla|"
     r"avanzar|retomar|retomemos|contact|llama|precio|rebaja|"
-    r"nuevo valor|cómo lo ves|como lo ves)", re.I
+    r"nuevo valor|cómo lo ves|como lo ves|día|dia|semana|hora|horario)", re.I
 )
 _QUESTION = re.compile(r"(?:\?|¿)")
+_CONTEXTUAL_YES = re.compile(
+    r"^\s*s[ií]\s*[,;]?\s*(?:el|la|este|esta|para|por|en|a las|mañana|tarde|dia|día)\b",
+    re.I,
+)
 
 
 def should_simulate(message: str, history: list[dict]) -> bool:
-    """Require standalone yes AND a recent property-related bot question."""
-    if not _YES.fullmatch(str(message or "")):
+    """Accept explicit interest in natural language, or contextual yes.
+
+    This test-only detector reuses the campaign's own classifications, never
+    the lead HOT/NORMAL states from CRM. It cannot inspect lead records.
+    """
+    from .price_drop_campaign_classifier import (
+        INTEREST, PRIORITY, classify_price_drop_reply,
+    )
+    value = str(message or "").strip()
+    classification = classify_price_drop_reply(value)
+    # "Solo quiero saber cuánto cuesta" is a neutral information request,
+    # despite older campaign rules grouping "quiero saber" under interest.
+    # Do not fire a management notice without an explicit interest statement.
+    info_only = re.search(
+        r"\b(?:quiero|quisiera|me gustar[ií]a)\s+saber\b", value, re.I
+    )
+    clear_interest = re.search(
+        r"\b(?:me interesa|estoy interesad[oa]|quiero agendar|"
+        r"quiero visitar|quiero (?:hacer|presentar) una oferta)\b",
+        value, re.I,
+    )
+    if classification.label == INTEREST and info_only and not clear_interest:
+        return False
+    if classification.label in {INTEREST, PRIORITY} and classification.positive:
+        return True
+    if not (_YES.fullmatch(value) or _CONTEXTUAL_YES.match(value)):
         return False
     for turn in reversed((history or [])[-3:]):
         previous = str(turn.get("bot_text") or "").strip()
-        if not previous:
-            continue
-        return bool(_QUESTION.search(previous) and _RELEVANT.search(previous))
+        if previous:
+            return bool(_QUESTION.search(previous) and _RELEVANT.search(previous))
     return False
 
 
-def _notice_text(ctx: dict, phone: str) -> str:
+def _notice_text(ctx: dict, phone: str, customer_text: str) -> str:
     code = str(ctx.get("property_code") or "")
     old = int(ctx.get("old_price_uf") or 0)
     new = int(ctx.get("new_price_uf") or 0)
     if not code.isdigit() or not old or not new or new >= old:
         raise ValueError("verified_campaign_prices_required")
     formatted = lambda number: f"{number:,.0f}".replace(",", ".")
+    # The original text is user-authored test content; no property/CRM private
+    # fields are included in this notice. Shorten and normalize whitespace.
+    quoted = " ".join(str(customer_text or "").split())[:120]
+    from .price_drop_campaign_classifier import PRIORITY, classify_price_drop_reply
+    category = classify_price_drop_reply(customer_text).label
+    label = ("Alta intención" if category == PRIORITY else "Interesado")
     return (
         "🧪 *PRUEBA INTERNA — AVISO SIMULADO AL EJECUTIVO*\n\n"
         "🔔 *PROCASA — Respuesta a campaña de rebaja de precio*\n\n"
         f"🏠 Propiedad: {code}\n"
         f"📉 Rebaja informada: UF {formatted(old)} → UF {formatted(new)}\n"
-        "*Estado campaña:* Rebaja de precio – Interesado\n"
+        f"*Estado campaña:* Rebaja de precio – {label}\n"
         f"📱 *Cliente de prueba:* ***{str(phone)[-4:]}\n"
-        "*Motivo:* Confirmó interés respondiendo «Sí» en la conversación.\n\n"
+        f"*Respuesta detectada:* «{quoted}»\n"
+        "*Motivo:* Manifestó interés después del aviso de rebaja.\n\n"
         "👤 *Destinatario:* ejecutivo del último ciclo de asignación vigente "
         "(simulado; no se consultaron datos de un lead real).\n\n"
         "🔗 *Abrir lead en CRM:* no disponible en esta prueba aislada. "
@@ -102,7 +136,7 @@ def send_simulated_exec_notice(
         })
     except DuplicateKeyError:
         return {"status": "ALREADY_ATTEMPTED"}
-    msg = _notice_text(ctx, normalized)
+    msg = _notice_text(ctx, normalized, customer_text)
     if sender is None:
         from .whatsapp_client import send_whatsapp_message_detailed_sync
         sender = send_whatsapp_message_detailed_sync
@@ -132,3 +166,64 @@ def send_simulated_exec_notice(
         "campaign_id": ctx["campaign_id"],
         "provider_message_id": receipt.get("provider_message_id"),
     }
+
+
+def recover_v10_exec_notice_once(
+    db: Any, *, sender: Callable[[str, str], dict] | None = None,
+) -> dict:
+    """Deliver one missed simulated alert for an ALREADY-SENT V10 conversation.
+
+    Operates on whitelisted test data only. No production lead, CRM,
+    assignment, executive phone or real-campaign collection can be accessed.
+    An exact campaign _id is used and the unique notice ID is reserved
+    before the provider call, so service restarts do not resend.
+    """
+    if os.getenv(FLAG, "").lower() not in {"1", "true", "yes"}:
+        return {"status": "DISABLED"}
+    from .price_drop_pilot_isolation import is_test_phone, load_test_context
+    from .price_drop_pilot import COLLECTION as TEST_CAMPAIGNS
+    phone = normalize_phone_strict(os.getenv("PRICE_DROP_PILOT_TEST_PHONE", ""))
+    if not phone or not is_test_phone(phone):
+        return {"status": "NOT_WHITELISTED"}
+    now = datetime.now(timezone.utc)
+    campaign = db[TEST_CAMPAIGNS].find_one({
+        "phone_normalized": phone,
+        "test_mode": True,
+        "campaign_version": VERSION,
+        "lead_id": {"$exists": False},
+        "status": "SENT",
+        "expires_at": {"$gt": now},
+    }, {"_id": 1, "phone_normalized": 1, "campaign_version": 1},
+       sort=[("sent_at", -1)])
+    if not campaign:
+        return {"status": "NO_ACTIVE_V10"}
+    ctx = load_test_context(db, phone)
+    if not ctx or ctx.get("campaign_id") != campaign["_id"] or ctx.get("campaign_version") != VERSION:
+        return {"status": "CONTEXT_MISMATCH"}
+    # Read ONLY turns from this exact isolated test campaign. Limit scanning,
+    # and never use the lead, CRM or production messaging collections.
+    turns = list(db[TURNS].find({
+        "campaign_id": campaign["_id"],
+        "status": "SENT",
+    }, {"customer_text": 1, "bot_text": 1, "provider_inbound_id": 1,
+        "created_at": 1}).sort("created_at", 1).limit(240))
+    previous = []
+    for turn in turns:
+        text = str(turn.get("customer_text") or "")
+        if should_simulate(text, previous):
+            outcome = send_simulated_exec_notice(
+                db, ctx=ctx, phone=phone, customer_text=text,
+                history=previous, inbound_message_id=str(
+                    turn.get("provider_inbound_id") or turn.get("_id") or "historical"
+                ),
+                sender=sender,
+            )
+            return {
+                "status": outcome["status"],
+                "phone_last4": phone[-4:],
+                "campaign_id": campaign["_id"],
+                "reason": "recovered_positive_v10_reply",
+                "provider_message_id": outcome.get("provider_message_id"),
+            }
+        previous.append(turn)
+    return {"status": "NO_CONFIRMED_INTEREST"}

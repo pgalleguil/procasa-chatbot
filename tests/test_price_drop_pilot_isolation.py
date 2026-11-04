@@ -656,14 +656,14 @@ def test_live_6436_location_and_quinchos_are_resolved_from_prop360_only(isolated
     }
     prop["caracteristicas"]["features"].append("has_grill")
     context = load_test_context(db, PHONE)
-    assert context["property_facts"]["calle_publicada"] == "Séptima Avenida 1370 68"
+    assert "calle_publicada" not in context["property_facts"]
     assert context["property_facts"]["parrillas_ficha"] is True
     send, calls = sender_spy()
     conversation = [
-        ("Podria ser pero donde quedaba", "Séptima Avenida 1370 68"),
+        ("Podria ser pero donde quedaba", "San Miguel"),
         ("Tiene terraza?", "5 m² de terraza"),
         ("Y quinchos", "parrillas mencionadas en la ficha"),
-        ("Tienes la direccion exacta", "Séptima Avenida 1370 68"),
+        ("Tienes la direccion exacta", "San Miguel"),
         ("¿Cuántos baños tiene y cuál es la dirección?", "2 baños"),
     ]
     for i, (question, expected) in enumerate(conversation):
@@ -676,7 +676,7 @@ def test_live_6436_location_and_quinchos_are_resolved_from_prop360_only(isolated
         assert answer["status"] == "test_reply_sent"
         assert expected.casefold() in calls[-1][1].casefold()
         assert "no la tengo" not in calls[-1][1].casefold()
-    assert "Séptima Avenida 1370 68" in calls[-1][1]
+    assert "Séptima Avenida 1370 68" not in calls[-1][1]
     assert "por confirmar" in calls[2][1]
     assert "quinchos" in calls[2][1]
     assert len(calls) == len(conversation)
@@ -699,7 +699,7 @@ def test_unverified_quinchos_and_address_are_not_fabricated(isolated):
         "¿Dónde queda?", ctx,
         llm=lambda *_: (_ for _ in ()).throw(AssertionError("No model")),
     )
-    assert "San Miguel" in address and "dirección exacta no confirmada" in address
+    assert "San Miguel" in address and "dirección exacta no disponible" in address
     assert "Séptima Avenida" not in address
 
 
@@ -1397,14 +1397,14 @@ def test_v6_actual_price_drop_date_is_grounded_and_no_llm_needed(
         },
     ]
     ctx = load_test_context(db, PHONE)
-    assert ctx["price_drop_date"] == "6 de octubre de 2026"
+    assert ctx["price_drop_date"] is None
     answer = build_native_pilot_reply(
         customer_message, ctx, [], generator=lambda *_args, **_kw: (
             _ for _ in ()
         ).throw(AssertionError("No LLM should handle an audited date"))
     )
-    assert "6 de octubre de 2026" in answer
-    assert "te escribimos" in answer.lower()
+    assert "fecha exacta" in answer and "6 de octubre" not in answer
+    assert "no tengo" in answer.lower()
     assert "no se ha solicitado" not in answer
 
 
@@ -1445,7 +1445,7 @@ def test_v6_price_change_date_survives_real_isolated_whatsapp_path(
     ]
     ctx = load_test_context(db, PHONE)
     msg = _build_native_campaign_messages("¿Sigue vigente?", ctx, [])
-    assert "6 de octubre de 2026" in msg[1]["content"]
+    assert "6 de octubre de 2026" not in msg[1]["content"]
     assert msg[2]["role"] == "assistant"
     assert "Te escribo porque el departamento" in msg[2]["content"]
     sender, calls = sender_spy()
@@ -1455,7 +1455,7 @@ def test_v6_price_change_date_survives_real_isolated_whatsapp_path(
         sender=sender,
     )["status"] == "test_reply_sent"
     assert len(calls) == 1
-    assert "6 de octubre de 2026" in calls[0][1]
+    assert "fecha exacta" in calls[0][1]
     assert "leads" in db and isinstance(db["leads"], BlockedCollection)
     assert len(db["crm_price_drop_pilot_test_turns_v1"].docs) == 1
 
@@ -1771,7 +1771,7 @@ def test_live_v8_no_unverified_apartment_number_in_realistic_reply(isolated):
     assert "ubicación exacta" in answer or "dirección exacta" in answer
 
 
-def test_explicit_prop360_unit_can_be_named(isolated):
+def test_explicit_prop360_unit_is_always_denied_to_pilot(isolated):
     from chatbot.price_drop_pilot_isolation import _sanitize_unverified_unit
     db = db_case()
     db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
@@ -1780,9 +1780,9 @@ def test_explicit_prop360_unit_can_be_named(isolated):
         "unidad": "68",
     }
     ctx = load_test_context(db, PHONE)
-    assert ctx["property_facts"]["unidad_verificada"] == "68"
+    assert "unidad_verificada" not in ctx["property_facts"]
     reply = "Está en Séptima Avenida 1370, departamento 68."
-    assert _sanitize_unverified_unit(reply, ctx) == reply
+    assert "departamento 68" not in _sanitize_unverified_unit(reply, ctx)
     assert "departamento 69" not in _sanitize_unverified_unit(
         "Está en Séptima Avenida 1370, departamento 69.", ctx
     )
@@ -1809,7 +1809,7 @@ def test_campaign_location_shows_area_not_street_number(isolated, query):
             AssertionError("A verified area is answered without the model")
         ),
     )
-    assert "Séptima Avenida - Tercera Transversal" in answer
+    assert "Séptima Avenida - Tercera Transversal" not in answer
     assert "San Miguel" in answer
     assert "1370" not in answer and "departamento 68" not in answer
 
@@ -1861,7 +1861,7 @@ def test_campaign_guards_exact_address_leaked_by_dialogue_history(isolated):
     )
     assert "1370" not in answer
     assert "departamento 68" not in answer
-    assert "Tercera Transversal" in answer
+    assert "Tercera Transversal" not in answer
 
 
 @pytest.mark.parametrize("customer", [
@@ -1931,7 +1931,7 @@ def test_v8_model_cannot_repeat_address_from_previous_customer_turn(
     )
     assert "1370" not in reply
     assert "departamento 68" not in reply.lower()
-    assert "Tercera Transversal" in reply
+    assert "Tercera Transversal" not in reply
     assert "San Miguel" in reply
 
 
@@ -2111,3 +2111,125 @@ def test_v8_mixed_location_price_visit_answers_all_three(isolated):
     assert "2.690" in answer
     assert "sábado" in answer and "11" in answer
     assert "agendada" in answer
+
+def test_v10_projection_does_not_fetch_any_sensitive_property_location_fields(isolated):
+    from chatbot.price_drop_pilot_isolation import load_test_context
+    db = _full_pilot_db()
+    property_collection = db["universo_cartera_prop360"]
+    observed = []
+    old_find = property_collection.find_one
+
+    def checked_find(query, projection=None, sort=None):
+        observed.append(dict(projection or {}))
+        assert projection and all(value == 1 for value in projection.values())
+        forbidden = (
+            "ubicacion.calle", "ubicacion.direccion_referencial",
+            "ubicacion.unidad", "ubicacion.sector", "historial_cambios",
+            "observaciones", "descripcion", "propietario", "telefono",
+        )
+        assert all(key not in projection for key in forbidden)
+        return old_find(query, projection, sort=sort)
+
+    property_collection.find_one = checked_find
+    ctx = load_test_context(db, PHONE)
+    assert observed and ctx["property_facts"]["comuna"] == "San Miguel"
+    assert all(k not in ctx["property_facts"] for k in (
+        "calle_publicada", "direccion_referencial", "unidad_verificada",
+    ))
+
+
+def test_v10_sensitive_location_values_are_never_accessed_in_python(isolated):
+    from chatbot.price_drop_pilot_isolation import load_test_context
+
+    class LockedLocation(dict):
+        def get(self, name, default=None):
+            if name in {"calle", "direccion_referencial", "unidad", "sector"}:
+                raise AssertionError("Sensitive location read")
+            return super().get(name, default)
+
+    db = _full_pilot_db()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = LockedLocation({
+        "comuna": "San Miguel", "calle": "SECRET-STREET-7382",
+        "direccion_referencial": "SECRET-REFERENCE-7382", "unidad": "999",
+    })
+    ctx = load_test_context(db, PHONE)
+    assert "SECRET" not in str(ctx)
+    assert ctx["property_facts"]["comuna"] == "San Miguel"
+
+
+def test_v10_real_dialogue_5am_is_not_misread_as_5pm(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    reply = build_native_pilot_reply(
+        "Quiero visidta mañana a las 5 de la mañana", ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Early visit time should be handled without model")
+        ),
+    )
+    assert "05:00" in reply
+    assert "poco habitual" in reply
+    assert "no hay visita agendada" in reply.lower()
+
+
+def test_v10_real_dialogue_personal_question_and_ambiguous_orientation(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    personal = build_native_pilot_reply(
+        "Tienew novio", ctx, [], generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Must not anthropomorphize")
+        ),
+    )
+    assert "asistente virtual" in personal
+    orientation = build_native_pilot_reply(
+        "Cualnes su orientacion", ctx,
+        [{"customer_text": "Tienew novio", "bot_text": personal}],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Ambiguous personal context should clarify")
+        ),
+    )
+    assert "¿Te refieres" in orientation
+    assert "Sur-Poniente" not in orientation
+
+
+def test_v10_contact_request_never_promises_an_executive_call(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    ctx = load_test_context(db_case(), PHONE)
+    reply = build_native_pilot_reply(
+        "Quien me contactará", ctx, [],
+        generator=lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("Contact handoff must be deterministic")
+        ),
+    )
+    assert "no hay visita ni contacto programado" in reply
+    assert "te llamará" not in reply
+
+
+def test_v10_repeated_exact_address_question_advances_without_street(isolated):
+    from chatbot.price_drop_pilot_isolation import build_native_pilot_reply
+    db = db_case()
+    db["universo_cartera_prop360"].docs[0]["ubicacion"] = {
+        "comuna": "San Miguel", "calle": "SECRET-AVENUE-7382",
+        "direccion_referencial": "SECRET-LOCATION", "unidad": "999",
+    }
+    ctx = load_test_context(db, PHONE)
+    first = build_native_pilot_reply("Tienws la direcion de la propiedad", ctx, [])
+    second = build_native_pilot_reply(
+        "Direccion exacta", ctx,
+        [{"customer_text": "Tienws la direcion de la propiedad", "bot_text": first}],
+    )
+    assert first != second
+    assert "San Miguel" in second
+    assert "SECRET" not in first + second
+
+
+def test_v10_prompt_redacts_historical_address_before_model(isolated):
+    from chatbot.price_drop_pilot_isolation import _build_native_campaign_messages
+    ctx = load_test_context(db_case(), PHONE)
+    msgs = _build_native_campaign_messages(
+        "Cuéntame", ctx,
+        [{"customer_text": "La calle es Secret Avenue 1234",
+          "bot_text": "Está en Séptima Avenida 1370, dpto 68"}],
+    )
+    content = " ".join(str(m["content"]) for m in msgs)
+    assert "1370" not in content and "1234" not in content
+    assert "Séptima Avenida" not in content

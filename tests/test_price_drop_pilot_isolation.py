@@ -2662,3 +2662,48 @@ def test_v13_never_sends_unsafe_llm_promise_through_provider(monkeypatch):
     assert len(calls) == 1
     assert "ejecutivo asignado" not in calls[0][1]
     assert "no hay una visita confirmada" in calls[0][1]
+
+
+def test_v13_1_first_three_real_webhook_turns_are_contextual(monkeypatch):
+    """Actual V13 complaint: real provider-webhook path, not a standalone regex."""
+    db = _v13_setup(monkeypatch)
+    monkeypatch.setenv("PRICE_DROP_PILOT_EXEC_NOTICE_SIMULATION", "0")
+    send, calls = sender_spy()
+    messages = [
+        ("hola", ("San Miguel", "2.690")),
+        ("me interesa", ("conocer el departamento",)),
+        ("sí", ("Qué día",)),
+    ]
+    for index, (message, expected) in enumerate(messages):
+        outcome = process_test_inbound(
+            db, PHONE, f"v13-1-real-start-{index}", message,
+            sender=send,
+            exec_notice_sender=lambda *_: (_ for _ in ()).throw(
+                AssertionError("An admin or executive alert interrupted chat")
+            ),
+        )
+        assert outcome["status"] == "test_reply_sent"
+        response = calls[-1][1]
+        assert all(value.casefold() in response.casefold() for value in expected), response
+    assert len(calls) == 3
+    assert len([x for x in db["crm_price_drop_pilot_test_turns_v1"].docs
+                if x.get("test_notification_role")]) == 0
+    assert set(db.keys()) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+def test_v13_1_bare_no_after_welcome_is_not_unsubscribe(monkeypatch):
+    db = _v13_setup(monkeypatch)
+    monkeypatch.setenv("PRICE_DROP_PILOT_EXEC_NOTICE_SIMULATION", "0")
+    send, calls = sender_spy()
+    for index, phrase in enumerate(("hola", "no")):
+        outcome = process_test_inbound(
+            db, PHONE, f"v13-1-no-{index}", phrase,
+            sender=send,
+        )
+        assert outcome["status"] == "test_reply_sent"
+    assert "San Miguel" in calls[-1][1]
+    assert "No insistiremos" not in calls[-1][1]
+    assert db["crm_price_drop_pilot_v1"].docs[0]["status"] == "SENT"

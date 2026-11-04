@@ -50,6 +50,7 @@ jobs:
               tests/test_price_drop_pilot_isolation.py
               tests/test_price_drop_pilot_followup_v12.py
               tests/test_price_drop_pilot_guard_v13.py
+              tests/test_price_drop_pilot_conversations_v13.py
               tests/test_chatbot_property_read_guard.py
               tests/test_price_drop_real_pilot.py
           - suite: Owner campaign price revalidation

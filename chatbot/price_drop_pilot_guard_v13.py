@@ -169,6 +169,28 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
     s = plain(message)
     if not s or _NEGATIVE.search(s):
         return None
+    # A bare 'no' to "¿alcanzaste a ver la publicación?" is NOT an opt-out.
+    # Brief replies are interpreted only using the immediately previous question.
+    previous_bot = plain(history[-1].get("bot_text") or "") if history else ""
+    if s in {"no", "nop", "nope", "no gracias"}:
+        if "alcanzaste a ver" in previous_bot or "viste la publicacion" in previous_bot:
+            return (
+                "No hay problema 😊. Te escribimos porque el departamento de "
+                f"San Miguel bajó de UF {_price(ctx['old_price_uf'])} a "
+                f"UF {_price(ctx['new_price_uf'])}. "
+                f"Esta es la publicación: https://www.procasa.cl/{ctx['property_code']}"
+            )
+        if re.search(r"\b(?:ir a verlo|ir a conocer|visitarlo|te gustaria visitar)\b", previous_bot):
+            return "Entendido, no coordinamos una visita. Si tienes alguna duda sobre el departamento, te ayudo encantada."
+        return "Entendido, gracias por responder. No insistiremos por esta propiedad."
+    if s in {"si", "sip", "claro", "dale", "ok", "oka"}:
+        if re.search(r"\b(?:ir a verlo|ir a conocer|visitarlo|te gustaria visitar)\b", previous_bot):
+            return (
+                "¡Perfecto! 😊 ¿Qué día te acomodaría ir a verlo? "
+                "La disponibilidad debe confirmarla el equipo comercial."
+            )
+        if "alcanzaste a ver" in previous_bot or "viste la publicacion" in previous_bot:
+            return "¡Perfecto! 😊 ¿Cómo ves el nuevo precio del departamento? Si quieres, puedo aclararte detalles."
     # The customer may challenge our own outreach or a previous poor answer.
     if (re.search(r"\b(?:me (?:envi|escrib|mand)\w*|ustedes me escribieron)\b", s)
             and re.search(r"\b(?:informacion|no quieres|no me dices|mensaje)\b", s)):
@@ -190,6 +212,34 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
     current_parts = parse_parts(s)
     active_visit = visit or _visit_history(history)
     schedule_update = bool(current_parts) and active_visit
+
+    # The first reply after the outreach must keep the property context;
+    # delegating a lone "hola" to an unconstrained LLM caused the V13 regression.
+    if re.fullmatch(r"(?:hola+|holi|buenas|buenos dias|buenas tardes|buenas noches)[!¡?.\s]*", s):
+        if history and any(
+            "san miguel" in plain(t.get("bot_text") or "")
+            for t in history[-3:]
+        ):
+            return "¡Hola de nuevo! 😊 Te leo. ¿Cómo seguimos con el departamento?"
+        return (
+            "¡Hola! 😊 Te escribimos por el departamento de San Miguel, que "
+            f"bajó a UF {_price(ctx['new_price_uf'])}. "
+            "¿Alcanzaste a ver la publicación?"
+        )
+
+    # The prospect often starts by asking why we wrote. Be specific, not
+    # defensive or evasive about the property and the price-drop reason.
+    if re.search(
+        r"\b(?:no entiendo|de que se trata|que me enviaron|"
+        r"que me mandaron|por que me escribieron|de que me hablas|"
+        r"que me estas ofreciendo|que estas ofreciendo)\b", s
+    ):
+        return (
+            f"Te escribimos para contarte que el departamento de San Miguel "
+            f"(código {ctx['property_code']}) bajó de UF "
+            f"{_price(ctx['old_price_uf'])} a UF {_price(ctx['new_price_uf'])}. "
+            f"Esta es la publicación: https://www.procasa.cl/{ctx['property_code']}"
+        )
 
     if re.search(r"\b(?:tan directo|muy directo|que seco|que brusco)\b", s):
         return (
@@ -264,7 +314,27 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
                 sentences.append("¿Qué día te acomodaría visitarlo? "
                                  "El equipo comercial tendría que confirmar disponibilidad.")
     elif interest and not (negotiate or property_question or amount or date or contact):
-        sentences.append("¡Qué bueno! 😊 ¿Quieres que conversemos sobre una posible visita?")
+        # Avoid vague "conversemos sobre una posible visita" with no mention
+        # of the original message. Also avoid repeating price on consecutive
+        # turns if the bot just anchored the property in its last response.
+        previous_bot = plain(history[-1].get("bot_text") or "") if history else ""
+        property_recently_anchored = any(
+            "san miguel" in plain(turn.get("bot_text") or "")
+            for turn in history[-3:]
+        )
+        if property_recently_anchored and (
+            "departamento" in previous_bot or "san miguel" in previous_bot
+        ):
+            sentences.append(
+                "¡Qué bueno! 😊 ¿Te gustaría ir a conocer el departamento? "
+                "Si tienes alguna duda, la podemos revisar primero."
+            )
+        else:
+            sentences.append(
+                f"¡Qué bueno que te interese el departamento de San Miguel! 😊 "
+                f"Con la rebaja quedó en UF {_price(ctx['new_price_uf'])}. "
+                "¿Te gustaría ir a verlo?"
+            )
 
     # Do not bring booking questions into a price/date-only request.
     # One concise WhatsApp response may contain multiple relevant answers.

@@ -1419,6 +1419,7 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
     from .price_drop_pilot_followup_v12 import VERSION as V12_VERSION, followup_reply
     from .price_drop_pilot_guard_v13 import (
         VERSION as V13_VERSION, reply_v13, safe_outbound_v13,
+        plain as v13_plain,
     )
     campaign_version = ctx.get("campaign_version")
     roles = ()
@@ -1428,7 +1429,10 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
         }, {"test_notification_role": 1})
         roles = tuple(str(row.get("test_notification_role") or "") for row in receipts)
     response = None
-    if campaign_version == V13_VERSION and not (NEGATE_VISIT.search(text) or DECLINE.search(text)):
+    if (campaign_version == V13_VERSION
+            and not NEGATE_VISIT.search(text)
+            and (not DECLINE.search(text)
+                 or v13_plain(text) in {"no", "nop", "nope", "no gracias"})):
         response = reply_v13(text, ctx, history, parse_parts=_visit_parts,
                              notice_roles=roles)
     elif campaign_version == V12_VERSION and not (NEGATE_VISIT.search(text) or DECLINE.search(text)):

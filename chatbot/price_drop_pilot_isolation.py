@@ -326,19 +326,11 @@ def _verified_property_facts(prop: dict) -> dict:
                 facts[field] = True
     location = prop.get("ubicacion") or {}
     if isinstance(location, dict):
-        # Prop360's own published street field; never guess missing unit/number.
-        for source, target in (("calle", "calle_publicada"),
-                               ("direccion_referencial", "direccion_referencial"),
-                               ("comuna", "comuna")):
-            value = location.get(source)
-            if (isinstance(value, str) and 2 <= len(value.strip()) <= 120
-                and not any(ch in value for ch in ("\n", "\r", "<", ">"))):
-                facts[target] = value.strip()
-        unit = location.get("unidad")
-        if isinstance(unit, (str, int)) and not isinstance(unit, bool):
-            unit_text = str(unit).strip()
-            if re.fullmatch(r"[A-Za-z0-9-]{1,12}", unit_text):
-                facts["unidad_verificada"] = unit_text
+        # Read ONLY comuna. Exact address, reference and unit are forbidden.
+        comuna = location.get("comuna")
+        if (isinstance(comuna, str) and 2 <= len(comuna.strip()) <= 120
+                and not any(ch in comuna for ch in ("\n", "\r", "<", ">"))):
+            facts["comuna"] = comuna.strip()
     expenses = _money(operation.get("gastos_comunes"))
     if expenses is not None and expenses < 100000000:
         facts["gastos_comunes_clp"] = int(expenses)
@@ -362,9 +354,7 @@ def _formatted_facts(facts: dict) -> str:
         items.append("piscina según ficha")
     if facts.get("parrillas_ficha"):
         items.append("parrillas mencionadas en ficha (detalles de quinchos por confirmar)")
-    if facts.get("direccion_referencial"):
-        items.append(f"referencia de ubicación: {facts['direccion_referencial']}")
-    elif facts.get("comuna"):
+    if facts.get("comuna"):
         items.append(f"comuna: {facts['comuna']}")
     # Do not expose exact street/door/apartment number in outreach replies.
     if facts.get("terraza"):
@@ -452,8 +442,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
          "caracteristicas.superficie_terraza": 1, "caracteristicas.piso": 1,
          "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
          "caracteristicas.orientacion": 1, "caracteristicas.features": 1,
-         "ubicacion.calle": 1, "ubicacion.direccion_referencial": 1,
-         "ubicacion.comuna": 1, "ubicacion.unidad": 1, "historial_cambios": 1},
+         "ubicacion.comuna": 1, "historial_cambios": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
@@ -822,9 +811,7 @@ def _native_safe_fallback(message: str, ctx: dict, history: list[dict],
 
 def _sanitize_unverified_unit(answer: str, ctx: dict) -> str:
     """Remove unsupported unit labels; never infer from a street number."""
-    verified = str(
-        (ctx.get("property_facts") or {}).get("unidad_verificada") or ""
-    ).strip()
+    verified = ""  # never allow a unit number from Prop360 in this chatbot
     pattern = re.compile(
         r"(?P<comma>,\s*)?(?P<kind>departamento|depto\.?|dpto\.?|unidad)"
         r"\s+(?:n[°º]\s*)?(?P<num>\d{1,3})\b", re.I
@@ -1268,19 +1255,7 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
         found = [format_value(facts[key]) for key, format_value in asked if key in facts]
         missing = [key for key, _ in asked if key not in facts]
         if ADDRESS.search(clean):
-            address = facts.get("calle_publicada")
-            ref = facts.get("direccion_referencial")
-            if address:
-                position = f"queda en {address}"
-                if facts.get("comuna"):
-                    position += f", {facts['comuna']}"
-                if ref:
-                    position += f" (referencia: {ref})"
-                found.append(position)
-            elif ref:
-                found.append(f"referencia de ubicación: {ref}, {facts.get('comuna', 'San Miguel')}")
-            else:
-                found.append(f"ubicación: {facts.get('comuna', 'San Miguel')}; dirección exacta no confirmada")
+            found.append(f"ubicación: {facts.get('comuna', 'San Miguel')}; dirección exacta no disponible en este canal")
         if GRILL.search(clean):
             if facts.get("parrillas_ficha"):
                 found.append("hay parrillas mencionadas en la ficha; cantidad y condiciones de uso de quinchos por confirmar")

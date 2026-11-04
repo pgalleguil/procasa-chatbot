@@ -683,3 +683,145 @@ def test_cold_lead_response_is_post_send_engagement_not_automatic_crm_hot(
     assert report["rows"][0]["campaign_origin"] == "PRICE_DROP"
     assert report["rows"][0]["attribution_basis"] == "same_phone_after_accepted_send_window"
     assert db["leads"].find_one({"_id": lead_id})["lead_temperature_effective"] == "COLD"
+
+
+def _campaign_notify_owner(db):
+    lead = db["leads"].find_one({"prospecto.codigo": "6436"})
+    user_id = ObjectId("690000000000000000000090")
+    owner_phone = "+56984517639"
+    db["usuarios"].insert_one({
+        "_id": user_id, "nombre": "Ejecutiva Prueba", "telefono": owner_phone,
+        "is_active": True,
+    })
+    db["crm_assignment_cycles"].insert_one({
+        "lead_id": lead["_id"], "assignment_cycle_id": "campaign-cycle-1",
+        "assigned_to_user_id": str(user_id),
+        "assigned_to_display_name": "Ejecutiva Prueba",
+        "property_code": "6436", "unassigned_at": None,
+        "cycle_status": "active",
+    })
+    db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
+        "lifecycle.current_assignment_cycle_id": "campaign-cycle-1",
+        "lifecycle.assigned_to_user_id": str(user_id),
+        "ejecutivo_asignado": "Ejecutiva Prueba",
+        "prospecto.ejecutivo": "Ejecutiva Prueba",
+    }})
+    return lead, owner_phone
+
+
+def test_campaign_reply_queues_one_notice_but_does_not_send_without_gate(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import (
+        COLLECTION, process_one_exec_notice,
+    )
+    lead, owner_phone = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    phone = lead["contact_phone_normalized"]
+    record_inbound(db, phone=phone, provider_message_id="visit-1",
+                   text="Quiero visitar el departamento",
+                   received_at=START + timedelta(minutes=1))
+    record_inbound(db, phone=phone, provider_message_id="visit-1",
+                   text="Quiero visitar el departamento",
+                   received_at=START + timedelta(minutes=1))
+    assert db[COLLECTION].count_documents({"status": "PENDING"}) == 1
+    attempts = []
+    assert process_one_exec_notice(db, sender=lambda *_: attempts.append(1))["status"] == "DISABLED"
+    assert not attempts
+
+def test_campaign_exec_notice_sends_once_to_current_owner(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import (
+        GATE, process_one_exec_notice,
+    )
+    lead, owner_phone = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    record_inbound(
+        db, phone=lead["contact_phone_normalized"], provider_message_id="call-1",
+        text="Quiero que me llame un ejecutivo",
+        received_at=START + timedelta(minutes=1),
+    )
+    monkeypatch.setenv(GATE, "true")
+    notices = []
+    def fake_sender(phone, message):
+        notices.append((phone, message))
+        return {"success": True, "provider_message_id": "notice-1"}
+    assert process_one_exec_notice(db, sender=fake_sender)["status"] == "SENT"
+    assert notices[0][0] == owner_phone
+    assert "6436" in notices[0][1]
+    assert process_one_exec_notice(db, sender=fake_sender)["status"] == "IDLE"
+    assert len(notices) == 1
+
+
+def test_campaign_exec_notice_rejects_stale_assignment(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import GATE, process_one_exec_notice
+    lead, _ = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    record_inbound(db, phone=lead["contact_phone_normalized"],
+                   provider_message_id="call-2", text="Quiero que me llame un ejecutivo",
+                   received_at=START + timedelta(minutes=1))
+    db["leads"].update_one(
+        {"_id": lead["_id"]}, {"$set": {"ejecutivo_asignado": "Otro"}},
+    )
+    monkeypatch.setenv(GATE, "true")
+    attempts = []
+    assert process_one_exec_notice(
+        db, sender=lambda *_: attempts.append(True),
+    )["status"] == "BLOCKED_ASSIGNMENT"
+    assert not attempts
+
+
+def test_campaign_notice_escalation_supersedes_older_interest(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import (
+        COLLECTION, GATE, process_one_exec_notice,
+    )
+    lead, _ = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    for i, text in enumerate(("Me interesa, cuéntame más",
+                              "Quiero coordinar una visita")):
+        record_inbound(
+            db, phone=lead["contact_phone_normalized"], provider_message_id=f"step-{i}",
+            text=text, received_at=START + timedelta(minutes=i + 1),
+        )
+    monkeypatch.setenv(GATE, "true")
+    sends = []
+    def fake_sender(*_):
+        sends.append(True)
+        return {"success": True, "provider_message_id": "notification-1"}
+    assert process_one_exec_notice(db, sender=fake_sender)["status"] == "SKIPPED"
+    assert process_one_exec_notice(db, sender=fake_sender)["status"] == "SENT"
+    assert len(sends) == 1
+    assert db[COLLECTION].count_documents({"status": "SENT"}) == 1
+
+
+def test_campaign_exec_notice_unknown_delivery_is_not_retried(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import (
+        COLLECTION, GATE, process_one_exec_notice,
+    )
+    lead, _ = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    record_inbound(db, phone=lead["contact_phone_normalized"],
+                   provider_message_id="interested-1", text="Me interesa",
+                   received_at=START + timedelta(minutes=1))
+    monkeypatch.setenv(GATE, "true")
+    attempts = []
+    def uncertain(*_):
+        attempts.append(True)
+        raise TimeoutError("unknown provider acceptance")
+    assert process_one_exec_notice(db, sender=uncertain)["status"] == "DELIVERY_UNKNOWN"
+    assert process_one_exec_notice(db, sender=uncertain)["status"] == "IDLE"
+    assert len(attempts) == 1
+    assert db[COLLECTION].find_one({})["status"] == "DELIVERY_UNKNOWN"
+

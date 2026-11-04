@@ -6844,6 +6844,28 @@ async def process_pending_leads_loop():
             else:
                 sla_notification_status.update({"status": "disabled", "health": "DISABLED"})
 
+            # Dedicated, opt-in campaign response notices. Independent from
+            # the new-lead assignment notifications, Hot SLA worker and its
+            # business-hour scheduler. Runs in a sync thread; one queued
+            # notification per pass, at most once even after worker restart.
+            if os.getenv("PRICE_DROP_CAMPAIGN_EXEC_NOTIFY_ENABLED", "").lower() in {"1", "true", "yes"}:
+                try:
+                    from chatbot.price_drop_campaign_exec_alert import process_one_exec_notice
+                    from chatbot.storage import get_db as _get_campaign_alert_db
+                    result = await asyncio.get_running_loop().run_in_executor(
+                        _WORKER_THREAD_POOL,
+                        lambda: process_one_exec_notice(_get_campaign_alert_db()),
+                    )
+                    if result.get("status") not in {"IDLE", "DISABLED"}:
+                        logger.info(
+                            "[PRICE_DROP_EXEC_NOTICE] status=%s campaign_id=%s lead_id=%s",
+                            result.get("status"),
+                            result.get("campaign_id"),
+                            result.get("lead_id"),
+                        )
+                except Exception:
+                    logger.exception("[PRICE_DROP_EXEC_NOTICE] worker failed; no auto resend")
+
             if should_send_now():
                 # Canonical Hot worker. Fully sync — runs in threadpool.
                 if Config.LEAD_HOT_NOTIFICATIONS_ENABLED:

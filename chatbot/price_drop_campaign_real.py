@@ -788,6 +788,20 @@ def record_inbound(
             "phone_normalized": row["phone_normalized"], "status": "PLANNED",
         }, {"$set": {"status": "SKIPPED_OPT_OUT", "skipped_at": now}})
     db["leads"].update_one({"_id": row["lead_id"]}, {"$set": lead_fields})
+    # Persist one executive-alert intent for the FIRST declared interest and
+    # one optional escalation to a concrete visit/call/offer request. This
+    # function never sends WhatsApp: the separately gated worker does.
+    if event["positive"] and event["label"] in {PRIORITY, CAMPAIGN_INTEREST}:
+        try:
+            from .price_drop_campaign_exec_alert import enqueue_campaign_interest
+            enqueue_campaign_interest(db, row, label=event["label"], now=now)
+        except Exception:
+            # Keep the customer response recorded, but expose any missed
+            # notification for operator reconciliation; never retry a send.
+            db[DISPATCHES].update_one(
+                {"_id": row["_id"]},
+                {"$set": {"executive_alert_enqueue_requires_review": True}},
+            )
     return {
         "status": "OPTED_OUT" if stopped else "ATTRIBUTED",
         "campaign_id": row["campaign_id"],

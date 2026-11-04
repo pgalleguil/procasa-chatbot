@@ -151,3 +151,17 @@ def test_customer_facing_entrypoints_use_scoped_property_reader():
     rag = (root / "rag.py").read_text()
     assert link.count("db = chatbot_safe_property_db(get_db())") >= 3
     assert rag.count("db = chatbot_safe_property_db(get_db())") >= 2
+
+def test_standard_chatbot_property_resolution_never_sees_raw_address():
+    from chatbot.core import _buscar_propiedad_en_universo
+    raw = FakeCollection([property_with_secrets()])
+    db = {
+        "universo_cartera_prop360": raw,
+        "universo_cartera": FakeCollection([]),
+    }
+    resolved = _buscar_propiedad_en_universo(db, "6436")
+    assert resolved["codigo"] == "6436"
+    assert "SECRET" not in str(resolved)
+    assert raw.projections and all(
+        p == SAFE_PROPERTY_PROJECTION for p in raw.projections
+    )

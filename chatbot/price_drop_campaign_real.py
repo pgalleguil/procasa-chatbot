@@ -433,7 +433,11 @@ def halt_campaign(db: Any, campaign_id: str, *, operator: str, now=None) -> dict
             "campaign_id": cid}
 
 
-def _update_lead_marker(db: Any, row: dict, *, status: str, now: datetime) -> None:
+def _update_lead_marker(
+    db: Any, row: dict, *, status: str, now: datetime,
+    crm_temperature_before_send: str | None,
+    crm_was_hot_before_send: bool | None,
+) -> None:
     """Campaign namespace only; do not mutate routing, stage or SLA."""
     db["leads"].update_one({"_id": row["lead_id"]}, {
         "$set": {
@@ -442,6 +446,11 @@ def _update_lead_marker(db: Any, row: dict, *, status: str, now: datetime) -> No
             "price_drop_campaign_v1.last_status": status,
             "price_drop_campaign_v1.last_sent_at": now,
             "price_drop_campaign_v1.has_received": status == "SENT",
+            "price_drop_campaign_v1.crm_temperature_before_send":
+                crm_temperature_before_send,
+            "price_drop_campaign_v1.crm_was_hot_before_send":
+                crm_was_hot_before_send,
+            "price_drop_campaign_v1.origin": "PRICE_DROP",
         },
         "$addToSet": {
             "price_drop_campaign_v1.campaign_ids": row["campaign_id"],
@@ -571,7 +580,11 @@ def send_one_due(
                               {"$set": patch})
     if accepted:
         try:
-            _update_lead_marker(db, claimed, status="SENT", now=accepted_at)
+            _update_lead_marker(
+                db, claimed, status="SENT", now=accepted_at,
+                crm_temperature_before_send=crm_at_send,
+                crm_was_hot_before_send=was_hot_at_send,
+            )
         except Exception:
             # Ledger/provider acceptance remains durable. Never retry on a
             # post-send CRM marker failure.
@@ -861,11 +874,15 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
         "status": 1, "phone_normalized": 1, "scheduled_at": 1,
         "attempted_at": 1, "sent_at": 1, "sent_at_chile": 1,
         "first_response_at": 1, "last_customer_reply_at": 1,
-        "first_positive_response_at": 1, "first_hot_response_at": 1,
+        "first_positive_response_at": 1, "first_priority_response_at": 1,
+        "first_positive_after_non_hot_at": 1,
+        "crm_temperature_at_selection": 1, "crm_was_hot_at_selection": 1,
+        "crm_temperature_before_send": 1, "crm_was_hot_before_send": 1,
         "reply_count": 1, "positive_reply_count": 1, "bot_reply_count": 1,
         "interest_signaled": 1, "declined": 1, "visit_requested": 1,
         "human_requested": 1, "offer_intent": 1, "opted_out_at": 1,
-        "response_classification": 1, "response_temperature": 1,
+        "campaign_response_classification": 1, "campaign_response_priority": 1,
+        "campaign_origin": 1, "campaign_attribution_basis": 1,
         "last_turn_intent": 1, "last_turn_reason": 1,
         "last_classified_at": 1, "classifier_version": 1,
         "followup_status": 1, "needs_human_review": 1,
@@ -880,14 +897,29 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
         "attempted": header.get("attempts_started", 0),
         "sent": len(sent), "responded": len(replied),
         "response_rate": round(len(replied) / len(sent), 3) if sent else 0.0,
-        "interested": sum(
-            row.get("response_classification") in {"HOT", "NORMAL"}
-            and bool(row.get("first_positive_response_at")) for row in rows
+        "positive_responses_after_notice": sum(
+            bool(row.get("first_positive_response_at")) for row in rows
         ),
-        "hot": sum(row.get("response_classification") == "HOT" for row in rows),
-        "normal": sum(row.get("response_classification") == "NORMAL" for row in rows),
+        "priority_responses": sum(
+            row.get("campaign_response_classification") == PRIORITY for row in rows
+        ),
+        "declared_interest": sum(
+            row.get("campaign_response_classification") == INTEREST for row in rows
+        ),
+        "information_only": sum(
+            row.get("campaign_response_classification") == INFO for row in rows
+        ),
+        "already_hot_before_send": sum(
+            row.get("crm_was_hot_before_send") is True and bool(row.get("sent_at"))
+            for row in rows
+        ),
+        "positive_response_after_non_hot": sum(
+            bool(row.get("first_positive_after_non_hot_at")) for row in rows
+        ),
         "pending_human_review": sum(bool(row.get("needs_human_review")) for row in rows),
-        "declined": sum(row.get("response_classification") == "RECHAZADO" for row in rows),
+        "declined": sum(
+            row.get("campaign_response_classification") == DECLINED for row in rows
+        ),
         "visits_requested": sum(bool(row.get("visit_requested")) for row in rows),
         "human_requested": sum(bool(row.get("human_requested")) for row in rows),
         "opted_out": sum(bool(row.get("opted_out_at")) for row in rows),
@@ -902,12 +934,23 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
             "sent_at": r.get("sent_at"),
             "sent_at_chile": r.get("sent_at_chile"),
             "provider_message_id": r.get("provider_message_id"),
-            "response_classification": r.get("response_classification") or "SIN_RESPUESTA",
-            "response_temperature": r.get("response_temperature"),
+            "campaign_response_classification":
+                r.get("campaign_response_classification") or "SIN_RESPUESTA",
+            "campaign_response_priority": r.get("campaign_response_priority"),
+            "crm_temperature_at_selection": r.get("crm_temperature_at_selection"),
+            "crm_was_hot_at_selection": r.get("crm_was_hot_at_selection"),
+            "crm_temperature_before_send": r.get("crm_temperature_before_send"),
+            "crm_was_hot_before_send": r.get("crm_was_hot_before_send"),
+            "campaign_origin": r.get("campaign_origin", "PRICE_DROP"),
+            "attribution_basis": r.get(
+                "campaign_attribution_basis", "same_phone_after_accepted_send_window"
+            ),
             "last_turn_intent": r.get("last_turn_intent"),
             "last_turn_reason": r.get("last_turn_reason"),
             "first_positive_response_at": r.get("first_positive_response_at"),
-            "first_hot_response_at": r.get("first_hot_response_at"),
+            "first_priority_response_at": r.get("first_priority_response_at"),
+            "first_positive_after_non_hot_at":
+                r.get("first_positive_after_non_hot_at"),
             "last_customer_reply_at": r.get("last_customer_reply_at"),
             "needs_human_review": bool(r.get("needs_human_review")),
             "followup_status": r.get("followup_status"),
@@ -924,16 +967,16 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
 
 
 def campaign_worklist(db: Any, campaign_id: str) -> dict:
-    """Read-only human follow-up queue; never marks a CRM lead as managed."""
+    """Review post-notice engagement, separate from pre-existing CRM Hot."""
     report = campaign_report(db, campaign_id)
-    priority = {"HOT": 0, "NORMAL": 1}
+    priority = {PRIORITY: 0, INTEREST: 1}
     pending = [
         row for row in report["rows"]
         if row.get("needs_human_review")
-        and row.get("response_classification") in priority
+        and row.get("campaign_response_classification") in priority
     ]
     pending.sort(key=lambda x: (
-        priority.get(x["response_classification"], 9),
+        priority.get(x["campaign_response_classification"], 9),
         _mongo_utc(x["first_positive_response_at"])
         if x.get("first_positive_response_at")
         else datetime.max.replace(tzinfo=timezone.utc),
@@ -943,8 +986,15 @@ def campaign_worklist(db: Any, campaign_id: str) -> dict:
         "campaign_id": report["campaign_id"],
         "property_code": report["property_code"],
         "pending": len(pending),
-        "hot": sum(r["response_classification"] == "HOT" for r in pending),
-        "normal": sum(r["response_classification"] == "NORMAL" for r in pending),
+        "priority_responses": sum(
+            r["campaign_response_classification"] == PRIORITY for r in pending
+        ),
+        "declared_interest": sum(
+            r["campaign_response_classification"] == INTEREST for r in pending
+        ),
+        "already_hot_before_send": sum(
+            r.get("crm_was_hot_before_send") is True for r in pending
+        ),
         "leads": pending,
         "note": (
             "Pendientes de revisión comercial. Esta lista NO constituye "

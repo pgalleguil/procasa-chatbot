@@ -3,6 +3,7 @@ import re
 import logging
 from typing import Tuple, Optional
 from .storage import get_db
+from .property_read_guard import chatbot_safe_property_db
 from .utils import safe_int_conversion
 from config import Config
 from .property_lookup import (
@@ -189,7 +190,7 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
     Retorna: (encontrado_link, propiedad_encontrada, plataforma_origen, codigo_externo)
     """
     urls = URL_RE.findall(mensaje)
-    db = get_db()
+    db = chatbot_safe_property_db(get_db())
     coleccion = db[PROPERTY_COLLECTION_NAME]
     logger.info(f"[LINK_TRACE] trace={trace_id or 'no-trace'} phone={phone} inicio_resolucion_link")
     logger.info(
@@ -515,7 +516,7 @@ def resolver_referencia_propiedad(
     if bare_numeric_code and not urls:
         # Verify a code-only value before the extractor applies its RUT/phone
         # shape filter. Only exact, unique Prop360 matches earn that exception.
-        db = get_db()
+        db = chatbot_safe_property_db(get_db())
         bare_code_prop, bare_code_meta = find_property_by_international_code(
             db, bare_numeric_code, PROPERTY_COLLECTION_NAME,
         )
@@ -539,7 +540,7 @@ def resolver_referencia_propiedad(
         return result
 
     if db is None:
-        db = get_db()
+        db = chatbot_safe_property_db(get_db())
     url_properties: dict[str, dict] = {}
     url_ids = []
     url_ambiguity = None

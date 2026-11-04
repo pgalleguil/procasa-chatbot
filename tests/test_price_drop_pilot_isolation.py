@@ -2562,3 +2562,34 @@ def test_v11_no_crm_lookup_and_always_only_test_phone(monkeypatch):
         "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
         "crm_price_drop_pilot_test_turns_v1"
     }
+
+
+def test_v11_each_role_has_separate_durable_delivery_result(monkeypatch):
+    db = _v11_sim_setup(monkeypatch)
+    bot_sender, _ = sender_spy()
+    calls = []
+    def partly_unavailable(phone, text):
+        calls.append((phone, text))
+        if len(calls) == 1:
+            raise TimeoutError("admin provider outcome unknown")
+        return {"success": True, "provider_message_id": "exec-ok"}
+    result = process_test_inbound(
+        db, PHONE, "v11-interest-once", "Me interesa",
+        sender=bot_sender, exec_notice_sender=partly_unavailable,
+    )
+    assert result["test_dual_notice_statuses"] == {
+        "ADMIN": "DELIVERY_UNKNOWN", "EXECUTIVE": "SENT"
+    }
+    saved = [d for d in db["crm_price_drop_pilot_test_turns_v1"].docs
+             if d.get("test_notification_role")]
+    assert {d["test_notification_role"]: d["status"] for d in saved} == {
+        "ADMIN": "NOTICE_DELIVERY_UNKNOWN", "EXECUTIVE": "NOTICE_SENT"
+    }
+    result2 = process_test_inbound(
+        db, PHONE, "v11-repeat-reply", "Quiero visitar",
+        sender=bot_sender, exec_notice_sender=partly_unavailable,
+    )
+    assert result2["test_dual_notice_statuses"] == {
+        "ADMIN": "ALREADY_ATTEMPTED", "EXECUTIVE": "ALREADY_ATTEMPTED"
+    }
+    assert len(calls) == 2

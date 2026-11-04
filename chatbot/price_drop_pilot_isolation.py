@@ -36,7 +36,7 @@ PILOT_RECENT_CHAR_BUDGET = 19000
 PILOT_ARCHIVE_CHAR_BUDGET = 10500
 STOP = re.compile(r"\b(?:stop|no me escriban|dejen de escribir|no quiero (?:más |mas )?mensajes|darme de baja|eliminar mi n[uú]mero)\b", re.I)
 DECLINE = re.compile(r"^\s*(?:no\s*[.!?]?\s*$|no gracias\b|no me interesa\b|ya no me interesa\b|no estoy interesado\b|por ahora no\b)", re.I)
-VISIT = re.compile(r"\b(?:visitar(?:la|lo)?|visitas?|agendar|coordinar|quiero verla|ir a ver|conocerla|ver el departamento)\b", re.I)
+VISIT = re.compile(r"\b(?:visitar(?:la|lo)?|visitas?|visidta|visista|visilta|agendar|coordinar|quiero verla|ir a ver|conocerla|ver el departamento)\b", re.I)
 PRICE = re.compile(r"\b(?:precio|cu[aá]nto (?:cuesta|vale|sale)|a cu[aá]nto|rebaja|baj[oó]|uf)\b", re.I)
 NEGOTIATION = re.compile(r"\b(?:ofertas?|negociar|rebajar|aceptan menos|descuento|contraofertas?)\b", re.I)
 YES = re.compile(r"^\s*(?:s[ií](?:,?\s*me interesa)?|claro|ok(?:a|ey)?(?:\s+me interesa)?|dale|por supuesto|me interesa|perfecto|s[ií]\s+claro)\s*[.!]?\s*$", re.I)
@@ -326,19 +326,11 @@ def _verified_property_facts(prop: dict) -> dict:
                 facts[field] = True
     location = prop.get("ubicacion") or {}
     if isinstance(location, dict):
-        # Prop360's own published street field; never guess missing unit/number.
-        for source, target in (("calle", "calle_publicada"),
-                               ("direccion_referencial", "direccion_referencial"),
-                               ("comuna", "comuna")):
-            value = location.get(source)
-            if (isinstance(value, str) and 2 <= len(value.strip()) <= 120
-                and not any(ch in value for ch in ("\n", "\r", "<", ">"))):
-                facts[target] = value.strip()
-        unit = location.get("unidad")
-        if isinstance(unit, (str, int)) and not isinstance(unit, bool):
-            unit_text = str(unit).strip()
-            if re.fullmatch(r"[A-Za-z0-9-]{1,12}", unit_text):
-                facts["unidad_verificada"] = unit_text
+        # Read ONLY comuna. Exact address, reference and unit are forbidden.
+        comuna = location.get("comuna")
+        if (isinstance(comuna, str) and 2 <= len(comuna.strip()) <= 120
+                and not any(ch in comuna for ch in ("\n", "\r", "<", ">"))):
+            facts["comuna"] = comuna.strip()
     expenses = _money(operation.get("gastos_comunes"))
     if expenses is not None and expenses < 100000000:
         facts["gastos_comunes_clp"] = int(expenses)
@@ -362,9 +354,7 @@ def _formatted_facts(facts: dict) -> str:
         items.append("piscina según ficha")
     if facts.get("parrillas_ficha"):
         items.append("parrillas mencionadas en ficha (detalles de quinchos por confirmar)")
-    if facts.get("direccion_referencial"):
-        items.append(f"referencia de ubicación: {facts['direccion_referencial']}")
-    elif facts.get("comuna"):
+    if facts.get("comuna"):
         items.append(f"comuna: {facts['comuna']}")
     # Do not expose exact street/door/apartment number in outreach replies.
     if facts.get("terraza"):
@@ -452,8 +442,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
          "caracteristicas.superficie_terraza": 1, "caracteristicas.piso": 1,
          "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
          "caracteristicas.orientacion": 1, "caracteristicas.features": 1,
-         "ubicacion.calle": 1, "ubicacion.direccion_referencial": 1,
-         "ubicacion.comuna": 1, "ubicacion.unidad": 1, "historial_cambios": 1},
+         "ubicacion.comuna": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
@@ -466,7 +455,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
         "campaign_id": campaign["_id"],
         "property_code": str(campaign["property_code"]),
         "old_price_uf": old, "new_price_uf": new,
-        "price_drop_date": _verified_discount_date(property_doc, old, new),
+        "price_drop_date": None,  # Bitácora can contain sensitive location changes; never read
         "property_facts": _verified_property_facts(property_doc),
         "customer_first_name": (
             campaign.get("customer_first_name")
@@ -782,6 +771,32 @@ def _native_visit_time_answer(message: str, history: list[dict]) -> str | None:
     # _visit_parts parses normalized weekday tokens; restore Spanish accents
     # in outbound WhatsApp without changing the stored scheduling preference.
     day = day.replace("sabado", "sábado").replace("miercoles", "miércoles")
+    normalized = _plain(message)
+    am_pm = re.search(
+        r"\ba las\s+(\d{1,2})(?::(\d{2}))?\s+(?:de|por) la (manana|tarde|noche)\b",
+        normalized,
+    )
+    if am_pm:
+        hour, minute, part = int(am_pm.group(1)), int(am_pm.group(2) or "0"), am_pm.group(3)
+        if hour > 12:
+            return "¿Me confirmas la hora en formato de 24 horas? No hay visita agendada."
+        if part == "manana":
+            hour = 0 if hour == 12 else hour
+        elif part in {"tarde", "noche"}:
+            hour = hour if hour == 12 else hour + 12
+        if hour < 8 or hour >= 22:
+            return (
+                f"Entiendo que prefieres {day} a las {hour:02d}:{minute:02d}. "
+                "Es un horario poco habitual para una visita. ¿Te acomodaría "
+                "otro horario durante el día? Todavía no hay visita agendada "
+                "ni se ha enviado ninguna solicitud al equipo."
+            )
+        time = f"a las {hour:02d}:{minute:02d}"
+    elif re.fullmatch(r"a las [1-7](?::\d{2})?", time):
+        return (
+            f"¿Te refieres a {day} por la mañana o por la tarde? "
+            "Todavía no hay visita agendada."
+        )
     if " o " in time:
         # Never transform two alternatives into a continuous interval.
         time = time.replace(" o ", " o a las ")
@@ -822,9 +837,7 @@ def _native_safe_fallback(message: str, ctx: dict, history: list[dict],
 
 def _sanitize_unverified_unit(answer: str, ctx: dict) -> str:
     """Remove unsupported unit labels; never infer from a street number."""
-    verified = str(
-        (ctx.get("property_facts") or {}).get("unidad_verificada") or ""
-    ).strip()
+    verified = ""  # never allow a unit number from Prop360 in this chatbot
     pattern = re.compile(
         r"(?P<comma>,\s*)?(?P<kind>departamento|depto\.?|dpto\.?|unidad)"
         r"\s+(?:n[°º]\s*)?(?P<num>\d{1,3})\b", re.I
@@ -840,50 +853,45 @@ def _sanitize_unverified_unit(answer: str, ctx: dict) -> str:
     return pattern.sub(strip_claim, answer)
 
 
-def _campaign_location_reply(ctx: dict) -> str:
-    """Give a verified area reference, not a street or apartment number."""
-    facts = ctx.get("property_facts") or {}
-    comuna = facts.get("comuna") or "San Miguel"
-    ref = facts.get("direccion_referencial")
-    # A reference that already includes a house number is an address, not
-    # an area reference. Never repeat it as a safe approximation.
-    if isinstance(ref, str) and re.search(r"\b\d{3,5}\b", ref):
-        ref = None
-    if ref:
+def _campaign_location_reply(ctx: dict, history: list[dict] | None = None) -> str:
+    """Only the comuna can be read; no street, sector or unit is available."""
+    comuna = (ctx.get("property_facts") or {}).get("comuna") or "San Miguel"
+    previous = str((history or [{}])[-1].get("bot_text") or "") if history else ""
+    if "direccion exacta" in _plain(previous) or "ubicacion exacta" in _plain(previous):
         return (
-            f"Está en el sector de {ref}, en {comuna}. "
-            "La dirección exacta se confirma al coordinar una visita."
+            f"Por seguridad, este canal solo tiene la comuna: {comuna}. "
+            "No tengo acceso a la dirección exacta. "
+            "Si te interesa conocerlo, podemos conversar sobre una posible visita."
         )
     return (
-        f"Está en {comuna}. La ubicación exacta se confirma "
-        "al coordinar una visita."
+        f"El departamento está en {comuna}. Por seguridad no tengo "
+        "acceso a la dirección exacta ni al número de departamento."
     )
+
+
+def _redact_historical_location(text: str) -> str:
+    """Older replies may contain leaked address data; keep it out of the LLM."""
+    normalized = _plain(text)
+    if re.search(
+        r"\b(?:calle|avenida|av\.?|pasaje|pje\.?|transversal|depto|dpto|"
+        r"numero de departamento)\b", normalized
+    ) or (
+        re.search(r"\b(?:direccion|ubicacion|numero|unidad)\b", normalized)
+        and re.search(r"\b\d{1,5}\b", normalized)
+    ):
+        return "[detalle de ubicación omitido por seguridad]"
+    return str(text or "")
 
 
 def _campaign_location_guard(answer: str, ctx: dict) -> str:
-    """History may contain previously leaked addresses; never repeat them."""
-    street = str(
-        (ctx.get("property_facts") or {}).get("calle_publicada") or ""
-    ).strip()
-    if not street:
-        return answer
-    number_tokens = re.findall(r"\b\d{3,5}\b", street)
-    street_words = [
-        token for token in _plain(re.sub(r"\d+", "", street)).split()
-        if len(token) > 3
-    ]
+    """Block model-disclosed street references WITHOUT knowing the address."""
     normalized = _plain(answer)
-    contains_number = any(
-        re.search(r"\b" + re.escape(n) + r"\b", normalized)
-        for n in number_tokens
-    )
-    location_context = any(word in normalized for word in (
-        "direccion", "ubicacion", "avenida", "calle", "septima",
-        "depto", "dpto", "departamento", "numero", "av."
-    ))
-    if contains_number and (
-        location_context
-        or (street_words and all(w in normalized for w in street_words[:2]))
+    if re.search(
+        r"\b(?:calle|avenida|av\.?|pasaje|pje\.?|transversal)\b",
+        normalized,
+    ) or (
+        re.search(r"\b(?:direccion|ubicacion|numero|depto|dpto|unidad)\b", normalized)
+        and re.search(r"\b\d{1,5}\b", normalized)
     ):
         return _campaign_location_reply(ctx)
     return answer
@@ -1026,7 +1034,15 @@ def _build_native_campaign_messages(message: str, ctx: dict,
         {"role": "system", "content": context},
         {"role": "assistant", "content": outbound},
     ]
-    archive, recent = _bounded_history(history)
+    # Previous V8/V9 bot replies can contain a historic disclosure.
+    # Declassify neither previous bot text nor customer-supplied addresses.
+    safe_history = [
+        {**item,
+         "customer_text": _redact_historical_location(item.get("customer_text") or ""),
+         "bot_text": _redact_historical_location(item.get("bot_text") or "")}
+        for item in history
+    ]
+    archive, recent = _bounded_history(safe_history)
     if archive:
         # Prepend a clearly delimited data record after the campaign opening,
         # before the full recent turns. Do not elevate user text to authority.
@@ -1068,6 +1084,22 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
     if "no habia consultado" in _plain(clean):
         return "Perdona la confusión. No tengo aquí una consulta anterior verificada. Si no deseas más mensajes, puedes indicárnoslo."
     plain = _plain(clean)
+    if re.search(r"\b(?:te amo|tienes? novio|tienew novio|tienes? pareja|eres humana|eres un bot)\b", plain):
+        return (
+            "Gracias por la buena onda 😊 Soy el asistente virtual de PROCASA, "
+            "así que no tengo vida personal. Si quieres, seguimos conversando "
+            "sobre el departamento."
+        )
+    if re.search(r"\b(?:quien me contactara|quien me llamara|quien me llama|quien coordina la visita)\b", plain):
+        return (
+            "La coordinación real tendría que hacerla el equipo comercial de PROCASA. "
+            "Este piloto no solicita llamadas ni envía avisos a ejecutivos; "
+            "por ahora no hay visita ni contacto programado."
+        )
+    if re.search(r"\b(?:orientacion|hacia donde)\b", plain) and history:
+        prior = _plain(str(history[-1].get("customer_text") or ""))
+        if re.search(r"\b(?:novio|pareja|amor|amas|personal)\b", prior):
+            return "¿Te refieres a la orientación del departamento o a otra cosa?"
     if "deberias darme la direccion" in plain or "sin corredor" in plain:
         return (
             "Entiendo tu observación. Por este canal puedo indicarte el sector, "
@@ -1109,7 +1141,7 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                 "Entiendo, no volveré a repetirte la ubicación. "
                 "¿Qué otra duda tienes sobre el departamento?"
             )
-        return _campaign_location_reply(ctx)
+        return _campaign_location_reply(ctx, history)
     introduced, _ = _customer_introduction(clean)
     if introduced and _plain(clean).startswith(("hola", "buenas")) and len(clean) < 55:
         return f"¡Hola, {introduced}! 😊 Gracias por responder al aviso."
@@ -1268,19 +1300,7 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
         found = [format_value(facts[key]) for key, format_value in asked if key in facts]
         missing = [key for key, _ in asked if key not in facts]
         if ADDRESS.search(clean):
-            address = facts.get("calle_publicada")
-            ref = facts.get("direccion_referencial")
-            if address:
-                position = f"queda en {address}"
-                if facts.get("comuna"):
-                    position += f", {facts['comuna']}"
-                if ref:
-                    position += f" (referencia: {ref})"
-                found.append(position)
-            elif ref:
-                found.append(f"referencia de ubicación: {ref}, {facts.get('comuna', 'San Miguel')}")
-            else:
-                found.append(f"ubicación: {facts.get('comuna', 'San Miguel')}; dirección exacta no confirmada")
+            found.append(f"ubicación: {facts.get('comuna', 'San Miguel')}; dirección exacta no disponible en este canal")
         if GRILL.search(clean):
             if facts.get("parrillas_ficha"):
                 found.append("hay parrillas mencionadas en la ficha; cantidad y condiciones de uso de quinchos por confirmar")

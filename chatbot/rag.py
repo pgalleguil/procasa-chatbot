@@ -6,6 +6,7 @@ from typing import List, Dict, Optional
 from config import Config
 
 from .storage import get_db
+from .property_read_guard import chatbot_safe_property_db
 from .utils import safe_int_conversion
 from .semantic_engine import generate_embedding
 from .geo_utils import get_neighboring_communes
@@ -159,7 +160,7 @@ def buscar_propiedades(criterios: Dict, exclude_codes: List[str] = None, limit: 
     exclude_codes: Lista de códigos a NO mostrar porque ya se vieron.
     limit: Máximo estricto (default 3).
     """
-    db = get_db()
+    db = chatbot_safe_property_db(get_db())
     collection = db[PROPERTY_COLLECTION_NAME]
     
     query = construir_query(criterios)
@@ -1487,7 +1488,7 @@ def buscar_semanticamente(query_text: str, limit: int = 3,
     4) Rankea los resultados filtrados por similaridad semántica (piscina, sol, metro...)
     5) Fallback geográfico a comunas vecinas si hay pocos resultados
     """
-    db = get_db()
+    db = chatbot_safe_property_db(get_db())
     collection = db[Config.COLLECTION_NAME]
 
     # --- Paso 1: Extraer filtros estructurados ---

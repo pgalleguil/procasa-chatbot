@@ -1702,7 +1702,7 @@ def test_v8_twenty_realistic_offline_customer_conversations(
         if "variacion" in question or "cuanto bajo" in question:
             assert "100" in reply
         if "cuando" in question and ("baj" in question or "rebaj" in question):
-            assert "6 de octubre de 2026" in reply
+            assert "fecha exacta" in reply and "6 de octubre" not in reply
         if "10 o 11" in question or "10 o a las 11" in question:
             assert "10 o a las 11" in low
             assert "entre 10 y 11" not in low
@@ -2116,6 +2116,7 @@ def test_v10_projection_does_not_fetch_any_sensitive_property_location_fields(is
     from chatbot.price_drop_pilot_isolation import load_test_context
     db = _full_pilot_db()
     property_collection = db["universo_cartera_prop360"]
+    property_collection.docs[0].setdefault("ubicacion", {})["comuna"] = "San Miguel"
     observed = []
     old_find = property_collection.find_one
 

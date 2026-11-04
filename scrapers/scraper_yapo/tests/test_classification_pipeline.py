@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from scrapers.scraper_yapo import classification_pipeline as pipeline
 
 from scrapers.scraper_yapo.classification_pipeline import (
@@ -16,6 +17,8 @@ from scrapers.scraper_yapo.classifier_rules import (
     classify_yapo_listing,
     known_broker_brand_in_strong_fields,
 )
+from scrapers.scraper_yapo.extractor import extract_listing_fields
+from scrapers.scraper_yapo.recheck_commercial_signatures_519 import _candidate_status
 
 
 def _confirmed(value, field="publicador_visible"):
@@ -37,6 +40,111 @@ def test_full_description_signature_excludes_visan_without_ai():
     assert result["classification_route"] == "deterministic_only"
     assert result["deepseek_call_executed"] is False
     assert any("visan propiedades" in item.lower() for item in result["evidence"])
+
+
+def test_saved_yapo_listing_33216485_closing_signature_and_more_ads_are_deterministic():
+    fixture = Path(__file__).parent / "fixtures" / "yapo_33216485_commercial_closing.html"
+    source_url = "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/33216485"
+    extracted = extract_listing_fields(fixture.read_text(encoding="utf-8"), source_url)
+    extracted["listing_id"] = "33216485"
+    extracted["publisher_profile_context"] = {
+        "status": "NO_VERIFICADO",
+        "reason": "profile_page_blocked",
+        "observed_listing_count": 0,
+    }
+
+    assert extracted["publicador_visible"].casefold() == "alejandro silva"
+    assert extracted["seller_type"] == "PROFESIONAL"
+    assert extracted["descripcion_is_truncated"] is False
+    assert extracted["description"].endswith("Buena Gestión Propiedades · Alejandro Silva Rojas · WhatsApp")
+    assert extracted["publisher_more_ads"]["distinct_listing_count"] == 7
+    assert "33000001" not in extracted["publisher_more_ads"]["listing_ids"]
+
+    result = classify_with_routing(extracted, max_calls=0, max_budget_usd=0)
+    assert result["state"] == "CORREDOR_SEGURO"
+    assert result["source"] == "publisher_linked_commercial_closing_signature"
+    assert result["classification_route"] == "deterministic_only"
+    assert result["deepseek_call_executed"] is False
+    assert any("Buena Gestión Propiedades" in item for item in result["evidence"])
+    assert any(item["rule_id"] == "PUBLISHER_MORE_ADS_ACTIVITY" and len(item["listing_ids"]) == 7
+               for item in result["broker_evidence"])
+
+
+def test_saved_yapo_listing_33215229_reverse_signature_is_detected_without_profile_lookup():
+    fixture = Path(__file__).parent / "fixtures" / "yapo_33215229_reverse_commercial_closing.html"
+    source_url = "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/33215229"
+    extracted = extract_listing_fields(fixture.read_text(encoding="utf-8"), source_url)
+    extracted["listing_id"] = "33215229"
+    extracted["publisher_profile_context"] = {
+        "status": "NO_VERIFICADO", "reason": "profile_page_blocked",
+        "observed_listing_count": 0,
+    }
+    assert extracted["description"].endswith(
+        "Para coordinar una visita o recibir la ficha completa: Alejandro Silva Rojas · Buena Gestión Propiedades · WhatsApp ."
+    )
+    assert extracted["publisher_more_ads"]["distinct_listing_count"] == 7
+    result = classify_with_routing(extracted, max_calls=0, max_budget_usd=0)
+    assert result["state"] == "CORREDOR_SEGURO"
+    assert result["source"] == "publisher_linked_commercial_closing_signature"
+    assert result["classification_route"] == "deterministic_only"
+    assert result["deepseek_call_executed"] is False
+    assert any("Buena Gestión Propiedades" in item for item in result["evidence"])
+
+
+def test_more_ads_alone_do_not_classify_a_private_owner_as_a_broker():
+    extracted = {
+        **_confirmed("Claudia Pérez"),
+        "listing_id": "33192896",
+        "seller_type": "PARTICULAR",
+        "listing_advertiser_type": "Propietario",
+        "description": "Soy la propietaria de esta casa. Trato directo y sin comisión.",
+        "publisher_more_ads": {
+            "status": "extracted", "publisher_name": "Claudia Pérez",
+            "listing_ids": ["33100001", "33100002", "33100003"],
+            "distinct_listing_count": 3, "source": "yapo_detail_html:more_ads_heading",
+        },
+    }
+    result = classify_yapo_listing(extracted)
+    assert result["state"] in {"DUEÑO_PROBABLE", "INCIERTO"}
+    assert result["state"] != "CORREDOR_SEGURO"
+    assert "PUBLISHER_MORE_ADS_ACTIVITY" in result["classification_rule_ids"]
+
+
+def test_generic_property_mention_and_unmatched_commercial_closing_do_not_confirm_broker():
+    generic = classify_yapo_listing({
+        **_confirmed("Patricia Soto"),
+        "description": "La casa está cerca de comercios y otras propiedades del sector.",
+    })
+    unrelated = classify_yapo_listing({
+        **_confirmed("Patricia Soto"),
+        "description": "Venta directa. Inversiones Sur Propiedades · María Rojas · WhatsApp",
+    })
+    assert generic["state"] == "INCIERTO"
+    assert unrelated["state"] == "INCIERTO"
+
+
+def test_saved_batch_reclassification_guard_preserves_human_and_assignment_barriers():
+    result = {
+        "state": "CORREDOR_SEGURO",
+        "source": "publisher_linked_commercial_closing_signature",
+    }
+    base = {
+        "classification": {
+            "state": "INCIERTO", "assignment_ready": False,
+            "exclude_from_assignment": True,
+        },
+        "exclude_from_assignment": True,
+    }
+    assert _candidate_status(base, result) == (True, "eligible")
+
+    for marker in ("human_confirmed", "confirmed_by_human", "manual_confirmation"):
+        human = {**base, "classification": {**base["classification"], marker: True}}
+        eligible, reason = _candidate_status(human, result)
+        assert eligible is False
+        assert reason == "human_confirmed_classification_preserved"
+
+    unlocked = {**base, "classification": {**base["classification"], "assignment_ready": True}}
+    assert _candidate_status(unlocked, result) == (False, "assignment_guard_not_locked")
 
 
 def test_unknown_business_stays_probable_and_is_recorded_pending_review(tmp_path):

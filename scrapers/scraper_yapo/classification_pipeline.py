@@ -21,7 +21,7 @@ except ImportError:  # direct script execution
     from classifier_rules import classify_yapo_listing, normalize_text, load_rule_sets
     from config import DATA_DIR
 
-CLASSIFIER_VERSION = "yapo-deterministic-v7"
+CLASSIFIER_VERSION = "yapo-deterministic-v8"
 PROMPT_VERSION = "deepseek-route-simulation-v1"
 UNKNOWN_CANDIDATES_PATH = DATA_DIR / "unknown_broker_candidates.json"
 DEEPSEEK_CACHE_PATH = DATA_DIR / "deepseek_classification_cache.jsonl"
@@ -38,7 +38,7 @@ def content_fingerprint(extracted: dict[str, Any]) -> str:
         for key in (
             "title", "description", "descripcion", "publicador_visible", "contact_name",
             "contact_logo_alt", "seller_jsonld_name", "listing_advertiser", "seller_type",
-            "contact_badges_text", "publisher_profile_context",
+            "contact_badges_text", "publisher_profile_context", "publisher_more_ads",
         )
     }
     payload = json.dumps(content, ensure_ascii=False, sort_keys=True, default=str, separators=(",", ":"))

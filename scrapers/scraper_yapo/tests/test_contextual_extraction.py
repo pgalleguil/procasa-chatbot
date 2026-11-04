@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from scrapers.scraper_yapo import extractor
-from scrapers.scraper_yapo.extractor import extract_listing_fields
+from scrapers.scraper_yapo.extractor import extract_listing_fields, extract_yapo_publisher_more_ads
 
 
 def test_title_is_not_truncated_and_source_is_recorded():
@@ -52,3 +52,38 @@ def test_no_beautifulsoup_fallback_keeps_entire_heading(monkeypatch):
     assert result["title"] == title.strip()
     assert len(result["title"]) > 120
     assert "Texto íntegro." in result["description"]
+
+
+def test_publisher_more_ads_extraction_excludes_similar_cards_and_current_listing():
+    html = """
+    <section><h2>Anuncios similares</h2><a href="/casas/33000001">Similar</a></section>
+    <section><div class="flex flex-col">
+      <div><h2>Más anuncios de Alejandro Silva</h2></div>
+      <div>
+        <a href="/casas/33216485">Aviso actual</a>
+        <a href="/casas/33192896">Uno</a>
+        <a href="/casas/33192896">Uno duplicado</a>
+        <a href="/casas/32717718">Dos</a>
+      </div>
+    </div></section>
+    """
+    result = extract_yapo_publisher_more_ads(
+        html,
+        publisher_name="alejandro silva",
+        current_listing_id="33216485",
+        seller_profile_id="14382601",
+    )
+    assert result["status"] == "extracted"
+    assert result["listing_ids"] == ["33192896", "32717718"]
+    assert result["distinct_listing_count"] == 2
+    assert result["publisher_profile_id"] == "14382601"
+    assert "33000001" not in result["listing_ids"]
+
+
+def test_publisher_more_ads_heading_must_match_confirmed_publisher_name():
+    result = extract_yapo_publisher_more_ads(
+        '<section><div><h2>Más anuncios de Otra Persona</h2><a href="/casas/33192896">Aviso</a></div></section>',
+        publisher_name="Alejandro Silva",
+    )
+    assert result["status"] == "identity_mismatch"
+    assert result["listing_ids"] == []

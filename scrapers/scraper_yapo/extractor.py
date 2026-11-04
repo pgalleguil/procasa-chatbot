@@ -78,6 +78,92 @@ def extract_yapo_listing_images(html: str, listing_id: str, source_url: str = ""
     return images
 
 
+def _normalized_publisher_name(value: str) -> str:
+    value = unicodedata.normalize("NFKD", str(value or "").casefold())
+    value = "".join(char for char in value if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", " ", value).strip()
+
+
+def extract_yapo_publisher_more_ads(
+    html_or_soup: Any,
+    publisher_name: str = "",
+    current_listing_id: str = "",
+    seller_profile_id: str = "",
+    *,
+    parser: str = "html.parser",
+) -> dict[str, Any]:
+    """Extract only the listing cards under Yapo's ``Más anuncios de`` heading.
+
+    This deliberately scopes to the nearest ancestor containing listing links.
+    It does not use the separate ``Anuncios similares`` carousel or profile
+    enumeration, so it remains useful when a Yapo profile page is blocked.
+    """
+    empty = {
+        "status": "not_found",
+        "publisher_name": "",
+        "publisher_profile_id": str(seller_profile_id or ""),
+        "heading_text": "",
+        "listing_ids": [],
+        "distinct_listing_count": 0,
+        "source": "yapo_detail_html:more_ads_heading",
+    }
+    if BeautifulSoup is None or not html_or_soup:
+        return {**empty, "status": "unavailable"}
+    soup = html_or_soup if hasattr(html_or_soup, "find_all") else BeautifulSoup(str(html_or_soup), parser)  # type: ignore[misc]
+    requested_identity = _normalized_publisher_name(publisher_name)
+    mismatched_heading = ""
+    for heading in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"]):
+        heading_text = re.sub(r"\s+", " ", heading.get_text(" ", strip=True)).strip()
+        normalized_heading = _normalized_publisher_name(heading_text)
+        prefix = "mas anuncios de "
+        if not normalized_heading.startswith(prefix):
+            continue
+        section_publisher = heading_text[len("Más anuncios de "):].strip() if heading_text.casefold().startswith("más anuncios de ") else heading_text[len("Mas anuncios de "):].strip()
+        section_identity = _normalized_publisher_name(section_publisher)
+        if requested_identity and section_identity != requested_identity:
+            # Do not attribute another person's seller carousel to this ad.
+            mismatched_heading = heading_text
+            continue
+
+        for ancestor in heading.parents:
+            # The nearest link-bearing ancestor is the card rail itself. Stop
+            # before broad containers that can mix similar listings and other
+            # page content.
+            ancestor_headings = [
+                _normalized_publisher_name(node.get_text(" ", strip=True))
+                for node in ancestor.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
+            ]
+            if any(text.startswith("anuncios similares") for text in ancestor_headings):
+                break
+            listing_ids: list[str] = []
+            for anchor in ancestor.select("a[href]"):
+                href = str(anchor.get("href") or "").strip()
+                path = urlsplit(href).path
+                if "/user/profile/" in path.casefold():
+                    continue
+                match = re.search(r"/(\d{6,})/?$", path)
+                if not match:
+                    continue
+                listing_id = match.group(1)
+                if listing_id == str(current_listing_id or "").strip():
+                    continue
+                if listing_id not in listing_ids:
+                    listing_ids.append(listing_id)
+            if listing_ids:
+                return {
+                    "status": "extracted",
+                    "publisher_name": section_publisher,
+                    "publisher_profile_id": str(seller_profile_id or ""),
+                    "heading_text": heading_text,
+                    "listing_ids": listing_ids,
+                    "distinct_listing_count": len(listing_ids),
+                    "source": "yapo_detail_html:more_ads_heading_nearest_listing_scope",
+                }
+    if mismatched_heading:
+        return {**empty, "status": "identity_mismatch", "heading_text": mismatched_heading}
+    return empty
+
+
 def _strip_html(text: str) -> str:
     text = re.sub(r"<script\b.*?</script>", " ", text, flags=re.I | re.S)
     text = re.sub(r"<style\b.*?</style>", " ", text, flags=re.I | re.S)
@@ -644,6 +730,7 @@ def extract_listing_fields(
             "body_text": text,
             "canonical_url": source_url,
             "publisher_field_provenance": {},
+            "publisher_more_ads": extract_yapo_publisher_more_ads(html),
         }
 
     soup = BeautifulSoup(html, parser)  # type: ignore[misc]
@@ -711,6 +798,15 @@ def extract_listing_fields(
     if profile_link:
         match = re.search(r"/user/profile/id/(\d+)", str(profile_link.get("href") or ""))
         seller_profile_id = match.group(1) if match else ""
+    listing_id_match = re.search(r"/(\d{6,})(?:/|$)", urlsplit(source_url).path)
+    current_listing_id = listing_id_match.group(1) if listing_id_match else ""
+    publisher_more_ads = extract_yapo_publisher_more_ads(
+        soup,
+        publisher_name=publicador_visible,
+        current_listing_id=current_listing_id,
+        seller_profile_id=seller_profile_id,
+        parser=parser,
+    )
     profile_account_type, profile_type_source = _publisher_profile_account_type(soup, seller_profile_id)
     if not seller_type and profile_account_type:
         seller_type = profile_account_type
@@ -820,6 +916,7 @@ def extract_listing_fields(
         "seller_profile_id": seller_profile_id,
         "seller_profile_url": str(profile_link.get("href") or "") if profile_link else "",
         "publisher_field_provenance": provenance,
+        "publisher_more_ads": publisher_more_ads,
         "images": images,
         "attributes": attributes,
         **commune,

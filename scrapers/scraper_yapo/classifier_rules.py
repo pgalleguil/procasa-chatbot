@@ -592,7 +592,151 @@ def _description_business_signature(extracted: dict[str, Any]) -> list[str]:
                         f"description_known_brand_signature:{canonical}|"
                         f"{tokens[verb_index]}|{cue.group(1)}"
                     )
-    return evidence[:5]
+    for item in _description_commercial_closing_signatures(extracted):
+        evidence.append(
+            "description_commercial_closing_signature:"
+            f"{item['brand']}|{item['contact']}|{item['channel']}|"
+            f"publisher_field={item['matched_publisher_field']}"
+        )
+    return list(dict.fromkeys(evidence))[:8]
+
+
+def _publisher_name_matches(publisher_candidate: str, confirmed_name: str) -> bool:
+    """Match a short Yapo account name to the named contact in a signature."""
+    candidate = normalize_text(publisher_candidate).split()
+    confirmed = normalize_text(confirmed_name).split()
+    if len(candidate) < 2 or len(confirmed) < 2:
+        return False
+    candidate_set = set(candidate)
+    confirmed_set = set(confirmed)
+    if candidate_set <= confirmed_set or confirmed_set <= candidate_set:
+        return True
+    # Yapo account names sometimes omit middle names. First + last is enough
+    # only when both are distinctive tokens and the match comes from a field
+    # whose provenance already ties it to the publisher.
+    return candidate[0] == confirmed[0] and candidate[-1] == confirmed[-1]
+
+
+def _confirmed_publisher_name_match(extracted: dict[str, Any], name: str) -> str:
+    # Only personal/account-name fields can attribute the signature's contact.
+    # A logo alt or advertiser label may itself be a brand and is not a named person.
+    for field in ("publicador_visible", "contact_name", "seller_jsonld_name"):
+        value = str(extracted.get(field) or "").strip()
+        if value and _publisher_field_is_confirmed(extracted, field) and _publisher_name_matches(name, value):
+            return field
+    return ""
+
+
+def _description_commercial_closing_signatures(extracted: dict[str, Any]) -> list[dict[str, str]]:
+    """Recognize a first-party commercial footer linked to the confirmed Yapo publisher.
+
+    The three-segment pattern is intentionally narrow: a named real-estate
+    business, a person matching the extracted publisher identity, and a
+    contact channel at the end of the full description.
+    """
+    raw_description = max(
+        (str(extracted.get(key) or "") for key in ("description", "descripcion")),
+        key=len,
+        default="",
+    )
+    if not raw_description.strip():
+        return []
+    raw_description = unescape(raw_description)
+    raw_description = re.sub(r"<\s*br\s*/?\s*>", "\n", raw_description, flags=re.I)
+    raw_description = re.sub(r"</\s*(?:p|div|li|section)\s*>", "\n", raw_description, flags=re.I)
+    raw_description = re.sub(r"<[^>]*>", " ", raw_description)
+    raw_description = re.sub(r"[\t\f\v ]+", " ", raw_description).strip()
+
+    separators = re.compile(r"(?:\r?\n+|[·•●▪∙⋅|]|\s+[—–]\s+|\s+-\s+|\s+\.\s+)")
+    parts = [re.sub(r"^[\s.,;:!?]+|[\s.,;:!?]+$", "", part).strip() for part in separators.split(raw_description)]
+    parts = [part for part in parts if part]
+    if len(parts) < 3:
+        return []
+    first_segment, second_segment, channel = parts[-3:]
+    marker_pattern = re.compile(r"\b(?:propiedades|inmobiliaria|inmobiliario|corredoras?|corretaje|bienes\s+raices|real\s+estate)\b")
+    first_marker = marker_pattern.search(normalize_text(first_segment))
+    second_marker = marker_pattern.search(normalize_text(second_segment))
+    if first_marker:
+        brand, contact_segment = first_segment, second_segment
+        fragment_segments = (first_segment, second_segment, channel)
+    elif second_marker:
+        # Some agents sign in the reverse order: "Alejandro Silva · Buena
+        # Gestión Propiedades · WhatsApp". A short contact instruction can
+        # precede the name in the same final segment, so match only its suffix.
+        brand, contact_segment = second_segment, first_segment
+        fragment_segments = (first_segment, second_segment, channel)
+    else:
+        return []
+
+    brand_norm = normalize_text(brand)
+    tokens = brand_norm.split()
+    marker = marker_pattern.search(brand_norm)
+    if not marker:
+        return []
+    brand_name_tokens = brand_norm[:marker.start()].split()
+    if not any(len(token) >= 2 and token not in {"de", "del", "la", "las", "los", "y", "el"} for token in brand_name_tokens):
+        # A bare "Propiedades" or a personal name followed by that generic
+        # word is not a commercial brand signature.
+        return []
+    if not tokens or not re.search(r"\b(?:whatsapp(?:\s+business)?|telefono|celular|fono|email|correo|instagram|llamar)\b", normalize_text(channel)):
+        return []
+    raw_name_tokens = re.findall(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ'-]*", contact_segment)
+    contact = ""
+    matched_field = ""
+    for length in range(2, min(6, len(raw_name_tokens)) + 1):
+        candidate = " ".join(raw_name_tokens[-length:])
+        field = _confirmed_publisher_name_match(extracted, candidate)
+        if field:
+            contact, matched_field = candidate, field
+            break
+    if not contact or not matched_field:
+        return []
+    return [{
+        "brand": brand,
+        "contact": contact,
+        "channel": channel,
+        "matched_publisher_field": matched_field,
+        "fragment": " · ".join(fragment_segments),
+    }]
+
+
+def _publisher_more_ads_evidence(extracted: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return corroborating activity only for a carousel linked to this publisher."""
+    section = extracted.get("publisher_more_ads") or {}
+    if not isinstance(section, dict) or section.get("status") != "extracted":
+        return []
+    publisher_name = str(section.get("publisher_name") or "").strip()
+    matched_field = _confirmed_publisher_name_match(extracted, publisher_name)
+    if not matched_field:
+        return []
+    profile_id = str(section.get("publisher_profile_id") or "").strip()
+    current_profile_id = str(extracted.get("seller_profile_id") or "").strip()
+    if profile_id and current_profile_id and profile_id != current_profile_id:
+        return []
+    current_listing_id = str(extracted.get("listing_id") or "").strip()
+    ids = list(dict.fromkeys(
+        str(value).strip() for value in section.get("listing_ids", [])
+        if str(value).strip().isdigit() and str(value).strip() != current_listing_id
+    ))
+    if not ids:
+        return []
+    return [{
+        "evidence_id": "PUBLISHER_MORE_ADS_ACTIVITY:publisher_more_ads",
+        "rule_id": "PUBLISHER_MORE_ADS_ACTIVITY",
+        "family": "publisher_linked_listing_activity",
+        "field": "publisher_more_ads",
+        "fragment": (
+            f"Más anuncios de {publisher_name}; {len(ids)} IDs distintos: "
+            + ", ".join(ids[:12])
+        ),
+        "strength": "MEDIA",
+        "position_start": None,
+        "position_end": None,
+        "provenance": str(section.get("source") or "yapo_detail_html:more_ads_heading"),
+        "matched_publisher_field": matched_field,
+        "publisher_profile_id": profile_id or current_profile_id,
+        "listing_ids": ids,
+    }]
 
 
 def _charged_brokerage_fee_evidence(extracted: dict[str, Any]) -> list[dict[str, Any]]:
@@ -893,6 +1037,7 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
     ]
     owner_candidates = list(dict.fromkeys(item["fragment"] for item in attributed_owner_declarations))
     business_signature_evidence = _description_business_signature(extracted)
+    publisher_more_ads_evidence = _publisher_more_ads_evidence(extracted)
     broker_role_signature_evidence = _description_broker_role_signature(extracted)
     fee_evidence = _charged_brokerage_fee_evidence(extracted)
     fee_attributions = []
@@ -931,6 +1076,8 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
         "broker_third_party_mentions": third_party_mentions,
         "broker_negations": negations,
         "broker_business_signature_evidence": business_signature_evidence,
+        "publisher_more_ads_evidence": publisher_more_ads_evidence,
+        "publisher_more_ads_count": sum(len(item.get("listing_ids") or []) for item in publisher_more_ads_evidence),
         "broker_role_signature_evidence": broker_role_signature_evidence,
         "brokerage_fee_evidence": fee_attributions,
         "brokerage_fee_attribution": [item["attribution"] for item in fee_attributions],
@@ -1062,6 +1209,29 @@ def classify_obvious_broker(extracted: dict[str, Any]) -> dict[str, Any] | None:
             "evidence": [*confirmed_company["company_like_evidence"], f"seller_type:{seller_type}"],
             "source": "confirmed_publisher_company_and_profile",
         }
+    closing_signatures = _description_commercial_closing_signatures(extracted)
+    if closing_signatures:
+        more_ads = _publisher_more_ads_evidence(extracted)
+        evidence = [
+            "description_commercial_closing_signature:"
+            f"{item['brand']} · {item['contact']} · {item['channel']}"
+            f"|publisher_field={item['matched_publisher_field']}"
+            for item in closing_signatures
+        ]
+        if professional_type:
+            evidence.append(f"seller_type:{seller_type}")
+        corroborated = bool(professional_type and more_ads and more_ads[0].get("listing_ids"))
+        return {
+            "state": "CORREDOR_SEGURO", "confidence": 0.99,
+            "reason": (
+                "Una firma comercial inmobiliaria de cierre coincide con el publicador; "
+                "la cuenta profesional y los anuncios adicionales del mismo publicador la corroboran."
+                if corroborated else
+                "Una firma comercial inmobiliaria de cierre atribuye la marca y el contacto al publicador confirmado."
+            ),
+            "evidence": evidence,
+            "source": "publisher_linked_commercial_closing_signature",
+        }
     brand = known_broker_brand_in_strong_fields(extracted)
     if brand:
         return brand
@@ -1161,13 +1331,21 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
     if broker_identity:
         for evidence in broker_identity.get("evidence") or []:
             field, _, detail = str(evidence).partition(":")
+            evidence_strength = (
+                "MEDIA" if field in {"seller_type", "publisher_more_ads", "seller_profile_id"}
+                else "ALTA" if broker_identity.get("state") == "CORREDOR_SEGURO"
+                else "MEDIA"
+            )
             broker_evidence.append({
                 "evidence_id": f"BROKER_IDENTITY:{field}:{len(broker_evidence)}",
                 "rule_id": f"BROKER_IDENTITY_{str(broker_identity.get('source') or 'RULE').upper()}",
                 "family": "publisher_identity", "field": field or "publisher_identity",
-                "fragment": detail or str(evidence), "strength": "ALTA" if broker_identity.get("state") == "CORREDOR_SEGURO" else "MEDIA",
+                "fragment": detail or str(evidence), "strength": evidence_strength,
                 "position_start": None, "position_end": None,
-                "provenance": _publisher_field_source(extracted, field) if field else "",
+                "provenance": (
+                    "yapo_detail_html:more_ads_heading" if field == "publisher_more_ads"
+                    else _publisher_field_source(extracted, field) if field else ""
+                ),
             })
             broker_rule_ids.append(broker_evidence[-1]["rule_id"])
     listing_agent_type = listing_advertiser in {"agente", "agente inmobiliario"}
@@ -1206,6 +1384,9 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
             "position_start": None, "position_end": None,
         })
         broker_rule_ids.append("BROKER_DESCRIPTION_BUSINESS_SIGNATURE")
+    for item in contextual["publisher_more_ads_evidence"]:
+        broker_evidence.append(item)
+        broker_rule_ids.append(item["rule_id"])
     for item in contextual["broker_role_signature_evidence"]:
         broker_evidence.append({
             "evidence_id": f"BROKER_DESCRIPTION_ROLE_SIGNATURE:{len(broker_evidence)}",

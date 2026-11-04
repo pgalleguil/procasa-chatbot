@@ -776,3 +776,29 @@ def test_campaign_exec_notice_rejects_stale_assignment(db, monkeypatch):
     )["status"] == "BLOCKED_ASSIGNMENT"
     assert not attempts
 
+
+def test_campaign_notice_escalation_supersedes_older_interest(db, monkeypatch):
+    from chatbot.price_drop_campaign_exec_alert import (
+        COLLECTION, GATE, process_one_exec_notice,
+    )
+    lead, _ = _campaign_notify_owner(db)
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "accepted"})
+    for i, text in enumerate(("Me interesa, cuéntame más",
+                              "Quiero coordinar una visita")):
+        record_inbound(
+            db, phone=lead["contact_phone_normalized"], provider_message_id=f"step-{i}",
+            text=text, received_at=START + timedelta(minutes=i + 1),
+        )
+    monkeypatch.setenv(GATE, "true")
+    sends = []
+    def fake_sender(*_):
+        sends.append(True)
+        return {"success": True, "provider_message_id": "notification-1"}
+    assert process_one_exec_notice(db, sender=fake_sender)["status"] == "SKIPPED"
+    assert process_one_exec_notice(db, sender=fake_sender)["status"] == "SENT"
+    assert len(sends) == 1
+    assert db[COLLECTION].count_documents({"status": "SENT"}) == 1
+

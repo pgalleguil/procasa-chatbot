@@ -21,7 +21,7 @@ from pymongo.errors import DuplicateKeyError
 from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_variants
 from .property_lookup import PROPERTY_COLLECTION_NAME
 from .price_drop_campaign_classifier import (
-    PRIORITY, INTEREST, INFO, NO_SIGNAL, DECLINED, UNSUBSCRIBED,
+    PRIORITY, INTEREST as CAMPAIGN_INTEREST, INFO, NO_SIGNAL, DECLINED, UNSUBSCRIBED,
     classify_price_drop_reply,
 )
 
@@ -681,9 +681,9 @@ def record_inbound(
         overall_label, priority, followup, pending = (
             PRIORITY, "ALTA", "PENDIENTE_REVISION", True,
         )
-    elif event["label"] == INTEREST or previous_label == INTEREST:
+    elif event["label"] == CAMPAIGN_INTEREST or previous_label == CAMPAIGN_INTEREST:
         overall_label, priority, followup, pending = (
-            INTEREST, "MEDIA", "PENDIENTE_REVISION", True,
+            CAMPAIGN_INTEREST, "MEDIA", "PENDIENTE_REVISION", True,
         )
     elif event["label"] == INFO or previous_label == INFO:
         overall_label, priority, followup, pending = (
@@ -904,7 +904,7 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
             row.get("campaign_response_classification") == PRIORITY for row in rows
         ),
         "declared_interest": sum(
-            row.get("campaign_response_classification") == INTEREST for row in rows
+            row.get("campaign_response_classification") == CAMPAIGN_INTEREST for row in rows
         ),
         "information_only": sum(
             row.get("campaign_response_classification") == INFO for row in rows
@@ -969,7 +969,7 @@ def campaign_report(db: Any, campaign_id: str) -> dict:
 def campaign_worklist(db: Any, campaign_id: str) -> dict:
     """Review post-notice engagement, separate from pre-existing CRM Hot."""
     report = campaign_report(db, campaign_id)
-    priority = {PRIORITY: 0, INTEREST: 1}
+    priority = {PRIORITY: 0, CAMPAIGN_INTEREST: 1}
     pending = [
         row for row in report["rows"]
         if row.get("needs_human_review")
@@ -990,7 +990,7 @@ def campaign_worklist(db: Any, campaign_id: str) -> dict:
             r["campaign_response_classification"] == PRIORITY for r in pending
         ),
         "declared_interest": sum(
-            r["campaign_response_classification"] == INTEREST for r in pending
+            r["campaign_response_classification"] == CAMPAIGN_INTEREST for r in pending
         ),
         "already_hot_before_send": sum(
             r.get("crm_was_hot_before_send") is True for r in pending

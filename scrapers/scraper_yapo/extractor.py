@@ -5,7 +5,7 @@ import re
 import unicodedata
 from html import unescape
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import unquote, urljoin, urlsplit
 
 try:
     from bs4 import BeautifulSoup  # type: ignore
@@ -23,6 +23,59 @@ DESCRIPTION_TRUNCATION_HINTS = (
     "mostrar más",
     "mostrar mas",
 )
+
+YAPO_LISTING_PHOTO_HOSTS = frozenset({"photos.encuentra24.com"})
+
+
+def extract_yapo_listing_images(html: str, listing_id: str, source_url: str = "") -> list[str]:
+    """Extract only photo CDN assets whose path identifies this Yapo listing.
+
+    Yapo detail pages include related-property cards and site UI images in the
+    same document. On saved pages, the listing's own photo CDN paths use the
+    listing ID as the filename prefix (``/{id}_{asset}``). Requiring both the
+    known photo host and the exact ID boundary filters those unrelated assets.
+    """
+    listing_id = str(listing_id or "").strip()
+    if not listing_id or not listing_id.isdigit() or not html:
+        return []
+
+    if BeautifulSoup is not None:
+        soup = BeautifulSoup(html, "html.parser")  # type: ignore[misc]
+        nodes = soup.select("img")
+        values = [
+            node.get(attr)
+            for node in nodes
+            for attr in ("src", "data-src", "data-original", "data-lazy")
+            if node.get(attr)
+        ]
+    else:  # pragma: no cover - used only where bs4 is unavailable
+        values = []
+        for tag in re.findall(r"<img\b[^>]*>", html, flags=re.I | re.S):
+            for attr, _quote, value in re.findall(
+                r"([\w:-]+)\s*=\s*(['\"])(.*?)\2", tag, flags=re.I | re.S
+            ):
+                if attr.lower() in {"src", "data-src", "data-original", "data-lazy"} and value:
+                    values.append(value)
+
+    prefix = re.compile(rf"^{re.escape(listing_id)}[_-](?P<asset>[^/]+)$")
+    images: list[str] = []
+    seen_assets: set[str] = set()
+    for value in values:
+        absolute = urljoin(source_url or "", str(value).strip())
+        parsed = urlsplit(absolute)
+        host = (parsed.hostname or "").casefold().rstrip(".")
+        if host not in YAPO_LISTING_PHOTO_HOSTS:
+            continue
+        basename = unquote(parsed.path.rsplit("/", 1)[-1])
+        match = prefix.fullmatch(basename)
+        if not match:
+            continue
+        asset = match.group("asset")
+        if asset in seen_assets:
+            continue
+        seen_assets.add(asset)
+        images.append(absolute)
+    return images
 
 
 def _strip_html(text: str) -> str:

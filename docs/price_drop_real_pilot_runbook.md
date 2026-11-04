@@ -203,3 +203,15 @@ Si hay conflicto, dos ciclos activos, titular dado de baja, usuario inexistente,
 La leyenda del WhatsApp indica que se trata del **seguimiento a una rebaja de precio**, no de un lead nuevo, e incluye el código de propiedad, precio anterior y nuevo, intención comercial específica y enlace directo CRM. No contiene dirección exacta ni atributos sensibles de Prop360.
 
 Nota semántica: `último ejecutivo` para estos avisos significa **titular del último ciclo de asignación vigente**. Un actor humano que registró una gestión en un ciclo antiguo ya cerrado no prevalece sobre una redistribución posterior.
+
+## Incidente de la prueba V10 del 4 de noviembre: interés detectado pero aviso no enviado
+
+En la conversación aislada del número autorizado, el cliente escribió `OK, ME INTERESA` y luego `SI, EL DIA DOMINGO DURANTE EN LA MAAÑANA`. El primer detector de pruebas exigía un `Sí` casi literal a la última pregunta; por ello no se intentó el WhatsApp simulado al ejecutivo.
+
+La corrección reconoce interés explícito y solicitudes de visita/contacto mediante el clasificador exclusivo de campaña, además de afirmaciones contextualizadas con hora o día. No interpreta preguntas neutrales, negaciones ni simples saludos como interés.
+
+Para recuperar **solamente el aviso V10 omitido**, sin reenviar la rebaja y sin consultar leads ni asignaciones del CRM, se dispone de `recover_v10_exec_notice_once(db)`. La tarea de arranque se ejecuta exclusivamente cuando `PRICE_DROP_PILOT_EXEC_RECOVER_ON_START=true` y `PRICE_DROP_PILOT_EXEC_NOTICE_SIMULATION=true`; también requiere el teléfono permitido por `PRICE_DROP_PILOT_TEST_PHONE` y la existencia de una V10 enviada, vigente y sin `lead_id`.
+
+La recuperación inspecciona únicamente el histórico aislado V10 de ese teléfono, detecta la primera expresión de interés y envía una sola notificación **al mismo teléfono de prueba**, rotulada `PRUEBA INTERNA — AVISO SIMULADO AL EJECUTIVO`. Reserva un identificador único antes de contactar al proveedor y no reintenta resultados inciertos.
+
+Después de verificar la aceptación por el proveedor, volver `PRICE_DROP_PILOT_EXEC_RECOVER_ON_START=false`. Los flags de campaña real y aviso a ejecutivos reales siguen `false`. Una prueba aislada no puede ni debe validar el nombre ni el teléfono del verdadero último ejecutivo: esa parte está cubierta por pruebas separadas de ciclos de asignación.

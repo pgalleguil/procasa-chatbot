@@ -2364,6 +2364,7 @@ def test_v10_exec_sim_test_sent_no_new_crm_lead_and_no_real_exec_lookup(monkeypa
     ("Sí, el día domingo durante la mañana", True),
     ("Me gustaría coordinar una visita", True),
     ("Quiero que me llamen", True),
+    ("Quiero que me llame un ejecutivo y quiero saber el precio", True),
     ("No me interesa", False),
     ("Solo quiero saber cuánto cuesta", False),
     ("¿Cuántos dormitorios?", False),

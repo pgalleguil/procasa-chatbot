@@ -442,7 +442,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
          "caracteristicas.superficie_terraza": 1, "caracteristicas.piso": 1,
          "caracteristicas.ascensores": 1, "caracteristicas.ano_construccion": 1,
          "caracteristicas.orientacion": 1, "caracteristicas.features": 1,
-         "ubicacion.comuna": 1, "historial_cambios": 1},
+         "ubicacion.comuna": 1},
     ) or {}
     tipo = property_doc.get("tipo_operacion") or {}
     price = _money((tipo.get("precio_venta") or {}).get("precio_uf"))
@@ -455,7 +455,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
         "campaign_id": campaign["_id"],
         "property_code": str(campaign["property_code"]),
         "old_price_uf": old, "new_price_uf": new,
-        "price_drop_date": _verified_discount_date(property_doc, old, new),
+        "price_drop_date": None,  # Bitácora can contain sensitive location changes; never read
         "property_facts": _verified_property_facts(property_doc),
         "customer_first_name": (
             campaign.get("customer_first_name")

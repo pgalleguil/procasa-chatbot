@@ -72,6 +72,7 @@ _UNVERIFIED_PROMISE = re.compile(
     r"se pondran en contacto|"
     r"(?:voy a|vamos a|podemos|con gusto) coordin\w* (?:una )?visita|"
     r"(?:ya|quedo|esta) (?:agendad\w*|confirmad\w*)|"
+    r"(?:ya|hoy) (?:agendamos|reservamos|confirmamos)|"
     r"le (?:avise|avisamos|avisare) al ejecutivo|"
     r"lo (?:derive|derivamos|dejamos registrado)|"
     r"tu solicitud (?:fue|esta|quedo) (?:enviad\w*|registrad\w*))\b",
@@ -130,15 +131,16 @@ def _time_review(text: str) -> tuple[str | None, str | None]:
         hour = 0 if hour == 12 else hour
     elif part in {"tarde", "noche"}:
         hour = hour if hour == 12 else hour + 12
+    if 1 <= hour <= 7 and not part:
+        # An unqualified "a las 4" must not become a 04:00 appointment.
+        return (
+            f"¿Te refieres a las {hour:02d}:{minute:02d} de la mañana o "
+            f"a las {hour + 12:02d}:{minute:02d} de la tarde?"
+        ), None
     if hour < 8 or hour >= 21:
         return (
             f"Entendí {hour:02d}:{minute:02d}, pero es un horario poco habitual "
             "para visitas. ¿Te acomodaría otro horario durante el día?"
-        ), None
-    if 1 <= hour <= 7 and not part:
-        return (
-            f"¿Te refieres a las {hour:02d}:{minute:02d} de la mañana o "
-            f"a las {hour + 12:02d}:{minute:02d} de la tarde?"
         ), None
     return None, f"{hour:02d}:{minute:02d}"
 
@@ -246,8 +248,8 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
             status = "Se emitió un aviso interno de prueba, no a un ejecutivo real."
         else:
             status = "Todavía no se ha solicitado contacto a un ejecutivo real."
-        sentences.append(status + " Tampoco hay visita confirmada.")
-    if visit or schedule_update:
+        sentences.append(status + " No hay visita confirmada.")
+    if (visit and not confirmation) or schedule_update:
         issue, local_time = _time_review(s)
         state = _preference(s, history, parse_parts)
         if issue:

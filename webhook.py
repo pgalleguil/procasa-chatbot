@@ -1498,6 +1498,28 @@ async def lifespan(app: FastAPI):
                 logger.exception("[PRICE_DROP_PILOT_SEND_ON_START] failed; never retry automatically")
         price_drop_send_task = asyncio.create_task(_run_price_drop_one_shot())
 
+    # One-off recovery for a V10 TESTER conversation that already produced
+    # a positive reply but missed its simulated executive alert. This flag
+    # cannot send a campaign to customers or a notification to an executive:
+    # the recovery code reads only isolated V10 test collections, confirms
+    # the exact whitelisted test phone and inserts a unique attempt ID before
+    # contacting the WhatsApp provider.
+    price_drop_exec_recovery_task = None
+    if str(os.getenv("PRICE_DROP_PILOT_EXEC_RECOVER_ON_START", "")).lower() in {"1", "true", "yes"}:
+        async def _run_v10_exec_recovery():
+            try:
+                from chatbot.price_drop_pilot_exec_notice_sim import recover_v10_exec_notice_once
+                from chatbot.storage import get_db as _get_v10_db
+                outcome = await asyncio.get_running_loop().run_in_executor(
+                    _WEB_THREAD_POOL,
+                    lambda: recover_v10_exec_notice_once(_get_v10_db()),
+                )
+                logger.info("[PRICE_DROP_V10_RECOVERY] status=%s provider_message_id=%s",
+                            outcome.get("status"), outcome.get("provider_message_id"))
+            except Exception:
+                logger.exception("[PRICE_DROP_V10_RECOVERY] blocked, no automatic retry")
+        price_drop_exec_recovery_task = asyncio.create_task(_run_v10_exec_recovery())
+
     # Real-customer pilot: deliberately a *different* switch from the 9804
     # test trigger. All four conditions must be explicitly enabled before a
     # single recipient can be contacted: startup flag, campaign send flag,
@@ -1546,6 +1568,8 @@ async def lifespan(app: FastAPI):
     # Shutdown logic
     if price_drop_send_task is not None:
         price_drop_send_task.cancel()
+    if price_drop_exec_recovery_task is not None:
+        price_drop_exec_recovery_task.cancel()
     logger.info("Bot PRO Apagando (Lifespan Shutdown)...")
     n_task.cancel()
     if s_task is not None:

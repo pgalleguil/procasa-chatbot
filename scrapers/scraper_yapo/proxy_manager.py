@@ -17,6 +17,7 @@ except ImportError:  # direct script execution
 @dataclass(slots=True)
 class ProxyChoice:
     url: str
+    provider: str = "generic"
 
     @property
     def requests_proxies(self) -> dict[str, str]:
@@ -24,7 +25,7 @@ class ProxyChoice:
 
 
 class ProxyManager:
-    def __init__(self, proxies: Iterable[str] | None = None):
+    def __init__(self, proxies: Iterable[str] | None = None, *, provider: str = "generic"):
         cleaned: list[str] = []
         seen: set[str] = set()
         for proxy in proxies or []:
@@ -36,15 +37,19 @@ class ProxyManager:
                 cleaned.append(normalized)
         self._proxies = cleaned
         self._cycle = cycle(self._proxies) if self._proxies else None
+        self.provider = provider
 
     @classmethod
     def from_config(cls, config: AppConfig) -> "ProxyManager":
+        flashproxy = str(getattr(config, "flashproxy_proxy_url", "") or "").strip()
+        if flashproxy:
+            return cls([flashproxy], provider="flashproxy")
         config_proxies = [config.proxy_url, *config.proxy_urls]
         username = os.getenv("PROXY_USER", "")
         password = os.getenv("PROXY_PASS", "")
         if username and password:
             config_proxies = [_add_proxy_auth(value, username, password) for value in config_proxies if value]
-        return cls([*config_proxies, *load_proxies_from_env()])
+        return cls([*config_proxies, *load_proxies_from_env()], provider="generic")
 
     def has_proxies(self) -> bool:
         return bool(self._proxies)
@@ -52,7 +57,7 @@ class ProxyManager:
     def next_proxy(self) -> ProxyChoice | None:
         if self._cycle is None:
             return None
-        return ProxyChoice(next(self._cycle))
+        return ProxyChoice(next(self._cycle), provider=self.provider)
 
     @staticmethod
     def normalize_proxy_url(proxy_url: str) -> str:

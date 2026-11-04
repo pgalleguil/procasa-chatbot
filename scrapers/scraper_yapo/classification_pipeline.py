@@ -21,7 +21,7 @@ except ImportError:  # direct script execution
     from classifier_rules import classify_yapo_listing, normalize_text, load_rule_sets
     from config import DATA_DIR
 
-CLASSIFIER_VERSION = "yapo-deterministic-v6"
+CLASSIFIER_VERSION = "yapo-deterministic-v7"
 PROMPT_VERSION = "deepseek-route-simulation-v1"
 UNKNOWN_CANDIDATES_PATH = DATA_DIR / "unknown_broker_candidates.json"
 DEEPSEEK_CACHE_PATH = DATA_DIR / "deepseek_classification_cache.jsonl"

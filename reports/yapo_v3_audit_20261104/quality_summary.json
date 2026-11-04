@@ -1,0 +1,130 @@
+{
+  "availability_summary": {
+    "current_active_confirmed": 0,
+    "current_deactivated_confirmed": 0,
+    "current_no_verificado": 4,
+    "live_availability_requests": 0,
+    "reason": "FlashProxy is not configured in this environment; historical HTML is not current proof.",
+    "user_reported_deactivated_ids": [
+      "32299493",
+      "32632678",
+      "32728499",
+      "32676021"
+    ]
+  },
+  "canonical_file_modified": false,
+  "canonical_input_path": "C:\\Users\\pgall\\Documents\\PROCASA\\YapoMaipu\\preimportacion_20261103\\yapo_maipu_preimport_482.json",
+  "canonical_sha256_after": "dc9bda51a093abd9a1d7c6a741eeacac275724ea74b29ad4cc2a8bba558e12bf",
+  "canonical_sha256_before": "dc9bda51a093abd9a1d7c6a741eeacac275724ea74b29ad4cc2a8bba558e12bf",
+  "canonical_sha256_expected": "dc9bda51a093abd9a1d7c6a741eeacac275724ea74b29ad4cc2a8bba558e12bf",
+  "changed_classification_count": 34,
+  "demonstrated_rule_failure_listing_ids": [
+    "28073704"
+  ],
+  "description_integrity": {
+    "manual_full_descriptions_matched_html": 21,
+    "manual_html_files_hash_matched": 21,
+    "manual_observation_html_checks": 21,
+    "missing_description_ids_in_canonical_json": [],
+    "truncated_description_ids_in_canonical_json": []
+  },
+  "generated_at_utc": "2026-11-04T13:51:05.363471+00:00",
+  "input_record_count": 482,
+  "manual_observation_count": 21,
+  "manual_observations_are_ground_truth": false,
+  "manual_observations_with_demonstrated_current_rule_failure": 1,
+  "manual_review_required_count": 257,
+  "newly_classified_as_broker_count": 33,
+  "newly_classified_as_broker_ids": [
+    "25888323",
+    "25899595",
+    "25980296",
+    "28073704",
+    "29549459",
+    "30934288",
+    "31977083",
+    "32021046",
+    "32227431",
+    "32299493",
+    "32306422",
+    "32400607",
+    "32502499",
+    "32503443",
+    "32521946",
+    "32632678",
+    "32665586",
+    "32672728",
+    "32676021",
+    "32677581",
+    "32728499",
+    "32741542",
+    "32753293",
+    "32870120",
+    "32880456",
+    "33057092",
+    "33068885",
+    "33092071",
+    "33098407",
+    "33098428",
+    "33190907",
+    "33196456",
+    "33208287"
+  ],
+  "newly_classified_as_owner_probable_count": 1,
+  "newly_classified_as_owner_probable_ids": [
+    "25939035"
+  ],
+  "owner_review_priority_listing_count": 43,
+  "owner_review_priority_signal_counts": {
+    "DIRECT_DEAL_CLAIM": 2,
+    "DIRECT_OWNER_CONTACT_CLAIM": 4,
+    "FEW_LISTING_PHOTOS": 8,
+    "NO_COMMISSION_CLAIM": 3,
+    "SHORT_DESCRIPTION": 37
+  },
+  "prior_classification_counts": {
+    "CORREDOR_PROBABLE": 11,
+    "CORREDOR_SEGURO": 369,
+    "DUEÑO_PROBABLE": 10,
+    "INCIERTO": 92
+  },
+  "profile_summary": {
+    "all_profile_enumerations_complete": false,
+    "distinct_seller_profile_ids_in_lot": 183,
+    "live_profile_pages_verified": 0,
+    "maximum_distinct_listings_for_one_profile_in_lot": 77,
+    "profile_counts_refer_to_canonical_lot_only": true,
+    "profiles_with_3_or_more_distinct_listing_count": 20,
+    "profiles_with_3_or_more_distinct_listings_observed_in_lot": 20
+  },
+  "proposed_classification_counts": {
+    "CORREDOR_PROBABLE": 44,
+    "CORREDOR_SEGURO": 369,
+    "DUEÑO_PROBABLE": 11,
+    "INCIERTO": 58
+  },
+  "quality_limits": {
+    "classifier_error_rate_claimed": false,
+    "description_text_truncated": false,
+    "flashproxy_credentials_written_to_report": false,
+    "full_description_in_manual_audit": true,
+    "new_broker_catalog_entries": 0,
+    "owner_probability_created": false
+  },
+  "side_effects": {
+    "deepseek_calls": 0,
+    "distribution_or_assignment": 0,
+    "imports": 0,
+    "mongo_reads": 0,
+    "mongo_writes": 0,
+    "notifications": 0,
+    "yapo_live_requests": 0
+  },
+  "uncertain_after_count": 58,
+  "unique_listing_id_count": 482,
+  "validation": {
+    "baseline_scraper_tests": "363 passed, 2 skipped",
+    "full_regression_suite": "380 passed, 2 skipped",
+    "v3_targeted_tests": "17 passed"
+  }
+}

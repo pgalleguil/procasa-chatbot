@@ -472,6 +472,7 @@ class _YapoClientPagination:
         self._start_url = _normalize_url(page_url)
         self._initial_html = page_html
         self._config = config
+        self.proxy_provider = proxy.provider
         self._request_events: list[dict[str, str]] = []
         self._initial_html_served = False
         self._timeout_ms = max(10, int(config.request_timeout_seconds)) * 1000
@@ -705,6 +706,7 @@ def discover_listing_urls(
                     html_path=html_path,
                     validation_status=validation["status"],
                     validation_reason=validation["reason"],
+                    proxy_provider=getattr(browser_navigator, "proxy_provider", "generic"),
                 )
                 report["proxy_requests"] += max(1, len(browser_page.get("request_urls") or []))
                 report["request_attempts"] += max(1, len(browser_page.get("request_urls") or []))

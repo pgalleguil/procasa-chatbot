@@ -16,14 +16,15 @@ sys.path.insert(0, str(_SCRAPER_DIR.parent.parent))
 sys.path.insert(0, str(_SCRAPER_DIR.parent))
 
 try:
-    from .classifier_rules import classify_yapo_listing
+    from .classifier_rules import classify_yapo_batch, classify_yapo_listing
     from .config import AppConfig
     from .discovery import discover_listing_urls, normalize_yapo_url
-    from .downloader import download_html, html_path_for_url, validate_html
+    from .downloader import assess_yapo_availability, download_html, html_path_for_url, validate_html
     from .enrich import _enrich_property_fields
     from .extractor import extract_listing_fields
     from .mongo_store import MongoStore
     from .proxy_manager import ProxyManager
+    from .publisher_profile import enrich_batch_publisher_profiles
     from .search_config import (
         FILTER_EVIDENCE,
         PROPERTY_CATEGORIES,
@@ -35,14 +36,15 @@ try:
         verify_search_page,
     )
 except ImportError:  # direct script execution
-    from scrapers.scraper_yapo.classifier_rules import classify_yapo_listing
+    from scrapers.scraper_yapo.classifier_rules import classify_yapo_batch, classify_yapo_listing
     from scrapers.scraper_yapo.config import AppConfig
     from scrapers.scraper_yapo.discovery import discover_listing_urls, normalize_yapo_url
-    from scrapers.scraper_yapo.downloader import download_html, html_path_for_url, validate_html
+    from scrapers.scraper_yapo.downloader import assess_yapo_availability, download_html, html_path_for_url, validate_html
     from scrapers.scraper_yapo.enrich import _enrich_property_fields
     from scrapers.scraper_yapo.extractor import extract_listing_fields
     from scrapers.scraper_yapo.mongo_store import MongoStore
     from scrapers.scraper_yapo.proxy_manager import ProxyManager
+    from scrapers.scraper_yapo.publisher_profile import enrich_batch_publisher_profiles
     from scrapers.scraper_yapo.search_config import (
         FILTER_EVIDENCE,
         PROPERTY_CATEGORIES,
@@ -540,6 +542,83 @@ def _save_search_outputs(summary: dict[str, Any], records: list[dict[str, Any]],
     return {"summary": str(summary_path), "records_json": str(records_path), "records_csv": str(csv_path)}
 
 
+def _apply_yapo_availability_hold(record: dict[str, Any]) -> None:
+    """Require a current explicit availability signal before assignment can be ready."""
+    status = str(record.get("availability_status") or "NO_VERIFICADO").upper()
+    record.setdefault("availability_status", status)
+    record.setdefault("availability_checked_at", "")
+    record.setdefault("availability_source", "not_observed")
+    record.setdefault("availability_evidence", ["no_current_availability_check"])
+    if status == "ACTIVO":
+        return
+    classification = dict(record.get("classification") or {})
+    reason = (
+        "yapo_listing_deactivated"
+        if status == "DESACTIVADO"
+        else "yapo_availability_not_confirmed"
+    )
+    reasons = list(classification.get("assignment_block_reasons") or [])
+    classification.update({
+        "manual_review_required": True,
+        "manual_review_reason": reason,
+        "assignment_ready": False,
+        "exclude_from_assignment": True,
+        "assignment_block_reasons": sorted(set([*reasons, reason])),
+    })
+    record["classification"] = classification
+    record["assignment_ready"] = False
+    record["exclude_from_assignment"] = True
+    record["assignment_block_reasons"] = classification["assignment_block_reasons"]
+
+
+def _reclassify_batch_by_exact_profile(records_out: list[dict[str, Any]]) -> None:
+    """Apply exact-profile evidence after every listing in the search batch is parsed."""
+    indexes: list[int] = []
+    classifier_inputs: list[dict[str, Any]] = []
+    passthrough_fields = (
+        "listing_id", "url", "seller_profile_id", "seller_profile_url", "seller_type",
+        "listing_advertiser", "listing_advertiser_type", "listing_advertiser_type_source",
+        "publicador_visible", "publicador", "seller_name", "contact_name", "contact_logo_alt",
+        "seller_jsonld_name", "contact_badges_text", "publisher_field_provenance",
+        "publisher_profile_context", "title", "description", "descripcion", "images", "image_urls",
+    )
+    for index, record in enumerate(records_out):
+        details = record.get("details")
+        if not isinstance(details, dict) or str(record.get("html_validation_status") or "").upper() != "OK":
+            _apply_yapo_availability_hold(record)
+            continue
+        extracted = dict(details)
+        for field in passthrough_fields:
+            value = record.get(field)
+            if value not in (None, "", [], {}):
+                extracted[field] = value
+        indexes.append(index)
+        classifier_inputs.append(extracted)
+
+    batch_results = classify_yapo_batch(classifier_inputs) if classifier_inputs else []
+    for index, result in zip(indexes, batch_results):
+        record = records_out[index]
+        if isinstance(result, dict):
+            record["classification"] = result
+            record["classification_evidence"] = result.get("evidence") or []
+            record["classification_debug"] = {
+                "evidence_strength": result.get("evidence_strength"),
+                "contradictions": result.get("contradictions") or [],
+                "requires_review": result.get("requires_review"),
+                "profile_corroboration": result.get("profile_corroboration"),
+                "deepseek_enabled": False,
+                "deepseek_call_executed": False,
+            }
+            record["pipeline_complete"] = bool(
+                not record.get("extraction_issues")
+                and result.get("state") in {
+                    "CORREDOR_SEGURO", "CORREDOR_PROBABLE", "DUEÑO_SEGURO", "DUEÑO_PROBABLE",
+                }
+            )
+            record["pipeline_state"] = "CLASSIFIED" if record["pipeline_complete"] else "UNCERTAIN_PENDING_REVIEW"
+        _apply_yapo_availability_hold(record)
+
+
 def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[str, Any]:
     """Run the shared read-only search engine; offline simulation is the default."""
     if not isinstance(search, SearchConfig):
@@ -710,6 +789,13 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
                     summary["successful_downloads"] += 1
                     summary["proxy_requests"] += 1
                 validation = validate_html(downloaded.html)
+                availability = assess_yapo_availability(
+                    downloaded.html,
+                    fetch_source=str(getattr(downloaded, "fetch_source", "unknown") or "unknown"),
+                    validation_status=str(validation.get("status") or ""),
+                    status_code=getattr(downloaded, "status_code", None),
+                    flashproxy_verified=str(getattr(downloaded, "proxy_provider", "")) == "flashproxy",
+                )
                 if downloaded.blocked or validation["status"] == "BLOCKED":
                     summary["errors_or_blocks"].append(f"listing_blocked:{row['listing_id']}")
                     records_out.append({
@@ -717,6 +803,7 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
                         "filter_validation": {"status": "PENDIENTE_VALIDACION", "reasons": ["detail_html_blocked"]},
                         "classification": {}, "classification_evidence": [],
                         "extraction_issues": ["listing_blocked"], "detail_error": "blocked",
+                        **availability,
                     })
                     continue
                 if validation["status"] in {"INVALID", "LISTING_REMOVED"}:
@@ -727,6 +814,7 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
                         "filter_validation": {"status": "PENDIENTE_VALIDACION", "reasons": [validation["status"]]},
                         "classification": {}, "classification_evidence": [],
                         "extraction_issues": [f"html_{validation['status'].lower()}"],
+                        **availability,
                     })
                     continue
                 extracted = extract_listing_fields(downloaded.html, source_url=row["url"])
@@ -862,6 +950,7 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
                     "details": extracted,
                     "classification": classification,
                     "classification_evidence": evidence,
+                    **availability,
                     "extraction_issues": extraction_issues,
                     "html_validation_status": validation["status"],
                     "html_validation_reason": validation["reason"],
@@ -906,14 +995,24 @@ def run_search(search: SearchConfig, config: AppConfig | None = None) -> dict[st
                 })
 
     commercial_states = {"DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"}
+    summary["publisher_profile_metrics"] = enrich_batch_publisher_profiles(
+        records_out,
+        config,
+        batch_id=batch_id,
+    )
+    _reclassify_batch_by_exact_profile(records_out)
     class_counts: dict[str, int] = {}
+    availability_counts: dict[str, int] = {}
     summary["commercial_candidates"] = []
     for item in records_out:
         state = str((item.get("classification") or {}).get("state") or "unavailable")
         class_counts[state] = class_counts.get(state, 0) + 1
+        availability_state = str(item.get("availability_status") or "NO_VERIFICADO")
+        availability_counts[availability_state] = availability_counts.get(availability_state, 0) + 1
         if item.get("filter_status") == "PASA" and state in commercial_states:
             summary["commercial_candidates"].append(item["listing_id"])
     summary["preliminary_classification_counts"] = class_counts
+    summary["availability_status_counts"] = availability_counts
     summary["commercial_candidate_count"] = len(summary["commercial_candidates"])
     summary["broker_excluded_count"] = sum(
         str((item.get("classification") or {}).get("state") or "").startswith("CORREDOR")

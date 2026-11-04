@@ -128,6 +128,11 @@ class AppConfig:
         default_factory=lambda: [item.strip() for item in os.getenv("PROXY_URLS", "").split(",") if item.strip()]
     )
     proxy_url: str = field(default_factory=lambda: os.getenv("PROXY_URL", "").strip())
+    # Profile-history reads use this endpoint exclusively and never fall back
+    # to generic proxy variables or a direct connection.
+    flashproxy_proxy_url: str = field(default_factory=lambda: os.getenv("FLASHPROXY_PROXY_URL", "").strip())
+    yapo_profile_max_profiles: int = field(default_factory=lambda: _env_int("YAPO_PROFILE_MAX_PROFILES", 12))
+    yapo_profile_max_pages: int = field(default_factory=lambda: _env_int("YAPO_PROFILE_MAX_PAGES", 3))
     extra_headers_raw: str = field(default_factory=lambda: os.getenv("EXTRA_HEADERS_JSON", "").strip())
 
     def ensure_layout(self) -> None:

@@ -12,27 +12,29 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 try:
-    from .classifier_rules import build_deepseek_context, build_rule_context, classify_yapo_listing
+    from .classifier_rules import build_deepseek_context, build_rule_context, classify_yapo_batch, classify_yapo_listing
     from .config import AppConfig, get_config
     from .discovery import discover_listing_urls
-    from .downloader import download_html
+    from .downloader import assess_yapo_availability, download_html
     from .export_reports import export_batch_reports
     from .extractor import extract_listing_fields
     from .enrich import _enrich_property_fields
     from .mongo_store import MongoStore
     from .proxy_manager import ProxyManager
     from .pilot import run_pilot
+    from .publisher_profile import enrich_batch_publisher_profiles
 except ImportError:  # direct execution from scrapers/scraper_yapo
-    from scrapers.scraper_yapo.classifier_rules import build_deepseek_context, build_rule_context, classify_yapo_listing
+    from scrapers.scraper_yapo.classifier_rules import build_deepseek_context, build_rule_context, classify_yapo_batch, classify_yapo_listing
     from scrapers.scraper_yapo.config import AppConfig, get_config
     from scrapers.scraper_yapo.discovery import discover_listing_urls
-    from scrapers.scraper_yapo.downloader import download_html
+    from scrapers.scraper_yapo.downloader import assess_yapo_availability, download_html
     from scrapers.scraper_yapo.export_reports import export_batch_reports
     from scrapers.scraper_yapo.extractor import extract_listing_fields
     from scrapers.scraper_yapo.enrich import _enrich_property_fields
     from scrapers.scraper_yapo.mongo_store import MongoStore
     from scrapers.scraper_yapo.proxy_manager import ProxyManager
     from scrapers.scraper_yapo.pilot import run_pilot
+    from scrapers.scraper_yapo.publisher_profile import enrich_batch_publisher_profiles
 
 
 def _utcnow() -> str:
@@ -156,10 +158,18 @@ def _process_single_record(
     no_llm: bool,
     write_db: bool,
     mongo_store: MongoStore | None,
+    defer_persistence: bool = False,
 ) -> dict[str, Any]:
     url = record["url"]
     batch_id = str(record.get("batch_id") or config.generate_batch_id())
     download = download_html(url, config, proxy_manager, batch_id=batch_id)
+    availability = assess_yapo_availability(
+        download.html,
+        fetch_source=download.fetch_source,
+        validation_status=download.validation_status,
+        status_code=download.status_code,
+        flashproxy_verified=str(getattr(download, "proxy_provider", "")) == "flashproxy",
+    )
     extracted = extract_listing_fields(download.html, source_url=url)
     extracted["discovery_comuna"] = record.get("discovery_comuna", "")
     extracted = _enrich_property_fields(extracted, url, config.uf_valor_clp, config.uf_fecha)
@@ -179,6 +189,7 @@ def _process_single_record(
         "html_validation_status": download.validation_status,
         "html_validation_reason": download.validation_reason,
         "fetch_source": download.fetch_source,
+        **availability,
         "rule_context": rule_context,
         "deepseek_context": build_deepseek_context(extracted),
         "classification": classification,
@@ -196,11 +207,28 @@ def _process_single_record(
         ),
     }
 
-    if classification is not None:
+    if classification is not None and availability["availability_status"] != "ACTIVO":
+        reason = (
+            "yapo_listing_deactivated"
+            if availability["availability_status"] == "DESACTIVADO"
+            else "yapo_availability_not_confirmed"
+        )
+        classification = dict(classification)
+        classification["manual_review_required"] = True
+        classification["manual_review_reason"] = reason
+        classification["assignment_ready"] = False
+        classification["exclude_from_assignment"] = True
+        classification["assignment_block_reasons"] = sorted(set([
+            *(classification.get("assignment_block_reasons") or []), reason,
+        ]))
+        combined["classification"] = classification
+        combined["manual_review_required"] = True
+
+    if classification is not None and not defer_persistence:
         from captacion_assignment_eligibility import mark_assignment_readiness
         mark_assignment_readiness(combined)
 
-    if write_db and mongo_store is not None:
+    if write_db and mongo_store is not None and not defer_persistence:
         mongo_store.upsert_listing(combined)
 
     return combined
@@ -231,10 +259,55 @@ def _process_batch(
                     no_llm=no_llm,
                     write_db=write_db,
                     mongo_store=mongo_store,
+                    defer_persistence=True,
                 )
             )
         except Exception as exc:
-            results.append({**record, "error": str(exc), "scrape_stage": "error", "processed_at": _utcnow()})
+            results.append({
+                **record,
+                "error": str(exc),
+                "scrape_stage": "error",
+                "availability_status": "NO_VERIFICADO",
+                "availability_checked_at": "",
+                "availability_source": "technical_error",
+                "availability_evidence": [f"processing_error:{type(exc).__name__}"],
+                "processed_at": _utcnow(),
+            })
+
+    enrich_batch_publisher_profiles(results, config, batch_id=_batch_id_from_records(records))
+    valid_indexes = [
+        index for index, result in enumerate(results)
+        if isinstance(result.get("classification"), dict)
+        and result.get("scrape_stage") != "error"
+    ]
+    batch_results = classify_yapo_batch([results[index] for index in valid_indexes]) if valid_indexes else []
+    for index, classification in zip(valid_indexes, batch_results):
+        result = results[index]
+        if isinstance(classification, dict):
+            result["classification"] = classification
+            if result.get("availability_status") != "ACTIVO":
+                reason = (
+                    "yapo_listing_deactivated"
+                    if result.get("availability_status") == "DESACTIVADO"
+                    else "yapo_availability_not_confirmed"
+                )
+                classification = dict(classification)
+                classification["manual_review_required"] = True
+                classification["manual_review_reason"] = reason
+                classification["assignment_ready"] = False
+                classification["exclude_from_assignment"] = True
+                classification["assignment_block_reasons"] = sorted(set([
+                    *(classification.get("assignment_block_reasons") or []), reason,
+                ]))
+                result["classification"] = classification
+                result["manual_review_required"] = True
+        from captacion_assignment_eligibility import mark_assignment_readiness
+        mark_assignment_readiness(result)
+
+    if write_db and mongo_store is not None:
+        for result in results:
+            if result.get("scrape_stage") != "error":
+                mongo_store.upsert_listing(result)
     return results
 
 

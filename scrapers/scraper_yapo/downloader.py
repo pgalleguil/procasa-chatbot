@@ -1,12 +1,16 @@
 ﻿from __future__ import annotations
 
 import hashlib
+import html as html_lib
 import json
 import re
 import time
-from dataclasses import dataclass
+import unicodedata
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from bs4 import BeautifulSoup
 
 try:
     import requests  # type: ignore
@@ -46,6 +50,15 @@ HTML_HINTS = (
     "<html",
     "<!doctype html",
 )
+_RELATED_BLOCK_RE = re.compile(r"related|recomend|similar|sugerid|carousel|listing-card|ad-tile", re.I)
+_INACTIVE_STATUS_RE = re.compile(
+    r"\b(?:este anuncio|esta publicacion|este aviso)\s+(?:esta|se encuentra|fue|ha sido|ya no esta|no esta)\s+"
+    r"(?:desactivad[oa]|retirad[oa]|eliminad[oa]|no disponible|disponible)\b|"
+    r"\b(?:anuncio|aviso|publicacion)\s+(?:fue|ha sido|esta)\s+(?:retirad[oa]|eliminad[oa]|desactivad[oa])\b"
+)
+_ACTIVE_STATUS_RE = re.compile(r"\b(?:este anuncio|esta publicacion|este aviso)\s+(?:esta|permanece)\s+activo\b")
+_INACTIVE_BADGE_RE = re.compile(r"\b(?:vendid[oa]|retirad[oa]|desactivad[oa]|eliminad[oa]|no disponible)\b")
+_STATUS_NODE_RE = re.compile(r"status|availability|available|inactive|removed|sold|estado|availability|alert|notice", re.I)
 LISTING_DETAIL_HREF_RE = re.compile(
     r"(?:href|data-href)\s*=\s*['\"][^'\"]*?/bienes-raices-(?:venta|alquiler)-"
     r"[^'\"<>\s]*?/\D*\d{6,}(?:[/?#][^'\"<>\s]*)?['\"]",
@@ -63,6 +76,11 @@ class DownloadResult:
     validation_status: str
     validation_reason: str
     blocked: bool = False
+    proxy_provider: str = "unknown"
+    availability_status: str = "NO_VERIFICADO"
+    availability_checked_at: str = ""
+    availability_source: str = ""
+    availability_evidence: list[str] = field(default_factory=list)
 
 
 def md5_url(url: str) -> str:
@@ -81,6 +99,143 @@ def _load_removed_patterns() -> list[str]:
     return [str(item) for item in rule_sets.get("listing_removed_patterns", []) if str(item).strip()]
 
 
+def _plain_primary_listing_text(source: str) -> tuple[str, list[str]]:
+    """Return primary-page visible text and status-node text, excluding related ads."""
+    soup = BeautifulSoup(source or "", "html.parser")
+    primary = soup.find("main") or soup.select_one('[itemtype*="Product"]') or soup.body or soup
+    for node in list(primary.find_all(["script", "style", "noscript"])):
+        node.decompose()
+    for node in list(primary.find_all(True)):
+        if node.attrs is None:  # a related ancestor may already have decomposed this node
+            continue
+        attrs = " ".join((
+            str(node.get("id") or ""),
+            " ".join(str(value) for value in (node.get("class") or [])),
+            str(node.get("data-testid") or ""),
+            str(node.get("aria-label") or ""),
+        ))
+        if node is not primary and _RELATED_BLOCK_RE.search(attrs):
+            node.decompose()
+
+    text = " ".join(html_lib.unescape(primary.get_text(" ", strip=True)).split())
+    status_nodes: list[str] = []
+    for node in primary.find_all(True):
+        attrs = " ".join((
+            str(node.get("id") or ""),
+            " ".join(str(value) for value in (node.get("class") or [])),
+            str(node.get("data-testid") or ""),
+            str(node.get("role") or ""),
+            str(node.get("data-status") or ""),
+            str(node.get("aria-label") or ""),
+        ))
+        node_text = " ".join(node.get_text(" ", strip=True).split())
+        if node_text and (_STATUS_NODE_RE.search(attrs) or str(node.get("role") or "").lower() == "alert"):
+            status_nodes.append(node_text)
+    return text, list(dict.fromkeys(status_nodes))
+
+
+def _configured_status_message(status_nodes: list[str]) -> str:
+    for text in status_nodes:
+        for pattern in _load_removed_patterns():
+            normalized_pattern = _normalize_status_text(pattern)[0].strip()
+            if not normalized_pattern:
+                continue
+            evidence = _matched_original_text(text, re.compile(re.escape(normalized_pattern)))
+            if evidence:
+                return evidence
+    return ""
+
+
+def _normalize_status_text(value: str) -> tuple[str, list[int]]:
+    normalized: list[str] = []
+    offsets: list[int] = []
+    for index, char in enumerate(value.casefold()):
+        for item in unicodedata.normalize("NFKD", char):
+            if not unicodedata.combining(item):
+                normalized.append(item)
+                offsets.append(index)
+    return "".join(normalized), offsets
+
+
+def _matched_original_text(value: str, pattern: re.Pattern[str]) -> str:
+    normalized, offsets = _normalize_status_text(value)
+    match = pattern.search(normalized)
+    if not match or not offsets:
+        return ""
+    start = offsets[match.start()]
+    end = offsets[min(match.end() - 1, len(offsets) - 1)] + 1
+    return value[start:end].strip()
+
+
+def assess_yapo_availability(
+    source: str,
+    *,
+    fetch_source: str,
+    validation_status: str = "OK",
+    status_code: int | None = None,
+    checked_at: str | None = None,
+    flashproxy_verified: bool = False,
+) -> dict[str, Any]:
+    """Assess only explicit primary-listing status; cached HTML is never current proof."""
+    visible, status_nodes = _plain_primary_listing_text(source)
+    texts = [visible, *status_nodes]
+    inactive_evidence = next(
+        (match for text in texts if (match := _matched_original_text(text, _INACTIVE_STATUS_RE))),
+        "",
+    )
+    if not inactive_evidence:
+        inactive_evidence = next(
+            (match for text in status_nodes if (match := _matched_original_text(text, _INACTIVE_BADGE_RE))),
+            "",
+        )
+    if not inactive_evidence:
+        inactive_evidence = _configured_status_message(status_nodes)
+    active_evidence = next(
+        (match for text in status_nodes if (match := _matched_original_text(text, _ACTIVE_STATUS_RE))),
+        "",
+    )
+    live_source = fetch_source == "flashproxy" or flashproxy_verified is True
+    evidence_source = "flashproxy" if live_source else (fetch_source or "unknown")
+    check_time = checked_at or (datetime.now(timezone.utc).isoformat() if live_source else "")
+    if not live_source or status_code is not None and status_code >= 400:
+        evidence = ["cached_or_non_live_html_does_not_confirm_current_availability"]
+        if inactive_evidence:
+            evidence.append(f"historical_status_message:{inactive_evidence}")
+        return {
+            "availability_status": "NO_VERIFICADO",
+            "availability_checked_at": "",
+            "availability_source": evidence_source,
+            "availability_evidence": evidence,
+        }
+    if validation_status in {"INVALID", "BLOCKED"}:
+        return {
+            "availability_status": "NO_VERIFICADO",
+            "availability_checked_at": check_time,
+            "availability_source": evidence_source,
+            "availability_evidence": [f"technical_status:{validation_status}"],
+        }
+    if inactive_evidence:
+        return {
+            "availability_status": "DESACTIVADO",
+            "availability_checked_at": check_time,
+            "availability_source": evidence_source,
+            "availability_evidence": [inactive_evidence],
+        }
+    if active_evidence:
+        return {
+            "availability_status": "ACTIVO",
+            "availability_checked_at": check_time,
+            "availability_source": evidence_source,
+            "availability_evidence": [active_evidence],
+        }
+    return {
+        "availability_status": "NO_VERIFICADO",
+        "availability_checked_at": check_time,
+        "availability_source": evidence_source,
+        "availability_evidence": ["no_explicit_primary_listing_status"],
+    }
+
+
 def _has_listing_detail_evidence(source: str) -> bool:
     return bool(LISTING_DETAIL_HREF_RE.search(source or ""))
 
@@ -90,8 +245,13 @@ def validate_html(html: str) -> dict[str, Any]:
     normalized_source = re.sub(r"\s+", " ", source).strip().lower()
     if len(normalized_source) < 200:
         return {"status": "INVALID", "reason": "too_short"}
+    primary_text, status_nodes = _plain_primary_listing_text(source)
+    scoped_text = " ".join((primary_text, *status_nodes))
+    normalized_scoped = _normalize_status_text(scoped_text)[0]
     removed_patterns = _load_removed_patterns()
-    if any(pattern.lower() in normalized_source for pattern in removed_patterns):
+    if _INACTIVE_STATUS_RE.search(normalized_scoped) or any(
+        _normalize_status_text(pattern)[0] in normalized_scoped for pattern in removed_patterns
+    ) or any(_matched_original_text(text, _INACTIVE_BADGE_RE) for text in status_nodes):
         return {"status": "LISTING_REMOVED", "reason": "listing_removed_text"}
 
     # Inspect rendered markup/text without script/style content for human-facing
@@ -164,6 +324,8 @@ def download_html(
             validation_status=validation["status"],
             validation_reason=validation["reason"],
             blocked=validation["status"] == "BLOCKED",
+            proxy_provider="cache",
+            **assess_yapo_availability(html, fetch_source="cache", validation_status=validation["status"]),
         )
 
     proxy = proxy_manager.next_proxy() if proxy_manager and proxy_manager.has_proxies() else None
@@ -234,6 +396,14 @@ def download_html(
             validation_status=validation["status"],
             validation_reason=validation["reason"],
             blocked=validation["status"] == "BLOCKED",
+            proxy_provider=str(getattr(proxy_manager, "provider", "generic") or "generic"),
+            **assess_yapo_availability(
+                html,
+                fetch_source="requests_proxy",
+                validation_status=validation["status"],
+                status_code=response.status_code,
+                flashproxy_verified=str(getattr(proxy_manager, "provider", "")) == "flashproxy",
+            ),
         )
 
     # urllib has no safe proxy configuration here. Fail closed rather than

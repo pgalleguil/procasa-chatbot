@@ -611,6 +611,94 @@ def _charged_brokerage_fee_evidence(extracted: dict[str, Any]) -> list[dict[str,
     return positive
 
 
+def _brokerage_fee_attribution(item: dict[str, Any]) -> str:
+    """Attribute a real-estate fee without assigning a third party's role to the seller."""
+    context = normalize_text(str(item.get("context") or item.get("fragment") or ""))
+    if not re.search(r"\b(?:corretaje|corredor(?:a)?|intermediacion inmobiliaria)\b", context):
+        return "not_brokerage_specific"
+    if re.search(
+        r"\b(?:corredor(?:a)?|corredor(?:a)? externo|corredor(?:a)? del comprador)\b"
+        r".{0,45}\b(?:cobra|cobrara|recibe|recibira)\b|"
+        r"\b(?:paga|pagara|se paga|se debe pagar|pagar)\b.{0,45}\b"
+        r"(?:al|a la|a los|a las)\s+(?:corredor(?:a)?|inmobiliaria)\b|"
+        r"\b(?:comision|honorarios)\b.{0,40}\b(?:de un tercero|del corredor externo)\b",
+        context,
+    ):
+        return "third_party_charges"
+    if re.search(
+        r"\b(?:cobro|cobramos|cobrar[eé]mos|nuestros honorarios|mis honorarios|"
+        r"nuestra comision|mi comision|cobramos la comision)\b",
+        context,
+    ):
+        return "advertiser_charges"
+    return "unattributed_charge"
+
+
+def _owner_review_priority_signals(
+    extracted: dict[str, Any], owner_language: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Expose weak owner-priority cues without changing the commercial state."""
+    signals: list[dict[str, Any]] = []
+    description = unescape(str(extracted.get("description") or extracted.get("descripcion") or ""))
+    plain_description = re.sub(r"<[^>]*>", " ", description)
+    if plain_description.strip() and len(plain_description.strip()) <= 350:
+        signals.append({
+            "signal_id": "SHORT_DESCRIPTION",
+            "strength": "weak",
+            "evidence": f"description_char_count:{len(plain_description.strip())}",
+            "classification_effect": False,
+        })
+
+    image_values = next((extracted.get(key) for key in ("images", "image_urls", "enlaces_fotos") if isinstance(extracted.get(key), list)), None)
+    if image_values is not None:
+        image_count = len({str(item).strip() for item in image_values if str(item).strip()})
+        if 1 <= image_count <= 3:
+            signals.append({
+                "signal_id": "FEW_LISTING_PHOTOS",
+                "strength": "weak",
+                "evidence": f"distinct_photo_count:{image_count}",
+                "classification_effect": False,
+            })
+
+    normalized = normalize_text(plain_description)
+    if re.search(r"\b(?:mi|mis|nuestro|nuestra|nuestros|nuestras)\s+(?:casa|casas|propiedad|propiedades|vivienda|viviendas|inmueble|inmuebles)\b", normalized):
+        signals.append({
+            "signal_id": "FIRST_PERSON_PROPERTY_REFERENCE",
+            "strength": "weak",
+            "evidence": "first_person_property_reference",
+            "classification_effect": False,
+        })
+
+    for item in owner_language.get("owner_support_signals") or []:
+        signal_id = {
+            "NO_COMMISSION": "NO_COMMISSION_CLAIM",
+            "DIRECT_DEAL_NEUTRAL": "DIRECT_DEAL_CLAIM",
+            "DIRECT_OWNER_CONTACT": "DIRECT_OWNER_CONTACT_CLAIM",
+        }.get(str(item.get("rule_id") or ""))
+        if signal_id:
+            signals.append({
+                "signal_id": signal_id,
+                "strength": "weak",
+                "evidence": str(item.get("fragment") or ""),
+                "classification_effect": False,
+            })
+
+    profile = extracted.get("publisher_profile_context") or {}
+    profile_count = profile.get("distinct_listing_count") if isinstance(profile, dict) else None
+    profile_complete = isinstance(profile, dict) and (
+        profile.get("enumeration_complete") is True
+        or profile.get("profile_enumeration_complete") is True
+    )
+    if profile_complete and isinstance(profile_count, int) and profile_count <= 2:
+        signals.append({
+            "signal_id": "FEW_DISTINCT_PROFILE_PROPERTIES",
+            "strength": "weak",
+            "evidence": f"complete_profile_listing_count:{profile_count}",
+            "classification_effect": False,
+        })
+    return signals
+
+
 def _description_broker_role_signature(extracted: dict[str, Any]) -> list[str]:
     """Tie an explicit broker role in the description to the extracted publisher."""
     source_fields = [
@@ -798,6 +886,7 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
     third_party_mentions = _context_term_hits(text, rules.get("broker_third_party_mentions", []))
     negations = _context_term_hits(text, rules.get("broker_negations", []))
     owner_language = analyze_owner_language(extracted)
+    owner_priority_signals = _owner_review_priority_signals(extracted, owner_language)
     attributed_owner_declarations = [
         item for item in owner_language["owner_declarations"]
         if item.get("attribution") == "advertiser_declaration_candidate"
@@ -806,6 +895,11 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
     business_signature_evidence = _description_business_signature(extracted)
     broker_role_signature_evidence = _description_broker_role_signature(extracted)
     fee_evidence = _charged_brokerage_fee_evidence(extracted)
+    fee_attributions = []
+    for item in fee_evidence:
+        attributed = {**item, "attribution": _brokerage_fee_attribution(item)}
+        attributed["brokerage_specific"] = attributed["attribution"] != "not_brokerage_specific"
+        fee_attributions.append(attributed)
     company_fee_signature_evidence = _description_company_fee_signature(extracted, fee_evidence)
     unknown_business_evidence = _unknown_business_signature(extracted)
     trato_directo = [
@@ -838,12 +932,18 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
         "broker_negations": negations,
         "broker_business_signature_evidence": business_signature_evidence,
         "broker_role_signature_evidence": broker_role_signature_evidence,
-        "brokerage_fee_evidence": fee_evidence,
+        "brokerage_fee_evidence": fee_attributions,
+        "brokerage_fee_attribution": [item["attribution"] for item in fee_attributions],
+        "publisher_fee_signal": any(
+            item["brokerage_specific"] and item["attribution"] in {"advertiser_charges", "unattributed_charge"}
+            for item in fee_attributions
+        ),
         "company_fee_signature_evidence": company_fee_signature_evidence,
         "unknown_business_identity_evidence": unknown_business_evidence,
         "owner_signal_candidates": list(dict.fromkeys([*owner_candidates, *trato_directo, *( ["trato directo"] if trato_directo else [] )])),
         "owner_declarations": owner_language["owner_declarations"],
         "owner_support_signals": owner_language["owner_support_signals"],
+        "owner_review_priority_signals": owner_priority_signals,
         "owner_negations": owner_language["owner_negations"],
         "owner_third_party_mentions": owner_language["owner_third_party_mentions"],
         "family_or_representative_signals": owner_language["family_or_representative_signals"],
@@ -1123,8 +1223,18 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         })
         broker_rule_ids.append("BROKER_DESCRIPTION_COMPANY_FEE_SIGNATURE")
     for item in contextual["brokerage_fee_evidence"]:
+        attribution = str(item.get("attribution") or "unattributed_charge")
+        fee_rule = (
+            "BROKERAGE_FEE_THIRD_PARTY_NOT_PUBLISHER"
+            if attribution == "third_party_charges"
+            else "BROKERAGE_FEE_PUBLISHER_CHARGES_OR_UNATTRIBUTED"
+            if item.get("brokerage_specific")
+            else "BROKERAGE_FEE_NOT_SPECIFIC_TO_REAL_ESTATE"
+        )
         broker_evidence.append({
-            **item, "evidence_id": f"{item['rule_id']}:{item['field']}:{item['position_start']}"
+            **item,
+            "evidence_id": f"{item['rule_id']}:{item['field']}:{item['position_start']}",
+            "attribution_rule_id": fee_rule,
         })
     for item in contextual["unknown_business_identity_evidence"]:
         probable = "|strength:probable" in item
@@ -1148,7 +1258,9 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         "|strength:probable" in item for item in contextual["unknown_business_identity_evidence"]
     ) or listing_agent_type or bool(contextual["broker_role_signature_evidence"]) or bool(
         contextual["company_fee_signature_evidence"]
-    ) or bool(contextual["broker_business_signature_evidence"])
+    ) or bool(contextual["broker_business_signature_evidence"]) or bool(
+        contextual["publisher_fee_signal"] and not contextual["direct_deal_candidate"]
+    )
     confirmed_company_identity = bool(company["company_like_suspected"] and any(
         _publisher_field_is_confirmed(extracted, item.split(":", 1)[0])
         for item in company["company_like_evidence"]
@@ -1266,6 +1378,10 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         or contextual["broker_role_signature_evidence"]
         or contextual["company_fee_signature_evidence"]
         or contextual["broker_business_signature_evidence"]
+        or any(
+            item.get("attribution") == "advertiser_charges"
+            for item in contextual["brokerage_fee_evidence"]
+        )
     )
     return {
         **(broker_identity or {}),
@@ -1287,6 +1403,7 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         "classification_rule_ids": rule_ids,
         "profile_identity_signal": profile_identity_signal,
         "owner_signal_candidates": contextual["owner_signal_candidates"],
+        "owner_review_priority_signals": contextual["owner_review_priority_signals"],
         "owner_signal_evidence": owner_evidence,
         "owner_classification_confirmed": False,
         "family_or_representative_signals": contextual["family_or_representative_signals"],

@@ -443,6 +443,8 @@ _OWNER_DECLARATION_RULES = (
     ("OWNER_FIRST_PERSON_SELF_REASON", "owner_first_person", "ALTA", r"\b(?:vendo|vendemos|estoy vendiendo|estamos vendiendo)\b.{0,70}\b(?:porque soy|por ser|al ser|x ser)\s+(?:(?:el|la)\s+)?(?:dueno|duena|propietario|propietaria)\b"),
     ("OWNER_ABBREVIATED_DIRECT_SALE", "owner_explicit", "ALTA", r"\b(?:vta|venta)\s+directa?\s+(?:por\s+)?(?:(?:el|la|su|sus)\s+)?(?:dueno|duena|duenos|duenas|propietario|propietaria|propietarios|propietarias)\b|\bvta\s+particular\b|\bventa\s+particular\s+sin\s+intermediarios\b|\btrato\s+dir\.?\s*(?:con\s+)?(?:el\s+|la\s+|su\s+)?(?:dueno|duena|propietario|propietaria)\b"),
     ("OWNER_HOME_IS_FOR_SALE", "owner_first_person", "ALTA", r"\b(?:mi|nuestra|nuestro)\s+(?:casa|propiedad|departamento|vivienda|inmueble|hogar)\s+(?:esta|se encuentra)\s+en venta\b"),
+    ("OWNER_SIGNOFF_ATTESTS_OWNERSHIP", "owner_explicit", "ALTA", r"\b(?:atte\.?|atentamente)\s*(?:,|:|-)?\s*(?:su\s+)?(?:dueno|duena|propietario|propietaria)\b"),
+    ("OWNER_SALE_BY_OWNER", "owner_explicit", "ALTA", r"\b(?:vende|venden|vendemos)\s+(?:(?:sus|los|las)\s+)?(?:propios?|propias?)\s+(?:duenos|duenas|propietarios|propietarias)\b"),
     ("OWNER_SALE_AS_PARTICULAR", "private_party_sale", "MEDIA", r"\b(?:venta|vta)\s+(?:de|por)\s+(?:(?:un|una)\s+)?particular\b|\bparticular\s+vende\b|\b(?:vende|venden|vendemos)\s+(?:directamente\s+)?(?:un\s+)?particular\b|\bsoy particular\b"),
 )
 
@@ -593,6 +595,104 @@ def _description_business_signature(extracted: dict[str, Any]) -> list[str]:
     return evidence[:5]
 
 
+def _charged_brokerage_fee_evidence(extracted: dict[str, Any]) -> list[dict[str, Any]]:
+    """Find positive brokerage-fee language without treating fee-free ads as fees."""
+    patterns = (
+        ("BROKERAGE_FEE_CHARGED", "commercial_activity", "MEDIA", r"\b(?:(?:comision(?:es)?|honorarios?)\b.{0,55}\b(?:corretaje|corredor(?:a)?|intermediacion)\b|(?:corretaje|corredor(?:a)?|intermediacion)\b.{0,55}\b(?:comision(?:es)?|honorarios?)\b|(?:comision(?:es)?|honorarios?)\b.{0,30}\b\d+(?:[.,]\d+)?\s*%|\d+(?:[.,]\d+)?\s*%\s*(?:\+\s*iva\s*)?(?:mas\s+iva\s*)?(?:de\s+)?(?:comision(?:es)?|honorarios?)(?:\s+de\s+(?:corretaje|corredor(?:a)?))?)\b"),
+        ("BROKERAGE_FEE_AFFECTS_SALE", "commercial_activity", "MEDIA", r"\b(?:venta|operacion)\s+(?:esta\s+)?afecta\s+a\s+(?:una\s+)?comision\s+(?:del?\s+)?\d+(?:[.,]\d+)?\s*%\b"),
+    )
+    found = _find_language_evidence(extracted, patterns)
+    positive: list[dict[str, Any]] = []
+    for item in found:
+        context = normalize_text(str(item.get("context") or ""))
+        if re.search(r"\b(?:sin|no|libre de|exento de)\b.{0,35}\b(?:comision|honorarios)\b", context):
+            continue
+        positive.append(item)
+    return positive
+
+
+def _description_broker_role_signature(extracted: dict[str, Any]) -> list[str]:
+    """Tie an explicit broker role in the description to the extracted publisher."""
+    source_fields = [
+        (field, unescape(str(extracted.get(field) or "")))
+        for field in ("title", "description", "descripcion")
+        if extracted.get(field)
+    ]
+    identities = _confirmed_identity_values(extracted)
+    identity_tokens: list[tuple[str, set[str]]] = []
+    generic = {"propiedades", "inmobiliaria", "inmobiliario", "corredora", "corredor", "contacto", "consulta", "visitas"}
+    for field, value in identities.items():
+        tokens = {token for token in normalize_text(value).split() if len(token) > 1 and token not in generic}
+        if len(tokens) >= 2:
+            identity_tokens.append((field, tokens))
+
+    evidence: list[str] = []
+    role_pattern = re.compile(
+        r"\bcorredor(?:a)?(?:\s+(?:de\s+(?:propiedades|bienes raices|inmobiliaria)|inmobiliari[oa]))?\b"
+    )
+    for field, raw in source_fields:
+        plain = re.sub(r"<[^>]*>", " ", raw)
+        normalized = normalize_text(plain)
+        for match in role_pattern.finditer(normalized):
+            context = normalized[max(0, match.start() - 90):min(len(normalized), match.end() + 90)]
+            context_tokens = set(context.split())
+            matched_identity = None
+            for identity_field, tokens in identity_tokens:
+                threshold = min(2, len(tokens))
+                if len(tokens & context_tokens) >= threshold:
+                    matched_identity = identity_field
+                    break
+            if matched_identity:
+                evidence.append(
+                    f"description_publisher_role_signature:{field}:{match.group(0)}|identity_field:{matched_identity}"
+                )
+
+        # First-person plural plus "nuestra corredora" identifies the publisher's
+        # own brokerage even when the account uses an individual's name.
+        for match in re.finditer(r"\ben nuestra corredora\b", normalized):
+            context = normalized[match.start():min(len(normalized), match.start() + 190)]
+            if re.search(r"\b(?:estamos|somos|asesoramos|guiamos|atendemos)\b", context):
+                evidence.append(f"description_first_person_brokerage_signature:{field}:{context[:160]}")
+    return list(dict.fromkeys(evidence))[:5]
+
+
+def _description_company_fee_signature(extracted: dict[str, Any], fee_evidence: list[dict[str, Any]]) -> list[str]:
+    """Treat a named business plus a charged brokerage fee as probable evidence."""
+    if not fee_evidence:
+        return []
+    source = " ".join(
+        re.sub(r"<[^>]*>", " ", unescape(str(extracted.get(key) or "")))
+        for key in ("title", "description", "descripcion")
+    )
+    text = normalize_text(source)
+    patterns = (
+        re.compile(r"\b(?P<name>(?:[a-z0-9&+]+\s+){0,2}(?:propiedades|inmobiliaria|corredora))\s+(?P<verb>vende|venden|actua|ofrece|ofrecemos|somos|estamos)\b"),
+        re.compile(r"\b(?P<name>(?:[a-z0-9&+]+\s+){1,2}(?:propiedades|inmobiliaria|corredora))\b"),
+    )
+    for pattern in patterns:
+        for match in pattern.finditer(text):
+            name = match.group("name").strip()
+            before = text[max(0, match.start() - 55):match.start()]
+            after = text[match.end():min(len(text), match.end() + 90)]
+            near_end = match.end() >= int(len(text) * 0.70)
+            signature_position = near_end and bool(re.search(r"\b(?:contactar|contacto|interesados|propiedades)\b", before + " " + after))
+            starts_as_vendor = bool(match.groupdict().get("verb"))
+            if starts_as_vendor or signature_position:
+                clean_name = " ".join(name.split()[-2:])
+                return [f"description_company_fee_signature:{clean_name}|positive_brokerage_fee"]
+
+    # A company name at the closing contact signature plus a charged brokerage
+    # fee identifies a commercial publisher even if the account uses a personal
+    # name. Restrict the match to the final text block to avoid passing mentions.
+    tail_start = int(len(text) * 0.70)
+    tail = text[tail_start:]
+    tail_match = re.search(r"\b(?P<name>(?:[a-z0-9&+]+\s+){1,2}(?:propiedades|inmobiliaria|corredora))\b", tail)
+    if tail_match and re.search(r"\b(?:contactar|contacto|interesados)\b", tail[max(0, tail_match.start() - 100):tail_match.start()]):
+        clean_name = " ".join(tail_match.group("name").split()[-2:])
+        return [f"description_company_fee_signature:{clean_name}|positive_brokerage_fee"]
+    return []
+
+
 def _unknown_business_signature(extracted: dict[str, Any]) -> list[str]:
     """Find an unknown publisher identity paired with explicit brokerage cues.
 
@@ -704,6 +804,9 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
     ]
     owner_candidates = list(dict.fromkeys(item["fragment"] for item in attributed_owner_declarations))
     business_signature_evidence = _description_business_signature(extracted)
+    broker_role_signature_evidence = _description_broker_role_signature(extracted)
+    fee_evidence = _charged_brokerage_fee_evidence(extracted)
+    company_fee_signature_evidence = _description_company_fee_signature(extracted, fee_evidence)
     unknown_business_evidence = _unknown_business_signature(extracted)
     trato_directo = [
         item["fragment"] for item in owner_language["owner_support_signals"]
@@ -716,6 +819,7 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
             ("BROKERAGE_SERVICE_OFFER", "commercial_activity", "MEDIA", r"\b(?:ofrecemos|ofrezco|brindamos|prestamos)\s+(?:servicios?\s+)?(?:de\s+)?(?:corretaje|intermediacion inmobiliaria|gestion inmobiliaria)\b"),
         ))
     )
+    commercial_contradictions.extend(item["fragment"] for item in fee_evidence)
     commercial_contradictions = list(dict.fromkeys(commercial_contradictions))
     # A phrase such as "se acepta corredor" or "trabajamos con corredor" refers
     # to another party and must not be read as the publisher identifying itself.
@@ -733,6 +837,9 @@ def analyze_contextual_signals(extracted: dict[str, Any]) -> dict[str, Any]:
         "broker_third_party_mentions": third_party_mentions,
         "broker_negations": negations,
         "broker_business_signature_evidence": business_signature_evidence,
+        "broker_role_signature_evidence": broker_role_signature_evidence,
+        "brokerage_fee_evidence": fee_evidence,
+        "company_fee_signature_evidence": company_fee_signature_evidence,
         "unknown_business_identity_evidence": unknown_business_evidence,
         "owner_signal_candidates": list(dict.fromkeys([*owner_candidates, *trato_directo, *( ["trato directo"] if trato_directo else [] )])),
         "owner_declarations": owner_language["owner_declarations"],
@@ -811,6 +918,13 @@ def _explicit_seller_contact_mismatch(extracted: dict[str, Any]) -> dict[str, st
         contact = re.sub(r"[.,;:!?]+$", "", match.group(1)).strip()
         contact_words = normalize_text(contact).split()
         contact_norm = " ".join(contact_words)
+        non_name_tokens = {
+            "via", "whatsapp", "telefono", "celular", "fono", "correo", "email", "mail",
+            "numero", "número", "contactar", "contacto", "al", "por", "favor", "llamar",
+            "llame", "informacion", "información", "interesados", "reales", "solo",
+        }
+        if any(token in non_name_tokens for token in contact_words):
+            continue
         if len(contact_words) >= 2 and contact_norm not in publisher_norm and publisher_norm not in contact_norm:
             return {"publisher": publisher, "named_contact": contact, "fragment": match.group(0)}
     return None
@@ -956,6 +1070,16 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
                 "provenance": _publisher_field_source(extracted, field) if field else "",
             })
             broker_rule_ids.append(broker_evidence[-1]["rule_id"])
+    listing_agent_type = listing_advertiser in {"agente", "agente inmobiliario"}
+    if listing_agent_type:
+        broker_evidence.append({
+            "evidence_id": "LISTING_ADVERTISER_AGENT_TYPE:listing_advertiser_type",
+            "rule_id": "LISTING_ADVERTISER_AGENT_TYPE", "family": "portal_listing_attribute",
+            "field": "listing_advertiser_type", "fragment": str(extracted.get("listing_advertiser_type")),
+            "strength": "MEDIA", "position_start": None, "position_end": None,
+            "provenance": str(extracted.get("listing_advertiser_type_source") or "yapo_listing_attribute_tipo_anunciante"),
+        })
+        broker_rule_ids.append("LISTING_ADVERTISER_AGENT_TYPE")
     if company["company_like_suspected"]:
         for evidence in company["company_like_evidence"]:
             field, _, fragment = evidence.partition(":")
@@ -982,6 +1106,26 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
             "position_start": None, "position_end": None,
         })
         broker_rule_ids.append("BROKER_DESCRIPTION_BUSINESS_SIGNATURE")
+    for item in contextual["broker_role_signature_evidence"]:
+        broker_evidence.append({
+            "evidence_id": f"BROKER_DESCRIPTION_ROLE_SIGNATURE:{len(broker_evidence)}",
+            "rule_id": "BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE", "family": "publisher_broker_role_signature",
+            "field": "description", "fragment": item, "strength": "MEDIA",
+            "position_start": None, "position_end": None,
+        })
+        broker_rule_ids.append("BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE")
+    for item in contextual["company_fee_signature_evidence"]:
+        broker_evidence.append({
+            "evidence_id": f"BROKER_DESCRIPTION_COMPANY_FEE_SIGNATURE:{len(broker_evidence)}",
+            "rule_id": "BROKER_DESCRIPTION_COMPANY_FEE_SIGNATURE", "family": "publisher_business_and_fee",
+            "field": "description", "fragment": item, "strength": "MEDIA",
+            "position_start": None, "position_end": None,
+        })
+        broker_rule_ids.append("BROKER_DESCRIPTION_COMPANY_FEE_SIGNATURE")
+    for item in contextual["brokerage_fee_evidence"]:
+        broker_evidence.append({
+            **item, "evidence_id": f"{item['rule_id']}:{item['field']}:{item['position_start']}"
+        })
     for item in contextual["unknown_business_identity_evidence"]:
         probable = "|strength:probable" in item
         broker_evidence.append({
@@ -995,11 +1139,16 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
             broker_rule_ids.append("UNKNOWN_BUSINESS_IDENTITY_REPEATED_OR_SERVICE_CUE")
 
     strong_owner = any(item.get("strength") == "ALTA" for item in owner_evidence)
+    explicit_owner_declaration = any(item.get("family") != "portal_listing_attribute" for item in owner_evidence)
     private_party_declaration = any(item.get("family") == "private_party_sale" for item in owner_evidence)
-    strong_broker_identity = bool(broker_identity and broker_identity.get("state") == "CORREDOR_SEGURO") or bool(contextual["broker_business_signature_evidence"])
+    strong_broker_identity = bool(broker_identity and broker_identity.get("state") == "CORREDOR_SEGURO") or bool(
+        contextual["broker_business_signature_evidence"]
+    )
     probable_broker = bool(broker_identity and broker_identity.get("state") == "CORREDOR_PROBABLE") or contextual["broker_self_declaration_confirmed"] or any(
         "|strength:probable" in item for item in contextual["unknown_business_identity_evidence"]
-    )
+    ) or listing_agent_type or bool(contextual["broker_role_signature_evidence"]) or bool(
+        contextual["company_fee_signature_evidence"]
+    ) or bool(contextual["broker_business_signature_evidence"])
     confirmed_company_identity = bool(company["company_like_suspected"] and any(
         _publisher_field_is_confirmed(extracted, item.split(":", 1)[0])
         for item in company["company_like_evidence"]
@@ -1033,9 +1182,9 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         state = "CORREDOR_SEGURO"
         reason = broker_identity.get("reason") if broker_identity else "La descripción identifica al anunciante con una firma y servicios inmobiliarios de primera parte."
         source = broker_identity.get("source") if broker_identity else "description_business_signature"
-    elif owner_evidence and probable_broker:
+    elif explicit_owner_declaration and probable_broker:
         state = "INCIERTO"
-        reason = "La declaración o atributo de propietario coexiste con una señal profesional sin corroboración independiente; requiere revisión."
+        reason = "Una declaración atribuible de propietario coexiste con una señal de corretaje; requiere revisión de la contradicción."
         source = "contradictory_context"
     elif probable_broker and not strong_owner:
         state = "CORREDOR_PROBABLE"
@@ -1055,7 +1204,7 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         state = "DUEÑO_PROBABLE"
         reason = "El anunciante se identifica como particular; es un indicio de venta privada, no acredita titularidad legal."
         source = "private_party_declaration"
-    elif owner_evidence and (probable_broker or confirmed_company_identity):
+    elif explicit_owner_declaration and (probable_broker or confirmed_company_identity):
         state = "INCIERTO"
         reason = "La declaración de propietario coexiste con una señal profesional o comercial no corroborada; requiere revisión."
         source = "contradictory_context"
@@ -1112,6 +1261,12 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         + [item["rule_id"] for item in contextual["family_or_representative_signals"]]
         + [item["rule_id"] for item in contradictions]
     ))
+    profile_identity_signal = bool(
+        strong_broker_identity or confirmed_company_identity
+        or contextual["broker_role_signature_evidence"]
+        or contextual["company_fee_signature_evidence"]
+        or contextual["broker_business_signature_evidence"]
+    )
     return {
         **(broker_identity or {}),
         "state": state,
@@ -1130,6 +1285,7 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         "requires_review": requires_review,
         "review_reason": " ".join(dict.fromkeys(review_reasons)),
         "classification_rule_ids": rule_ids,
+        "profile_identity_signal": profile_identity_signal,
         "owner_signal_candidates": contextual["owner_signal_candidates"],
         "owner_signal_evidence": owner_evidence,
         "owner_classification_confirmed": False,
@@ -1141,3 +1297,92 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         "company_like_evidence": company["company_like_evidence"],
         "contextual_analysis": contextual,
     }
+
+
+def classify_yapo_batch(extracted_records: Iterable[dict[str, Any]]) -> list[dict[str, Any] | None]:
+    """Classify saved listings and correlate direct broker evidence by exact Yapo profile ID.
+
+    Only first-party business signatures, explicit broker-role statements, a
+    company-plus-fee signature, or a confirmed publisher identity can inform a
+    sibling listing. Yapo's listing-level ``Agente`` type is not propagated.
+    Portal owner tags and direct owner declarations on the target listing block
+    cross-listing promotion and remain visible for manual review.
+    """
+    records = [dict(item) for item in extracted_records]
+    results = [classify_yapo_listing(item) for item in records]
+    profile_groups: dict[str, list[int]] = {}
+    for index, record in enumerate(records):
+        profile_id = str(record.get("seller_profile_id") or "").strip()
+        if profile_id:
+            profile_groups.setdefault(profile_id, []).append(index)
+
+    for profile_id, indexes in profile_groups.items():
+        evidence_sources = []
+        for index in indexes:
+            result = results[index]
+            if not isinstance(result, dict) or not result.get("profile_identity_signal"):
+                continue
+            # A contradictory owner badge on the source ad cannot establish the
+            # account-wide business identity for sibling listings.
+            if any(item.get("family") == "portal_listing_attribute" for item in result.get("owner_evidence", [])):
+                continue
+            direct_rules = [
+                item.get("rule_id") for item in result.get("broker_evidence", [])
+                if item.get("rule_id") in {
+                    "BROKER_DESCRIPTION_BUSINESS_SIGNATURE",
+                    "BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE",
+                    "BROKER_DESCRIPTION_COMPANY_FEE_SIGNATURE",
+                    "BROKER_IDENTITY_CONFIRMED_PUBLISHER_COMPANY_AND_PROFILE",
+                    "BROKER_IDENTITY_KNOWN_BROKER_BRAND",
+                    "BROKER_IDENTITY_RULES_JSON",
+                    "BROKER_IDENTITY_UNVERIFIED_SAVED_IDENTITY",
+                    "PUBLISHER_IDENTITY_COMPANY_SHAPE",
+                }
+            ]
+            if direct_rules:
+                evidence_sources.append((index, direct_rules[0]))
+        if not evidence_sources:
+            continue
+        evidence_sources.sort(key=lambda pair: str(records[pair[0]].get("listing_id") or ""))
+        source_index, source_rule = evidence_sources[0]
+        source_id = str(records[source_index].get("listing_id") or "unknown")
+        for index in indexes:
+            result = results[index]
+            if not isinstance(result, dict) or result.get("state") != "INCIERTO":
+                continue
+            if result.get("owner_evidence"):
+                continue
+            sibling_advertiser = normalize_text(str(records[index].get("listing_advertiser_type") or ""))
+            if sibling_advertiser in {"propietario", "dueno", "particular"}:
+                continue
+            fragment = f"seller_profile_id:{profile_id};source_listing_id:{source_id};source_rule:{source_rule}"
+            result["state"] = result["classification_state"] = "CORREDOR_PROBABLE"
+            result["source"] = "same_yapo_profile_correlation"
+            result["reason"] = result["classification_reason"] = (
+                "Otro anuncio del mismo ID de perfil Yapo contiene evidencia directa de actividad de corretaje; "
+                "se propone corredor probable y se conserva para confirmación humana."
+            )
+            result.setdefault("broker_evidence", []).append({
+                "evidence_id": f"SAME_PROFILE_BROKER_EVIDENCE:{profile_id}:{source_id}",
+                "rule_id": "SAME_PROFILE_CORROBORATED_BROKER_IDENTITY",
+                "family": "exact_yapo_profile_correlation", "field": "seller_profile_id",
+                "fragment": fragment, "strength": "MEDIA", "position_start": None,
+                "position_end": None, "source_listing_id": source_id, "source_rule_id": source_rule,
+            })
+            result["evidence"] = list(dict.fromkeys([*(result.get("evidence") or []), fragment]))
+            result["classification_rule_ids"] = list(dict.fromkeys([
+                *(result.get("classification_rule_ids") or []), "SAME_PROFILE_CORROBORATED_BROKER_IDENTITY"
+            ]))
+            result["evidence_strength"] = "MEDIA"
+            result["requires_review"] = True
+            result["review_reason"] = (
+                f"Confirmar que la señal comercial del anuncio {source_id} corresponde al mismo publicador "
+                f"del perfil Yapo {profile_id}."
+            )
+            result["profile_corroboration"] = {
+                "seller_profile_id": profile_id,
+                "source_listing_id": source_id,
+                "source_rule_id": source_rule,
+                "method": "exact_seller_profile_id",
+            }
+    return results

@@ -1,0 +1,1661 @@
+{
+  "audit_title": "Auditoría manual de 20 anuncios INCIERTO de Yapo",
+  "canonical_input": "C:\\Users\\pgall\\Documents\\PROCASA\\YapoMaipu\\preimportacion_20261103\\yapo_maipu_preimport_482.json",
+  "canonical_sha256": "dc9bda51a093abd9a1d7c6a741eeacac275724ea74b29ad4cc2a8bba558e12bf",
+  "selection": {
+    "seed": 20261103,
+    "algorithm": "random.Random(20261103).sample(uncertain_records_in_canonical_order, 20)",
+    "sample_size": 20,
+    "listing_ids_in_sample_order": [
+      "32299493",
+      "33098407",
+      "33196456",
+      "32931491",
+      "26143551",
+      "25939035",
+      "33190907",
+      "26610549",
+      "33208287",
+      "28073704",
+      "32632678",
+      "27167566",
+      "27144918",
+      "32306422",
+      "32728499",
+      "25861896",
+      "26135394",
+      "26644524",
+      "26653392",
+      "27111189"
+    ]
+  },
+  "source_scope": "JSON canónico y HTML local guardado; sin solicitudes a Yapo, sin verificación externa de identidad, sin DeepSeek ni MongoDB.",
+  "records": [
+    {
+      "listing_id": "32299493",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-villa-el-rosal-liceo-bicentenario/32299493",
+      "publisher_identity": {
+        "publicador_visible": "Alejandra Martin",
+        "contact_name": "Alejandra Martin",
+        "contact_logo_alt": "Foto de perfil de Alejandra Martin",
+        "seller_jsonld_name": "",
+        "seller_profile_id": "13729815",
+        "seller_profile_url": "/user/profile/id/13729815",
+        "seller_type_profile": "",
+        "seller_type_provenance": {},
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13729815",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:13729815:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "CASA Villa El Rosal / Liceo Bicentenario",
+      "description_complete": "Se vende amplia y bien mantenida casa aislada en Villa El Rosal, Maipú, a pasos de nueva comisaría, liceo Bicentenario de Niñas y con locomoción a la puerta. Excelente ubicación en un sector residencial consolidado, ideal para vivir en familia con buena conectividad y seguridad. La propiedad cuenta con 4 dormitorios y 3 baños, y se distribuye de la siguiente manera: Primer piso: Ante jardín. Entrada de auto. Living comedor con bosca. Baño de visitas. Cocina amoblada y equipada con cocina, horno y microondas empotrados. Comedor de diario de estilo rústico. Patio trasero con quincho. Dormitorio principal amplio con baño en suite. Segundo piso: Sala de estar con aire acondicionado. 3 dormitorios amplios con closet. Baño completo. Además, la casa cuenta con ventanas con persianas automáticas, las que ayudan a aislar ruido y luz, entregando mayor confort y privacidad. Una excelente oportunidad para quienes buscan amplitud, comodidad y una buena ubicación en Maipú.",
+      "description_is_truncated": false,
+      "description_length": 973,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\883ac78ed085079a78131929186ce783.html",
+        "sha256": "72817fb059aaa0402b40084a64d875b510c8bc30489458ea6c334526f85c1556",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "CORREDOR_PROBABLE",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_AGENT_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_AGENT_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Agente",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "provenance": "yapo_listing_attribute_tipo_anunciante"
+        }
+      ],
+      "owner_evidence": [],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "El texto completo solo describe la vivienda. No aparece firma comercial, comisión ni declaración de propiedad. El tipo de anunciante Agente proviene del HTML de Yapo; por esa señal queda CORREDOR_PROBABLE, no seguro."
+    },
+    {
+      "listing_id": "33098407",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/titanium-propiedades-vende-casa-con-piscina-temperada-en-ciudad-satelite-maipu/33098407",
+      "publisher_identity": {
+        "publicador_visible": "Camila Paz",
+        "contact_name": "Camila Paz",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "Camila Paz",
+        "seller_profile_id": "14459921",
+        "seller_profile_url": "/user/profile/id/14459921",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "14459921",
+          "distinct_listing_count": 2,
+          "evidence": [
+            "saved_html_profile:14459921:2_listings"
+          ]
+        },
+        "listing_advertiser_type": "",
+        "listing_advertiser_type_source": "",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Titanium Propiedades vende Casa con piscina temperada en Ciudad Satélite, Maipú",
+      "description_complete": "Descubra la oportunidad de vivir en una propiedad excepcional que redefine el concepto de confort familiar, destacando por su exclusiva piscina temperada privada y una ubicación privilegiada en un entorno tranquilo. Situada en uno de los sectores más demandados y consolidados de Maipú, esta residencia representa el refugio ideal para quienes buscan calidad de vida superior y espacios exteriores diseñados para el disfrute total.<br /> <br /> Esta sólida construcción de dos niveles presenta una arquitectura funcional y acogedora, optimizando cada uno de sus 84 metros cuadrados construidos sobre un generoso terreno total de 163 metros cuadrados. La distribución interior ha sido cuidadosamente planificada para maximizar la privacidad, contemplando tres amplios dormitorios, donde destaca la habitación principal configurada en suite para mayor comodidad. El inmueble dispone en total de tres baños completos, asegurando la fluidez necesaria para la rutina de una familia moderna. Además, la propiedad ofrece una notable capacidad de estacionamiento con espacio para tres vehículos, un atributo diferenciador y altamente valorado en la zona.<br /> <br /> El mayor valor agregado de esta casa se encuentra en su zona de esparcimiento privada. La piscina temperada permite un uso recreativo y deportivo durante todas las estaciones del año, elevando significativamente el estándar de bienestar de sus habitantes. Complementando esta área, se encuentra un quincho perfectamente equipado, ideal para organizar reuniones sociales y celebraciones familiares en un ambiente seguro y privado. La versatilidad de estos espacios exteriores convierte a esta propiedad en una inversión inteligente para quienes priorizan el tiempo de calidad en el hogar.<br /> <br /> Emplazada en el corazón de Ciudad Satélite, la propiedad goza de un entorno residencial con acceso inmediato a una amplia gama de servicios esenciales. A pocos minutos podrá encontrar colegios de excelencia, supermercados, farmacias y diversas áreas verdes, facilitando la logística diaria del grupo familiar. Su conectividad es excelente, con acceso expedito a las principales autopistas y vías de transporte hacia el resto de la Región Metropolitana. En Titanium Propiedades, estamos comprometidos con su próximo paso inmobiliario. Le invitamos a contactarnos para coordinar una visita guiada y recibir asesoría experta en la adquisición de su nuevo hogar.",
+      "description_is_truncated": false,
+      "description_length": 2419,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\f7c45cafc34a45b7e3c692da491945d4.html",
+        "sha256": "0043d1a238495e732004384a7966c10afa513f3b7a1a9e5fc8b766d76c79325e",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "",
+        "listing_advertiser_type_source": "",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [
+        {
+          "listing_id": "33098428",
+          "title": "SE VENDE EXCLUSIVA Y LINDA CASA EN CIUDAD SATÉLITE, MAIPÚ",
+          "classification_before": "INCIERTO",
+          "classification_proposed": "CORREDOR_PROBABLE",
+          "seller_type": "PROFESIONAL",
+          "listing_advertiser_type": "",
+          "description_complete": true
+        }
+      ],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "CORREDOR_PROBABLE",
+      "proposal_source": "same_yapo_profile_correlation",
+      "broker_evidence": [
+        {
+          "evidence_id": "SAME_PROFILE_BROKER_EVIDENCE:14459921:33098428",
+          "rule_id": "SAME_PROFILE_CORROBORATED_BROKER_IDENTITY",
+          "family": "exact_yapo_profile_correlation",
+          "field": "seller_profile_id",
+          "fragment": "seller_profile_id:14459921;source_listing_id:33098428;source_rule:BROKER_DESCRIPTION_COMPANY_FEE_SIGNATURE",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "source_listing_id": "33098428",
+          "source_rule_id": "BROKER_DESCRIPTION_COMPANY_FEE_SIGNATURE"
+        }
+      ],
+      "owner_evidence": [],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "El título atribuye la venta a Titanium Propiedades y la descripción habla desde esa marca. El anuncio 33098428 del mismo seller_profile_id incluye el nombre comercial y comisión explícita de corretaje. Se propone probable por evidencia del perfil exacto."
+    },
+    {
+      "listing_id": "33196456",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-2-pisos-4d-3b-90-102mt2-maipu/33196456",
+      "publisher_identity": {
+        "publicador_visible": "Guido Parra",
+        "contact_name": "Guido Parra",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "Guido Parra",
+        "seller_profile_id": "13733845",
+        "seller_profile_url": "/user/profile/id/13733845",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13733845",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:13733845:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Casa 2 pisos 4D 3B 90/102mt2 Maipú",
+      "description_complete": "Se vende cómoda casa de 2 pisos ubicada en Barrio Los Castaños III, comuna de Maipú, con 90/102m2. Tiene 4 dormitorios, 3 baños, 2 Walk in closet, living comedor independiente, cocina americana amoblada, patio trasero y estacionamiento para 2 a 3 vehículos. <br /> <br /> Casa ubicada en barrio muy tranquilo, áreas verdes, juegos infantiles, cercana a colegios, supermercados y comercio en general. <br /> <br /> Comisión corredor 2% más boleta honorarios. <br /> <br /> <br /> Lo esperamos para coordinar su visita. <br /> Contacto: Guido Parra",
+      "description_is_truncated": false,
+      "description_length": 546,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\dc9739b5e9a8332e0378c37b0b42bc54.html",
+        "sha256": "0dfe60208a2cca6bd9153d5527009203583a10f287d364720ffe275120dffa11",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "CORREDOR_PROBABLE",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_AGENT_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_AGENT_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Agente",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "provenance": "yapo_listing_attribute_tipo_anunciante"
+        },
+        {
+          "evidence_id": "BROKER_DESCRIPTION_ROLE_SIGNATURE:1",
+          "rule_id": "BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE",
+          "family": "publisher_broker_role_signature",
+          "field": "description",
+          "fragment": "description_publisher_role_signature:description:corredor|identity_field:seller_jsonld_name",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null
+        },
+        {
+          "evidence_id": "BROKER_DESCRIPTION_ROLE_SIGNATURE:2",
+          "rule_id": "BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE",
+          "family": "publisher_broker_role_signature",
+          "field": "description",
+          "fragment": "description_publisher_role_signature:descripcion:corredor|identity_field:seller_jsonld_name",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null
+        },
+        {
+          "rule_id": "BROKERAGE_FEE_CHARGED",
+          "family": "commercial_activity",
+          "field": "description",
+          "fragment": "Comisión corredor",
+          "strength": "MEDIA",
+          "position_start": 394,
+          "position_end": 411,
+          "context": "Comisión corredor 2% más boleta honorarios",
+          "evidence_id": "BROKERAGE_FEE_CHARGED:description:394"
+        }
+      ],
+      "owner_evidence": [],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [
+        {
+          "rule_id": "BROKERAGE_FEE_CHARGED",
+          "family": "commercial_activity",
+          "field": "description",
+          "fragment": "Comisión corredor",
+          "strength": "MEDIA",
+          "position_start": 394,
+          "position_end": 411,
+          "context": "Comisión corredor 2% más boleta honorarios"
+        }
+      ],
+      "contradictions": [],
+      "requires_review": false,
+      "audit_conclusion": "El HTML marca tipo de anunciante Agente y la descripción cobra comisión de corredor del 2% más boleta de honorarios; el contacto es Guido Parra. No hay declaración de propiedad."
+    },
+    {
+      "listing_id": "32931491",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/gran-y-luminosa-casa-en-ciudad-satelite/32931491",
+      "publisher_identity": {
+        "publicador_visible": "María Eugenia Moyano Olivares",
+        "contact_name": "María Eugenia Moyano Olivares",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "María Eugenia Moyano Olivares",
+        "seller_profile_id": "13731717",
+        "seller_profile_url": "/user/profile/id/13731717",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13731717",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:13731717:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "",
+        "listing_advertiser_type_source": "",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Gran y luminosa casa en Ciudad Satélite",
+      "description_complete": "Descubra la armonía perfecta entre amplitud y luminosidad en una de las zonas más consolidadas y familiares de Maipú. Esta propiedad destaca por su diseño funcional y excelente estado de conservación, representando una oportunidad inigualable para quienes buscan calidad de vida en el sector de Ciudad Satélite.<br /> <br /> Esta destacada casa en venta se presenta como una opción habitacional superior para familias que valoran el espacio, la comodidad y la seguridad. Con una construcción sólida de dos niveles que data del año 2010, la propiedad cuenta con una superficie de 94 metros cuadrados construidos, emplazados estratégicamente sobre un terreno total de 136 metros cuadrados. La distribución interior ha sido diseñada meticulosamente para optimizar cada rincón, logrando una fluidez excepcional entre las áreas comunes y las zonas de descanso privado.<br /> <br /> En su programa habitacional, la vivienda ofrece tres amplios dormitorios, resaltando la habitación principal configurada en suite, la cual garantiza un refugio de privacidad y confort. El inmueble dispone de un total de tres baños completos, equipados para satisfacer las necesidades de una familia moderna con total funcionalidad. El estado de la propiedad es excelente, reflejando un mantenimiento riguroso y una estructura que ha resistido el paso del tiempo con distinción. Adicionalmente, cuenta con un estacionamiento privado, un elemento esencial para la comodidad y resguardo vehicular en este sector residencial.<br /> <br /> En términos de protección y tecnología, la casa integra un sistema de seguridad virtual, proporcionando tranquilidad constante a sus residentes. La orientación de la propiedad permite un aprovechamiento óptimo de la luz natural, creando ambientes cálidos y acogedores durante todo el día. El patio posterior y los espacios libres del terreno ofrecen el potencial ideal para futuros proyectos de paisajismo o áreas de recreación exterior.<br /> <br /> El entorno de Ciudad Satélite en Maipú es reconocido por ser un barrio planificado que ofrece una infraestructura de servicios de primer nivel. Los residentes disfrutan de una conectividad envidiable, con acceso rápido a avenidas principales y autopistas, facilitando el traslado hacia diversos puntos de la capital. La zona cuenta con una variada oferta de colegios, supermercados, centros comerciales y áreas verdes, consolidándose como un polo residencial de alta demanda y constante plusvalía.<br /> <br /> Invertir en esta propiedad significa asegurar un patrimonio sólido en una comunidad tranquila y segura. Le invitamos a descubrir el potencial de este hogar y a experimentar la calidad de vida que solo Ciudad Satélite puede ofrecer. Para coordinar una visita técnica y recibir asesoría profesional detallada, contáctenos hoy mismo y dé el siguiente paso hacia su nueva propiedad.",
+      "description_is_truncated": false,
+      "description_length": 2852,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\87f50737c2de8c5c388485f36cb703d8.html",
+        "sha256": "2d698b5ae0be7c47fed9824629781dc81656d51e7766fe2a0b7c749cafd4d009",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "",
+        "listing_advertiser_type_source": "",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "El perfil lleva PROFESIONAL, pero no hay tipo de anunciante Agente, firma de corredor, marca atribuida, comisión ni declaración de propietario. La asesoría profesional es texto promocional genérico; permanece INCIERTO."
+    },
+    {
+      "listing_id": "26143551",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-hermosa-casa/26143551",
+      "publisher_identity": {
+        "publicador_visible": "viviana albornoz",
+        "contact_name": "viviana albornoz",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "viviana albornoz",
+        "seller_profile_id": "13736705",
+        "seller_profile_url": "/user/profile/id/13736705",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13736705",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:13736705:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Se vende hermosa casa",
+      "description_complete": "Se vende casa Maipú $",
+      "description_is_truncated": false,
+      "description_length": 21,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\0b7eb739039ad0f416a485130334f7a6.html",
+        "sha256": "66a480532ed025c45d7ef5eaa6883ef03f095d8319d30c0d8179f91981c6013b",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "La descripción tiene 21 caracteres y la etiqueta Yapo dice Propietario. No hay declaración de propiedad atribuible ni señal comercial; permanece INCIERTO."
+    },
+    {
+      "listing_id": "25939035",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-de-un-piso-maipu/25939035",
+      "publisher_identity": {
+        "publicador_visible": "Alejandro",
+        "contact_name": "Alejandro",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "Alejandro",
+        "seller_profile_id": "13764644",
+        "seller_profile_url": "/user/profile/id/13764644",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13764644",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:13764644:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Casa de un piso maipu",
+      "description_complete": "Casa de un piso ,excelente estado ,3 d 1 b antejardin ,estacionamiento ,rejas ,protección ventanas ,comedor diario ,logia ,conexion para galon de gas de 45 ,living,comedor,dormitorios y baños con cerámicas, cercano al metro ,red de buses colectivos ,supermercados.colegios y mall ,farmacias,clinicas de salud ,cesfam ,universidad y aeropuerto (10 minutos). especial para la familia . todo al dia agua y luz exenta de pago de contribuciones. dfl2.<br /> <br /> atte su dueño",
+      "description_is_truncated": false,
+      "description_length": 473,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\54ddce626a06825529997e7cbddc1529.html",
+        "sha256": "5bfdbdc4d4c854387adeedcbc8aab3b0105c3fd4d6f3efa4f79379257ff0bddb",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "DUEÑO_PROBABLE",
+      "proposal_source": "owner_declaration_grammar",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "rule_id": "OWNER_SIGNOFF_ATTESTS_OWNERSHIP",
+          "family": "owner_explicit",
+          "field": "description",
+          "fragment": "atte su dueño",
+          "strength": "ALTA",
+          "position_start": 450,
+          "position_end": 463,
+          "context": "atte su dueño",
+          "attribution": "advertiser_declaration_candidate",
+          "related_rule_ids": [],
+          "evidence_id": "OWNER_SIGNOFF_ATTESTS_OWNERSHIP:description:450"
+        },
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [
+        {
+          "rule_id": "OWNER_SIGNOFF_ATTESTS_OWNERSHIP",
+          "family": "owner_explicit",
+          "field": "description",
+          "fragment": "atte su dueño",
+          "strength": "ALTA",
+          "position_start": 450,
+          "position_end": 463,
+          "context": "atte su dueño",
+          "attribution": "advertiser_declaration_candidate",
+          "related_rule_ids": []
+        }
+      ],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "La descripción termina con una firma explícita “atte su dueño” y coincide con el tipo Yapo Propietario. Se propone DUEÑO_PROBABLE; PROFESIONAL no se usa como prueba de corretaje y la titularidad legal no queda confirmada."
+    },
+    {
+      "listing_id": "33190907",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-4-dormitorios-3-banos-en-microbarrio-cerrado-maipu/33190907",
+      "publisher_identity": {
+        "publicador_visible": "Gonzalo Sánchez",
+        "contact_name": "Gonzalo Sánchez",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "Gonzalo Sánchez",
+        "seller_profile_id": "18021176",
+        "seller_profile_url": "/user/profile/id/18021176",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "18021176",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:18021176:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Casa 4 Dormitorios 3 Baños en Microbarrio Cerrado Maipú",
+      "description_complete": "Descubra la combinación perfecta de seguridad, confort y amplitud en una de las zonas más residenciales y valoradas de Maipú. Esta excepcional propiedad en microbarrio cerrado representa el refugio ideal para su familia, garantizando tranquilidad y una calidad de vida superior en un entorno privado, seguro y altamente consolidado.<br /> <br /> Con una superficie construida de 109 metros cuadrados emplazada en un terreno total de 133 metros cuadrados, esta casa destaca por su diseño funcional y una distribución inteligente que optimiza cada espacio. La propiedad cuenta con cuatro amplios dormitorios, diseñados estratégicamente para maximizar la privacidad y el descanso de cada integrante del hogar. El dormitorio principal dispone de un baño en suite, proporcionando un espacio de retiro exclusivo y confortable. En total, la vivienda posee tres baños completos con finas terminaciones, lo que asegura una excelente dinámica y fluidez para el día a día de una familia moderna que requiere comodidad sin compromisos.<br /> <br /> El inmueble se presenta en un estado de conservación impecable, listo para ser habitado de inmediato por sus nuevos propietarios. Su ubicación privilegiada dentro de un microbarrio cerrado no solo incrementa la plusvalía de su inversión inmobiliaria, sino que también brinda un entorno de seguridad controlada, ideal para quienes buscan calma y protección en la Región Metropolitana. Adicionalmente, la propiedad incluye un estacionamiento privado, cubriendo de manera eficiente las necesidades logísticas y de resguardo vehicular de sus residentes.<br /> <br /> Situada en el prestigioso sector de El Rosal, en la comuna de Maipú, la casa goza de una conectividad envidiable que facilita el equilibrio entre la vida laboral y personal. El entorno se caracteriza por su cercanía a colegios de excelencia, diversos centros comerciales, supermercados y una completa oferta de servicios y áreas verdes que enriquecen la experiencia urbana diaria. El fácil acceso a las principales autopistas permite un desplazamiento fluido hacia los núcleos empresariales de la capital, consolidando a esta propiedad como una oportunidad estratégica en el mercado actual.<br /> <br /> Le invitamos a descubrir el potencial de este hogar que combina elegancia, amplitud y funcionalidad. Contáctenos hoy mismo para coordinar una visita personalizada y recibir la asesoría experta que usted requiere para concretar su próximo proyecto de vida con total seguridad.<br /> <br /> Descubre esta Casa Modelo Villarrica K3 en un tranquilo microbarrio cerrado de Maipú, ideal para familias que valoran seguridad, conectividad y vida de barrio . Acceso controlado vía celular y frente a una plaza para niños .<br /> <br /> Con 109,26 m² construidos en 132,84 m² de terreno , se distribuye en 2 pisos: 4 dormitorios con clósets completos , principal en suite en primer piso con vanitorio y tina ; 2 baños completos + baño de visita . Amplios living y comedor para compartir en familia , y cocina amoblada equipada con encimera, campana y horno . En el segundo piso, una sala de estar perfecta para home office o juegos . Piso flotante en gran parte de la casa .<br /> <br /> Exterior pensado para disfrutar: patio con cerámica , cobertizo elevado en roble , bodega de material sólido , reja perimetral de aprox. 2 m , calefón instalado en exterior y estacionamiento .<br /> <br /> Excelente conectividad: a minutos de Mall Arauco Maipú, Clínica Indisa, supermercados, colegios, farmacia, servicentros e infraestructura pública . Vive en un sector consolidado, familiar y seguro. ¡Tu próximo hogar te espera!",
+      "description_is_truncated": false,
+      "description_length": 3614,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\3bddd78b25c97d27a9633b0361904a75.html",
+        "sha256": "6e844db56e2d660f66ac099fe2658dc1f1d36ff40ed911cf3f9af858ec6ae1c2",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "CORREDOR_PROBABLE",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_AGENT_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_AGENT_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Agente",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "provenance": "yapo_listing_attribute_tipo_anunciante"
+        }
+      ],
+      "owner_evidence": [],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "La descripción es marketing genérico; no incluye comisión ni firma comercial. El HTML sí etiqueta el tipo de anunciante como Agente, por lo que la propuesta CORREDOR_PROBABLE se basa en esa categoría del aviso y no en PROFESIONAL."
+    },
+    {
+      "listing_id": "26610549",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/hermosa-casa-3d2b-maipu-sin-comision/26610549",
+      "publisher_identity": {
+        "publicador_visible": "Claudio Galleguillos",
+        "contact_name": "Claudio Galleguillos",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "Claudio Galleguillos",
+        "seller_profile_id": "13815170",
+        "seller_profile_url": "/user/profile/id/13815170",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13815170",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:13815170:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Hermosa Casa 3D2B Maipú Sin Comisión",
+      "description_complete": "Hermosa casa de un piso ubicada en Pasaje Arturo Moya Grau, comuna de Maipú, pasaje cerrado muy seguro debido a que posee un portón de acceso solo para residentes. La propiedad posee 3 dormitorios con 2 baños, el dormitorio principal cuenta closet amplio y baño en suite, cocina amoblada, living comedor, cobertizo, antejardín, patio y estacionamiento techado.<br /> Posee buena accesibilidad por su cercanía a Avenida Sur (50 m.), Calle Diego Barros Ortiz (90m.), Avenida Las Naciones (300 m.) y Avenida Nueva San Martin (500 m). La propiedad posee una superficie de terreno de 138 m2 y la superficie de la vivienda original 1° piso 59 m2 más ampliación en 1°piso de 22 m2 sumando un total de 81m2 de construcción.<br /> <br /> Características:<br /> &#8226; 3 dormitorios.<br /> &#8226; 2 baños, principal en suite. <br /> &#8226; Living comedor. <br /> &#8226; Cocina amoblada. <br /> &#8226; Logia.<br /> &#8226; Cobertizo. <br /> &#8226; Antejardín. <br /> &#8226; Patio. <br /> &#8226; Estacionamiento techado.<br /> <br /> Información adicional: <br /> &#8226; Citófono.<br /> &#8226; Chapa Eléctrica. <br /> &#8226; Alarma. <br /> &#8226; Portón de corredera interior.<br /> &#8226; Portón de acceso al pasaje cerrado de corredera.<br /> &#8226; Terreno: 138m2 <br /> &#8226; Construcción: 59 m2 + 22 m2 ampliación.",
+      "description_is_truncated": false,
+      "description_length": 1323,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\918b53248eb6f7b4d76b1453f2641e30.html",
+        "sha256": "3b355b5a9a68957879baebfef2b722046f77afe70442e441dbde96f90b1a791f",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [
+        {
+          "rule_id": "NO_COMMISSION",
+          "family": "no_commission",
+          "field": "title",
+          "fragment": "Sin Comisión",
+          "strength": "BAJA",
+          "position_start": 24,
+          "position_end": 36,
+          "context": "Hermosa Casa 3D2B Maipú Sin Comisión"
+        }
+      ],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "El título dice Sin Comisión y la descripción enumera características de la vivienda. La regla de comisión positiva no se activa; Propietario sin declaración de dueño no basta. Permanece INCIERTO."
+    },
+    {
+      "listing_id": "33208287",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/239-metros-terreno-4-dormitorios-2-banos-el-carmen-av-sur-maipu/33208287",
+      "publisher_identity": {
+        "publicador_visible": "SAULING CHIONG ABE",
+        "contact_name": "SAULING CHIONG ABE",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "SAULING CHIONG ABE",
+        "seller_profile_id": "13736569",
+        "seller_profile_url": "/user/profile/id/13736569",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13736569",
+          "distinct_listing_count": 2,
+          "evidence": [
+            "saved_html_profile:13736569:2_listings"
+          ]
+        },
+        "listing_advertiser_type": "",
+        "listing_advertiser_type_source": "",
+        "contact_badges_text": ""
+      },
+      "title_complete": "239 METROS TERRENO 4 DORMITORIOS, 2 BAÑOS EL CARMEN /AV SUR MAIPU",
+      "description_complete": "CASA ESQUINA DE 239 METROS TERRENO 84 METROS CONSTRUIDOS, IDEAL HABITACIONAL O DESTINO COMERCIAL , SE UBICA EN UN SECTOR DE GRAN PLUSVALIA DENTRO DE LA COMUNA <br /> <br /> - LIVING COMEDOR<br /> <br /> - COCINA AMOBLDA<br /> <br /> - 4 DORMITORIOS<br /> <br /> - 2 BAÑOS<br /> <br /> - COBERTIZOS<br /> <br /> - ENTRADA DE VEHICULOS<br /> <br /> PROPIEDAD SE EMPLAZA EN UN SECTOR RESIDENCIAL , COMERCIAL FRENTE SUPERMERCADO, MOVILIZACION COLECTIVA, COLEGIOS, A MINUTOS HOSPITAL EL CARMEN , A MINUTOS PLAZA DE MAIPU.<br />",
+      "description_is_truncated": false,
+      "description_length": 522,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\7250cc7814a62996982421630c039e22.html",
+        "sha256": "7474bdd0b0f396e920515917ca744977f12ccf20ccf324df02de41d90a7e4ec2",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "",
+        "listing_advertiser_type_source": "",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [
+        {
+          "listing_id": "32306422",
+          "title": "CASA 4 DORMITORIOS 2 BAÑOS 180 TERRENO VICTORIA MAIPU",
+          "classification_before": "INCIERTO",
+          "classification_proposed": "CORREDOR_PROBABLE",
+          "seller_type": "PROFESIONAL",
+          "listing_advertiser_type": "Agente",
+          "description_complete": true
+        }
+      ],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "CORREDOR_PROBABLE",
+      "proposal_source": "same_yapo_profile_correlation",
+      "broker_evidence": [
+        {
+          "evidence_id": "SAME_PROFILE_BROKER_EVIDENCE:13736569:32306422",
+          "rule_id": "SAME_PROFILE_CORROBORATED_BROKER_IDENTITY",
+          "family": "exact_yapo_profile_correlation",
+          "field": "seller_profile_id",
+          "fragment": "seller_profile_id:13736569;source_listing_id:32306422;source_rule:BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "source_listing_id": "32306422",
+          "source_rule_id": "BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE"
+        }
+      ],
+      "owner_evidence": [],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "Su texto es descriptivo y no identifica al anunciante como corredor. El anuncio 32306422 comparte exactamente el perfil 13736569 e incluye la firma “Corredora de Propiedades” vinculada al publicador. Se propone CORREDOR_PROBABLE por correlación exacta y requiere confirmación humana."
+    },
+    {
+      "listing_id": "28073704",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/extraordinaria-y-hermosa-casa-de-3-pisos-en-maipu/28073704",
+      "publisher_identity": {
+        "publicador_visible": "hector",
+        "contact_name": "hector",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "hector",
+        "seller_profile_id": "13733251",
+        "seller_profile_url": "/user/profile/id/13733251",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13733251",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:13733251:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Extraordinaria y Hermosa casa de 3 pisos en Maipu",
+      "description_complete": "Extraordinaria Casa de 3 Pisos en Villa Consolidada: <br /> Descubre el lujo y el confort en esta impresionante casa de 3 pisos, ubicada dentro de una villa consolidada con acceso controlado y una plaza interior de uso exclusivo. Con amplios y cómodos espacios, esta propiedad ofrece un estilo de vida inigualable a solo una cuadra del Supermercado y con alta y variada disponibilidad de transporte público. Además, se encuentra a pocos minutos de las futuras estaciones del Metrotrén.<br /> Distribución:<br /> 1er. Piso:<br /> Living y Comedor Separados: Espacios ideales para recibir invitados o disfrutar de momentos familiares.<br /> ; Home Office: Perfecto para trabajar desde casa en un ambiente tranquilo.<br /> ; Cocina Totalmente Amoblada y Equipada Full Eléctrica:<br /> ; Baño de Visitas<br /> 2do. Piso:<br /> ; Dormitorio Principal con Balcón, Walking Closet y Baño en Suite: Un verdadero oasis de privacidad y confort.<br /> ; 2 dormitorios Secundarios: Espaciosos y luminosos, perfectos para la familia.<br /> ; Baño Completo.<br /> 3er. Piso:<br /> ; Sala de Estar<br /> ; Escritorio<br /> ; 2 dormitorios: Confortables y bien iluminados.<br /> ; Baño Completo<br /> ; Antejardín Formado: Un espacio verde que da la bienvenida a tu hogar.<br /> ; Entrada Lateral Techada: Comodidad y protección para tus vehículos.<br /> ; Patio Trasero con Quincho, Logia y Bodega: <br /> ;Ático para Almacenamiento: Espacio extra para tus pertenencias.<br /> ; Piso Flotante en Dormitorios y Salas: Elegante y fácil de mantener.<br /> ; Pisos Cerámicos en Living, Comedor, Cocina y Baños: Duraderos y modernos.<br /> Estacionamiento para 2 Autos: Espacio amplio y seguro para tus vehículos.<br /> Contribuciones<br /> Sin Gastos Comunes<br /> Ubicación Inmejorable<br /> Situada en una de las zonas más codiciadas, esta propiedad ofrece acceso cercano a escuelas, tiendas, restaurantes y parques. Además, cuenta con excelentes conexiones de transporte, facilitando tu día a día.<br /> No pierdas la oportunidad de vivir en esta joya inmobiliaria. <br /> Se debe considerar el 2% de honorarios de Corretaje.",
+      "description_is_truncated": false,
+      "description_length": 2108,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\a202732314db756d5f8e1f95562e3e06.html",
+        "sha256": "75dca4f04bea3b2fc873372463390720fcbe8bede104e718e6c75019bfc1cd2b",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [
+        {
+          "rule_id": "BROKERAGE_FEE_CHARGED",
+          "family": "commercial_activity",
+          "field": "description",
+          "fragment": "honorarios de Corretaje",
+          "strength": "MEDIA",
+          "position_start": 1939,
+          "position_end": 1962,
+          "context": "Se debe considerar el 2% de honorarios de Corretaje",
+          "evidence_id": "BROKERAGE_FEE_CHARGED:description:1939"
+        }
+      ],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [
+        {
+          "rule_id": "BROKERAGE_FEE_CHARGED",
+          "family": "commercial_activity",
+          "field": "description",
+          "fragment": "honorarios de Corretaje",
+          "strength": "MEDIA",
+          "position_start": 1939,
+          "position_end": 1962,
+          "context": "Se debe considerar el 2% de honorarios de Corretaje"
+        }
+      ],
+      "contradictions": [
+        {
+          "rule_id": "CONFLICT_OWNER_AND_BROKER_SIGNALS",
+          "reason": "Coexisten una declaración/atributo de propietario y señales profesionales, comerciales o de identidad empresarial.",
+          "owner_evidence_ids": [
+            "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type"
+          ],
+          "broker_rule_ids": [
+            "COMMERCIAL_TEXT_SIGNAL"
+          ]
+        }
+      ],
+      "requires_review": true,
+      "audit_conclusion": "El texto cobra 2% de honorarios de corretaje, pero Yapo etiqueta al anunciante como Propietario y no aparece identidad comercial o rol del publicador. La comisión sola no alcanza; permanece INCIERTO."
+    },
+    {
+      "listing_id": "32632678",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-adriana-perez-llona/32632678",
+      "publisher_identity": {
+        "publicador_visible": "CRISTI PROPIEDADES",
+        "contact_name": "CRISTI PROPIEDADES",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "",
+        "seller_profile_id": "15302692",
+        "seller_profile_url": "/user/profile/id/15302692",
+        "seller_type_profile": "",
+        "seller_type_provenance": {},
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "15302692",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:15302692:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "CASA Adriana Pérez llona",
+      "description_complete": "Se vende casa en Maipú detrás del Macdonals de camino a Melipilla Pasaje con acceso controlado 121m2 terreno 63m2 construido Tres habitaciones Tres baños Patio trasero y delantero",
+      "description_is_truncated": false,
+      "description_length": 179,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\fe34ad9be795ee20f36d7f46a667254f.html",
+        "sha256": "29625d3757dbae3719c563bd0ecdf0b8e91b0a99435418fb0aa5605c0f6b524a",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "CORREDOR_PROBABLE",
+      "proposal_source": "unknown_business_context",
+      "broker_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_AGENT_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_AGENT_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Agente",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "provenance": "yapo_listing_attribute_tipo_anunciante"
+        },
+        {
+          "evidence_id": "PUBLISHER_COMPANY_SHAPE:publicador_visible:1",
+          "rule_id": "PUBLISHER_IDENTITY_COMPANY_SHAPE",
+          "family": "publisher_company_identity",
+          "field": "publicador_visible",
+          "fragment": "propiedades",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "provenance": "publisher_scope:yapo_published_by_heading"
+        },
+        {
+          "evidence_id": "PUBLISHER_COMPANY_SHAPE:contact_name:2",
+          "rule_id": "PUBLISHER_IDENTITY_COMPANY_SHAPE",
+          "family": "publisher_company_identity",
+          "field": "contact_name",
+          "fragment": "propiedades",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "provenance": "publisher_identity"
+        },
+        {
+          "evidence_id": "UNKNOWN_BUSINESS_IDENTITY:3",
+          "rule_id": "UNKNOWN_BUSINESS_IDENTITY_REPEATED_OR_SERVICE_CUE",
+          "family": "unknown_commercial_identity",
+          "field": "publicador_visible",
+          "fragment": "unknown_business_identity:publicador_visible:CRISTI PROPIEDADES|shape:propiedades|repeat_listings:1|strength:review_candidate",
+          "strength": "BAJA",
+          "position_start": null,
+          "position_end": null
+        },
+        {
+          "evidence_id": "UNKNOWN_BUSINESS_IDENTITY:4",
+          "rule_id": "UNKNOWN_BUSINESS_IDENTITY_REPEATED_OR_SERVICE_CUE",
+          "family": "unknown_commercial_identity",
+          "field": "contact_name",
+          "fragment": "unknown_business_identity:contact_name:CRISTI PROPIEDADES|shape:propiedades|repeat_listings:1|strength:review_candidate",
+          "strength": "BAJA",
+          "position_start": null,
+          "position_end": null
+        }
+      ],
+      "owner_evidence": [],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": false,
+      "audit_conclusion": "El publicador figura como CRISTI PROPIEDADES y el HTML etiqueta el aviso como Agente. La marca no se incorpora al catálogo; queda CORREDOR_PROBABLE y el nombre comercial es candidato a revisión."
+    },
+    {
+      "listing_id": "27167566",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/amplia-casa-ampliada-4d3b-maipu/27167566",
+      "publisher_identity": {
+        "publicador_visible": "MARCELA ESPINOZA AHUMADA",
+        "contact_name": "MARCELA ESPINOZA AHUMADA",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "MARCELA ESPINOZA AHUMADA",
+        "seller_profile_id": "14200402",
+        "seller_profile_url": "/user/profile/id/14200402",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "14200402",
+          "distinct_listing_count": 2,
+          "evidence": [
+            "saved_html_profile:14200402:2_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Amplia casa ampliada 4D3B Maipu",
+      "description_complete": "Amplia casa se vende 4D3B, living comedor, cocina tipo americana 4 dormitorios amplios, 3 dormitorios, cocina de diario y ampliación <br /> <br /> Antejardin con quincho y estacionamiento <br /> <br /> Esta propiedad está ubicada en avenida con excelente conectividad con locomoción colectiva <br /> <br /> Cercana a supermercados, farmacias, locales comerciales, colegios y jardines infantiles",
+      "description_is_truncated": false,
+      "description_length": 394,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\5eb5e301a158fc5d35ac748731a784b9.html",
+        "sha256": "2dcd89e8e8b1da9a0a06cbc297ff1fcf03ff216e37a1d1aad2bf76312f5a4179",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [
+        {
+          "listing_id": "27168232",
+          "title": "Amplia casa de dos pisos 3D3B",
+          "classification_before": "INCIERTO",
+          "classification_proposed": "INCIERTO",
+          "seller_type": "PROFESIONAL",
+          "listing_advertiser_type": "Propietario",
+          "description_complete": true
+        }
+      ],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "Dos anuncios del mismo perfil local llevan etiqueta Propietario; los textos describen la casa y no contienen declaración personal de dominio ni señales de corretaje. Permanece INCIERTO."
+    },
+    {
+      "listing_id": "27144918",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vendo-casa-ciudad-satelite-sector-liquidambar/27144918",
+      "publisher_identity": {
+        "publicador_visible": "carolina betancourt",
+        "contact_name": "carolina betancourt",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "carolina betancourt",
+        "seller_profile_id": "14227322",
+        "seller_profile_url": "/user/profile/id/14227322",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "14227322",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:14227322:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Vendo casa ciudad satelite sector liquidambar",
+      "description_complete": "Casa 3 dormitorios, 3 baños, cocina amoblada, living comedor separados, patio. Consultas",
+      "description_is_truncated": false,
+      "description_length": 88,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\96c849870e030c52ef970e911efee67e.html",
+        "sha256": "fbf0c378aaa2eebe971dd415b6cc0a72173a07aecda1b9b0fd1a071d6649d9dd",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "El título dice “Vendo casa”, pero no afirma “mi casa” ni identifica al publicador como propietario. La etiqueta Yapo aislada no promueve a dueño; permanece INCIERTO."
+    },
+    {
+      "listing_id": "32306422",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-4-dormitorios-2-banos-180-terreno-victoria-maipu/32306422",
+      "publisher_identity": {
+        "publicador_visible": "SAULING CHIONG ABE",
+        "contact_name": "SAULING CHIONG ABE",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "SAULING CHIONG ABE",
+        "seller_profile_id": "13736569",
+        "seller_profile_url": "/user/profile/id/13736569",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13736569",
+          "distinct_listing_count": 2,
+          "evidence": [
+            "saved_html_profile:13736569:2_listings"
+          ]
+        },
+        "listing_advertiser_type": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "CASA 4 DORMITORIOS 2 BAÑOS 180 TERRENO VICTORIA MAIPU",
+      "description_complete": "CASA DE 180 METROS DE TERRENO UBICADA EN CALLE VICTORIA COMUNA DE MAIPU. <br /> <br /> - LIVING COMEDOR <br /> <br /> - COCINA <br /> <br /> - 4 DORMITORIOS <br /> <br /> - 2 BAÑOS <br /> <br /> - BODEGA <br /> <br /> - ENTRADA DE VEHICULOS <br /> <br /> PROPIEDAD SE EMPLAZA EN UN SECTOR RESIDENCIAL TRANQUILO A MINUTOS DE ESTACION DE METRO SANTIAGO BUERAS, SUPERMERCADOS, COLEGIOS, PLAZA DE MAIPU <br /> <br /> CONTACTO <br /> SAULING CHIONG ABE <br /> CORREDORA DE PROPIEDADES",
+      "description_is_truncated": false,
+      "description_length": 479,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\0b6b4b780c64ecf3b45ea2b86ed25f5b.html",
+        "sha256": "44ee9875943f02aa6bfeb0dc06bebb0e6f43bb68f038f74924bf14eaad23165c",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Agente",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [
+        {
+          "listing_id": "33208287",
+          "title": "239 METROS TERRENO 4 DORMITORIOS, 2 BAÑOS EL CARMEN /AV SUR MAIPU",
+          "classification_before": "INCIERTO",
+          "classification_proposed": "CORREDOR_PROBABLE",
+          "seller_type": "PROFESIONAL",
+          "listing_advertiser_type": "",
+          "description_complete": true
+        }
+      ],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "CORREDOR_PROBABLE",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_AGENT_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_AGENT_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Agente",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "provenance": "yapo_listing_attribute_tipo_anunciante"
+        },
+        {
+          "evidence_id": "BROKER_DESCRIPTION_ROLE_SIGNATURE:1",
+          "rule_id": "BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE",
+          "family": "publisher_broker_role_signature",
+          "field": "description",
+          "fragment": "description_publisher_role_signature:description:corredora de propiedades|identity_field:seller_jsonld_name",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null
+        },
+        {
+          "evidence_id": "BROKER_DESCRIPTION_ROLE_SIGNATURE:2",
+          "rule_id": "BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE",
+          "family": "publisher_broker_role_signature",
+          "field": "description",
+          "fragment": "description_publisher_role_signature:descripcion:corredora de propiedades|identity_field:seller_jsonld_name",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null
+        }
+      ],
+      "owner_evidence": [],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": false,
+      "audit_conclusion": "Además de la etiqueta Yapo Agente, la descripción cierra con SAULING CHIONG ABE seguido de “Corredora de Propiedades”. El nombre coincide con el publicador. Se propone CORREDOR_PROBABLE."
+    },
+    {
+      "listing_id": "32728499",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/86-m-const-balcon-y-aire-acond-uf-3-590-maipu/32728499",
+      "publisher_identity": {
+        "publicador_visible": "Alejandro silva",
+        "contact_name": "Alejandro silva",
+        "contact_logo_alt": "Foto de perfil de Alejandro silva",
+        "seller_jsonld_name": "Alejandro silva",
+        "seller_profile_id": "14382601",
+        "seller_profile_url": "/user/profile/id/14382601",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "14382601",
+          "distinct_listing_count": 3,
+          "evidence": [
+            "saved_html_profile:14382601:3_listings"
+          ]
+        },
+        "listing_advertiser_type": "",
+        "listing_advertiser_type_source": "",
+        "contact_badges_text": ""
+      },
+      "title_complete": "86 m² Const., Balcón y Aire Acond., UF 3.590 – Maipú",
+      "description_complete": "Ubicación:<br /> <br /> Nemesio Antunez 219, Bosques del Sur, Maipú.<br /> <br /> Descubra la combinación perfecta de confort y funcionalidad en esta exclusiva propiedad ubicada en el consolidado sector de Bosques del Sur, Maipú. Una oportunidad inmejorable para familias que buscan calidad de vida en un entorno residencial tranquilo y con alta plusvalía.<br /> <br /> Esta destacada casa de dos niveles cuenta con una superficie total de 129 m² de terreno y 86 m² construidos, distribuidos estratégicamente para maximizar la iluminación natural y la amplitud de sus espacios interiores. El programa habitacional contempla tres amplios dormitorios, donde destaca la habitación principal en suite, la cual se encuentra equipada con un funcional walking closet y baño privado. En total, la propiedad dispone de tres baños diseñados para ofrecer máxima comodidad a todos los integrantes del hogar y sus invitados, optimizando la distribución y privacidad en cada una de sus plantas.<br /> <br /> Construida en el año 2013, la vivienda se presenta en excelentes condiciones y ofrece atributos diferenciadores que elevan sustancialmente el estándar de habitabilidad en la zona. Entre sus principales características técnicas y de confort destacan:<br /> <br /> <br /> Sistema de aire acondicionado instalado para asegurar un clima ideal durante todo el año.<br /> Espaciosa terraza techada y un quincho completamente equipado, ideal para celebraciones y eventos sociales.<br /> Acceso principal techado y balcón en el segundo nivel con vista despejada.<br /> Estacionamiento privado y una estructura sólida que garantiza durabilidad y seguridad.<br /> <br /> <br /> El entorno de la propiedad es otro de sus grandes valores añadidos. Situada en el corazón de Bosques del Sur, en la comuna de Maipú, la zona destaca por su excelente conectividad vial y acceso rápido a redes de transporte. Los residentes disfrutan de la cercanía inmediata a una variada oferta de servicios esenciales, incluyendo colegios de prestigio, centros comerciales, supermercados y diversas áreas verdes destinadas al esparcimiento familiar. La tranquilidad del barrio, sumada a la calidad constructiva de la propiedad, convierte a esta casa en una opción estratégica tanto para uso habitacional como para inversión inmobiliaria a largo plazo.<br /> <br /> En nuestra corredora estamos a su total disposición para resolver cualquier duda y guiarle profesionalmente en la adquisición de su nueva propiedad. Contáctenos hoy mismo para coordinar una visita técnica y descubrir personalmente el potencial de este increíble hogar en Maipú.",
+      "description_is_truncated": false,
+      "description_length": 2604,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\9d9c61c1aad23a8ec179e9e610bdc821.html",
+        "sha256": "ff78a2a635ddc2176920f5c0aa51f543d1f62e5d33812c0bd5413ef04338a6a9",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "",
+        "listing_advertiser_type_source": "",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [
+        {
+          "listing_id": "32677581",
+          "title": "Amplia Casa Familiar en Ciudad Satélite | 3 Dormitorios | Patio y Estacionamientos",
+          "classification_before": "INCIERTO",
+          "classification_proposed": "CORREDOR_PROBABLE",
+          "seller_type": "PROFESIONAL",
+          "listing_advertiser_type": "",
+          "description_complete": true
+        },
+        {
+          "listing_id": "32672728",
+          "title": "Casa en Av. Las Torres | Excelente Ubicación y Potencial Comercial",
+          "classification_before": "INCIERTO",
+          "classification_proposed": "CORREDOR_PROBABLE",
+          "seller_type": "PROFESIONAL",
+          "listing_advertiser_type": "",
+          "description_complete": true
+        }
+      ],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "CORREDOR_PROBABLE",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [
+        {
+          "evidence_id": "BROKER_DESCRIPTION_ROLE_SIGNATURE:0",
+          "rule_id": "BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE",
+          "family": "publisher_broker_role_signature",
+          "field": "description",
+          "fragment": "description_first_person_brokerage_signature:description:en nuestra corredora estamos a su total disposicion para resolver cualquier duda y guiarle profesionalmente en la adquisicion de su nueva propiedad contactenos ",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null
+        },
+        {
+          "evidence_id": "BROKER_DESCRIPTION_ROLE_SIGNATURE:1",
+          "rule_id": "BROKER_DESCRIPTION_EXPLICIT_ROLE_SIGNATURE",
+          "family": "publisher_broker_role_signature",
+          "field": "description",
+          "fragment": "description_first_person_brokerage_signature:descripcion:en nuestra corredora estamos a su total disposicion para resolver cualquier duda y guiarle profesionalmente en la adquisicion de su nueva propiedad contactenos ",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null
+        }
+      ],
+      "owner_evidence": [],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "La descripción dice “En nuestra corredora” y ofrece orientación en primera persona. El perfil Yapo exacto tiene tres anuncios locales; los otros dos se correlacionan como CORREDOR_PROBABLE con evidencia del anuncio fuente."
+    },
+    {
+      "listing_id": "25861896",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-en-maipu/25861896",
+      "publisher_identity": {
+        "publicador_visible": "lorena",
+        "contact_name": "lorena",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "lorena",
+        "seller_profile_id": "13757298",
+        "seller_profile_url": "/user/profile/id/13757298",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13757298",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:13757298:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Casa en venta en maipu",
+      "description_complete": "Se vende hermosa casa en la comuna de maipu, sector tranquilo y residencial, con áreas verdes, accesos controlados mediante portón automatico. Trato directo con dueños sin costos de comisión!!",
+      "description_is_truncated": false,
+      "description_length": 192,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\d3f7198a54f22c7af2a11ec4899206b1.html",
+        "sha256": "dd48b629997a2aff8810bced3e14abfb549ca3af21538315dd074dbd1e7c8d55",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [
+        {
+          "rule_id": "DIRECT_DEAL_NEUTRAL",
+          "family": "direct_deal",
+          "field": "description",
+          "fragment": "Trato directo",
+          "strength": "BAJA",
+          "position_start": 143,
+          "position_end": 156,
+          "context": "Trato directo con dueños sin costos de comisión"
+        },
+        {
+          "rule_id": "DIRECT_OWNER_CONTACT",
+          "family": "direct_deal",
+          "field": "description",
+          "fragment": "Trato directo con dueños",
+          "strength": "MEDIA",
+          "position_start": 143,
+          "position_end": 167,
+          "context": "Trato directo con dueños sin costos de comisión"
+        }
+      ],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "La descripción habla de trato directo con “dueños” en plural, pero no vincula a Lorena con la titularidad. La etiqueta Yapo Propietario es débil y no hay corretaje; permanece INCIERTO."
+    },
+    {
+      "listing_id": "26135394",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vendo-hermosa-casa-en-ciudad-satelite/26135394",
+      "publisher_identity": {
+        "publicador_visible": "fernando Salazar",
+        "contact_name": "fernando Salazar",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "fernando Salazar",
+        "seller_profile_id": "13834042",
+        "seller_profile_url": "/user/profile/id/13834042",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "13834042",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:13834042:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Vendo Hermosa Casa en Ciudad Satelite",
+      "description_complete": "Hermosa casa Ciudad Satélite<br /> 4 dormitorios<br /> (dormitorio principal con baño en suite)<br /> 2 baños<br /> 1 living y comedor separados.<br /> Comedor diario.<br /> Cocina<br /> Estacionamiento 3 Autos<br /> Antejardín 100 metros cuadrados<br /> Patio posterior con logia.<br /> Manzarda",
+      "description_is_truncated": false,
+      "description_length": 296,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\e07846074933cd9576f2c18d6eae7169.html",
+        "sha256": "ee6e21fb8d41a09a293d232e1ef94fcc3bc8aae2adad38c9de77e4d2728b8fb4",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "El título usa “Vendo”, pero la descripción solo enumera atributos. No hay señal “mi casa”, firma del dueño ni evidencia de corretaje; permanece INCIERTO."
+    },
+    {
+      "listing_id": "26644524",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/excelente-casa-en-maipu-5-dormitorios/26644524",
+      "publisher_identity": {
+        "publicador_visible": "Begoña Borda",
+        "contact_name": "Begoña Borda",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "Begoña Borda",
+        "seller_profile_id": "14078479",
+        "seller_profile_url": "/user/profile/id/14078479",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "14078479",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:14078479:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Excelente Casa en Maipú 5 dormitorios",
+      "description_complete": "Excelente casa ampliado en 2 pisos, 5 dormitorios, 2 baños impecables, terraza, antejardin, patio, lavadero, entrada por calle principal y por costado de pasaje cerrado. Pisos flotantes y en living porcelanato, Excelentes terminaciones.",
+      "description_is_truncated": false,
+      "description_length": 236,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\043cfb67f270586ba5bf561000232069.html",
+        "sha256": "3f4dfe0fb137d684436fdd3531cf8522e93ec4bd715d7256fc16075b37179112",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "La descripción enumera características de la casa; no hay declaración personal de propiedad ni evidencia de corretaje. La etiqueta Propietario no confirma por sí sola."
+    },
+    {
+      "listing_id": "26653392",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/hermosa-casa-en-condominio/26653392",
+      "publisher_identity": {
+        "publicador_visible": "Boris Avila",
+        "contact_name": "Boris Avila",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "Boris Avila",
+        "seller_profile_id": "14081479",
+        "seller_profile_url": "/user/profile/id/14081479",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "14081479",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:14081479:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Hermosa casa en condominio!",
+      "description_complete": "Ubicada en la hermosa ciudad satélite de Maipu , cerca de supermercados, colegios, jardines infantiles, locomoción, carabineros, bencineras, con un parque natural en avenida principal para el paseo en familia o con tu mascota, para hacer yoga, etc en condominio privado con Consejeria 24/7 el condominio también cuenta con un parque y juegos para los más peques !<br /> <br /> Rutas para llegar tanto por Camino Lonquen y Camino a Melipillla, precio poco conversable ya que se venderá con varios muebles ( se mencionará en la visita)<br /> Patio delantero y trasero con regadío automático , celular de contacto ( el que aparece en la publicación ya no corre )<br /> ESTA UNA MUY BUENA OPORTUNIDAD DE CONSEGUIR TU HERMOSA CASA PROPIA !!!!",
+      "description_is_truncated": false,
+      "description_length": 737,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\957dc108cf5696e2b82cd4ae244faa71.html",
+        "sha256": "f867c673560f0fb5a66d14d5a72afeb851c00bee4569142c745831993f1c21df",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "“Tu hermosa casa propia” se dirige al comprador y no afirma que el publicador sea dueño. La descripción y el perfil no muestran corretaje; permanece INCIERTO."
+    },
+    {
+      "listing_id": "27111189",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/bella-casa-villa-la-llaveria-maipu/27111189",
+      "publisher_identity": {
+        "publicador_visible": "jose carrizo",
+        "contact_name": "jose carrizo",
+        "contact_logo_alt": "",
+        "seller_jsonld_name": "jose carrizo",
+        "seller_profile_id": "14218938",
+        "seller_profile_url": "/user/profile/id/14218938",
+        "seller_type_profile": "PROFESIONAL",
+        "seller_type_provenance": {
+          "status": "confirmed",
+          "source": "publisher_scope:publisher_profile_account_badge",
+          "relationship": "publisher"
+        },
+        "publisher_profile_context_from_saved_batch": {
+          "seller_profile_id": "14218938",
+          "distinct_listing_count": 1,
+          "evidence": [
+            "saved_html_profile:14218938:1_listings"
+          ]
+        },
+        "listing_advertiser_type": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "contact_badges_text": ""
+      },
+      "title_complete": "Bella casa villa la llaveria maipu",
+      "description_complete": "BELLISIMA CASA DE DOS PISOS RECIEN REMODELADA, VILLA CASAS DE LA LLAVERIA<br /> <br /> EMPLAZADA EN BUEN SECTOR DE CAMINO EL BOSQUE, AV FERROCARRIL, CAPELLAN FLORENCIO INFANTE, LOS URBANISTAS.<br /> LUGAR BUENA PLUSVALIA, PRONTO PASO DEL METROTREN A MELIPILLA.<br /> <br /> DISTRIBUCION<br /> <br /> PRIMERA PLANTA<br /> <br /> LIVING - COMEDOR <br /> COCINA AMOBLADA, EQUIPADA HORNO ELECTRIVO, COCINA ENCIMERA, DOBLE LLAVE EN LAVAPLATOS, Y AMPLIADA A UN COMEDOR DIARIO ELEGANTE.<br /> CALEFONT POR EL COSTADO DE LA CASA<br /> <br /> UNA BODEGA QUE SE PUEDE HABILITAR COMO CUARTO DORMITORIO O DORMITORIO DE SERVICIO, ( CABE UNA CAMA DE PLAZA MAS UN VELADOR )<br /> <br /> PRIMER PISO DE CERAMICA<br /> BAÑO DE VISITAS<br /> <br /> SEGUNDA PLANTA<br /> <br /> 3 DORMITORIOS CON CLOSET, UNO MATRIMONIAL EN WALKING CLOSET Y BAÑO EN SUITE.<br /> 3 BAÑOS , 2 BAÑOS COMPLETOS EN CERAMICA EN EL SEGUNDO PISO<br /> PISO DE MADERA PARQUET.<br /> <br /> MATERIALIDAD DE LA CASA, HORMIGON ARMADO<br /> <br /> PATIO TRASERO, ES TERRAZA <br /> LOGGIA AMPLIA.<br /> BODEGA <br /> <br /> PROPIEDAD EXCELENTE ESTADO DE CONSERVACION<br /> SE PAGAN CONTRIBUCIONES<br /> <br /> MAYORES DETALLES AL CELULAR",
+      "description_is_truncated": false,
+      "description_length": 1186,
+      "html_local_audit": {
+        "exists": true,
+        "path": "C:\\Users\\pgall\\Desktop\\Python\\ChatBot_v4_Grok\\scrapers\\scraper_yapo\\html_dumps\\maipu_casas_3000_6000_audit_20261102\\796032aa72cc7f3d85a380f9ff56ed76.html",
+        "sha256": "ef7a6a7d3508f8d369184e363041cb7f4ad898ef4cda25c923eb6473faaa8622",
+        "sha256_matches": true,
+        "title_matches": true,
+        "description_matches": true,
+        "listing_type_matches": true,
+        "listing_advertiser_type_extracted": "Propietario",
+        "listing_advertiser_type_source": "yapo_listing_attribute_tipo_anunciante",
+        "description_truncated_by_extractor": false
+      },
+      "identity_external_verification": "No realizada; no se equiparan nombres parecidos con identidad confirmada.",
+      "same_exact_seller_profile_local_ads": [],
+      "classification_before": "INCIERTO",
+      "classification_proposed": "INCIERTO",
+      "proposal_source": "contextual_rules",
+      "broker_evidence": [],
+      "owner_evidence": [
+        {
+          "evidence_id": "LISTING_ADVERTISER_OWNER_TYPE:listing_advertiser_type",
+          "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+          "family": "portal_listing_attribute",
+          "field": "listing_advertiser_type",
+          "fragment": "Propietario",
+          "strength": "MEDIA",
+          "position_start": null,
+          "position_end": null,
+          "attribution": "portal_listing_attribute"
+        }
+      ],
+      "owner_declarations_full_context": [],
+      "owner_support_signals": [],
+      "brokerage_fee_evidence": [],
+      "contradictions": [],
+      "requires_review": true,
+      "audit_conclusion": "La descripción detalla la propiedad y menciona el pago de contribuciones, pero no declara que el publicador sea propietario ni ofrece corretaje. Permanece INCIERTO."
+    }
+  ]
+}

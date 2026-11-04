@@ -68,7 +68,7 @@ def test_26_replay_observed_and_adversarial(question, required):
     assert "te contacta desde su número directo" not in reply.casefold()
 
 @pytest.mark.parametrize("message", [
-    "hola", "bueno", "gracias", "no me interesa",
+    "bueno", "gracias", "no me interesa",
     "stop", "no me escriban", "no quiero visitar",
     "no quiero que me contacten", "dame de baja",
 ])
@@ -152,3 +152,55 @@ def test_recent_rejection_cancels_earlier_visit_thread():
         {"customer_text": "ya no me interesa", "bot_text": "Entendido, gracias."},
     ]
     assert answer("lunes a las 10", history) is None
+
+
+def test_initial_greeting_keeps_original_outreach_context():
+    response = answer("hola")
+    assert "San Miguel" in response
+    assert "UF 2.690" in response
+    assert "¿Alcanzaste a ver" in response
+    assert "Te leo" not in response
+
+
+def test_interest_following_initial_greeting_is_not_generic():
+    history = [{"customer_text": "hola", "bot_text": answer("hola")}]
+    response = answer("me interesa", history)
+    assert "conocer el departamento" in response
+    assert "conversemos sobre una posible visita" not in response
+    assert "¿Te gustaría" in response
+
+
+def test_first_interest_without_history_identifies_property():
+    response = answer("me interesa")
+    assert "departamento de San Miguel" in response
+    assert "UF 2.690" in response
+    assert "¿Te gustaría ir a verlo?" in response
+
+
+def test_yes_to_visit_question_is_a_visit_preference_not_a_booking():
+    h = [{"customer_text": "me interesa", "bot_text": answer("me interesa")}]
+    response = answer("sí", h)
+    assert "¿Qué día" in response
+    assert "confirmarla" in response
+
+
+def test_no_to_publication_question_never_means_opt_out():
+    h = [{"customer_text": "hola", "bot_text": answer("hola")}]
+    response = answer("no", h)
+    assert "San Miguel" in response
+    assert "https://www.procasa.cl/6436" in response
+    assert "No insistiremos" not in response
+
+
+def test_no_to_visit_question_does_not_cancel_all_property_inquiries():
+    h = [{"customer_text": "me interesa", "bot_text": answer("me interesa")}]
+    response = answer("no", h)
+    assert "no coordinamos una visita" in response
+    assert "no insistiremos" not in response
+
+
+def test_outreach_confusion_has_direct_factual_answer():
+    response = answer("no entiendo de qué se trata")
+    assert "San Miguel" in response
+    assert "2.790" in response and "2.690" in response
+    assert "https://www.procasa.cl/6436" in response

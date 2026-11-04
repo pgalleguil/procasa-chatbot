@@ -199,10 +199,10 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
         old, new = ctx["old_price_uf"], ctx["new_price_uf"]
         diff = old - new
         sentences.append(
-            f"Bajó {_price(diff)} UF: antes costaba UF {_price(old)} y ahora "
-            f"UF {_price(new)} ({diff/old*100:.2f}% de rebaja).".replace(".", ",", 1)
-            if False else
-            f"Bajó {_price(diff)} UF: de UF {_price(old)} a UF {_price(new)}."
+            f"Bajó {_price(diff)} UF: de UF {_price(old)} a UF {_price(new)} "
+            f"({(diff / old * 100):.2f}% menos).".replace(
+                f"{(diff / old * 100):.2f}%", f"{(diff / old * 100):.2f}".replace(".", ",") + "%"
+            )
         )
     if date:
         verified_date = ctx.get("price_drop_date")
@@ -212,6 +212,8 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
             "No tengo verificada la fecha exacta en que se aplicó la rebaja."
         )
     if negotiate:
+        if interest:
+            sentences.append("¡Qué bueno que te interese!")
         sentences.append(
             f"El valor publicado es UF {_price(ctx['new_price_uf'])}. "
             "No tengo confirmado si el propietario aceptaría una negociación; "

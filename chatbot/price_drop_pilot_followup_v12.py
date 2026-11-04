@@ -77,8 +77,8 @@ def followup_reply(
     handler, but this response must not claim they have already been sent.
     """
     message = _plain(text)
-    if re.search(r"\\b(?:no me interesa|no quiero (?:visitar|visita|que me contacten)|"
-                 r"ya no quiero ir|no me escriban|stop|darme de baja)\\b", message):
+    if re.search(r"\b(?:no me interesa|no quiero (?:visitar|visita|que me contacten)|"
+                 r"ya no quiero ir|no me escriban|stop|darme de baja)\b", message):
         return None
     contact = bool(_CONTACT.search(message))
     visit = bool(_VISIT.search(message))
@@ -94,7 +94,12 @@ def followup_reply(
     preference = {**previous, **current}
     reported = _show_preference(preference)
     had_visit_request = any(_VISIT.search(_plain(t.get("customer_text") or "")) for t in history[-24:])
-    is_visit_context = had_visit_request or bool(previous) or visit
+    last_bot = _plain(history[-1].get("bot_text") or "") if history else ""
+    bot_asked_visit_preference = bool(re.search(
+        r"\b(?:que dia|que horario|acomodaria|visita|conocerlo|ir a verlo)\b", last_bot
+    ))
+    is_visit_context = (had_visit_request or bool(previous) or visit
+                        or (bool(current) and bot_asked_visit_preference))
     if not (contact or visit or interest or asks_confirmation or (current and is_visit_context)):
         return None
 

@@ -30,6 +30,10 @@ _RELEVANT = re.compile(
     r"nuevo valor|cómo lo ves|como lo ves|día|dia|semana|hora|horario)", re.I
 )
 _QUESTION = re.compile(r"(?:\?|¿)")
+_CONTEXTUAL_YES = re.compile(
+    r"^\s*s[ií]\s*[,;]?\s*(?:el|la|este|esta|para|por|en|a las|mañana|tarde|dia|día)\b",
+    re.I,
+)
 
 
 def should_simulate(message: str, history: list[dict]) -> bool:
@@ -45,7 +49,7 @@ def should_simulate(message: str, history: list[dict]) -> bool:
     classification = classify_price_drop_reply(value)
     if classification.label in {INTEREST, PRIORITY} and classification.positive:
         return True
-    if not _YES.fullmatch(value):
+    if not (_YES.fullmatch(value) or _CONTEXTUAL_YES.match(value)):
         return False
     for turn in reversed((history or [])[-3:]):
         previous = str(turn.get("bot_text") or "").strip()

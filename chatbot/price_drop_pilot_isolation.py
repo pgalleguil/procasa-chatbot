@@ -827,50 +827,45 @@ def _sanitize_unverified_unit(answer: str, ctx: dict) -> str:
     return pattern.sub(strip_claim, answer)
 
 
-def _campaign_location_reply(ctx: dict) -> str:
-    """Give a verified area reference, not a street or apartment number."""
-    facts = ctx.get("property_facts") or {}
-    comuna = facts.get("comuna") or "San Miguel"
-    ref = facts.get("direccion_referencial")
-    # A reference that already includes a house number is an address, not
-    # an area reference. Never repeat it as a safe approximation.
-    if isinstance(ref, str) and re.search(r"\b\d{3,5}\b", ref):
-        ref = None
-    if ref:
+def _campaign_location_reply(ctx: dict, history: list[dict] | None = None) -> str:
+    """Only the comuna can be read; no street, sector or unit is available."""
+    comuna = (ctx.get("property_facts") or {}).get("comuna") or "San Miguel"
+    previous = str((history or [{}])[-1].get("bot_text") or "") if history else ""
+    if "direccion exacta" in _plain(previous) or "ubicacion exacta" in _plain(previous):
         return (
-            f"Está en el sector de {ref}, en {comuna}. "
-            "La dirección exacta se confirma al coordinar una visita."
+            f"Por seguridad, este canal solo tiene la comuna: {comuna}. "
+            "No tengo acceso a la dirección exacta. "
+            "Si te interesa conocerlo, podemos conversar sobre una posible visita."
         )
     return (
-        f"Está en {comuna}. La ubicación exacta se confirma "
-        "al coordinar una visita."
+        f"El departamento está en {comuna}. Por seguridad no tengo "
+        "acceso a la dirección exacta ni al número de departamento."
     )
+
+
+def _redact_historical_location(text: str) -> str:
+    """Older replies may contain leaked address data; keep it out of the LLM."""
+    normalized = _plain(text)
+    if re.search(
+        r"\b(?:calle|avenida|av\.?|pasaje|pje\.?|transversal|depto|dpto|"
+        r"numero de departamento)\b", normalized
+    ) or (
+        re.search(r"\b(?:direccion|ubicacion|numero|unidad)\b", normalized)
+        and re.search(r"\b\d{1,5}\b", normalized)
+    ):
+        return "[detalle de ubicación omitido por seguridad]"
+    return str(text or "")
 
 
 def _campaign_location_guard(answer: str, ctx: dict) -> str:
-    """History may contain previously leaked addresses; never repeat them."""
-    street = str(
-        (ctx.get("property_facts") or {}).get("calle_publicada") or ""
-    ).strip()
-    if not street:
-        return answer
-    number_tokens = re.findall(r"\b\d{3,5}\b", street)
-    street_words = [
-        token for token in _plain(re.sub(r"\d+", "", street)).split()
-        if len(token) > 3
-    ]
+    """Block model-disclosed street references WITHOUT knowing the address."""
     normalized = _plain(answer)
-    contains_number = any(
-        re.search(r"\b" + re.escape(n) + r"\b", normalized)
-        for n in number_tokens
-    )
-    location_context = any(word in normalized for word in (
-        "direccion", "ubicacion", "avenida", "calle", "septima",
-        "depto", "dpto", "departamento", "numero", "av."
-    ))
-    if contains_number and (
-        location_context
-        or (street_words and all(w in normalized for w in street_words[:2]))
+    if re.search(
+        r"\b(?:calle|avenida|av\.?|pasaje|pje\.?|transversal)\b",
+        normalized,
+    ) or (
+        re.search(r"\b(?:direccion|ubicacion|numero|depto|dpto|unidad)\b", normalized)
+        and re.search(r"\b\d{1,5}\b", normalized)
     ):
         return _campaign_location_reply(ctx)
     return answer
@@ -1013,7 +1008,15 @@ def _build_native_campaign_messages(message: str, ctx: dict,
         {"role": "system", "content": context},
         {"role": "assistant", "content": outbound},
     ]
-    archive, recent = _bounded_history(history)
+    # Previous V8/V9 bot replies can contain a historic disclosure.
+    # Declassify neither previous bot text nor customer-supplied addresses.
+    safe_history = [
+        {**item,
+         "customer_text": _redact_historical_location(item.get("customer_text") or ""),
+         "bot_text": _redact_historical_location(item.get("bot_text") or "")}
+        for item in history
+    ]
+    archive, recent = _bounded_history(safe_history)
     if archive:
         # Prepend a clearly delimited data record after the campaign opening,
         # before the full recent turns. Do not elevate user text to authority.
@@ -1096,7 +1099,7 @@ def build_native_pilot_reply(message: str, ctx: dict, history: list[dict],
                 "Entiendo, no volveré a repetirte la ubicación. "
                 "¿Qué otra duda tienes sobre el departamento?"
             )
-        return _campaign_location_reply(ctx)
+        return _campaign_location_reply(ctx, history)
     introduced, _ = _customer_introduction(clean)
     if introduced and _plain(clean).startswith(("hola", "buenas")) and len(clean) < 55:
         return f"¡Hola, {introduced}! 😊 Gracias por responder al aviso."

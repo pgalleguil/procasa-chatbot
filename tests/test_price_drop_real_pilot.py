@@ -369,3 +369,194 @@ def test_render_bootstrap_off_does_no_database_work():
         def __getitem__(self, name):
             raise AssertionError("Disabled bootstrap queried a database")
     assert run_bootstrap(ForbiddenDB(), env={}) == {"status": "DISABLED"}
+
+
+@pytest.mark.parametrize("text,label,intent,positive,review", [
+    ("Quiero visitar el departamento", "HOT", "ASK_VISIT", True, True),
+    ("Me gustaría coordinar una visita mañana", "HOT", "ASK_VISIT", True, True),
+    ("¿Puedo visitar mañana?", "HOT", "ASK_VISIT", True, True),
+    ("Quiero que me llame un ejecutivo", "HOT", "ASK_CONTACT", True, True),
+    ("Me puede llamar una asesora", "HOT", "ASK_CONTACT", True, True),
+    ("Quiero hacer una oferta", "HOT", "GIVE_OFFER", True, True),
+    ("Me interesa, cuéntame más", "NORMAL", "ASK_INFO", True, True),
+    ("¿Cuáles son los gastos comunes?", "NORMAL", "ASK_INFO", False, False),
+    ("¿Quién me contactará?", "NORMAL", "ASK_INFO", False, False),
+    ("No me interesa", "RECHAZADO", "OTHER", False, False),
+    ("No me interesa una visita", "RECHAZADO", "OTHER", False, False),
+    ("No quiero agendar, gracias", "RECHAZADO", "OTHER", False, False),
+    ("No me escriban más", "BAJA", "UNSUBSCRIBE", False, False),
+    ("STOP", "BAJA", "UNSUBSCRIBE", False, False),
+    ("Sí", "SIN_SENAL", "OTHER", False, False),
+    ("Ok", "SIN_SENAL", "OTHER", False, False),
+    ("Hola", "SIN_SENAL", "OTHER", False, False),
+])
+def test_campaign_classifier_uses_canonical_hot_intents_without_overcalling(
+        text, label, intent, positive, review):
+    from chatbot.price_drop_campaign_classifier import classify_price_drop_reply
+    result = classify_price_drop_reply(text)
+    assert result.label == label
+    assert result.intent == intent
+    assert result.positive is positive
+    assert result.needs_human_review is review
+    assert result.temperature == ("HOT" if label == "HOT" else
+                                  "NORMAL" if label == "NORMAL" else None)
+
+
+def test_campaign_send_accepted_timestamp_and_chile_timezone(db, monkeypatch):
+    approve(db, n=1)
+    enable(monkeypatch)
+    reply = send_one_due(db, "piloto6436_20261105", now=START,
+                         sender=lambda *_: {"success": True, "provider_message_id": "msg-accepted"})
+    assert reply["status"] == "SENT"
+    assert reply["sent_at"] == START.isoformat()
+    assert reply["sent_at_chile"].startswith("2026-11-05T11:00:00")
+    row = db[DISPATCHES].find_one({"provider_message_id": "msg-accepted"})
+    assert row["sent_at_chile"].startswith("2026-11-05T11:00:00")
+    assert row["attempted_at"].replace(tzinfo=UTC) == START
+    assert row["sent_at"].replace(tzinfo=UTC) == START
+    assert row["response_classification"] == "SIN_RESPUESTA"
+
+
+def test_campaign_hot_reply_creates_actionable_marker_without_crm_hot_write(
+        db, monkeypatch):
+    from chatbot.price_drop_campaign_real import campaign_worklist
+    approve(db, n=1)
+    enable(monkeypatch)
+    db["leads"].update_one(
+        {"_id": ObjectId("690000000000000000000001")},
+        {"$set": {"lead_temperature_effective": "COLD",
+                  "lifecycle.hot_since": "2026-01-01T10:00:00-03:00",
+                  "sla_status": "ok", "ejecutivo_asignado": "Actual"}},
+    )
+    assert send_one_due(
+        db, "piloto6436_20261105", now=START,
+        sender=lambda *_: {"success": True, "provider_message_id": "campaign-sent-1"},
+    )["status"] == "SENT"
+    at = START + timedelta(minutes=4)
+    result = record_inbound(
+        db, phone="+56930000001", provider_message_id="cust-hot-1",
+        text="Quiero visitar el departamento, ¿podemos coordinar?",
+        received_at=at,
+    )
+    assert result["classification"] == "HOT"
+    assert result["temperature"] == "HOT"
+    assert result["intent"] == "ASK_VISIT"
+    assert result["needs_human_review"] is True
+    doc = db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})
+    assert doc["response_classification"] == "HOT"
+    assert doc["first_hot_response_at"].replace(tzinfo=UTC) == at
+    assert doc["first_positive_response_at"].replace(tzinfo=UTC) == at
+    assert doc["followup_status"] == "PENDIENTE_REVISION"
+    turn = db[TURNS].find_one({"provider_message_id": "cust-hot-1"})
+    assert turn["classification"]["intent"] == "ASK_VISIT"
+    assert turn["classification"]["classifier_version"]
+    lead = db["leads"].find_one({"_id": doc["lead_id"]})
+    assert lead["price_drop_campaign_v1"]["temperature"] == "HOT"
+    assert lead["price_drop_campaign_v1"]["needs_human_review"] is True
+    assert lead["lead_temperature_effective"] == "COLD"
+    assert lead["lifecycle"]["hot_since"] == "2026-01-01T10:00:00-03:00"
+    assert lead["sla_status"] == "ok"
+    assert lead["ejecutivo_asignado"] == "Actual"
+    worklist = campaign_worklist(db, "piloto6436_20261105")
+    assert worklist["hot"] == 1 and worklist["pending"] == 1
+    assert worklist["leads"][0]["lead_id"] == str(doc["lead_id"])
+
+
+def test_campaign_normal_questions_vs_positive_reply(db, monkeypatch):
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "msg-first"})
+    info = record_inbound(
+        db, phone="+56930000001", provider_message_id="info-1",
+        text="¿Cuánto son los gastos comunes?", received_at=START + timedelta(minutes=1),
+    )
+    assert info["classification"] == "NORMAL"
+    assert info["needs_human_review"] is False
+    assert db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})[
+        "followup_status"] == "CONSULTA_INFORMATIVA"
+    interest = record_inbound(
+        db, phone="+56930000001", provider_message_id="interest-2",
+        text="Me interesa, cuéntame más", received_at=START + timedelta(minutes=2),
+    )
+    assert interest["classification"] == "NORMAL"
+    assert interest["needs_human_review"] is True
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["normal"] == 1 and report["hot"] == 0
+    assert report["interested"] == 1 and report["pending_human_review"] == 1
+    assert db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})[
+        "positive_reply_count"] == 1
+
+
+def test_campaign_decline_clears_pending_but_keeps_historical_events(db, monkeypatch):
+    from chatbot.price_drop_campaign_real import campaign_worklist
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "msg-1"})
+    record_inbound(db, phone="+56930000001", provider_message_id="visit-1",
+                   text="Quiero agendar una visita", received_at=START + timedelta(minutes=1))
+    outcome = record_inbound(
+        db, phone="+56930000001", provider_message_id="decline-2",
+        text="No me interesa, no quiero visita",
+        received_at=START + timedelta(minutes=2),
+    )
+    assert outcome["classification"] == "RECHAZADO"
+    assert outcome["needs_human_review"] is False
+    report = campaign_report(db, "piloto6436_20261105")
+    assert report["hot"] == 0 and report["pending_human_review"] == 0
+    assert report["declined"] == 1
+    assert report["rows"][0]["first_hot_response_at"] is not None
+    assert campaign_worklist(db, "piloto6436_20261105")["pending"] == 0
+
+
+def test_campaign_inbound_duplicate_never_increments_or_reopens_followup(db, monkeypatch):
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "msg-first"})
+    received = dict(phone="+56930000001", provider_message_id="unique-visit",
+                    text="Quiero agendar una visita", received_at=START + timedelta(minutes=1))
+    assert record_inbound(db, **received)["classification"] == "HOT"
+    assert record_inbound(db, **received)["status"] == "DUPLICATE_IGNORED"
+    row = db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})
+    assert row["reply_count"] == 1 and row["positive_reply_count"] == 1
+    assert db[TURNS].count_documents({"direction": "inbound"}) == 1
+
+
+def test_campaign_worklist_prioritizes_hot_before_normal(db, monkeypatch):
+    from chatbot.price_drop_campaign_real import campaign_worklist
+    approve(db, n=2)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "sent-1"})
+    send_one_due(db, "piloto6436_20261105", now=START + timedelta(minutes=12),
+                 sender=lambda *_: {"success": True, "provider_message_id": "sent-2"})
+    record_inbound(db, phone="+56930000001", provider_message_id="reply-1",
+                   text="Me interesa, cuéntame más",
+                   received_at=START + timedelta(minutes=14))
+    record_inbound(db, phone="+56930000002", provider_message_id="reply-2",
+                   text="Quiero que me llame un ejecutivo",
+                   received_at=START + timedelta(minutes=15))
+    worklist = campaign_worklist(db, "piloto6436_20261105")
+    assert worklist["pending"] == 2
+    assert worklist["hot"] == 1 and worklist["normal"] == 1
+    assert [r["response_classification"] for r in worklist["leads"]] == [
+        "HOT", "NORMAL",
+    ]
+
+
+def test_reply_for_different_property_not_misattributed(db, monkeypatch):
+    approve(db, n=1)
+    enable(monkeypatch)
+    send_one_due(db, "piloto6436_20261105", now=START,
+                 sender=lambda *_: {"success": True, "provider_message_id": "msg-first"})
+    response = record_inbound(
+        db, phone="+56930000001", provider_message_id="another-home",
+        text="Me interesa la propiedad 9999, quiero verla",
+        received_at=START + timedelta(minutes=2),
+    )
+    assert response["status"] == "OTHER_PROPERTY_NOT_ATTRIBUTED"
+    assert db[TURNS].count_documents({}) == 0
+    assert db[DISPATCHES].find_one({"campaign_id": "piloto6436_20261105"})[
+        "reply_count"] == 0

@@ -318,9 +318,12 @@ def reply_v13(message: str, ctx: dict, history: list[dict], *,
         # of the original message. Also avoid repeating price on consecutive
         # turns if the bot just anchored the property in its last response.
         previous_bot = plain(history[-1].get("bot_text") or "") if history else ""
-        if "san miguel" in previous_bot and (
-            "rebaja" in previous_bot or str(int(ctx["new_price_uf"])) in previous_bot
-            or _price(ctx["new_price_uf"]) in previous_bot
+        property_recently_anchored = any(
+            "san miguel" in plain(turn.get("bot_text") or "")
+            for turn in history[-3:]
+        )
+        if property_recently_anchored and (
+            "departamento" in previous_bot or "san miguel" in previous_bot
         ):
             sentences.append(
                 "¡Qué bueno! 😊 ¿Te gustaría ir a conocer el departamento? "

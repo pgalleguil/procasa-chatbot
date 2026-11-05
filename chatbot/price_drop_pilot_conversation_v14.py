@@ -6,6 +6,7 @@ verified test context. It never loads CRM records or sends messages.
 from __future__ import annotations
 
 import math
+import os
 import re
 import time
 from typing import Any, Callable
@@ -395,6 +396,47 @@ def generate_reply(
         "usage": None,
         "cost": None,
     }
+    # Emergency recovery for the existing V14 test conversation only.
+    # Controlled by an explicit environment flag; no CRM, new campaign, or
+    # simulated executive notifications are touched. The V14 caller still
+    # enforces the single-recipient webhook boundary and provider idempotency.
+    if os.getenv("PRICE_DROP_PILOT_V14_RESTORE_V13", "").strip().lower() in {
+        "1", "true", "yes"
+    }:
+        from .price_drop_pilot_guard_v13 import (
+            VERSION as V13_VERSION, reply_v13, safe_outbound_v13,
+            plain as v13_plain,
+        )
+        from .price_drop_pilot_isolation import (
+            DECLINE, NEGATE_VISIT, _visit_parts,
+            _personalize_reply, build_test_reply,
+        )
+        history = history or []
+        response = None
+        if (not NEGATE_VISIT.search(message)
+                and (not DECLINE.search(message)
+                     or v13_plain(message) in {"no", "nop", "nope", "no gracias"})):
+            response = reply_v13(
+                message, ctx, history, parse_parts=_visit_parts,
+                notice_roles=(),
+            )
+        if response is None:
+            # Same isolated legacy path used in the functioning V13.1 pilot.
+            # Unlike V14's JSON-only commercial generation this can answer
+            # verifiable facts without requiring a JSON response.
+            response = build_test_reply(message, ctx, history)
+        response = safe_outbound_v13(
+            response, message, ctx, history, parse_parts=_visit_parts,
+            notice_roles=(),
+        )
+        final = _personalize_reply(response, message, ctx, history)
+        audit["provider"] = "v13_1_recovery"
+        audit["model"] = None
+        audit["rule_interventions"].append("temporary_v13_1_recovery")
+        audit["restored_engine"] = V13_VERSION
+        audit["final_response"] = final
+        audit["latency_ms"] = int((time.monotonic() - started) * 1000)
+        return {"answer": final, "audit": audit}
     try:
         messages = _build_messages(str(message or ""), ctx, history or [])
         audit["context_sent"] = messages

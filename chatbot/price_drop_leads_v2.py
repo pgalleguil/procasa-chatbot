@@ -519,12 +519,12 @@ def send_test_notice_once(db, *, role: str,
         return {"status": "ALREADY_CLAIMED"}
     role_name = "ADMINISTRADOR" if role == "administrator" else "EJECUTIVO DE LA PROPIEDAD"
     message = (
-        f"PRUEBA INTERNA — AVISO SIMULADO AL {role_name}\\n\\n"
-        "🔔 PROCASA — Interesado en rebaja de precio\\n"
-        f"🏠 Propiedad: {campaign['property_code']}\\n"
-        f"📉 UF {campaign['old_price_uf']:,} → UF {campaign['new_price_uf']:,}\\n"
-        f"📱 Cliente de prueba: {tester}\\n"
-        f"💬 Respuesta: {str(campaign.get('last_customer_text') or 'Interés registrado')[:160]}\\n"
+        f"PRUEBA INTERNA — AVISO SIMULADO AL {role_name}\n\n"
+        "🔔 PROCASA — Interesado en rebaja de precio\n"
+        f"🏠 Propiedad: {campaign['property_code']}\n"
+        f"📉 UF {campaign['old_price_uf']:,} → UF {campaign['new_price_uf']:,}\n"
+        f"📱 Cliente de prueba: {tester}\n"
+        f"💬 Respuesta: {str(campaign.get('last_customer_text') or 'Interés registrado')[:160]}\n"
         "Aviso de prueba: no se notificó a un ejecutivo real."
     ).replace(",", ".")
     if sender is None:

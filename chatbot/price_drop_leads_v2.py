@@ -22,6 +22,7 @@ CONTEXT_FLAG = "PRICE_DROP_LEADS_V2_CONTEXT_ENABLED"
 SEND_FLAG = "PRICE_DROP_LEADS_V2_SEND_ENABLED"
 APPROVED_ID_FLAG = "PRICE_DROP_LEADS_V2_APPROVED_ID"
 TEST_PHONE_FLAG = "PRICE_DROP_PILOT_TEST_PHONE"
+TEST_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_TEST_NOTICES_ENABLED"
 ACTIVE_STATES = ("SENDING", "SENT", "RESPONDED", "OPTED_OUT", "DELIVERY_UNKNOWN")
 VALID_CODE = re.compile(r"^\d{4,6}$")
 VALID_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{5,79}$")
@@ -374,6 +375,7 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
             f"{field}.last_classification": label,
             f"{field}.last_customer_reply_at": now,
             f"{field}.last_inbound_provider_id": str(provider_message_id),
+            f"{field}.last_customer_text": str(text)[:350],
         },
         "$addToSet": {
             "price_drop_v2.processed_inbound_provider_ids": str(provider_message_id),
@@ -465,3 +467,85 @@ def record_delivery_update(db, payload: dict, *, now=None) -> dict:
         f"{field}.provider_status": {"$in": allowed},
     }, update)
     return {"status": "UPDATED" if result.modified_count else "UNCHANGED"}
+
+
+def send_test_notice_once(db, *, role: str,
+                          sender: Callable[[str, str], dict] | None = None,
+                          now=None) -> dict:
+    """Send one simulated internal notice to the allowlisted tester only.
+
+    Both roles target the TEST phone, never employee numbers. Each attempted
+    provider call is claimed on the same lead before I/O; an uncertain call
+    is quarantined rather than retried.
+    """
+    if os.getenv(TEST_NOTICE_FLAG, "").lower() not in {"1", "true", "yes"}:
+        return {"status": "DISABLED"}
+    if role not in {"administrator", "property_executive"}:
+        return {"status": "INVALID_ROLE"}
+    tester = normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, ""))
+    if not tester:
+        return {"status": "TEST_PHONE_NOT_CONFIGURED"}
+    candidates = list(db[LEADS].find({
+        f"{ROOT}.notifications.{role}.status": "PENDING_SIMULATION",
+    }, {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
+        "price_drop_v2.campaigns": 1}).limit(3))
+    selected = []
+    for lead in candidates:
+        if not _same_phone(lead, tester):
+            continue
+        for i, c in enumerate((lead.get("price_drop_v2") or {}).get("campaigns") or []):
+            if (c.get("test_mode") is True
+                    and c.get("phone_normalized") == tester
+                    and c.get("provider_message_id")
+                    and c.get("has_positive_response")
+                    and c.get("notifications", {}).get(role, {}).get("status") == "PENDING_SIMULATION"):
+                selected.append((lead["_id"], i, c))
+    if not selected:
+        return {"status": "IDLE"}
+    # Stable first selection avoids nondeterministic notification order.
+    selected.sort(key=lambda row: (str(row[2].get("campaign_id")), str(row[0])))
+    lead_id, index, campaign = selected[0]
+    field = f"{ROOT}.{index}"
+    stamp = utc(now or datetime.now(timezone.utc))
+    claim = db[LEADS].update_one({
+        "_id": lead_id, f"{field}.campaign_id": campaign["campaign_id"],
+        f"{field}.test_mode": True,
+        f"{field}.notifications.{role}.status": "PENDING_SIMULATION",
+    }, {"$set": {
+        f"{field}.notifications.{role}.status": "CLAIMED",
+        f"{field}.notifications.{role}.attempted_at": stamp,
+    }})
+    if claim.modified_count != 1:
+        return {"status": "ALREADY_CLAIMED"}
+    role_name = "ADMINISTRADOR" if role == "administrator" else "EJECUTIVO DE LA PROPIEDAD"
+    message = (
+        f"PRUEBA INTERNA — AVISO SIMULADO AL {role_name}\\n\\n"
+        "🔔 PROCASA — Interesado en rebaja de precio\\n"
+        f"🏠 Propiedad: {campaign['property_code']}\\n"
+        f"📉 UF {campaign['old_price_uf']:,} → UF {campaign['new_price_uf']:,}\\n"
+        f"📱 Cliente de prueba: {tester}\\n"
+        f"💬 Respuesta: {str(campaign.get('last_customer_text') or 'Interés registrado')[:160]}\\n"
+        "Aviso de prueba: no se notificó a un ejecutivo real."
+    ).replace(",", ".")
+    if sender is None:
+        from .whatsapp_client import send_whatsapp_message_detailed_sync
+        sender = send_whatsapp_message_detailed_sync
+    try:
+        receipt = sender(tester, message)
+    except Exception:
+        receipt = {"success": False, "provider_call_uncertain": True}
+    accepted = bool(receipt.get("success") and receipt.get("provider_message_id")
+                    and not receipt.get("provider_call_uncertain"))
+    status = "SENT" if accepted else "DELIVERY_UNKNOWN"
+    db[LEADS].update_one({
+        "_id": lead_id, f"{field}.campaign_id": campaign["campaign_id"],
+        f"{field}.notifications.{role}.status": "CLAIMED",
+    }, {"$set": {
+        f"{field}.notifications.{role}.status": status,
+        f"{field}.notifications.{role}.provider_message_id": receipt.get("provider_message_id"),
+        f"{field}.notifications.{role}.completed_at": stamp,
+        f"{field}.notifications.{role}.sent_to": "TEST_PHONE_ONLY",
+        **({f"{field}.notifications.{role}.sent_at": stamp} if accepted else {}),
+    }})
+    return {"status": status, "campaign_id": campaign["campaign_id"],
+            "role": role, "recipient_last4": tester[-4:]}

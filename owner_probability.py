@@ -590,6 +590,49 @@ def calculate_owner_probability(
             incomplete["deterministic_signal_codes"] = [s["code"] for s in deterministic_signals]
             incomplete["minimum_deterministic_evidence"] = sorted(sufficient_signal_codes)
             if deepseek_only_block:
+                state = normalize_state((doc.get("classification") or {}).get("state"))
+                portal = _text(doc.get("origen") or doc.get("portal")).lower()
+                weak_neutral_signal = (
+                    any(signal.get("code") == "SELLER_TYPE_AGENT_OR_COMPANY" for signal in deterministic_signals)
+                    or len(deterministic_signals) >= 2
+                )
+                if (
+                    portal == "yapo"
+                    and state in {"INCIERTO", "DUEÑO_PROBABLE"}
+                    and weak_neutral_signal
+                ):
+                    neutral_completeness = {
+                        **incomplete,
+                        "heuristic_score_evidence_basis": "neutral_baseline_when_only_weak_deterministic_signals_exist",
+                        "neutral_baseline_applied": True,
+                        "heuristic_score_complete": False,
+                    }
+                    suppressed_signals = [
+                        {**signal, "suppression_reason": "below_minimum_deterministic_evidence"}
+                        for signal in deterministic_signals
+                    ]
+                    base.update({
+                        "owner_probability_heuristic_score": 50,
+                        "owner_probability_heuristic_kind": "NEUTRAL_BASELINE",
+                        "owner_probability_heuristic_calibrated": False,
+                        "owner_probability_heuristic_source": OWNER_PROBABILITY_SOURCE,
+                        "owner_probability_heuristic_version": OWNER_PROBABILITY_VERSION,
+                        "owner_probability_heuristic_calculated_at": when.isoformat(),
+                        "owner_probability_heuristic_calculation_mode": "deterministic_neutral_baseline",
+                        "owner_probability_heuristic_signals": {
+                            "base": 50,
+                            "applied": [],
+                            "suppressed": suppressed_signals,
+                            "raw_score": 50,
+                            "neutral": True,
+                            "family_rule": "weak signals do not move the neutral baseline",
+                        },
+                        "owner_probability_heuristic_quality": "HEURISTIC_NEUTRAL",
+                        "owner_probability_heuristic_band": probability_band(0.5),
+                        "owner_probability_heuristic_contradiction": None,
+                        "owner_probability_heuristic_completeness": neutral_completeness,
+                    })
+                    return base
                 base["owner_probability_heuristic_completeness"] = incomplete
                 base["owner_probability_heuristic_signals"] = {
                     "base": 50,

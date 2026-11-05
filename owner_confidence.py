@@ -95,11 +95,20 @@ def build_owner_probability_doc(doc):
     ]
     if heuristic:
         title_prefix = "Puntaje heurístico; no es una probabilidad calibrada estadísticamente"
+        if classification.get("owner_probability_heuristic_kind") == "NEUTRAL_BASELINE":
+            title_prefix = (
+                "Puntaje heurístico neutral de 50%; no es una probabilidad calibrada. "
+                "Señales débiles, incluido el perfil Profesional de Yapo, no bastan para inferir dueño o corredor"
+            )
         title = " | ".join([title_prefix, *labels])
     else:
         title = " | ".join(labels) if labels else "Resultado neutral: sin señales útiles"
     return {
-        "owner_probability_display": f"{value}/100 · heurística" if heuristic else f"{value}%",
+        "owner_probability_display": (
+            f"{value}% · heurística (neutral)"
+            if heuristic and classification.get("owner_probability_heuristic_kind") == "NEUTRAL_BASELINE"
+            else f"{value}% · heurística" if heuristic else f"{value}%"
+        ),
         "owner_probability_sort": value,
         "owner_probability_title": title,
     }

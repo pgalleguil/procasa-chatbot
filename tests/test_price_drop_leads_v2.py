@@ -185,3 +185,23 @@ def test_unknown_delivery_is_durable_and_not_retried(db, monkeypatch):
                        sender=broken_sender, now=NOW)["status"] == "NOT_APPROVED"
     assert len(attempts) == 1
     assert db["leads"].find_one({"phone": PHONE})["price_drop_v2"]["campaigns"][0]["status"] == "DELIVERY_UNKNOWN"
+
+
+def test_real_inquiry_must_reference_same_property_before_drop(db):
+    lead = db["leads"].find_one({"phone": PHONE})
+    drop = datetime(2026, 10, 14, 11, 52, 43, tzinfo=timezone.utc)
+    # A generic earlier conversation cannot be used as campaign evidence.
+    assert v2._inquiry_before(lead, "6436", drop) is False
+    older = dict(role="user", content="Consulté por el código 6436",
+                 timestamp="2026-10-12T12:00:00-03:00")
+    lead["messages"].append(older)
+    assert v2._inquiry_before(lead, "6436", drop) is True
+    older["content"] = "Consulté por el código 9999"
+    assert v2._inquiry_before(lead, "6436", drop) is False
+    older["metadata"] = {"property_code": "6436"}
+    assert v2._inquiry_before(lead, "6436", drop) is True
+    older["metadata"] = {}
+    older["content"] = "Revisé https://www.procasa.cl/6436, gracias"
+    assert v2._inquiry_before(lead, "6436", drop) is True
+    older["timestamp"] = "2026-11-05T12:00:00-03:00"
+    assert v2._inquiry_before(lead, "6436", drop) is False

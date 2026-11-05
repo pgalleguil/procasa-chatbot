@@ -356,10 +356,10 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
             f"{field}.status": "OPTED_OUT" if stopped else "RESPONDED",
             f"{field}.last_classification": label,
             f"{field}.last_customer_reply_at": now,
+            f"{field}.last_inbound_provider_id": str(provider_message_id),
         },
         "$addToSet": {
             "price_drop_v2.processed_inbound_provider_ids": str(provider_message_id),
-            f"{field}.inbound_provider_ids": str(provider_message_id),
         },
         "$inc": {f"{field}.reply_count": 1},
     }

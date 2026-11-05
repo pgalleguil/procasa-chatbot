@@ -58,6 +58,7 @@ jobs:
               tests/test_chatbot_property_read_guard.py
               tests/test_price_drop_real_pilot.py
               tests/test_price_drop_watch_request.py
+              tests/test_price_drop_leads_v2.py
           - suite: Owner campaign price revalidation
             tests: >-
               tests/test_owner_campaign_private_portal.py

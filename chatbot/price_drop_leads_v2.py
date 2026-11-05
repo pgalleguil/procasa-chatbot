@@ -294,11 +294,12 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
     if not campaign or not _same_phone(lead, canonical):
         return None
     code = campaign["property_code"]
-    if re.search(r"\b(?:codigo|código|propiedad)\s*[:#]?\s*(\d{4,6})\b",
-                 message or "", re.I):
-        found = re.search(r"\b(?:codigo|código|propiedad)\s*[:#]?\s*(\d{4,6})\b",
-                          message, re.I).group(1)
-        if found != code:
+    # An explicit other-property reference (including a link) must not be
+    # attributed to this campaign. Reuse the existing resolver used by V1.
+    from .price_drop_pilot import _other_property_referenced
+    if _other_property_referenced(message or "", code):
+        own_url = f"https://www.procasa.cl/{code}"
+        if own_url not in str(message or ""):
             return None
     try:
         _property_price(db, code, campaign["old_price_uf"], campaign["new_price_uf"])

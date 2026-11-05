@@ -133,7 +133,12 @@ def _load_real_campaign_context(db: Any, phone: str, message: str, *, now=None) 
 
 
 def load_active_context(db: Any, phone: str, message: str, *, now: datetime | None = None) -> dict | None:
-    """Test-phone isolation or explicitly sent real campaign conversation."""
+    """Lead-embedded V2 first; legacy context stays read-only for older sends."""
+    # A V2 campaign must never depend on legacy campaign/dispatch collections.
+    from .price_drop_leads_v2 import active_context as _v2_active_context
+    v2 = _v2_active_context(db, phone=phone, message=message, now=now)
+    if v2 is not None:
+        return v2
     if not _enabled_for_phone(phone):
         return _load_real_campaign_context(db, phone, message, now=now)
     now = now or datetime.now(timezone.utc)

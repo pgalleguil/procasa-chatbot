@@ -348,7 +348,10 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
             f"{ROOT}.$.last_classification": label,
             f"{ROOT}.$.last_customer_reply_at": now,
         },
-        "$addToSet": {f"{ROOT}.$.inbound_provider_ids": str(provider_message_id)},
+        "$addToSet": {
+            "price_drop_v2.processed_inbound_provider_ids": str(provider_message_id),
+            f"{ROOT}.$.inbound_provider_ids": str(provider_message_id),
+        },
         "$inc": {f"{ROOT}.$.reply_count": 1},
     }
     if stopped:
@@ -367,10 +370,13 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
                 update["$set"][f"{ROOT}.$.notifications.{role}.status"] = role_status
         update["$set"][f"{ROOT}.$.has_positive_response"] = True
     result = db[LEADS].update_one(
-        {"_id": lead["_id"], ROOT: {"$elemMatch": {
-            "campaign_id": cid, "status": {"$in": ["SENT", "RESPONDED"]},
-            "inbound_provider_ids": {"$ne": str(provider_message_id)},
-        }}},
+        {"_id": lead["_id"],
+         "price_drop_v2.processed_inbound_provider_ids": {
+             "$ne": str(provider_message_id),
+         },
+         ROOT: {"$elemMatch": {
+             "campaign_id": cid, "status": {"$in": ["SENT", "RESPONDED"]},
+         }}},
         update,
     )
     if result.modified_count != 1:

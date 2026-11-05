@@ -80,6 +80,24 @@ def enable(monkeypatch, campaign_id="piloto6436_20261105"):
     monkeypatch.setenv("PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED", "true")
 
 
+def test_price_drop_message_natural_and_not_pushy():
+    from chatbot.price_drop_campaign_real import _message
+    msg = _message("6436", 2790, 2690)
+    assert "de San Miguel" in msg
+    assert "UF 2.790" in msg
+    assert "bajó 100 UF" in msg
+    assert "UF 2.690" in msg
+    assert "https://www.procasa.cl/6436" in msg
+    assert "¿te sigue interesando?" in msg
+    assert "no recibir más avisos" in msg
+    assert "visitar" not in msg.casefold()
+    assert "agendar" not in msg.casefold()
+
+    other = _message("8001", 3000, 2800)
+    assert "de San Miguel" not in other
+    assert "código 8001" in other
+
+
 def test_preview_read_only_and_paced_by_12_minutes(db):
     p = preview_plan(db, plan(db, 3), now=NOW)
     assert p["ready_to_plan"] and not p["blocked"]

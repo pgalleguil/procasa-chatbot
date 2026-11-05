@@ -332,7 +332,8 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
                  {"contact_phone_normalized": normalize_phone_strict(phone)}],
          ROOT: {"$elemMatch": {"campaign_id": cid, "status": {
              "$in": ["SENT", "RESPONDED"]}}}},
-        {"_id": 1, "phone": 1, "contact_phone_normalized": 1},
+        {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
+         "price_drop_v2.campaigns": 1},
     )
     if not lead or not _same_phone(lead, phone):
         return {"status": "NOT_CAMPAIGN_REPLY"}
@@ -350,9 +351,17 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
     if stopped:
         update["$set"]["price_drop_v2.opted_out"] = True
     if positive:
-        role_status = "PENDING_SIMULATION" if ctx["test_mode"] else "PENDING_HUMAN_REVIEW"
-        for role in ("administrator", "property_executive"):
-            update["$set"][f"{ROOT}.$.notifications.{role}.status"] = role_status
+        stored_campaign = next(
+            (row for row in (lead.get("price_drop_v2") or {}).get("campaigns") or []
+             if row.get("campaign_id") == cid), {},
+        )
+        if not stored_campaign.get("has_positive_response"):
+            role_status = (
+                "PENDING_SIMULATION" if ctx["test_mode"]
+                else "PENDING_HUMAN_REVIEW"
+            )
+            for role in ("administrator", "property_executive"):
+                update["$set"][f"{ROOT}.$.notifications.{role}.status"] = role_status
         update["$set"][f"{ROOT}.$.has_positive_response"] = True
     result = db[LEADS].update_one(
         {"_id": lead["_id"], ROOT: {"$elemMatch": {

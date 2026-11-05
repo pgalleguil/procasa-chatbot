@@ -99,7 +99,7 @@ def test_test_campaign_lifecycle_only_mutates_existing_canonical_lead(db, monkey
     c = lead["price_drop_v2"]["campaigns"][0]
     assert c["provider_message_id"] == "test-provider-6436"
     assert c["status"] == "SENT"
-    assert c["expires_at"] == NOW + timedelta(days=7)
+    assert c["expires_at"].replace(tzinfo=timezone.utc) == NOW + timedelta(days=7)
     assert len(lead["messages"]) == 2
     assert lead["messages"][-1]["metadata"]["campaign_id"] == CAMPAIGN
     assert lead["messages"][-1]["metadata"]["provider_message_id"] == "test-provider-6436"

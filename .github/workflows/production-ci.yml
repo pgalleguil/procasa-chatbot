@@ -44,6 +44,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: Chatbot snapshot delivery fence
+            tests: >-
+              tests/test_chatbot_snapshot_delivery_fence.py
           - suite: Isolated price-drop WhatsApp pilot
             tests: >-
               tests/test_price_drop_pilot.py

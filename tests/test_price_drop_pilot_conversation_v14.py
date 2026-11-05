@@ -148,6 +148,12 @@ def test_partial_unsafe_answer_gets_one_repair_and_keeps_verified_answer():
     assert result["answer"] == "El precio vigente es UF 2.690."
     assert result["audit"]["repair_count"] == 1
     assert result["audit"]["provider_calls"] == 2
+    repair_context = generator.messages[1]
+    assert repair_context[-2] == {
+        "role": "assistant",
+        "content": "El precio vigente es UF 2.690. Tu visita ya quedó confirmada.",
+    }
+    assert "unconfirmed_operational_action" in repair_context[-1]["content"]
     assert "unconfirmed_operational_action" in result["audit"]["rule_interventions"]
     assert "bounded_model_repair" in result["audit"]["rule_interventions"]
 
@@ -189,6 +195,20 @@ def test_empty_generation_returns_safe_fallback_without_extra_repair():
         "Disculpa, tuve un problema al preparar la respuesta. "
         "¿Me puedes repetir tu consulta?"
     )
+
+
+def test_history_budget_preserves_latest_correction_and_pending_question():
+    ctx = conversation_context()
+    history = [{"customer_text": str(i) + "x" * 695,
+                "bot_text": "y" * 895} for i in range(24)]
+    history[-1] = {"customer_text": "Corrección: no quiero visita",
+                   "bot_text": "¿Quieres saber los gastos comunes?"}
+    generator = SequenceGenerator(["Los gastos comunes son $72.000."])
+    generate_reply("sí", ctx, history, generator=generator)
+    sent = generator.messages[0]
+    assert sent[-3]["content"] == history[-1]["customer_text"]
+    assert sent[-2]["content"] == history[-1]["bot_text"]
+    assert history[-1]["bot_text"] in sent[1]["content"]
 
 
 def test_timeout_returns_safe_fallback():

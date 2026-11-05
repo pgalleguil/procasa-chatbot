@@ -179,7 +179,7 @@ def _bounded_history(history: list[dict]) -> list[dict]:
     """Keep recent literal turns within a modest context budget."""
     selected: list[dict] = []
     char_count = 0
-    for turn in history[-24:]:
+    for turn in reversed(history[-24:]):
         customer = str(turn.get("customer_text") or "").strip()[:700]
         assistant = str(turn.get("bot_text") or "").strip()[:900]
         if not customer and not assistant:
@@ -190,7 +190,7 @@ def _bounded_history(history: list[dict]) -> list[dict]:
             break
         selected.append(exchange)
         char_count += cost
-    return selected
+    return list(reversed(selected))
 
 
 def _build_messages(message: str, ctx: dict, history: list[dict]) -> list[dict]:
@@ -442,16 +442,18 @@ def generate_reply(
             if violations:
                 audit["rule_interventions"].extend(violations)
                 repair_messages = [
-                    *messages[:-1],
+                    *messages,
+                    {"role": "assistant", "content": answer},
                     {"role": "system", "content": (
                         "Repara una sola vez tu respuesta anterior. Conserva las "
                         "partes que sí responden la pregunta y están respaldadas "
                         "por los datos entregados. Elimina toda afirmación de visita "
                         "confirmada, reserva, aviso, contacto o escritura en CRM que "
                         "no esté confirmada. No añadas una promesa nueva. Responde "
-                        "al último mensaje del cliente y entrega solo la respuesta."
+                        "al último mensaje del cliente y entrega solo la respuesta. "
+                        "Corrige también estas infracciones detectadas: "
+                        + ", ".join(violations)
                     )},
-                    messages[-1],
                 ]
                 repair_diagnostics: dict[str, Any] = {}
                 audit["repair_count"] = 1

@@ -97,3 +97,9 @@ Por falta de esa evidencia, V13.1 se mantiene como ruta predeterminada y la cand
 ## Riesgos pendientes
 
 Los validadores de salida cubren afirmaciones críticas conocidas, pero no demuestran la seguridad semántica de toda respuesta en lenguaje natural. El cliente comercial actual no expone costos. La revisión humana de conversaciones completas con modelo real, la rúbrica de Astra y la batería original siguen pendientes. No se recomienda activar V14 hasta disponer de esa evidencia y confirmar mejora suficiente sin fallos críticos.
+
+## Revisión técnica posterior
+
+Se corrigieron dos defectos detectados al revisar el código: la reparación ahora recibe la respuesta original y las infracciones detectadas; el presupuesto del historial conserva primero los turnos más recientes y después restituye el orden cronológico. Se agregaron regresiones para ambos casos. La prueba de bootstrap con fecha vencida ahora usa NOW explícito en preview, persistencia y aprobación, sin cambiar el reloj ni los controles de producción.
+
+Verificación posterior: 283 pruebas aprobadas, sin exclusiones, ejecutando test_price_drop_pilot_conversation_v14.py, test_price_drop_pilot_isolation.py y test_price_drop_real_pilot.py con Python 3.13 y UTF-8. Esta verificación reemplaza el resultado con exclusión para la prueba temporal. La evaluación real de conversaciones y la integración de V14 en la ruta de destinatarios reales siguen pendientes; esta revisión no autoriza envíos.

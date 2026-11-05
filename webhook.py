@@ -4420,14 +4420,25 @@ async def webhook(
         # a prior, explicitly approved price-drop send without altering CRM/SLA.
         # Tracking failures must not prevent a normal chatbot response.
         try:
-            from chatbot.price_drop_campaign_real import record_inbound
-            await loop.run_in_executor(
+            # V2 stores its complete price-drop state on the canonical lead.
+            # An attributed V2 reply must not also write a legacy campaign turn.
+            from chatbot.price_drop_leads_v2 import record_inbound as record_lead_price_drop
+            v2_result = await loop.run_in_executor(
                 _WEB_THREAD_POOL,
-                lambda: record_inbound(
+                lambda: record_lead_price_drop(
                     _sync_db(), phone=phone,
                     provider_message_id=str(provider_message_id), text=text,
                 ),
             )
+            if v2_result.get("status") == "NOT_CAMPAIGN_REPLY":
+                from chatbot.price_drop_campaign_real import record_inbound
+                await loop.run_in_executor(
+                    _WEB_THREAD_POOL,
+                    lambda: record_inbound(
+                        _sync_db(), phone=phone,
+                        provider_message_id=str(provider_message_id), text=text,
+                    ),
+                )
         except Exception:
             logger.exception("[PRICE_DROP_CAMPAIGN] inbound audit unavailable")
         return JSONResponse({"ok": True, "job_id": str(job_id)}, status_code=200)

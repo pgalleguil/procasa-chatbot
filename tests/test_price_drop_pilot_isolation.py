@@ -255,6 +255,24 @@ def test_sender_logs_safe_reason_for_blocked_preflight(isolated, monkeypatch, ca
     assert "[PRICE_DROP_PILOT_TEST] blocked reason=recipient_not_configured" in caplog.text
 
 
+def test_v14_preflight_uses_prop360_normalized_type_and_commune(isolated, monkeypatch, capsys):
+    from scripts import price_drop_pilot_test as sender_script
+    db = db_case()
+    db["crm_price_drop_pilot_v1"].docs = []
+    prop = db["universo_cartera_prop360"].docs[0]
+    prop["comuna"] = "San Miguel"
+    prop["tipo_operacion"]["tipo"] = "Departamento"
+
+    monkeypatch.setattr(sender_script, "get_db", lambda: db)
+    calls = []
+    monkeypatch.setattr(sender_script, "send_whatsapp_message_detailed_sync",
+                        lambda phone, message: calls.append((phone, message)))
+
+    assert sender_script.run_test_once(send=False, version=sender_script.VERSION) == 0
+    assert not calls
+    assert "departamento de San Miguel" in capsys.readouterr().out
+
+
 def test_pilot_sender_once_and_never_writes_existing_leads(isolated, monkeypatch):
     """Dry-run cannot send; the first live call is recorded; second cannot send."""
     from scripts import price_drop_pilot_test as sender_script

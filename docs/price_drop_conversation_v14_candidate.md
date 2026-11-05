@@ -77,11 +77,11 @@ La respuesta falsa de visita se eliminó y el dato de precio verificado se conse
 
 ## Comparación de veinte conversaciones y rúbrica
 
-El archivo `tests/fixtures/price_drop_conversations_v14.json` contiene veinte escenarios conversacionales de varios turnos, derivados de los ejemplos y casos límite de la solicitud: saludo, sí/no contextual, negociación, rechazo de visita, preguntas combinadas, segunda propiedad, errores ortográficos y horarios ambiguos. La solicitud menciona una batería y rúbrica de Astra, pero esos artefactos no estaban adjuntos ni en el repositorio; por eso no presento este fixture como los escenarios originales de Astra.
+El archivo `tests/fixtures/price_drop_conversations_v14.json` contiene veinte escenarios conversacionales de varios turnos, derivados de los ejemplos y casos límite de la solicitud. Astra entregó después una batería y una rúbrica en otro chat, junto con tres opciones de mensaje inicial y recomendó la opción A. Este fixture se creó antes de recibir esa respuesta y todavía no corresponde a la batería de Astra; no se ha puntuado con su rúbrica. La opción A es más breve y pregunta si sigue interesando el departamento; la vista previa implementada aún usa el texto anterior, así que falta incorporarla y evaluarla.
 
-La comparación completa V13.1 / V14 / generador comercial original con conversaciones completas y modelo real **no se ejecutó**. La configuración señala `deepseek-v4-flash`, pero no hay clave DeepSeek/XAI en el entorno ni en `.env`. No se intentó ninguna llamada, no se copió una clave y no se modificó configuración. Tampoco hay transcripciones reales con las que identificar casos de calidad que mejoraron o empeoraron. No atribuyo a V14 una mejora de naturalidad, continuidad, pertinencia o utilidad comercial.
+La comparación completa V13.1 / V14 / generador comercial original con conversaciones completas y modelo real **no se ejecutó** en este entorno. El usuario informa que ha probado desde su teléfono actuando como cliente; esas pruebas son evidencia del recorrido que atendió el servicio desplegado, pero no se ha identificado qué commit/versión las atendió ni se han adjuntado sus transcripciones. V14 todavía está integrada solo en `process_test_inbound`; la campaña real construye su apertura en `price_drop_campaign_real._message` y procesa respuestas por la cola normal y `chatbot.core`. Por tanto, esas pruebas no acreditan el comportamiento de V14 ni su activación para leads reales.
 
-Por falta de esa evidencia, V13.1 se mantiene como ruta predeterminada y la candidata no debe habilitarse basándose en este borrador. Para reconsiderarla hacen falta la rúbrica y batería originales de Astra, seguida de evaluación aislada con datos ficticios en el generador real; registrar y puntuar las veinte conversaciones completas, incluyendo casos mejores y peores, y comprobar cero fallos críticos.
+La recomendación de Astra de separar redacción de controles y evaluar cada apertura con su siguiente respuesta coincide con la dirección de V14. Su revisión también advierte que una prueba de teléfono con otra ruta no valida esta candidata. Antes de activar la conversación V14 para el piloto real hay que conectarla al recorrido normal sin eludir el control CRM/SLA, incorporar el mensaje A, usar la batería y rúbrica de Astra, registrar las transcripciones del modelo desplegado y comprobar cero fallos críticos. La ruta predeterminada sigue en V13.1 mientras eso no se cumpla.
 
 ## Archivos modificados
 
@@ -96,7 +96,7 @@ Por falta de esa evidencia, V13.1 se mantiene como ruta predeterminada y la cand
 
 ## Riesgos pendientes
 
-Los validadores de salida cubren afirmaciones críticas conocidas, pero no demuestran la seguridad semántica de toda respuesta en lenguaje natural. El cliente comercial actual no expone costos. La revisión humana de conversaciones completas con modelo real, la rúbrica de Astra y la batería original siguen pendientes. No se recomienda activar V14 hasta disponer de esa evidencia y confirmar mejora suficiente sin fallos críticos.
+Los validadores de salida cubren afirmaciones críticas conocidas, pero no demuestran la seguridad semántica de toda respuesta en lenguaje natural. El cliente comercial actual no expone costos. Faltan la integración del diálogo en la ruta real, la comparación con las conversaciones del teléfono identificando la versión que las atendió y la puntuación de la batería de Astra. No se recomienda activar V14 para leads hasta demostrar mejora sin fallos críticos.
 
 ## Revisión técnica posterior
 

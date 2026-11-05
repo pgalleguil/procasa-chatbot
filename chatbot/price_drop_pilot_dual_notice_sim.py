@@ -14,6 +14,8 @@ from .price_drop_pilot_exec_notice_sim import FLAG, TURNS, should_simulate
 VERSION = "price_drop_pilot_v11_dual_notice_test"
 V12_VERSION = "price_drop_pilot_v12_followup_test"
 V13_VERSION = "price_drop_pilot_v13_regression_test"
+V14_VERSION = "price_drop_pilot_natural_v14"
+V14_NOTICE_FLAG = "PRICE_DROP_PILOT_V14_DUAL_NOTICE_SIMULATION"
 
 
 def _text(ctx, phone, answer, role):
@@ -43,10 +45,14 @@ def _text(ctx, phone, answer, role):
 
 def send_dual_test_notices(db, *, ctx, phone, customer_text, history,
                            inbound_message_id, sender=None):
-    if os.getenv(FLAG, "").lower() not in {"1", "true", "yes"}:
-        return {"status": "DISABLED"}
-    if ctx.get("campaign_version") not in {VERSION, V12_VERSION, V13_VERSION}:
+    version = ctx.get("campaign_version")
+    if version not in {VERSION, V12_VERSION, V13_VERSION, V14_VERSION}:
         return {"status": "WRONG_VERSION"}
+    # V14 has its own opt-in. Restoring V13.1 dialogue must not silently
+    # enable extra messages or change how prior V11-V13 tests behave.
+    flag = V14_NOTICE_FLAG if version == V14_VERSION else FLAG
+    if os.getenv(flag, "").strip().lower() not in {"1", "true", "yes"}:
+        return {"status": "DISABLED"}
     from .price_drop_pilot_isolation import is_test_phone
     normalized = normalize_phone_strict(phone)
     configured = normalize_phone_strict(os.getenv("PRICE_DROP_PILOT_TEST_PHONE", ""))
@@ -59,8 +65,9 @@ def send_dual_test_notices(db, *, ctx, phone, customer_text, history,
         sender = send_whatsapp_message_detailed_sync
     outcomes = {}
     for role in ("ADMIN", "EXECUTIVE"):
-        prefix = ("v13-notice:" if ctx.get("campaign_version") == V13_VERSION
-                  else "v12-notice:" if ctx.get("campaign_version") == V12_VERSION
+        prefix = ("v14-notice:" if version == V14_VERSION
+                  else "v13-notice:" if version == V13_VERSION
+                  else "v12-notice:" if version == V12_VERSION
                   else "v11-notice:")
         key = prefix + hashlib.sha256(
             f"{ctx['campaign_id']}:{role}".encode()

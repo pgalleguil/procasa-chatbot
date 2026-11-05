@@ -1505,8 +1505,17 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
     if not accepted:
         return {"status": "delivery_unknown"}
     if campaign_version == V14_VERSION:
-        # The conversation candidate never sends simulated notices or
-        # creates a human handoff; the one customer reply is already done.
+        # Optional V14 ADMIN/EXECUTIVE simulations only reach the exact test
+        # phone. No CRM lookup, lead creation or actual executive handoff.
+        from .price_drop_pilot_dual_notice_sim import send_dual_test_notices
+        notice = send_dual_test_notices(
+            db, ctx=ctx, phone=phone_norm, customer_text=text,
+            history=history, inbound_message_id=str(provider_message_id),
+            sender=exec_notice_sender,
+        )
+        if notice.get("status") == "PROCESSED":
+            return {"status": "test_reply_sent",
+                    "test_dual_notice_statuses": notice["roles"]}
         return {"status": "test_reply_sent"}
     # V11/V12/V13: test-only notifications to the allowlisted tester.
     # No CRM, current executive owner or real commercial side effects.

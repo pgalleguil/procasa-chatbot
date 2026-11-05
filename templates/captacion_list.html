@@ -4653,10 +4653,10 @@
                             {% set precio_sort = current_sorts.get('precio') %}
                             <th class="text-center sortable" data-col="precio" title="{{ 'Orden actual: ascendente.' if precio_sort and precio_sort.direction == 'asc' else 'Orden actual: descendente.' if precio_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Precio {% if precio_sort %}<span class="sort-direction">{{ '↑ asc.' if precio_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                             {% set probability_sort = current_sorts.get('owner_probability') %}
-                            <th class="text-center sortable" data-col="owner_probability" title="Probabilidad estimada según evidencia del publicador. {{ 'Orden actual: ascendente.' if probability_sort and probability_sort.direction == 'asc' else 'Orden actual: descendente.' if probability_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Probabilidad de dueño {% if probability_sort %}<span class="sort-direction">{{ '↑ asc.' if probability_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
-                            <th class="text-center">Estado</th>
+                            <th class="text-center sortable" data-col="owner_probability" title="Clasificación del anunciante y probabilidad numérica cuando fue calculada. {{ 'Orden actual: ascendente.' if probability_sort and probability_sort.direction == 'asc' else 'Orden actual: descendente.' if probability_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Anunciante / probabilidad {% if probability_sort %}<span class="sort-direction">{{ '↑ asc.' if probability_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
+                            <th class="text-center">Gestión</th>
                             {% set antiguedad_sort = current_sorts.get('antiguedad') %}
-                            <th class="text-center sortable" data-col="antiguedad" title="{{ 'Orden actual: ascendente.' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'Orden actual: descendente.' if antiguedad_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Antigüedad {% if antiguedad_sort %}<span class="sort-direction">{{ '↑ asc.' if antiguedad_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="antiguedad" title="Fecha de captura o antigüedad, según el origen del dato. {{ 'Orden actual: ascendente.' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'Orden actual: descendente.' if antiguedad_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Fecha / antigüedad {% if antiguedad_sort %}<span class="sort-direction">{{ '↑ asc.' if antiguedad_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -4687,18 +4687,33 @@
                                 {% endif %}
                                 </div>
                             </td>
-                            <td class="text-center" data-label="Probabilidad de dueño"
+                            <td class="text-center" data-label="Anunciante / probabilidad"
                                 data-sort="{{ item.owner_probability_sort }}"
                                 title="{{ item.owner_probability_title }}">
-                                <div class="mobile-cell-value">{{ item.owner_probability_display }}</div>
+                                <div class="mobile-cell-value">
+                                    {% if item.is_new_yapo_cohort %}
+                                    <strong>{{ item.classification_state_label }}</strong>
+                                    <div class="small">{{ item.owner_probability_display }}</div>
+                                    {% if item.availability_display %}
+                                    <div class="small text-warning-emphasis fw-semibold">{{ item.availability_display }}</div>
+                                    {% endif %}
+                                    {% else %}
+                                    {{ item.owner_probability_display }}
+                                    {% endif %}
+                                </div>
                             </td>
-                            <td class="text-center" data-label="Estado">
+                            <td class="text-center" data-label="Gestión">
                                 <div class="mobile-cell-value"><span class="badge-custom badge-{{ item.estado|lower }}">{{ item.estado }}</span></div>
                             </td>
-                            <td class="text-center" data-label="Antigüedad">
+                            <td class="text-center" data-label="Fecha / antigüedad">
                                 <div class="mobile-cell-value">
+                                {% if item.fecha_es_captura %}
+                                <div class="small fw-bold">Fecha de captura</div>
+                                <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
+                                {% else %}
                                 <div class="small fw-bold">Hace {{ item.dias_en_portal }} días</div>
                                 <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
+                                {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -4880,6 +4895,7 @@
             </div>
 
             <div class="table-responsive">
+                {% set has_new_yapo_items = items|selectattr('is_new_yapo_cohort')|list|length > 0 %}
                 <table class="prop-table">
                     <thead>
                         <tr>
@@ -4887,9 +4903,12 @@
                             <th class="sortable" data-col="comuna" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Comuna <i class="fa-solid {{ 'fa-sort-up' if comuna_sort and comuna_sort.direction == 'asc' else 'fa-sort-down' if comuna_sort else 'fa-sort' }} ms-1"></i>{% if comuna_sort %}<span class="sort-priority">{{ comuna_sort.priority }}</span>{% endif %}</th>
                             <th>Origen</th>
                             <th class="text-center">Precio</th>
-                            <th class="text-center">Estado</th>
+                            {% if has_new_yapo_items %}
+                            <th class="text-center">Anunciante</th>
+                            {% endif %}
+                            <th class="text-center">Gestión</th>
                             {% set antiguedad_sort = current_sorts.get('antiguedad') %}
-                            <th class="text-center sortable" data-col="antiguedad" title="Clic: agregar, cambiar dirección o quitar este criterio." style="cursor:pointer;user-select:none;">Antigüedad <i class="fa-solid {{ 'fa-sort-up' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'fa-sort-down' if antiguedad_sort else 'fa-sort' }} ms-1"></i>{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="antiguedad" title="Fecha de captura o antigüedad, según el origen del dato." style="cursor:pointer;user-select:none;">Fecha / antigüedad <i class="fa-solid {{ 'fa-sort-up' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'fa-sort-down' if antiguedad_sort else 'fa-sort' }} ms-1"></i>{% if antiguedad_sort %}<span class="sort-priority">{{ antiguedad_sort.priority }}</span>{% endif %}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -4914,7 +4933,15 @@
                                 <div class="price-source-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ item.price_source_warning }}</div>
                                 {% endif %}
                             </td>
-                            <td class="text-center" data-label="Estado">
+                            {% if has_new_yapo_items %}
+                            <td class="text-center" data-label="Anunciante">
+                                {% if item.is_new_yapo_cohort %}
+                                <strong>{{ item.classification_state_label }}</strong>
+                                {% if item.availability_display %}<div class="small text-warning-emphasis fw-semibold">{{ item.availability_display }}</div>{% endif %}
+                                {% else %}—{% endif %}
+                            </td>
+                            {% endif %}
+                            <td class="text-center" data-label="Gestión">
                                 {% set e = item.estado %}
                                 {% if e in ['Por contactar', 'En gestión', 'Contacto exitoso', 'Sin respuesta', 'Reunión agendada', 'GESTION'] %}
                                     <span class="badge-custom badge-gestion">{{ e }}</span>
@@ -4926,9 +4953,14 @@
                                     <span class="badge-custom badge-nuevo">{{ e }}</span>
                                 {% endif %}
                             </td>
-                            <td class="text-center" data-label="Antigüedad">
+                            <td class="text-center" data-label="Fecha / antigüedad">
+                                {% if item.fecha_es_captura %}
+                                <div class="small fw-bold">Fecha de captura</div>
+                                <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
+                                {% else %}
                                 <div class="small fw-bold">Hace {{ item.dias_en_portal }} días</div>
                                 <div class="small text-secondary" style="font-size: 0.75rem;">{{ item.fecha_str }}</div>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}

@@ -1,5 +1,7 @@
 """Reglas compartidas para agrupar las respuestas de captación."""
 
+from captacion_visibility import apply_captacion_visibility
+
 VISIBLE_CLASSIFICATION_STATES = ("DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO")
 
 # `gestion.estado` es la respuesta guardada desde el detalle. Los documentos que
@@ -50,9 +52,10 @@ def is_terminal_captacion_state(value):
 
 def build_kpi_queries(base_query):
     """Construye consultas mutuamente excluyentes desde la respuesta del equipo."""
+    visible_query = apply_captacion_visibility(base_query)
     return {
-        "available": {**base_query, "gestion.estado": {"$in": list(AVAILABLE_STATES)}},
-        "management": {**base_query, "gestion.estado": {"$in": list(MANAGEMENT_STATES)}},
-        "captured": {**base_query, "gestion.estado": {"$in": list(CAPTURED_STATES)}},
-        "discarded": {**base_query, "gestion.estado": {"$in": list(DISCARDED_STATES)}},
+        "available": {"$and": [visible_query, {"gestion.estado": {"$in": list(AVAILABLE_STATES)}}]},
+        "management": {"$and": [visible_query, {"gestion.estado": {"$in": list(MANAGEMENT_STATES)}}]},
+        "captured": {"$and": [visible_query, {"gestion.estado": {"$in": list(CAPTURED_STATES)}}]},
+        "discarded": {"$and": [visible_query, {"gestion.estado": {"$in": list(DISCARDED_STATES)}}]},
     }

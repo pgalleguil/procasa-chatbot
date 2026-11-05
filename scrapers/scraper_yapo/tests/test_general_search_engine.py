@@ -49,7 +49,10 @@ class _Proxy:
         return bool(type(self).available)
 
 
-def _install_live_mocks(monkeypatch, tmp_path, *, pages_complete=True, rows=None, fail=False):
+def _install_live_mocks(
+    monkeypatch, tmp_path, *, pages_complete=True, rows=None, fail=False,
+    selection_truncated=False,
+):
     calls = {"discover": 0, "detail": 0}
 
     def discovery(urls, *, report, page_filter_validator, **_kwargs):
@@ -64,6 +67,8 @@ def _install_live_mocks(monkeypatch, tmp_path, *, pages_complete=True, rows=None
                        "filter_validation": validation}],
             "pagination_complete": pages_complete,
             "pagination_cause": "explicit_total_pages_reached" if pages_complete else "safety_max_pages_reached",
+            "selection_truncated": selection_truncated,
+            "selection_dropped_count": 1 if selection_truncated else 0,
             "errors": [] if pages_complete else ["pagination_incomplete"],
             "proxy_requests": 1, "request_attempts": 1,
             "successful_downloads": 1, "cache_responses": 0,
@@ -247,6 +252,36 @@ def test_i_incomplete_pagination_keeps_partial_record_out_of_commercial_result(t
     assert result["filter_matches"] == 1
 
 
+def test_truncated_listing_selection_cannot_be_reported_as_complete(tmp_path, monkeypatch):
+    search = _search(tmp_path, batch="truncated-selection", max_listings=1)
+    listing = {
+        "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-apartamentos/depto/12345678",
+        "listing_id": "12345678", "discovery_comuna": "Pudahuel",
+        "source_search_url": search.start_urls()[0][0], "page_number": 1,
+    }
+    _install_live_mocks(
+        monkeypatch, tmp_path, rows=[listing], selection_truncated=True,
+    )
+
+    class Store:
+        def __init__(self, _config):
+            pass
+
+        def existing_listing_ids(self, _ids):
+            return set()
+
+        def existing_listing_urls(self, _urls):
+            return set()
+
+    monkeypatch.setattr(pilot, "MongoStore", Store)
+    result = pilot.run_search(search, _config(tmp_path))
+
+    assert result["pagination_complete"] is True
+    assert result["listing_selection_complete"] is False
+    assert result["selection_dropped_count"] == 1
+    assert result["commercial_result_available"] is False
+
+
 def test_max_listings_keeps_one_record_but_continues_through_bounded_pagination(tmp_path, monkeypatch):
     from scrapers.scraper_yapo.downloader import DownloadResult
 
@@ -352,3 +387,20 @@ def test_general_cli_defaults_to_offline_simulation(tmp_path, monkeypatch, capsy
     assert code == 0
     assert seen["search"].live is False
     assert json.loads(capsys.readouterr().out)["errors_or_blocks"] == []
+
+
+def test_general_cli_returns_failure_for_incomplete_live_result(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        "scrapers.scraper_yapo.ejecutar_busqueda.run_search",
+        lambda _search, _config: {
+            "errors_or_blocks": [], "commercial_result_available": False,
+        },
+    )
+    code = main([
+        "--region", "Región Metropolitana", "--comuna", "Maipú",
+        "--operacion", "venta", "--tipo", "casa",
+        "--precio-min", "3000", "--precio-max", "6000", "--moneda", "UF",
+        "--output-dir", str(tmp_path), "--live",
+    ])
+    assert code == 2
+    assert json.loads(capsys.readouterr().out)["commercial_result_available"] is False

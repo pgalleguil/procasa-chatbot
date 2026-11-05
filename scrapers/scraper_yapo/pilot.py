@@ -1074,7 +1074,8 @@ def run_search(
         "detail_error:" in error or "listing_blocked:" in error for error in summary["errors_or_blocks"]
     )
     summary["commercial_result_available"] = bool(
-        summary["pagination_complete"] and summary["search_filters_verified"]
+        summary["pagination_complete"] and summary["listing_selection_complete"]
+        and summary["search_filters_verified"]
         and summary["mongo_dedup_verified"] and summary["detail_processing_complete"]
     )
     summary["files"] = _save_search_outputs(summary, records_out, output_dir)

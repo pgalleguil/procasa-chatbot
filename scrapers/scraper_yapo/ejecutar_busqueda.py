@@ -89,7 +89,8 @@ def main(argv: list[str] | None = None) -> int:
         config.uf_source = args.uf_fuente
     result = run_search(search, config)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-    return 0 if not result.get("errors_or_blocks") else 2
+    complete_live_result = not search.live or bool(result.get("commercial_result_available"))
+    return 0 if not result.get("errors_or_blocks") and complete_live_result else 2
 
 
 if __name__ == "__main__":  # pragma: no cover

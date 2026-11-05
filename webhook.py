@@ -1493,14 +1493,19 @@ async def lifespan(app: FastAPI):
     # restart/deploy cannot send the same campaign twice. This never invokes
     # the CRM/lead/SLA pipeline and only addresses the configured test phone.
     price_drop_send_task = None
-    if str(os.getenv("PRICE_DROP_PILOT_SEND_ON_START", "")).lower() in {"1", "true", "yes"}:
+    price_drop_send_on_start = str(os.getenv("PRICE_DROP_PILOT_SEND_ON_START", "")).lower() in {"1", "true", "yes"}
+    price_drop_preflight_on_start = str(os.getenv("PRICE_DROP_PILOT_PREFLIGHT_ON_START", "")).lower() in {"1", "true", "yes"}
+    if price_drop_send_on_start or price_drop_preflight_on_start:
         async def _run_price_drop_one_shot():
             try:
                 from scripts.price_drop_pilot_test import run_test_once
+                # Preflight takes precedence if both flags are accidentally enabled.
+                send_now = price_drop_send_on_start and not price_drop_preflight_on_start
                 exit_code = await asyncio.get_running_loop().run_in_executor(
-                    _WEB_THREAD_POOL, lambda: run_test_once(send=True),
+                    _WEB_THREAD_POOL, lambda: run_test_once(send=send_now),
                 )
-                logger.info("[PRICE_DROP_PILOT_SEND_ON_START] exit_code=%s", exit_code)
+                mode = "send" if send_now else "preflight"
+                logger.info("[PRICE_DROP_PILOT_SEND_ON_START] mode=%s exit_code=%s", mode, exit_code)
             except Exception:
                 logger.exception("[PRICE_DROP_PILOT_SEND_ON_START] failed; never retry automatically")
         price_drop_send_task = asyncio.create_task(_run_price_drop_one_shot())

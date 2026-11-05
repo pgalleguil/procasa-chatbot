@@ -239,8 +239,20 @@ def test_script_no_longer_looks_up_or_edits_existing_leads():
 
 def test_bootstrap_one_shot_is_disabled_by_default():
     source = Path(__file__).resolve().parents[1].joinpath("webhook.py").read_text()
-    assert 'if str(os.getenv("PRICE_DROP_PILOT_SEND_ON_START", "")).lower()' in source
-    assert 'lambda: run_test_once(send=True)' in source
+    assert 'price_drop_send_on_start = str(os.getenv("PRICE_DROP_PILOT_SEND_ON_START", "")).lower()' in source
+    assert 'PRICE_DROP_PILOT_PREFLIGHT_ON_START' in source
+    assert 'price_drop_send_on_start and not price_drop_preflight_on_start' in source
+    assert 'lambda: run_test_once(send=send_now)' in source
+
+
+def test_sender_logs_safe_reason_for_blocked_preflight(isolated, monkeypatch, caplog):
+    from scripts import price_drop_pilot_test as sender_script
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_PHONE", "")
+
+    with caplog.at_level("WARNING"):
+        assert sender_script.run_test_once(send=False) == 2
+
+    assert "[PRICE_DROP_PILOT_TEST] blocked reason=recipient_not_configured" in caplog.text
 
 
 def test_pilot_sender_once_and_never_writes_existing_leads(isolated, monkeypatch):

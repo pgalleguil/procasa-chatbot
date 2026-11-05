@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import logging
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,7 @@ from chatbot.property_lookup import PROPERTY_COLLECTION_NAME
 from chatbot.storage import get_db
 from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
 
+logger = logging.getLogger(__name__)
 PROPERTY_CODE = "6436"
 OLD_UF = 2790.0
 NEW_UF = 2690.0
@@ -30,26 +32,29 @@ TEST_ID = "20261104-6436-price-drop-pilot-v13-regression-single-test"
 V14_TEST_ID = "20261105-6436-price-drop-pilot-v14-phone-test-single"
 
 
+def _blocked(reason: str) -> int:
+    """Report a safe, non-PII reason for a fail-closed preflight."""
+    logger.warning("[PRICE_DROP_PILOT_TEST] blocked reason=%s", reason)
+    print(f"BLOCKED: {reason}")
+    return 2
+
+
 def run_test_once(*, send: bool = False, version: str | None = None) -> int:
     """One durable provider attempt at most, even after Render restarts."""
     campaign_version = version or os.environ.get("PRICE_DROP_PILOT_TEST_VERSION") or V13_VERSION
     if campaign_version not in {V13_VERSION, VERSION}:
-        print("BLOCKED: isolated test campaign version is not supported")
-        return 2
+        return _blocked("unsupported_version")
     phone = normalize_phone_strict(os.environ.get(TEST_PHONE, ""))
     if not phone:
-        print("BLOCKED: test recipient is not configured")
-        return 2
+        return _blocked("recipient_not_configured")
     if os.environ.get(FLAG, "").lower() not in {"1", "true", "yes"}:
-        print("BLOCKED: isolated pilot flag is disabled")
-        return 2
+        return _blocked("pilot_disabled")
 
     db = get_db()
     # The test never reads or edits existing leads. Historic duplicate identities
     # are intentionally irrelevant to this separate test conversation.
     if not is_test_phone(phone):
-        print("BLOCKED: recipient is outside isolated test allowlist")
-        return 2
+        return _blocked("recipient_not_allowlisted")
 
     prop = db[PROPERTY_COLLECTION_NAME].find_one(
         {"codigo": PROPERTY_CODE},
@@ -67,8 +72,7 @@ def run_test_once(*, send: bool = False, version: str | None = None) -> int:
         or abs(float(current) - NEW_UF) > 0.01
         or not (2000 <= NEW_UF <= 5000 and OLD_UF > NEW_UF)
     ):
-        print("BLOCKED: sale availability or current price differs from the verified pilot")
-        return 2
+        return _blocked("listing_not_verified")
 
     inquiry_evidence = None
     if campaign_version == VERSION:
@@ -78,8 +82,7 @@ def run_test_once(*, send: bool = False, version: str | None = None) -> int:
             not isinstance(property_type, str) or not property_type.strip()
             or not isinstance(comuna, str) or not comuna.strip()
         ):
-            print("BLOCKED: property type or comuna is not available from the verified listing")
-            return 2
+            return _blocked("listing_context_missing")
 
         inquiry_evidence = (
             "test-only roleplay: tester simulates a previous inquiry; not a CRM record"
@@ -113,10 +116,11 @@ def run_test_once(*, send: bool = False, version: str | None = None) -> int:
 
     key = "test:" + test_id + ":" + hashlib.sha256(phone.encode()).hexdigest()[:24]
     if db[COLLECTION].find_one({"_id": key}, {"_id": 1}):
-        print("BLOCKED: an attempt for this test was already recorded; no retries")
-        return 2
+        return _blocked("attempt_already_recorded")
 
     if not send:
+        logger.info("[PRICE_DROP_PILOT_TEST] preflight_passed version=%s property=%s",
+                    campaign_version, PROPERTY_CODE)
         print("DRY RUN PASSED: isolated recipient and current price verified; no WhatsApp sent")
         print(message)
         return 0
@@ -152,6 +156,7 @@ def run_test_once(*, send: bool = False, version: str | None = None) -> int:
             "attempted_at": now,
         }})
         print("DELIVERY_UNKNOWN: provider call raised an exception; no retry")
+        logger.error("[PRICE_DROP_PILOT_TEST] status=delivery_unknown reason=provider_exception")
         return 1
 
     sent = bool(receipt.get("success") and receipt.get("provider_message_id")
@@ -165,8 +170,11 @@ def run_test_once(*, send: bool = False, version: str | None = None) -> int:
     }})
     if not sent:
         print("DELIVERY_UNKNOWN: acceptance without durable provider ID or failed call; no retry")
+        logger.error("[PRICE_DROP_PILOT_TEST] status=delivery_unknown reason=provider_unconfirmed")
         return 1
     print("SENT: provider accepted one test message; wait for inbound reply verification")
+    logger.info("[PRICE_DROP_PILOT_TEST] status=provider_accepted version=%s property=%s",
+                campaign_version, PROPERTY_CODE)
     return 0
 
 

@@ -20,7 +20,7 @@ from chatbot.price_drop_pilot import COLLECTION, FLAG, TEST_PHONE
 from chatbot.price_drop_pilot_isolation import is_test_phone
 from chatbot.price_drop_pilot_conversation_v14 import VERSION, prepare_initial_message
 from chatbot.price_drop_pilot_guard_v13 import VERSION as V13_VERSION
-from chatbot.property_lookup import PROPERTY_COLLECTION_NAME
+from chatbot.property_lookup import PROPERTY_COLLECTION_NAME, get_prop_location, get_prop_operation
 from chatbot.storage import get_db
 from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
 
@@ -59,7 +59,8 @@ def run_test_once(*, send: bool = False, version: str | None = None) -> int:
     prop = db[PROPERTY_COLLECTION_NAME].find_one(
         {"codigo": PROPERTY_CODE},
         {"codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
-         "tipo": 1, "tipo_propiedad": 1, "ubicacion.comuna": 1,
+         "tipo": 1, "tipo_propiedad": 1, "tipo_operacion.tipo": 1,
+         "comuna": 1, "ubicacion.comuna": 1,
          "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1},
     ) or {}
     sale = (prop.get("tipo_operacion") or {})
@@ -76,8 +77,8 @@ def run_test_once(*, send: bool = False, version: str | None = None) -> int:
 
     inquiry_evidence = None
     if campaign_version == VERSION:
-        property_type = prop.get("tipo") or prop.get("tipo_propiedad")
-        comuna = (prop.get("ubicacion") or {}).get("comuna")
+        property_type = get_prop_operation(prop).get("tipo")
+        comuna = get_prop_location(prop).get("comuna")
         if (
             not isinstance(property_type, str) or not property_type.strip()
             or not isinstance(comuna, str) or not comuna.strip()

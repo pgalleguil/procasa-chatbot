@@ -4179,14 +4179,21 @@ async def webhook(
                 record_sla_reassignment_delivery_status_webhook,
             )
             sla_result = record_sla_reassignment_delivery_status_webhook(data)
-            # Read/write only the dedicated price-drop ledger; never route a
-            # provider status event into a customer conversation.
+            # V2 stores delivery receipts on the canonical lead. The legacy
+            # function remains read-compatible for older already-sent campaigns.
+            # Neither path treats receipts as new customer WhatsApp messages.
+            try:
+                from chatbot.price_drop_leads_v2 import record_delivery_update as v2_delivery_update
+                from chatbot.storage import get_db as _campaign_db
+                v2_delivery_update(_campaign_db(), data)
+            except Exception:
+                logger.exception("[PRICE_DROP_LEADS_V2] receipt tracking unavailable")
             try:
                 from chatbot.price_drop_campaign_real import record_delivery_update
                 from chatbot.storage import get_db as _campaign_db
                 record_delivery_update(_campaign_db(), data)
             except Exception:
-                logger.exception("[PRICE_DROP_CAMPAIGN] receipt tracking unavailable")
+                logger.exception("[PRICE_DROP_CAMPAIGN] legacy receipt tracking unavailable")
             return weekly_updated, sla_result
 
         weekly_updated, sla_result = await asyncio.get_running_loop().run_in_executor(

@@ -2707,3 +2707,130 @@ def test_v13_1_bare_no_after_welcome_is_not_unsubscribe(monkeypatch):
     assert "San Miguel" in calls[-1][1]
     assert "No insistiremos" not in calls[-1][1]
     assert db["crm_price_drop_pilot_v1"].docs[0]["status"] == "SENT"
+
+
+def test_v14_candidate_runs_isolated_webhook_and_sends_at_most_one_reply(isolated):
+    from chatbot.price_drop_pilot_conversation_v14 import (
+        VERSION as V14_VERSION,
+        prepare_initial_message,
+    )
+
+    db = db_case()
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    campaign.update({
+        "campaign_version": V14_VERSION,
+        "inquiry_evidence_at": "fixture-only verified inquiry for code 6436",
+    })
+    property_doc = db["universo_cartera_prop360"].docs[0]
+    property_doc.update({
+        "tipo": "Departamento",
+        "ubicacion": {"comuna": "San Miguel"},
+        "caracteristicas": {
+            "dormitorios": 2, "banos": 2, "superficie_total": 65,
+        },
+    })
+    campaign["outbound_message"] = prepare_initial_message({
+        "property_code": "6436",
+        "property_type": "Departamento",
+        "comuna": "San Miguel",
+        "old_price_uf": 2790,
+        "current_price_uf": 2690,
+        "new_price_uf": 2690,
+        "current_price_verified": True,
+        "available_for_sale": True,
+        "prior_inquiry_verified": True,
+        "prior_inquiry_evidence": campaign["inquiry_evidence_at"],
+    })["message"]
+
+    generated = [
+        "El precio vigente es UF 2.690. Tu visita ya quedó confirmada.",
+        "El precio vigente es UF 2.690.",
+    ]
+    generation_calls = []
+    def commercial_generator(messages, context, *, write_telemetry, diagnostics, retry_invalid_json):
+        generation_calls.append(messages)
+        assert write_telemetry is False
+        diagnostics.update({
+            "model": "fixture-model",
+            "provider_calls": 1,
+            "format_retries": 0,
+            "raw_responses": [generated[0]],
+            "usage": {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28},
+            "cost": None,
+        })
+        return {"respuesta_bot": generated.pop(0)}
+
+    send, sent = sender_spy()
+    notice_calls = []
+    def forbidden_notice(*args, **kwargs):
+        notice_calls.append(args)
+        raise AssertionError("V14 must not send a human or simulated notice")
+
+    result = process_test_inbound(
+        db, PHONE, "v14-inbound-1", "¿cuál es el precio?",
+        sender=send,
+        exec_notice_sender=forbidden_notice,
+        commercial_generator=commercial_generator,
+    )
+    assert result == {"status": "test_reply_sent"}
+    assert len(generation_calls) == 2
+    assert len(sent) == 1
+    assert "El precio vigente es UF 2.690." == sent[0][1]
+    assert notice_calls == []
+    assert db["crm_price_drop_pilot_v1"].docs[0]["status"] == "SENT"
+    turn = db["crm_price_drop_pilot_test_turns_v1"].docs[0]
+    assert turn["status"] == "SENT"
+    assert turn["candidate_audit"]["repair_count"] == 1
+    assert turn["candidate_audit"]["context_sent"][2]["content"] == campaign["outbound_message"]
+    assert set(db.keys()) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+    duplicate = process_test_inbound(
+        db, PHONE, "v14-inbound-1", "¿cuál es el precio?",
+        sender=send, commercial_generator=commercial_generator,
+    )
+    assert duplicate == {"status": "duplicate_suppressed"}
+    assert len(sent) == 1
+    assert len(generation_calls) == 2
+
+
+def test_v14_candidate_without_exact_initial_message_fails_closed(isolated):
+    from chatbot.price_drop_pilot_conversation_v14 import VERSION as V14_VERSION
+
+    db = db_case()
+    db["crm_price_drop_pilot_v1"].docs[0]["campaign_version"] = V14_VERSION
+    send, calls = sender_spy()
+    result = process_test_inbound(
+        db, PHONE, "v14-missing-opening", "hola", sender=send,
+        commercial_generator=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("candidate context must be blocked before generation")
+        ),
+    )
+    assert result == {"status": "test_candidate_context_missing"}
+    assert calls == []
+    assert db["crm_price_drop_pilot_test_turns_v1"].docs == []
+
+
+def test_v14_stop_request_stops_test_campaign_before_model_or_sender(isolated):
+    from chatbot.price_drop_pilot_conversation_v14 import VERSION as V14_VERSION
+
+    db = db_case()
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    campaign.update({
+        "campaign_version": V14_VERSION,
+        "outbound_message": "fixture-only verified initial message",
+    })
+    send, calls = sender_spy()
+    result = process_test_inbound(
+        db, PHONE, "v14-stop", "No quiero recibir más mensajes",
+        sender=send,
+        commercial_generator=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("opt-out must stop before generation")
+        ),
+    )
+    assert result == {"status": "test_stopped"}
+    assert campaign["status"] == "STOPPED"
+    assert calls == []
+    assert db["crm_price_drop_pilot_test_turns_v1"].docs[0]["status"] == "STOPPED"

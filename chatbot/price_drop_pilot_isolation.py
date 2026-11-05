@@ -435,10 +435,11 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
     old, new = _money(campaign.get("old_price_uf")), _money(campaign.get("new_price_uf"))
     if old is None or new is None or not (old > new and 2000 <= new <= 5000):
         return None
-    from .property_lookup import PROPERTY_COLLECTION_NAME
+    from .property_lookup import PROPERTY_COLLECTION_NAME, get_prop_operation
     property_doc = db[PROPERTY_COLLECTION_NAME].find_one(
         {"codigo": str(campaign.get("property_code") or "")},
         {"codigo": 1, "tipo": 1, "tipo_propiedad": 1, "disponible_prop360": 1, "estado.oficina": 1,
+         "tipo_operacion.tipo": 1,
          "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1,
          "tipo_operacion.gastos_comunes": 1, "caracteristicas.banos": 1,
          "caracteristicas.dormitorios": 1, "caracteristicas.bodegas": 1,
@@ -459,7 +460,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
         "campaign_id": campaign["_id"],
         "campaign_version": campaign.get("campaign_version"),
         "outbound_message": str(campaign.get("outbound_message") or ""),
-        "property_type": str(property_doc.get("tipo") or property_doc.get("tipo_propiedad") or ""),
+        "property_type": str(get_prop_operation(property_doc).get("tipo") or ""),
         "prior_inquiry_verified": bool(campaign.get("inquiry_evidence_at")),
         "prior_inquiry_evidence": str(campaign.get("inquiry_evidence_at") or ""),
         "property_code": str(campaign["property_code"]),

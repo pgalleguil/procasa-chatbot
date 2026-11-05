@@ -697,11 +697,12 @@ def test_v14_sender_dry_run_uses_verified_a_copy_and_no_crm(isolated, monkeypatc
     assert not db["crm_price_drop_pilot_v1"].docs
 
 
-def test_v14_sender_persists_exact_opening_for_isolated_webhook(isolated, monkeypatch):
+def test_v14_inbound_uses_prop360_nested_type_and_generates_reply(isolated, monkeypatch):
     from scripts import price_drop_pilot_test as sender
     db = db_case()
     prop = db["universo_cartera_prop360"].docs[0]
-    prop.update({"tipo": "Departamento", "ubicacion": {"comuna": "San Miguel"}})
+    prop["tipo_operacion"]["tipo"] = "Departamento"
+    prop["ubicacion"] = {"comuna": "San Miguel"}
     db["crm_price_drop_pilot_v1"].docs = []
     monkeypatch.setattr(sender, "get_db", lambda: db)
     calls = []
@@ -724,6 +725,38 @@ def test_v14_sender_persists_exact_opening_for_isolated_webhook(isolated, monkey
     assert ctx["campaign_version"] == sender.VERSION
     assert ctx["outbound_message"] == calls[0][1]
     assert ctx["prior_inquiry_verified"] is True
+    assert ctx["property_type"] == "Departamento"
+    assert ctx["property_facts"]["comuna"] == "San Miguel"
+
+    reply_calls = []
+    def reply_generator(messages, operation_context, *, write_telemetry,
+                        diagnostics, retry_invalid_json):
+        diagnostics.update({
+            "provider": "fixture", "model": "fixture-model",
+            "provider_calls": 1, "format_retries": 0,
+            "raw_responses": [], "usage": None, "cost": None,
+        })
+        assert messages[-1] == {
+            "role": "user", "content": "¿Me puedes contar más del departamento?"
+        }
+        assert operation_context["tipo"] == "Departamento"
+        assert operation_context["comuna"] == "San Miguel"
+        return {"respuesta_bot": "Claro, te ayudo con las dudas sobre el departamento."}
+
+    def reply_sender(phone, text):
+        reply_calls.append((phone, text))
+        return {"success": True, "provider_message_id": "v14-reply-test"}
+
+    outcome = process_test_inbound(
+        db, PHONE, "v14-inbound-test", "¿Me puedes contar más del departamento?",
+        sender=reply_sender, commercial_generator=reply_generator,
+    )
+    assert outcome == {"status": "test_reply_sent"}
+    assert len(reply_calls) == 1
+    assert reply_calls[0][1] == "Claro, te ayudo con las dudas sobre el departamento."
+    turn = db["crm_price_drop_pilot_test_turns_v1"].docs[0]
+    assert turn["status"] == "SENT"
+    assert turn["candidate_audit"]["errors"] == []
 
     assert sender.run_test_once(send=True, version=sender.VERSION) == 2
     assert len(calls) == 1

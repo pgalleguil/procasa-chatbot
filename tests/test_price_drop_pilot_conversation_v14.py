@@ -136,6 +136,21 @@ def test_candidate_sends_exact_outreach_and_pending_question_to_commercial_gener
     assert result["audit"]["context_sent"] == sent
 
 
+def test_missing_context_audit_keeps_safe_candidate_error_code():
+    ctx = conversation_context()
+    ctx["property_type"] = ""
+    generator = SequenceGenerator(["No debe invocarse"])
+
+    result = generate_reply("hola", ctx, generator=generator)
+
+    assert result["answer"] == (
+        "Disculpa, tuve un problema al preparar la respuesta. "
+        "¿Me puedes repetir tu consulta?"
+    )
+    assert result["audit"]["errors"] == ["property_type_invalid"]
+    assert not generator.messages
+
+
 def test_partial_unsafe_answer_gets_one_repair_and_keeps_verified_answer():
     ctx = conversation_context()
     generator = SequenceGenerator([

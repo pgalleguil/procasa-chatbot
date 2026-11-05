@@ -2952,3 +2952,107 @@ def test_v14_stop_request_stops_test_campaign_before_model_or_sender(isolated):
     assert campaign["status"] == "STOPPED"
     assert calls == []
     assert db["crm_price_drop_pilot_test_turns_v1"].docs[0]["status"] == "STOPPED"
+
+
+def _v14_dual_notice_setup(monkeypatch):
+    """V14 test-only webhook with the V13.1 conversational recovery retained."""
+    from chatbot.price_drop_pilot_conversation_v14 import VERSION as V14_VERSION
+    monkeypatch.setenv("PRICE_DROP_PILOT_ENABLED", "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_PHONE", PHONE)
+    monkeypatch.setenv("PRICE_DROP_PILOT_V14_RESTORE_V13", "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_V14_DUAL_NOTICE_SIMULATION", "true")
+    db = db_case()
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    campaign.update({
+        "campaign_version": V14_VERSION,
+        "outbound_message": "Hola, el departamento 6436 bajó de UF 2.790 a UF 2.690.",
+    })
+    return db
+
+
+def test_v14_sends_two_isolated_role_notices_only_after_explicit_interest(monkeypatch):
+    db = _v14_dual_notice_setup(monkeypatch)
+    reply_sender, replies = sender_spy()
+    notices = []
+
+    def notice_sender(recipient, message):
+        notices.append((recipient, message))
+        return {"success": True, "provider_message_id": "role-" + str(len(notices))}
+
+    for i, neutral in enumerate(("hola", "solo quiero saber cuánto cuesta")):
+        out = process_test_inbound(
+            db, PHONE, "v14-neutral-" + str(i), neutral,
+            sender=reply_sender, exec_notice_sender=notice_sender,
+        )
+        assert out == {"status": "test_reply_sent"}
+        assert not notices
+
+    interest = process_test_inbound(
+        db, PHONE, "v14-interest", "si me interesa",
+        sender=reply_sender, exec_notice_sender=notice_sender,
+    )
+    assert interest == {
+        "status": "test_reply_sent",
+        "test_dual_notice_statuses": {"ADMIN": "SENT", "EXECUTIVE": "SENT"},
+    }
+    assert len(notices) == 2
+    assert all(recipient == PHONE for recipient, _ in notices)
+    assert "AVISO AL ADMINISTRADOR" in notices[0][1]
+    assert "AVISO AL EJECUTIVO" in notices[1][1]
+    assert all(PHONE in message for _, message in notices)
+    assert all("PRUEBA" in message for _, message in notices)
+    assert all("sin enlace real" in message for _, message in notices)
+    assert len(replies) == 3
+
+    again = process_test_inbound(
+        db, PHONE, "v14-repeat-interest", "quiero visitarla",
+        sender=reply_sender, exec_notice_sender=notice_sender,
+    )
+    assert again["test_dual_notice_statuses"] == {
+        "ADMIN": "ALREADY_ATTEMPTED", "EXECUTIVE": "ALREADY_ATTEMPTED",
+    }
+    assert len(notices) == 2
+    assert len(replies) == 4
+    role_docs = [
+        item for item in db["crm_price_drop_pilot_test_turns_v1"].docs
+        if item.get("test_notification_role")
+    ]
+    assert {item["test_notification_role"] for item in role_docs} == {"ADMIN", "EXECUTIVE"}
+    assert all(item["status"] == "NOTICE_SENT" for item in role_docs)
+    assert set(db.keys()) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+
+def test_v14_dual_notice_needs_separate_opt_in(monkeypatch):
+    db = _v14_dual_notice_setup(monkeypatch)
+    monkeypatch.delenv("PRICE_DROP_PILOT_V14_DUAL_NOTICE_SIMULATION")
+    send, replies = sender_spy()
+    notices = []
+    result = process_test_inbound(
+        db, PHONE, "v14-disabled-interest", "me interesa",
+        sender=send, exec_notice_sender=lambda *args: notices.append(args),
+    )
+    assert result == {"status": "test_reply_sent"}
+    assert len(replies) == 1
+    assert not notices
+    assert not [
+        item for item in db["crm_price_drop_pilot_test_turns_v1"].docs
+        if item.get("test_notification_role")
+    ]
+
+
+def test_v14_dual_notice_never_targets_another_phone(monkeypatch):
+    from chatbot.price_drop_pilot_dual_notice_sim import send_dual_test_notices
+    db = _v14_dual_notice_setup(monkeypatch)
+    ctx = load_test_context(db, PHONE)
+    notices = []
+    outcome = send_dual_test_notices(
+        db, ctx=ctx, phone="+56999990000",
+        customer_text="me interesa", history=[],
+        inbound_message_id="wrong-phone",
+        sender=lambda *args: notices.append(args),
+    )
+    assert outcome["status"] == "OUTSIDE_TEST_ALLOWLIST"
+    assert not notices

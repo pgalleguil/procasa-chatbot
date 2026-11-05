@@ -667,6 +667,38 @@ def test_v14_sender_dry_run_uses_verified_a_copy_and_no_crm(isolated, monkeypatc
     assert not db["crm_price_drop_pilot_v1"].docs
 
 
+def test_v14_sender_persists_exact_opening_for_isolated_webhook(isolated, monkeypatch):
+    from scripts import price_drop_pilot_test as sender
+    db = db_case()
+    prop = db["universo_cartera_prop360"].docs[0]
+    prop.update({"tipo": "Departamento", "ubicacion": {"comuna": "San Miguel"}})
+    db["crm_price_drop_pilot_v1"].docs = []
+    monkeypatch.setattr(sender, "get_db", lambda: db)
+    calls = []
+
+    def sent(phone, text):
+        calls.append((phone, text))
+        return {"success": True, "provider_message_id": "v14-opening-test"}
+
+    monkeypatch.setattr(sender, "send_whatsapp_message_detailed_sync", sent)
+    assert sender.run_test_once(send=True, version=sender.VERSION) == 0
+    assert len(calls) == 1
+
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    assert campaign["campaign_version"] == sender.VERSION
+    assert campaign["outbound_message"] == calls[0][1]
+    assert campaign["inquiry_evidence_at"].startswith("test-only roleplay:")
+    assert campaign["test_mode"] is True
+    assert "lead_id" not in campaign
+    ctx = load_test_context(db, PHONE)
+    assert ctx["campaign_version"] == sender.VERSION
+    assert ctx["outbound_message"] == calls[0][1]
+    assert ctx["prior_inquiry_verified"] is True
+
+    assert sender.run_test_once(send=True, version=sender.VERSION) == 2
+    assert len(calls) == 1
+
+
 
 def test_live_6436_location_and_quinchos_are_resolved_from_prop360_only(isolated):
     """Reproduce Nov 2's missed factual answers without a model or CRM writes."""

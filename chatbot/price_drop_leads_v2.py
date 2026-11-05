@@ -208,6 +208,8 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     if not (os.getenv(SEND_FLAG, "").lower() in {"true", "1", "yes"}
             and os.getenv(APPROVED_ID_FLAG) == campaign_id):
         return {"status": "DISABLED"}
+    if os.getenv(CONTEXT_FLAG, "").lower() not in {"true", "1", "yes"}:
+        return {"status": "CONTEXT_DISABLED"}
     lead = db[LEADS].find_one({"_id": _lead_id(lead_id)}) or {}
     c = next((x for x in (lead.get("price_drop_v2") or {}).get("campaigns") or []
               if x.get("campaign_id") == campaign_id), None)

@@ -283,3 +283,27 @@ def test_structured_generator_invalid_json_uses_one_attempt_and_safe_fallback(mo
     }
     assert result["audit"]["cost"] is None
     assert result["audit"]["original_response"] == "not json"
+
+
+def test_emergency_v13_recovery_responds_without_v14_json_generator(monkeypatch):
+    """Emergency switch handles the exact hello/interest failure seen in Atlas."""
+    monkeypatch.setenv("PRICE_DROP_PILOT_V14_RESTORE_V13", "true")
+    generator = SequenceGenerator(["This JSON-only V14 generator must not run"])
+    ctx = conversation_context()
+
+    first = generate_reply("hola", ctx, generator=generator)
+    assert "departamento de San Miguel" in first["answer"]
+    assert "UF 2.690" in first["answer"]
+    assert first["audit"]["restored_engine"] == "price_drop_pilot_v13_regression_test"
+    assert first["audit"]["rule_interventions"] == ["temporary_v13_1_recovery"]
+    assert not first["audit"]["errors"]
+    assert not generator.messages
+
+    second = generate_reply(
+        "me interesa", ctx,
+        history=[{"customer_text": "hola", "bot_text": first["answer"]}],
+        generator=generator,
+    )
+    assert "interesa" in second["answer"].lower() or "conocer" in second["answer"].lower()
+    assert second["audit"]["restored_engine"] == first["audit"]["restored_engine"]
+    assert not generator.messages

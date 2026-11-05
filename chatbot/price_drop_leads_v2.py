@@ -408,3 +408,60 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
         return {"status": "DUPLICATE_IGNORED"}
     return {"status": "ATTRIBUTED", "campaign_id": cid,
             "classification": label["label"], "test_mode": ctx["test_mode"]}
+
+
+def record_delivery_update(db, payload: dict, *, now=None) -> dict:
+    """Track actual delivered/read receipts in leads, not a campaign ledger.
+
+    Provider acceptance is not the same as delivery to a customer's device.
+    Unknown/failure callbacks do not imply delivery and cannot auto-resend.
+    """
+    from .whatsapp_client import normalize_provider_status
+    nested = payload.get("data") or {}
+    item = nested.get("messages") or nested
+    if isinstance(item, list):
+        item = item[0] if item else {}
+    if not isinstance(item, dict):
+        item = {}
+    key = item.get("key") or {}
+    mid = str(key.get("id") or item.get("messageId")
+              or item.get("msgId") or payload.get("messageId") or "").strip()
+    if not mid:
+        return {"status": "UNMATCHED"}
+    raw_status = item.get("status") or nested.get("status") or payload.get("status")
+    state = normalize_provider_status(raw_status)
+    if state not in {"delivered", "read"}:
+        return {"status": "IGNORED"}
+    candidates = list(db[LEADS].find(
+        {f"{ROOT}.provider_message_id": mid},
+        {"_id": 1, "price_drop_v2.campaigns": 1},
+    ).limit(2))
+    if len(candidates) != 1:
+        return {"status": "UNMATCHED_OR_AMBIGUOUS"}
+    lead = candidates[0]
+    found = [(i, c) for i, c in
+             enumerate((lead.get("price_drop_v2") or {}).get("campaigns") or [])
+             if c.get("provider_message_id") == mid]
+    if len(found) != 1:
+        return {"status": "UNMATCHED_OR_AMBIGUOUS"}
+    index, campaign = found[0]
+    current = campaign.get("provider_status") or "accepted"
+    if current == "read" or current == state or (
+            current == "delivered" and state == "accepted"):
+        return {"status": "UNCHANGED"}
+    field = f"{ROOT}.{index}"
+    stamp = utc(now or datetime.now(timezone.utc))
+    allowed = ["accepted", "sent", "unknown"] if state == "delivered" else [
+        "accepted", "sent", "unknown", "delivered"
+    ]
+    update = {"$set": {f"{field}.provider_status": state,
+                       f"{field}.last_provider_update_at": stamp}}
+    if state == "delivered":
+        update["$set"][f"{field}.delivered_at"] = stamp
+    if state == "read":
+        update["$set"][f"{field}.read_at"] = stamp
+    result = db[LEADS].update_one({
+        "_id": lead["_id"], f"{field}.provider_message_id": mid,
+        f"{field}.provider_status": {"$in": allowed},
+    }, update)
+    return {"status": "UPDATED" if result.modified_count else "UNCHANGED"}

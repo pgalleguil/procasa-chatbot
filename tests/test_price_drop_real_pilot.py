@@ -326,7 +326,7 @@ def test_render_bootstrap_preview_prepare_approve_are_separate_no_send(db, monke
     from chatbot.price_drop_campaign_bootstrap import run_bootstrap
     from chatbot.price_drop_campaign_real import APPROVED_ID_FLAG
     p = plan(db, n=1)
-    p["start_at"] = (datetime.now(UTC) + timedelta(days=1)).isoformat()
+    p["start_at"] = START.isoformat()  # Frozen against NOW; avoids time-dependent campaign-age flakiness
     env = {
         "PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE": "preview",
         "PRICE_DROP_REAL_PILOT_PLAN_JSON": json.dumps(p),

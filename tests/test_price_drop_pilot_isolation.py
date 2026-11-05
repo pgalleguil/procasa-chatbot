@@ -223,10 +223,13 @@ def test_model_cannot_claim_executive_was_notified(isolated):
 
 def test_webhook_interception_occurs_before_production_operations():
     source = Path(__file__).resolve().parents[1].joinpath("webhook.py").read_text()
-    marker = source.index("    # Isolated price-drop test: intercept this exact phone BEFORE log_event")
+    marker = source.index("    # Intercept only a tester WITH an active/uncertain/opted-out test campaign.")
     assert marker < source.index("    # Para el log de eventos, usamos el número limpio sin el '+'", marker)
     assert marker < source.index("    # Persist to the durable queue.", marker)
     assert 'if is_test_phone(phone):' in source[marker:marker + 1600]
+    assert 'should_intercept_test_phone' in source[marker:marker + 1600]
+    assert 'if intercept_test:' in source[marker:marker + 1600]
+    assert 'no active test campaign; routing tester through normal CRM' in source[marker:marker + 2200]
 
 
 def test_script_no_longer_looks_up_or_edits_existing_leads():
@@ -3056,3 +3059,85 @@ def test_v14_dual_notice_never_targets_another_phone(monkeypatch):
     )
     assert outcome["status"] == "OUTSIDE_TEST_ALLOWLIST"
     assert not notices
+
+
+
+def test_test_phone_without_campaign_can_use_normal_crm(monkeypatch):
+    """An absent/expired campaign must not mute the allowlisted phone."""
+    from chatbot.price_drop_pilot_isolation import should_intercept_test_phone
+
+    monkeypatch.setenv("PRICE_DROP_PILOT_ENABLED", "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_PHONE", PHONE)
+    now = datetime.now(timezone.utc)
+
+    class GuardCollection:
+        def __init__(self, records):
+            self.records = records
+            self.queries = []
+
+        def find_one(self, query, projection=None):
+            self.queries.append(query)
+            assert query["phone_normalized"] == PHONE
+            assert query["test_mode"] is True
+            assert query["lead_id"] == {"$exists": False}
+            clauses = query["$or"]
+            assert {"status": "SENT", "expires_at": {"$gt": now}} in clauses
+            assert {"status": {"$in": ["SENDING", "DELIVERY_UNKNOWN", "STOPPED"]}} in clauses
+            for record in self.records:
+                if record.get("phone_normalized") != query["phone_normalized"]:
+                    continue
+                if record.get("test_mode") is not True or "lead_id" in record:
+                    continue
+                if record["status"] == "SENT" and record.get("expires_at", now) > now:
+                    return {"_id": record["_id"]}
+                if record["status"] in ("SENDING", "DELIVERY_UNKNOWN", "STOPPED"):
+                    return {"_id": record["_id"]}
+            return None
+
+    collection = GuardCollection([])
+    db = {"crm_price_drop_pilot_v1": collection}
+    assert should_intercept_test_phone(db, PHONE, now=now) is False
+    assert len(collection.queries) == 1
+
+    live = {"_id": "test:active", "phone_normalized": PHONE,
+            "test_mode": True, "status": "SENT",
+            "expires_at": now + timedelta(hours=1)}
+    collection.records = [live]
+    assert should_intercept_test_phone(db, PHONE, now=now) is True
+
+    expired = {**live, "expires_at": now - timedelta(hours=1)}
+    collection.records = [expired]
+    assert should_intercept_test_phone(db, PHONE, now=now) is False
+    for status in ("SENDING", "DELIVERY_UNKNOWN", "STOPPED"):
+        collection.records = [{**live, "status": status,
+                               "expires_at": now - timedelta(days=1)}]
+        assert should_intercept_test_phone(db, PHONE, now=now) is True, status
+
+    collection.records = [{**live, "lead_id": "not-a-test-campaign"}]
+    assert should_intercept_test_phone(db, PHONE, now=now) is False
+
+
+def test_non_tester_does_not_read_test_collection(monkeypatch):
+    from chatbot.price_drop_pilot_isolation import should_intercept_test_phone
+
+    monkeypatch.setenv("PRICE_DROP_PILOT_ENABLED", "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_PHONE", PHONE)
+    assert should_intercept_test_phone({}, "+56999990000") is False
+    monkeypatch.setenv("PRICE_DROP_PILOT_ENABLED", "false")
+    assert should_intercept_test_phone({}, PHONE) is False
+
+
+def test_test_phone_preflight_database_error_must_not_fall_through(monkeypatch):
+    from chatbot.price_drop_pilot_isolation import should_intercept_test_phone
+
+    monkeypatch.setenv("PRICE_DROP_PILOT_ENABLED", "true")
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_PHONE", PHONE)
+
+    class DBUnavailable:
+        def find_one(self, query, projection=None):
+            raise RuntimeError("read_only_error_for_test")
+
+    with pytest.raises(RuntimeError, match="read_only_error_for_test"):
+        should_intercept_test_phone(
+            {"crm_price_drop_pilot_v1": DBUnavailable()}, PHONE,
+        )

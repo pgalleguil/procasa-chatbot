@@ -223,10 +223,13 @@ def test_model_cannot_claim_executive_was_notified(isolated):
 
 def test_webhook_interception_occurs_before_production_operations():
     source = Path(__file__).resolve().parents[1].joinpath("webhook.py").read_text()
-    marker = source.index("    # Isolated price-drop test: intercept this exact phone BEFORE log_event")
+    marker = source.index("    # Intercept only a tester WITH an active/uncertain/opted-out test campaign.")
     assert marker < source.index("    # Para el log de eventos, usamos el número limpio sin el '+'", marker)
     assert marker < source.index("    # Persist to the durable queue.", marker)
     assert 'if is_test_phone(phone):' in source[marker:marker + 1600]
+    assert 'should_intercept_test_phone' in source[marker:marker + 1600]
+    assert 'if intercept_test:' in source[marker:marker + 1600]
+    assert 'no active test campaign; routing tester through normal CRM' in source[marker:marker + 2200]
 
 
 def test_script_no_longer_looks_up_or_edits_existing_leads():

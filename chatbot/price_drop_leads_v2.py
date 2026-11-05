@@ -340,19 +340,28 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
     )
     if not lead or not _same_phone(lead, phone):
         return {"status": "NOT_CAMPAIGN_REPLY"}
+    # Campaign array entries are append-only; an explicit verified index
+    # avoids ambiguous positional updates under concurrent $elemMatch.
+    campaign_index = next(
+        (i for i, row in enumerate((lead.get("price_drop_v2") or {}).get("campaigns") or [])
+         if row.get("campaign_id") == cid), None,
+    )
+    if campaign_index is None:
+        return {"status": "NOT_CAMPAIGN_REPLY"}
+    field = f"{ROOT}.{campaign_index}"
     stopped = label["label"] == "BAJA"
     positive = label["label"] in {"INTERES_DECLARADO", "PRIORIDAD_COMERCIAL"}
     update = {
         "$set": {
-            f"{ROOT}.$.status": "OPTED_OUT" if stopped else "RESPONDED",
-            f"{ROOT}.$.last_classification": label,
-            f"{ROOT}.$.last_customer_reply_at": now,
+            f"{field}.status": "OPTED_OUT" if stopped else "RESPONDED",
+            f"{field}.last_classification": label,
+            f"{field}.last_customer_reply_at": now,
         },
         "$addToSet": {
             "price_drop_v2.processed_inbound_provider_ids": str(provider_message_id),
-            f"{ROOT}.$.inbound_provider_ids": str(provider_message_id),
+            f"{field}.inbound_provider_ids": str(provider_message_id),
         },
-        "$inc": {f"{ROOT}.$.reply_count": 1},
+        "$inc": {f"{field}.reply_count": 1},
     }
     if stopped:
         update["$set"]["price_drop_v2.opted_out"] = True
@@ -367,16 +376,15 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
                 else "PENDING_HUMAN_REVIEW"
             )
             for role in ("administrator", "property_executive"):
-                update["$set"][f"{ROOT}.$.notifications.{role}.status"] = role_status
-        update["$set"][f"{ROOT}.$.has_positive_response"] = True
+                update["$set"][f"{field}.notifications.{role}.status"] = role_status
+        update["$set"][f"{field}.has_positive_response"] = True
     result = db[LEADS].update_one(
         {"_id": lead["_id"],
          "price_drop_v2.processed_inbound_provider_ids": {
              "$ne": str(provider_message_id),
          },
-         ROOT: {"$elemMatch": {
-             "campaign_id": cid, "status": {"$in": ["SENT", "RESPONDED"]},
-         }}},
+         f"{field}.campaign_id": cid,
+         f"{field}.status": {"$in": ["SENT", "RESPONDED"]}},
         update,
     )
     if result.modified_count != 1:

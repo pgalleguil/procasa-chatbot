@@ -87,7 +87,7 @@ from analytics.leads_service import (
 )
 
 from api_captacion import (
-    get_captacion_list, get_captacion_detail, get_captacion_update_state,
+    get_captacion_list, get_captacion_detail, get_captacion_update_state, get_captacion_collection,
     update_captacion_status, update_contact_info,
     distribute_sourced_leads, release_stale_captaciones, redistribute_inactive_agent_captaciones,
     format_relative_time as format_captacion_time, format_captacion_portal_label,
@@ -97,6 +97,12 @@ from api_captacion import (
     warm_captacion_shared_catalogs,
 )
 from captacion_kpis import VISIBLE_CLASSIFICATION_STATES, build_kpi_queries
+from captacion_visibility import (
+    apply_captacion_visibility,
+    build_yapo_visibility_diagnostics_query,
+    commercial_visibility_exclusion_reasons,
+    yapo_new_cohort_query,
+)
 from captacion_goals import (
     CAPTACION_PRIVILEGED_ROLES,
     CAPTACION_GOAL_SNAPSHOT_COLLECTION,
@@ -160,7 +166,7 @@ logger = logging.getLogger("procasa-full")
 # que un proceso caliente nunca reutilice silenciosamente un esquema viejo.
 # Incremento de versión para que cualquier proceso recargado invalide snapshots KPI antiguos.
 CAPTACION_KPI_CACHE_VERSION = "v13"
-CAPTACION_KPI_CACHE_SCHEMA = 4
+CAPTACION_KPI_CACHE_SCHEMA = 5
 CAPTACION_GOAL_EXCLUDED_EXECUTIVES = ("Pablo Galleguillos",)
 
 # --- BLOCKING DETECTOR (temporal forensics) ---
@@ -739,6 +745,7 @@ def _broker_counts_by_portal(active_events, property_origin):
 async def _load_captacion_kpi_snapshot(adb, base_query):
     """Calcula el snapshot de KPI sin depender del listado paginado."""
     from captacion_kpis import AVAILABLE_STATES, MANAGEMENT_STATES, KPI_MANAGEMENT_STATES, CAPTURED_STATES, DISCARDED_STATES, KPI_WORKED_STATES
+    base_query = apply_captacion_visibility(base_query)
     worked_states = list(KPI_WORKED_STATES)
     kpi_facet = [
         {"$match": base_query},
@@ -4822,12 +4829,12 @@ async def view_captaciones(
     _perf["diag_done"] = time.perf_counter()
     
     # KPIs de todos los portales soportados.
-    base_query = {
+    base_query = apply_captacion_visibility({
         # Universo dinámico: todo portal con origen válido entra en las
         # tarjetas superiores y en su desglose por portal.
         "origen": {"$exists": True, "$nin": [None, ""]},
         "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
-    }
+    })
     if user_role not in CAPTACION_PRIVILEGED_ROLES:
         # Agente ve sus propias propiedades: matchea por ejecutivo_id (canonico)
         # con fallback a ejecutivo_asignado para documentos legacy
@@ -5621,6 +5628,72 @@ async def open_followup_link(request: Request, signed_token: str):
         if code in {"followup_actor_forbidden", "followup_access_denied", "CRM_ASSIGNMENT_CONTEXT_INVALID"}:
             raise HTTPException(status_code=403, detail=code)
         raise HTTPException(status_code=410, detail=code)
+
+@app.get("/api/captacion/visibility-diagnostics")
+async def api_captacion_visibility_diagnostics(request: Request):
+    """Admin-only diagnostics for new Yapo rows blocked from the commercial tray."""
+    user = await get_current_user_doc(request)
+    if not user:
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    role = str(user.get("rol") or "").strip().lower()
+    if role not in {"admin", "supervisor"}:
+        return JSONResponse({"error": "No autorizado"}, status_code=403)
+
+    from chatbot.storage import get_db
+
+    collection = get_captacion_collection(get_db())
+    cohort_query = yapo_new_cohort_query()
+    visible_query = {"$and": [
+        cohort_query,
+        {"classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}},
+    ]}
+    eligible_query = apply_captacion_visibility(visible_query)
+    excluded_query = build_yapo_visibility_diagnostics_query(VISIBLE_CLASSIFICATION_STATES)
+    projection = {
+        "origen": 1,
+        "listing_id": 1,
+        "url": 1,
+        "batch_id": 1,
+        "classification.state": 1,
+        "gestion.estado": 1,
+        "availability_status": 1,
+        "html_validation_status": 1,
+        "scrape_stage": 1,
+        "detail_error": 1,
+        "scrape_error": 1,
+        "title": 1,
+        "description": 1,
+        "comuna": 1,
+        "operacion": 1,
+        "tipo_propiedad": 1,
+        "price": 1,
+        "precio_uf": 1,
+        "precio_clp": 1,
+        "canonical_url": 1,
+        "yapo_ingestion.source_batch_id": 1,
+    }
+    blocked_rows = []
+    for document in collection.find(excluded_query, projection).sort("listing_id", 1):
+        blocked_rows.append({
+            "listing_id": str(document.get("listing_id") or ""),
+            "url": str(document.get("url") or ""),
+            "batch_id": str(document.get("batch_id") or ""),
+            "classification": str((document.get("classification") or {}).get("state") or ""),
+            "gestion": str((document.get("gestion") or {}).get("estado") or "NUEVO"),
+            "availability_status": str(document.get("availability_status") or "NO_VERIFICADO"),
+            "html_validation_status": str(document.get("html_validation_status") or "NO_VERIFICADO"),
+            "scrape_stage": str(document.get("scrape_stage") or ""),
+            "reasons": commercial_visibility_exclusion_reasons(document),
+        })
+
+    return JSONResponse({
+        "cohort_total": collection.count_documents(cohort_query),
+        "classification_visible_total": collection.count_documents(visible_query),
+        "commercially_eligible_total": collection.count_documents(eligible_query),
+        "excluded_total": len(blocked_rows),
+        "excluded": blocked_rows,
+    })
+
 
 @app.get("/captacion/{obj_id}", response_class=HTMLResponse)
 async def view_captacion_detail_route(

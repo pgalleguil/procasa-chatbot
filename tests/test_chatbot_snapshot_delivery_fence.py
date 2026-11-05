@@ -121,3 +121,42 @@ def test_new_customer_message_during_provider_delivery_forms_new_batch(sandbox):
     assert b["state"] == queue.ST_RESPONDED
     assert b["_id"] != a["_id"]
     assert sent == ["Respuesta: hola", "Respuesta: depto en Pudahuel"]
+
+
+def test_inbound_rehomed_when_producer_and_delivery_fence_race(sandbox, monkeypatch):
+    db = sandbox
+    now = datetime.now(timezone.utc)
+    earlier_id = inbound(db, "id-original", "hola", now)
+    claimed = queue.claim_pending_batch(
+        db, worker_id="sealer", now=now + timedelta(seconds=16),
+    )
+    assert claimed["state"] == queue.ST_PROCESSING
+
+    collection = db[queue.JOB_COLLECTION]
+    original_update = collection.update_one
+    injected = []
+
+    def race_update(filter, update, *args, **kwargs):
+        result = original_update(filter, update, *args, **kwargs)
+        if (not injected and filter.get("kind") == queue.KIND_JOB
+                and filter.get("state") == queue.ST_RECEIVED):
+            injected.append(True)
+            sealed = queue.seal_batch_for_delivery(
+                db, batch_id=claimed["_id"], worker_id="sealer",
+                delivery_token=claimed["delivery_token"],
+                snapshot_sequence=claimed["snapshot_sequence"],
+                now=now + timedelta(seconds=20),
+            )
+            assert sealed and sealed.get("active_conversation_key") is None
+        return result
+
+    monkeypatch.setattr(collection, "update_one", race_update)
+    late_id = inbound(db, "id-late-racing", "busco depto en Pudahuel",
+                      now + timedelta(seconds=20))
+    old = collection.find_one({"_id": claimed["_id"]})
+    later = collection.find_one({"_id": late_id})
+    assert old["job_ids"] == [earlier_id]
+    assert later["batch_id"] != claimed["_id"]
+    fresh = collection.find_one({"_id": later["batch_id"]})
+    assert fresh["job_ids"] == [late_id]
+    assert fresh["state"] == queue.ST_BATCHING

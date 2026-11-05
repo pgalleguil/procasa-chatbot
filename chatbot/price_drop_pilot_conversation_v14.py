@@ -487,7 +487,10 @@ def generate_reply(
                             final = _safe_fallback(message)
                             audit["rule_interventions"].append("safe_generation_fallback")
                 except Exception as exc:
-                    audit["errors"].append(type(exc).__name__)
+                    audit["errors"].append(
+                        str(exc) if isinstance(exc, CandidateContextError)
+                        else type(exc).__name__
+                    )
                     preserved = _safe_fragments(answer, ctx)
                     if preserved:
                         final = preserved
@@ -500,7 +503,10 @@ def generate_reply(
         audit["final_response"] = final
         return {"answer": final, "audit": audit}
     except Exception as exc:
-        audit["errors"].append(type(exc).__name__)
+        audit["errors"].append(
+            str(exc) if isinstance(exc, CandidateContextError)
+            else type(exc).__name__
+        )
         audit["rule_interventions"].append("safe_generation_fallback")
         final = _safe_fallback(message)
         audit["final_response"] = final

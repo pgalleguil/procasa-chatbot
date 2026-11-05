@@ -373,6 +373,30 @@ def is_test_phone(phone: str) -> bool:
     return _enabled_for_phone(phone)
 
 
+def should_intercept_test_phone(db: Any, phone: str, *, now: datetime | None = None) -> bool:
+    """Intercept a tester only while a test campaign needs isolation.
+
+    Without an active campaign the tester must use normal CRM intake. Keep
+    partial/uncertain sends and opt-outs isolated, and fail closed on DB errors.
+    Other phone numbers never cause this test collection to be read.
+    """
+    if not is_test_phone(phone):
+        return False
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    campaign = db[COLLECTION].find_one({
+        "phone_normalized": normalize_phone_strict(phone),
+        "test_mode": True,
+        "lead_id": {"$exists": False},
+        "$or": [
+            {"status": "SENT", "expires_at": {"$gt": now}},
+            {"status": {"$in": ["SENDING", "DELIVERY_UNKNOWN", "STOPPED"]}},
+        ],
+    }, {"_id": 1})
+    return campaign is not None
+
+
 def _verified_discount_date(prop: dict, old: float, new: float) -> str | None:
     """Only matching audited Prop360 changes can supply the discount date."""
     months = ("enero", "febrero", "marzo", "abril", "mayo", "junio",

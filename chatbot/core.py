@@ -1108,6 +1108,54 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         )
         logger.info(f"📢 Alerta de propiedad faltante ({codigo_externo}) enviada al administrador.")
 
+    # Explicit requests to be notified about a FUTURE price reduction are
+    # recorded for human review. A real campaign still requires independent
+    # verification, consent review and an approved recipient list.
+    from .price_drop_watch_request import (
+        asks_for_price_drop_notice, register_price_drop_watch,
+    )
+    if asks_for_price_drop_notice(original_message):
+        requested_code = str(codigo_detectado or prospecto_actual.get("codigo") or "").strip()
+        if not requested_code:
+            return await _persist_generated_outbound(
+                "Claro, ¿de cuál propiedad te gustaría que revisáramos una posible rebaja? "
+                "Si tienes el código o el enlace, envíamelo y lo revisamos.",
+                {"tipo": "solicitud_aviso_rebaja_sin_propiedad"},
+                intent="consulta_general",
+            )
+        try:
+            watch = await _run_sync(
+                register_price_drop_watch, db,
+                lead_id=lead_doc_full.get("_id"), phone=phone,
+                property_code=requested_code, customer_text=original_message,
+            )
+        except Exception:
+            logger.exception("[PRICE_DROP_WATCH] record failed; no promise of future notification")
+            watch = {"status": "RECORD_ERROR"}
+        if watch["status"] in {"RECORDED", "ALREADY_RECORDED"}:
+            prefix = (
+                "Entiendo, el precio es importante. 😊 Dejé registrada"
+                if watch["status"] == "RECORDED"
+                else "Claro, ya tengo registrada"
+            )
+            return await _persist_generated_outbound(
+                f"{prefix} tu solicitud sobre la propiedad {requested_code} "
+                "para que el equipo la revise si se confirma una rebaja. "
+                "No es una alerta automática garantizada. "
+                "Si quieres, mientras tanto puedo buscarte alternativas más económicas.",
+                {"tipo": "solicitud_aviso_rebaja_registrada",
+                 "property_code": requested_code},
+                intent="consulta_general",
+            )
+        return await _persist_generated_outbound(
+            "Entiendo. No pude confirmar el registro de tu solicitud de aviso "
+            "de rebaja todavía. Si me compartes el código o enlace de la propiedad, "
+            "el equipo podrá revisarlo contigo.",
+            {"tipo": "solicitud_aviso_rebaja_pendiente",
+             "watch_result": str(watch["status"])},
+            intent="consulta_general",
+        )
+
     # =======================================================
     # 5. PREPARACIÓN DE MESSAGES PARA GROK
     # =======================================================

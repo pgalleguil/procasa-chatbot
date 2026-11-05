@@ -213,11 +213,12 @@ def send_one(db, *, lead_id: str, campaign_id: str,
               if x.get("campaign_id") == campaign_id), None)
     if not c or c.get("status") != "APPROVED":
         return {"status": "NOT_APPROVED"}
-    if c.get("test_mode") and normalize_phone_strict(
-            os.getenv(TEST_PHONE_FLAG, "")) != c.get("phone_normalized"):
+    # Phase 1 is single-recipient acceptance only. Real clients require a
+    # reviewed, 3-person audience and dual notification before this gate opens.
+    if not c.get("test_mode"):
+        return {"status": "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"}
+    if normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")) != c.get("phone_normalized"):
         return {"status": "TEST_PHONE_NOT_ALLOWLISTED"}
-    if not c.get("test_mode") and not c.get("consent_reviewed"):
-        return {"status": "CONSENT_NOT_VERIFIED"}
     _property_price(db, c["property_code"], c["old_price_uf"], c["new_price_uf"])
     stamp = utc(now or datetime.now(timezone.utc))
     claimed = db[LEADS].update_one(

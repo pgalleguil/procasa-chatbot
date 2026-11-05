@@ -3005,7 +3005,7 @@ def test_v14_sends_two_isolated_role_notices_only_after_explicit_interest(monkey
     assert len(replies) == 3
 
     again = process_test_inbound(
-        db, PHONE, "v14-repeat-interest", "quiero visitarla",
+        db, PHONE, "v14-repeat-interest", "quiero agendar una visita",
         sender=reply_sender, exec_notice_sender=notice_sender,
     )
     assert again["test_dual_notice_statuses"] == {

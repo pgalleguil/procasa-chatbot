@@ -231,16 +231,22 @@ def _check_recipient(
 
 
 def _message(code: str, old: float, new: float) -> str:
+    """Natural, price-verified outreach for a previously interested lead.
+
+    The caller has already checked pre-drop inquiry, permission and current
+    price. Do not imply a visit, automatic discount, or human handoff.
+    """
     f = lambda n: f"{n:,.0f}".replace(",", ".")
     return (
-        "Hola, ¿cómo estás? Soy de PROCASA 😊\n\n"
-        f"Te escribo porque el departamento que consultaste (código {code}) "
-        f"bajó de UF {f(old)} a UF {f(new)}.\n\n"
-        "Con este nuevo valor quizás valga la pena darle otra mirada. "
-        f"Acá está la publicación actualizada: https://www.procasa.cl/{code}\n\n"
-        "¿Cómo lo ves con este nuevo precio?"
+        "¡Hola! ¿Cómo estás? 😊\n\n"
+        "Te escribimos de PROCASA porque hace un tiempo consultaste por "
+        f"el departamento {('de San Miguel ' if code == '6436' else '')}"
+        f"(código {code}), cuando costaba UF {f(old)}.\n\n"
+        f"Quería contarte que bajó {f(old - new)} UF y ahora está en UF {f(new)}.\n\n"
+        f"Te dejo la publicación actualizada: https://www.procasa.cl/{code}\n\n"
+        "Con este nuevo precio, ¿te sigue interesando?\n\n"
+        "Si prefieres no recibir más avisos, solo dínoslo."
     )
-
 
 def preview_plan(db: Any, payload: dict, *, now: datetime | None = None) -> dict:
     """Read-only. Report every rejection; no writes, no provider calls."""

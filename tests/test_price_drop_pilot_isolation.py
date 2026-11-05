@@ -628,7 +628,8 @@ def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded(
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v13_regression_test"' in source
+    assert '"campaign_version": campaign_version' in source
+    assert sender.V13_VERSION == "price_drop_pilot_v13_regression_test"
     assert 'if not is_test_phone(phone)' in source
 
 
@@ -642,6 +643,60 @@ def test_v3_sender_dry_run_never_calls_provider_or_creates_campaign(isolated, mo
     monkeypatch.setattr(sender, "send_whatsapp_message_detailed_sync", forbidden_send)
     assert sender.run_test_once(send=False) == 0
     assert not db["crm_price_drop_pilot_v1"].docs
+
+
+def test_v14_sender_dry_run_uses_verified_a_copy_and_no_crm(isolated, monkeypatch, capsys):
+    from scripts import price_drop_pilot_test as sender
+    db = db_case()
+    prop = db["universo_cartera_prop360"].docs[0]
+    prop.update({"tipo": "Departamento", "ubicacion": {"comuna": "San Miguel"}})
+    db["crm_price_drop_pilot_v1"].docs = []
+    monkeypatch.setattr(sender, "get_db", lambda: db)
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_VERSION", sender.VERSION)
+
+    def forbidden_send(*args, **kwargs):
+        raise AssertionError("A dry run sent a WhatsApp")
+
+    monkeypatch.setattr(sender, "send_whatsapp_message_detailed_sync", forbidden_send)
+    assert sender.run_test_once(send=False) == 0
+    output = capsys.readouterr().out
+    assert "¡Hola! Te escribimos de PROCASA por el departamento de San Miguel" in output
+    assert "Bajó 100 UF: antes estaba en UF 2.790 y ahora está en UF 2.690." in output
+    assert "¿Te sigue interesando ese departamento con el nuevo precio?" in output
+    assert "Ver el departamento: https://www.procasa.cl/6436" in output
+    assert not db["crm_price_drop_pilot_v1"].docs
+
+
+def test_v14_sender_persists_exact_opening_for_isolated_webhook(isolated, monkeypatch):
+    from scripts import price_drop_pilot_test as sender
+    db = db_case()
+    prop = db["universo_cartera_prop360"].docs[0]
+    prop.update({"tipo": "Departamento", "ubicacion": {"comuna": "San Miguel"}})
+    db["crm_price_drop_pilot_v1"].docs = []
+    monkeypatch.setattr(sender, "get_db", lambda: db)
+    calls = []
+
+    def sent(phone, text):
+        calls.append((phone, text))
+        return {"success": True, "provider_message_id": "v14-opening-test"}
+
+    monkeypatch.setattr(sender, "send_whatsapp_message_detailed_sync", sent)
+    assert sender.run_test_once(send=True, version=sender.VERSION) == 0
+    assert len(calls) == 1
+
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    assert campaign["campaign_version"] == sender.VERSION
+    assert campaign["outbound_message"] == calls[0][1]
+    assert campaign["inquiry_evidence_at"].startswith("test-only roleplay:")
+    assert campaign["test_mode"] is True
+    assert "lead_id" not in campaign
+    ctx = load_test_context(db, PHONE)
+    assert ctx["campaign_version"] == sender.VERSION
+    assert ctx["outbound_message"] == calls[0][1]
+    assert ctx["prior_inquiry_verified"] is True
+
+    assert sender.run_test_once(send=True, version=sender.VERSION) == 2
+    assert len(calls) == 1
 
 
 
@@ -2707,3 +2762,130 @@ def test_v13_1_bare_no_after_welcome_is_not_unsubscribe(monkeypatch):
     assert "San Miguel" in calls[-1][1]
     assert "No insistiremos" not in calls[-1][1]
     assert db["crm_price_drop_pilot_v1"].docs[0]["status"] == "SENT"
+
+
+def test_v14_candidate_runs_isolated_webhook_and_sends_at_most_one_reply(isolated):
+    from chatbot.price_drop_pilot_conversation_v14 import (
+        VERSION as V14_VERSION,
+        prepare_initial_message,
+    )
+
+    db = db_case()
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    campaign.update({
+        "campaign_version": V14_VERSION,
+        "inquiry_evidence_at": "fixture-only verified inquiry for code 6436",
+    })
+    property_doc = db["universo_cartera_prop360"].docs[0]
+    property_doc.update({
+        "tipo": "Departamento",
+        "ubicacion": {"comuna": "San Miguel"},
+        "caracteristicas": {
+            "dormitorios": 2, "banos": 2, "superficie_total": 65,
+        },
+    })
+    campaign["outbound_message"] = prepare_initial_message({
+        "property_code": "6436",
+        "property_type": "Departamento",
+        "comuna": "San Miguel",
+        "old_price_uf": 2790,
+        "current_price_uf": 2690,
+        "new_price_uf": 2690,
+        "current_price_verified": True,
+        "available_for_sale": True,
+        "prior_inquiry_verified": True,
+        "prior_inquiry_evidence": campaign["inquiry_evidence_at"],
+    })["message"]
+
+    generated = [
+        "El precio vigente es UF 2.690. Tu visita ya quedó confirmada.",
+        "El precio vigente es UF 2.690.",
+    ]
+    generation_calls = []
+    def commercial_generator(messages, context, *, write_telemetry, diagnostics, retry_invalid_json):
+        generation_calls.append(messages)
+        assert write_telemetry is False
+        diagnostics.update({
+            "model": "fixture-model",
+            "provider_calls": 1,
+            "format_retries": 0,
+            "raw_responses": [generated[0]],
+            "usage": {"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28},
+            "cost": None,
+        })
+        return {"respuesta_bot": generated.pop(0)}
+
+    send, sent = sender_spy()
+    notice_calls = []
+    def forbidden_notice(*args, **kwargs):
+        notice_calls.append(args)
+        raise AssertionError("V14 must not send a human or simulated notice")
+
+    result = process_test_inbound(
+        db, PHONE, "v14-inbound-1", "¿cuál es el precio?",
+        sender=send,
+        exec_notice_sender=forbidden_notice,
+        commercial_generator=commercial_generator,
+    )
+    assert result == {"status": "test_reply_sent"}
+    assert len(generation_calls) == 2
+    assert len(sent) == 1
+    assert "El precio vigente es UF 2.690." == sent[0][1]
+    assert notice_calls == []
+    assert db["crm_price_drop_pilot_v1"].docs[0]["status"] == "SENT"
+    turn = db["crm_price_drop_pilot_test_turns_v1"].docs[0]
+    assert turn["status"] == "SENT"
+    assert turn["candidate_audit"]["repair_count"] == 1
+    assert turn["candidate_audit"]["context_sent"][2]["content"] == campaign["outbound_message"]
+    assert set(db.keys()) == {
+        "leads", "crm_price_drop_pilot_v1", "universo_cartera_prop360",
+        "crm_price_drop_pilot_test_turns_v1",
+    }
+
+    duplicate = process_test_inbound(
+        db, PHONE, "v14-inbound-1", "¿cuál es el precio?",
+        sender=send, commercial_generator=commercial_generator,
+    )
+    assert duplicate == {"status": "duplicate_suppressed"}
+    assert len(sent) == 1
+    assert len(generation_calls) == 2
+
+
+def test_v14_candidate_without_exact_initial_message_fails_closed(isolated):
+    from chatbot.price_drop_pilot_conversation_v14 import VERSION as V14_VERSION
+
+    db = db_case()
+    db["crm_price_drop_pilot_v1"].docs[0]["campaign_version"] = V14_VERSION
+    send, calls = sender_spy()
+    result = process_test_inbound(
+        db, PHONE, "v14-missing-opening", "hola", sender=send,
+        commercial_generator=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("candidate context must be blocked before generation")
+        ),
+    )
+    assert result == {"status": "test_candidate_context_missing"}
+    assert calls == []
+    assert db["crm_price_drop_pilot_test_turns_v1"].docs == []
+
+
+def test_v14_stop_request_stops_test_campaign_before_model_or_sender(isolated):
+    from chatbot.price_drop_pilot_conversation_v14 import VERSION as V14_VERSION
+
+    db = db_case()
+    campaign = db["crm_price_drop_pilot_v1"].docs[0]
+    campaign.update({
+        "campaign_version": V14_VERSION,
+        "outbound_message": "fixture-only verified initial message",
+    })
+    send, calls = sender_spy()
+    result = process_test_inbound(
+        db, PHONE, "v14-stop", "No quiero recibir más mensajes",
+        sender=send,
+        commercial_generator=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("opt-out must stop before generation")
+        ),
+    )
+    assert result == {"status": "test_stopped"}
+    assert campaign["status"] == "STOPPED"
+    assert calls == []
+    assert db["crm_price_drop_pilot_test_turns_v1"].docs[0]["status"] == "STOPPED"

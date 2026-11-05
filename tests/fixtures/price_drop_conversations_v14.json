@@ -1,0 +1,249 @@
+[
+  {
+    "id": "greeting-interest-yes",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "me interesa",
+      "sí"
+    ],
+    "expectations": [
+      "contextual greeting",
+      "interest without visit pressure",
+      "yes follows the last question"
+    ]
+  },
+  {
+    "id": "greeting-no-not-unsubscribe",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "no"
+    ],
+    "expectations": [
+      "distinguish not seeing the publication from opt-out"
+    ]
+  },
+  {
+    "id": "yes-after-price-question",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "sí"
+    ],
+    "expectations": [
+      "interpret yes relative to the initial question"
+    ]
+  },
+  {
+    "id": "forgot-property",
+    "property": "house_92817",
+    "turns": [
+      "hola",
+      "¿qué propiedad era? no me acuerdo",
+      "¿cuántos dormitorios tiene?"
+    ],
+    "expectations": [
+      "identify the second property accurately",
+      "answer four bedrooms from verified facts"
+    ]
+  },
+  {
+    "id": "interest-then-negotiation",
+    "property": "apartment_6436",
+    "turns": [
+      "me interesa",
+      "¿y es negociable?"
+    ],
+    "expectations": [
+      "answer negotiation directly",
+      "do not invent owner disposition"
+    ]
+  },
+  {
+    "id": "declines-visit-keeps-factual-question",
+    "property": "apartment_6436",
+    "turns": [
+      "me interesa",
+      "no quiero visita, pero dime cuánto mide"
+    ],
+    "expectations": [
+      "respect visit refusal",
+      "answer verified area"
+    ]
+  },
+  {
+    "id": "yes-then-saturday-ten",
+    "property": "apartment_6436",
+    "turns": [
+      "me interesa",
+      "sí",
+      "el sábado a las 10"
+    ],
+    "expectations": [
+      "remember Saturday at 10",
+      "state preference is not confirmed booking"
+    ]
+  },
+  {
+    "id": "unusual-04-hour",
+    "property": "apartment_6436",
+    "turns": [
+      "me interesa",
+      "sí",
+      "mañana a las 4 de la mañana"
+    ],
+    "expectations": [
+      "retain stated time",
+      "do not normalize or confirm an appointment"
+    ]
+  },
+  {
+    "id": "ambiguous-four",
+    "property": "apartment_6436",
+    "turns": [
+      "me interesa",
+      "sí",
+      "mañana a las 4"
+    ],
+    "expectations": [
+      "ask whether 04:00 or 16:00",
+      "do not assume a time"
+    ]
+  },
+  {
+    "id": "monday-ten",
+    "property": "apartment_6436",
+    "turns": [
+      "me interesa",
+      "sí",
+      "el lunes a las 10"
+    ],
+    "expectations": [
+      "remember Monday at 10",
+      "keep it as a preference"
+    ]
+  },
+  {
+    "id": "outreach-confusion",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "no entiendo de qué se trata"
+    ],
+    "expectations": [
+      "recognize PROCASA initiated contact",
+      "explain the verified price change"
+    ]
+  },
+  {
+    "id": "typo-multiple-questions",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "me interesa, ¿es negociable? ¿cuánto son los gastos comunes?"
+    ],
+    "expectations": [
+      "answer both questions",
+      "do not replace them with a visit proposal"
+    ]
+  },
+  {
+    "id": "discount-amount-typo",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "te pregundo cuánto bajó de precio"
+    ],
+    "expectations": [
+      "answer the 100 UF difference"
+    ]
+  },
+  {
+    "id": "price-drop-date-unknown",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "¿y cuándo bajó de precio?"
+    ],
+    "expectations": [
+      "say exact date is unverified"
+    ]
+  },
+  {
+    "id": "amount-and-date",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "¿cuánto bajó y cuándo bajó?"
+    ],
+    "expectations": [
+      "answer amount and disclose date uncertainty"
+    ]
+  },
+  {
+    "id": "visit-typo",
+    "property": "apartment_6436",
+    "turns": [
+      "buenas tardes",
+      "quiero visitar el depto"
+    ],
+    "expectations": [
+      "understand typo/prior intent",
+      "ask a relevant missing preference only"
+    ]
+  },
+  {
+    "id": "visit-preference-then-question",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "quiero verlo mañana a las 10",
+      "no quiero visita todavía, ¿cuántos baños tiene?"
+    ],
+    "expectations": [
+      "remember preference",
+      "respect changed refusal",
+      "answer two bathrooms"
+    ]
+  },
+  {
+    "id": "who-will-call",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "me interesa",
+      "¿quién me llamará?"
+    ],
+    "expectations": [
+      "clarify no human contact was sent",
+      "do not invent a person"
+    ]
+  },
+  {
+    "id": "booking-status",
+    "property": "apartment_6436",
+    "turns": [
+      "hola",
+      "me interesa",
+      "¿ya está confirmada la visita?"
+    ],
+    "expectations": [
+      "state no booking is confirmed"
+    ]
+  },
+  {
+    "id": "second-property-expenses-and-patio",
+    "property": "house_92817",
+    "turns": [
+      "hola",
+      "me interesa",
+      "¿cuánto paga de gastos comunes y tiene patio?"
+    ],
+    "expectations": [
+      "give verified CLP expenses",
+      "say patio is unverified",
+      "use the second property's type and commune"
+    ]
+  }
+]

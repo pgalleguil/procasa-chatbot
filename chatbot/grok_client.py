@@ -105,13 +105,26 @@ def generar_respuesta(messages: list, tipo: str = "prospecto", telemetry_context
 def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None,
                                     telemetry_context: dict | None = None, *,
                                     write_telemetry: bool = True,
-                                    force_json_output: bool = False) -> dict:
+                                    force_json_output: bool = False,
+                                    diagnostics: dict | None = None,
+                                    retry_invalid_json: bool = True) -> dict:
     """
     Genera respuesta conversacional y extrae datos nuevos si el usuario los menciona.
     Combina el prompt de negocio + instrucciones de extracción.
     """
     if prospecto_actual is None:
         prospecto_actual = {}
+    if diagnostics is not None:
+        diagnostics.clear()
+        diagnostics.update({
+            "provider": "deepseek",
+            "model": Config.DEEPSEEK_MODEL_REASONER,
+            "provider_calls": 0,
+            "format_retries": 0,
+            "raw_responses": [],
+            "usage": None,
+            "cost": None,
+        })
 
     datos_conocidos = {k: v for k, v in prospecto_actual.items() if v}
 
@@ -245,6 +258,8 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         if force_json_output or is_price_drop_pilot or Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
             kwargs["response_format"] = {"type": "json_object"}
 
+        if diagnostics is not None:
+            diagnostics["provider_calls"] = 1
         response = client.chat.completions.create(
             model=Config.DEEPSEEK_MODEL_REASONER,
             messages=structured_messages,
@@ -263,6 +278,18 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         completion_details = getattr(usage, "completion_tokens_details", None) if usage else None
         reasoning_tokens_used = getattr(completion_details, "reasoning_tokens", 0) if completion_details else 0
         content_final = raw_content
+        if diagnostics is not None:
+            diagnostics.update({
+                "finish_reason": finish_reason,
+                "raw_responses": [raw_content],
+                "latency_ms": int((time.monotonic() - started_at) * 1000),
+                "usage": {
+                    "prompt_tokens": int(getattr(usage, "prompt_tokens", 0) or 0),
+                    "completion_tokens": int(getattr(usage, "completion_tokens", 0) or 0),
+                    "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
+                    "reasoning_tokens": int(reasoning_tokens_used or 0),
+                } if usage else None,
+            })
 
         logger.info(
             "[DEEPSEEK_USAGE] finish=%s prompt=%s completion=%s reasoning=%s content_len=%s",
@@ -305,9 +332,12 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         try:
             datos = json.loads(contenido_json_str)
         except json.JSONDecodeError:
-            if not is_price_drop_pilot:
+            if not is_price_drop_pilot or not retry_invalid_json:
                 raise
             logger.warning("[PRICE_DROP_PILOT_JSON] invalid output, retry once")
+            if diagnostics is not None:
+                diagnostics["provider_calls"] = 2
+                diagnostics["format_retries"] = 1
             again = client.chat.completions.create(
                 model=Config.DEEPSEEK_MODEL_REASONER,
                 messages=[*structured_messages[:-1], {
@@ -321,7 +351,26 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
                 timeout=Config.DEEPSEEK_TIMEOUT_REASONER,
                 response_format={"type": "json_object"},
             )
-            datos = json.loads((again.choices[0].message.content or "").strip())
+            retry_content = again.choices[0].message.content or ""
+            datos = json.loads(retry_content.strip())
+            if diagnostics is not None:
+                retry_usage = getattr(again, "usage", None)
+                retry_completion_details = getattr(
+                    retry_usage, "completion_tokens_details", None
+                ) if retry_usage else None
+                prior_usage = diagnostics.get("usage") or {}
+                diagnostics["raw_responses"].append(retry_content)
+                diagnostics["usage"] = {
+                    "prompt_tokens": int(prior_usage.get("prompt_tokens", 0))
+                    + int(getattr(retry_usage, "prompt_tokens", 0) or 0),
+                    "completion_tokens": int(prior_usage.get("completion_tokens", 0))
+                    + int(getattr(retry_usage, "completion_tokens", 0) or 0),
+                    "total_tokens": int(prior_usage.get("total_tokens", 0))
+                    + int(getattr(retry_usage, "total_tokens", 0) or 0),
+                    "reasoning_tokens": int(prior_usage.get("reasoning_tokens", 0))
+                    + int(getattr(retry_completion_details, "reasoning_tokens", 0) or 0),
+                } if retry_usage else diagnostics.get("usage")
+                diagnostics["latency_ms"] = int((time.monotonic() - started_at) * 1000)
 
         if write_telemetry:
             _record_llm_telemetry(
@@ -335,6 +384,12 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
             "respuesta_bot": datos.get("respuesta_bot", "Gracias por tu consulta."),
         }
     except Exception as e:
+        if diagnostics is not None:
+            diagnostics.update({
+                "error": type(e).__name__,
+                "timeout": _is_timeout_error(e),
+                "latency_ms": int((time.monotonic() - started_at) * 1000),
+            })
         if write_telemetry:
             _record_llm_telemetry(
                 model=Config.DEEPSEEK_MODEL_REASONER, started_at=started_at,

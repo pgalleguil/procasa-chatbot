@@ -316,6 +316,13 @@ def test_no_tracking_queries_when_campaign_not_enabled(db, monkeypatch):
 
 def test_render_bootstrap_preview_prepare_approve_are_separate_no_send(db, monkeypatch):
     import json
+    from chatbot import price_drop_campaign_bootstrap as bootstrap
+    original_preview = bootstrap.preview_plan
+    original_persist = bootstrap.persist_plan
+    original_approve = bootstrap.approve_campaign
+    monkeypatch.setattr(bootstrap, "preview_plan", lambda db, payload: original_preview(db, payload, now=NOW))
+    monkeypatch.setattr(bootstrap, "persist_plan", lambda db, payload: original_persist(db, payload, now=NOW))
+    monkeypatch.setattr(bootstrap, "approve_campaign", lambda db, cid, *, operator: original_approve(db, cid, operator=operator, now=NOW))
     from chatbot.price_drop_campaign_bootstrap import run_bootstrap
     from chatbot.price_drop_campaign_real import APPROVED_ID_FLAG
     p = plan(db, n=1)

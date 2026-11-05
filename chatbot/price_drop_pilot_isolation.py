@@ -34,7 +34,11 @@ PILOT_HISTORY_FETCH_LIMIT = 240
 PILOT_RECENT_FULL_TURNS = 36
 PILOT_RECENT_CHAR_BUDGET = 19000
 PILOT_ARCHIVE_CHAR_BUDGET = 10500
-STOP = re.compile(r"\b(?:stop|no me escriban|dejen de escribir|no quiero (?:más |mas )?mensajes|darme de baja|eliminar mi n[uú]mero)\b", re.I)
+STOP = re.compile(
+    r"\b(?:stop|no me escriban|dejen de escribir|"
+    r"no quiero (?:(?:recibir|seguir recibiendo) )?(?:m[aá]s )?mensajes|"
+    r"darme de baja|eliminar mi n[uú]mero)\b", re.I,
+)
 DECLINE = re.compile(r"^\s*(?:no\s*[.!?]?\s*$|no gracias\b|no me interesa\b|ya no me interesa\b|no estoy interesado\b|por ahora no\b)", re.I)
 VISIT = re.compile(r"\b(?:visitar(?:la|lo)?|visitas?|visidta|visista|visilta|agendar|coordinar|quiero verla|ir a ver|conocerla|ver el departamento)\b", re.I)
 PRICE = re.compile(r"\b(?:precio|cu[aá]nto (?:cuesta|vale|sale)|a cu[aá]nto|rebaja|baj[oó]|uf)\b", re.I)
@@ -434,7 +438,7 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
     from .property_lookup import PROPERTY_COLLECTION_NAME
     property_doc = db[PROPERTY_COLLECTION_NAME].find_one(
         {"codigo": str(campaign.get("property_code") or "")},
-        {"codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
+        {"codigo": 1, "tipo": 1, "tipo_propiedad": 1, "disponible_prop360": 1, "estado.oficina": 1,
          "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1,
          "tipo_operacion.gastos_comunes": 1, "caracteristicas.banos": 1,
          "caracteristicas.dormitorios": 1, "caracteristicas.bodegas": 1,
@@ -454,6 +458,10 @@ def load_test_context(db: Any, phone: str, *, now: datetime | None = None) -> di
     return {
         "campaign_id": campaign["_id"],
         "campaign_version": campaign.get("campaign_version"),
+        "outbound_message": str(campaign.get("outbound_message") or ""),
+        "property_type": str(property_doc.get("tipo") or property_doc.get("tipo_propiedad") or ""),
+        "prior_inquiry_verified": bool(campaign.get("inquiry_evidence_at")),
+        "prior_inquiry_evidence": str(campaign.get("inquiry_evidence_at") or ""),
         "property_code": str(campaign["property_code"]),
         "old_price_uf": old, "new_price_uf": new,
         "price_drop_date": None,  # Bitácora can contain sensitive location changes; never read
@@ -1364,7 +1372,8 @@ def build_test_reply(message: str, ctx: dict, history: list[dict] | None = None,
 
 def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: str,
                          *, sender: Callable | None = None, llm: Callable | None = None,
-                         exec_notice_sender: Callable | None = None) -> dict:
+                         exec_notice_sender: Callable | None = None,
+                         commercial_generator: Callable | None = None) -> dict:
     """Intercept before commercial queue. All writes confined to test collections.
 
     One provider attempt per inbound ID. An uncertain send is never retried.
@@ -1376,6 +1385,10 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
         # Fail closed: do not allow this number into the regular CRM while
         # the isolated test flag is active, even if the campaign is expired.
         return {"status": "test_not_active"}
+    from .price_drop_pilot_conversation_v14 import VERSION as V14_VERSION
+    if (ctx.get("campaign_version") == V14_VERSION
+            and not str(ctx.get("outbound_message") or "").strip()):
+        return {"status": "test_candidate_context_missing"}
     if not provider_message_id or not text or not str(text).strip():
         return {"status": "test_invalid_inbound"}
     phone_norm = normalize_phone_strict(phone)
@@ -1429,7 +1442,15 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
         }, {"test_notification_role": 1})
         roles = tuple(str(row.get("test_notification_role") or "") for row in receipts)
     response = None
-    if (campaign_version == V13_VERSION
+    response_audit = None
+    if campaign_version == V14_VERSION:
+        from .price_drop_pilot_conversation_v14 import generate_reply
+        generated = generate_reply(
+            text, ctx, history, generator=commercial_generator,
+        )
+        response = generated["answer"]
+        response_audit = generated["audit"]
+    elif (campaign_version == V13_VERSION
             and not NEGATE_VISIT.search(text)
             and (not DECLINE.search(text)
                  or v13_plain(text) in {"no", "nop", "nope", "no gracias"})):
@@ -1449,14 +1470,18 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
             response, text, ctx, history, parse_parts=_visit_parts,
             notice_roles=roles,
         )
-    answer = _personalize_reply(response, text, ctx, history)
+    answer = (
+        str(response or "").strip() if campaign_version == V14_VERSION
+        else _personalize_reply(response, text, ctx, history)
+    )
     if not answer:
         db[TURN_COLLECTION].update_one({"_id": key}, {"$set": {"status": "NO_REPLY"}})
         return {"status": "no_reply"}
 
-    db[TURN_COLLECTION].update_one({"_id": key}, {"$set": {
-        "status": "SENDING", "bot_text": answer,
-    }})
+    turn_patch = {"status": "SENDING", "bot_text": answer}
+    if response_audit is not None:
+        turn_patch["candidate_audit"] = response_audit
+    db[TURN_COLLECTION].update_one({"_id": key}, {"$set": turn_patch})
     try:
         if sender is None:
             from .whatsapp_client import send_whatsapp_message_detailed_sync
@@ -1478,6 +1503,10 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
     }})
     if not accepted:
         return {"status": "delivery_unknown"}
+    if campaign_version == V14_VERSION:
+        # The conversation candidate never sends simulated notices or
+        # creates a human handoff; the one customer reply is already done.
+        return {"status": "test_reply_sent"}
     # V11/V12/V13: test-only notifications to the allowlisted tester.
     # No CRM, current executive owner or real commercial side effects.
     from .price_drop_pilot_dual_notice_sim import VERSION as V11_VERSION

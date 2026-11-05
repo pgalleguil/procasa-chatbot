@@ -125,30 +125,28 @@ def prepare_initial_message(verified: dict[str, Any]) -> dict[str, Any]:
     }
     feminine = property_type in feminine_types
     article = "la" if feminine else "el"
-    object_pronoun = "verla" if feminine else "mirarlo"
     property_phrase = f"{article} {property_type}"
+    demonstrative_phrase = f"{'esa' if feminine else 'ese'} {property_type}"
     if prior_inquiry_verified:
         opening = (
-            "¡Hola! ¿Cómo estás? 😊 Te escribimos de PROCASA porque hace un tiempo "
-            f"consultaste por {property_phrase} de {comuna}."
+            "¡Hola! Te escribimos de PROCASA por "
+            f"{property_phrase} de {comuna} que consultaste hace un tiempo."
         )
         closing_question = (
-            f"¿Te gustaría volver a {object_pronoun} con este nuevo precio?"
+            f"¿Te sigue interesando {demonstrative_phrase} con el nuevo precio?"
         )
     else:
         opening = (
-            "¡Hola! ¿Cómo estás? 😊 Te escribimos de PROCASA para contarte que bajó "
-            f"el precio de {property_phrase} de {comuna}."
+            "¡Hola! Te escribimos de PROCASA para contarte la rebaja de "
+            f"{property_phrase} de {comuna}."
         )
-        closing_question = f"¿Te gustaría {object_pronoun} con este nuevo precio?"
+        closing_question = f"¿Te interesa {property_phrase} con el nuevo precio?"
 
     message = (
-        f"{opening}\n\n"
-        f"Te quería contar que bajó {_format_uf(drop)} UF: antes estaba en "
-        f"UF {_format_uf(old)} y ahora en UF {_format_uf(current)}.\n\n"
-        "Te dejo la publicación actualizada para que puedas revisarla:\n"
-        f"{supplied_url}\n\n"
-        f"{closing_question}"
+        f"{opening} Bajó {_format_uf(drop)} UF: antes estaba en "
+        f"UF {_format_uf(old)} y ahora está en UF {_format_uf(current)}.\n\n"
+        f"{closing_question}\n\n"
+        f"Ver {property_phrase}: {supplied_url}"
     )
     return {
         "message": message,

@@ -70,12 +70,11 @@ def test_initial_preview_uses_verified_property_fields_and_prior_inquiry():
     preview = prepare_initial_message(verified_apartment())
     assert preview["preview_only"] is True
     assert preview["message"] == (
-        "¡Hola! ¿Cómo estás? 😊 Te escribimos de PROCASA porque hace un tiempo "
-        "consultaste por el departamento de San Miguel.\n\n"
-        "Te quería contar que bajó 100 UF: antes estaba en UF 2.790 y ahora en UF 2.690.\n\n"
-        "Te dejo la publicación actualizada para que puedas revisarla:\n"
-        "https://www.procasa.cl/6436\n\n"
-        "¿Te gustaría volver a mirarlo con este nuevo precio?"
+        "¡Hola! Te escribimos de PROCASA por el departamento de San Miguel que "
+        "consultaste hace un tiempo. Bajó 100 UF: antes estaba en UF 2.790 y "
+        "ahora está en UF 2.690.\n\n"
+        "¿Te sigue interesando ese departamento con el nuevo precio?\n\n"
+        "Ver el departamento: https://www.procasa.cl/6436"
     )
 
 
@@ -94,7 +93,8 @@ def test_initial_preview_omits_unverified_previous_inquiry():
     assert preview["prior_inquiry_verified"] is False
     assert "consultaste" not in preview["message"]
     assert "la casa de La Florida" in preview["message"]
-    assert "bajó 250 UF" in preview["message"]
+    assert "¿Te interesa la casa" in preview["message"]
+    assert "Bajó 250 UF" in preview["message"]
     assert "UF 5.600" in preview["message"]
     assert "UF 5.350" in preview["message"]
     assert "https://www.procasa.cl/92817" in preview["message"]

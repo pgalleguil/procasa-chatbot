@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from chatbot.phone_utils import normalize_phone_strict
 from chatbot.price_drop_pilot import COLLECTION, FLAG, TEST_PHONE
 from chatbot.price_drop_pilot_isolation import is_test_phone
+from chatbot.price_drop_pilot_conversation_v14 import VERSION, prepare_initial_message
+from chatbot.price_drop_pilot_guard_v13 import VERSION as V13_VERSION
 from chatbot.property_lookup import PROPERTY_COLLECTION_NAME
 from chatbot.storage import get_db
 from chatbot.whatsapp_client import send_whatsapp_message_detailed_sync
@@ -25,10 +27,15 @@ PROPERTY_CODE = "6436"
 OLD_UF = 2790.0
 NEW_UF = 2690.0
 TEST_ID = "20261104-6436-price-drop-pilot-v13-regression-single-test"
+V14_TEST_ID = "20261105-6436-price-drop-pilot-v14-phone-test-single"
 
 
-def run_test_once(*, send: bool = False) -> int:
+def run_test_once(*, send: bool = False, version: str | None = None) -> int:
     """One durable provider attempt at most, even after Render restarts."""
+    campaign_version = version or os.environ.get("PRICE_DROP_PILOT_TEST_VERSION") or V13_VERSION
+    if campaign_version not in {V13_VERSION, VERSION}:
+        print("BLOCKED: isolated test campaign version is not supported")
+        return 2
     phone = normalize_phone_strict(os.environ.get(TEST_PHONE, ""))
     if not phone:
         print("BLOCKED: test recipient is not configured")
@@ -47,6 +54,7 @@ def run_test_once(*, send: bool = False) -> int:
     prop = db[PROPERTY_COLLECTION_NAME].find_one(
         {"codigo": PROPERTY_CODE},
         {"codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
+         "tipo": 1, "tipo_propiedad": 1, "ubicacion.comuna": 1,
          "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1},
     ) or {}
     sale = (prop.get("tipo_operacion") or {})
@@ -62,30 +70,59 @@ def run_test_once(*, send: bool = False) -> int:
         print("BLOCKED: sale availability or current price differs from the verified pilot")
         return 2
 
-    key = "test:" + TEST_ID + ":" + hashlib.sha256(phone.encode()).hexdigest()[:24]
+    inquiry_evidence = None
+    if campaign_version == VERSION:
+        property_type = prop.get("tipo") or prop.get("tipo_propiedad")
+        comuna = (prop.get("ubicacion") or {}).get("comuna")
+        if (
+            not isinstance(property_type, str) or not property_type.strip()
+            or not isinstance(comuna, str) or not comuna.strip()
+        ):
+            print("BLOCKED: property type or comuna is not available from the verified listing")
+            return 2
+
+        inquiry_evidence = (
+            "test-only roleplay: tester simulates a previous inquiry; not a CRM record"
+        )
+        preview = prepare_initial_message({
+            "property_code": PROPERTY_CODE,
+            "property_type": property_type,
+            "comuna": comuna,
+            "old_price_uf": OLD_UF,
+            "current_price_uf": current,
+            "new_price_uf": NEW_UF,
+            "current_price_verified": True,
+            "available_for_sale": True,
+            "prior_inquiry_verified": True,
+            "prior_inquiry_evidence": inquiry_evidence,
+        })
+        message = preview["message"]
+        test_id = V14_TEST_ID
+    else:
+        # Preserve the established V13 sender as the default test version.
+        message = (
+            "Hola, ¿cómo estás? Soy de PROCASA 😊\n\n"
+            "Te escribo porque el departamento de San Miguel tuvo una rebaja: "
+            "ahora está en UF 2.690, 100 UF menos que antes (UF 2.790).\n\n"
+            "Con este nuevo precio quizás valga la pena darle otra mirada. "
+            "Acá está la publicación actualizada:\n"
+            "https://www.procasa.cl/6436\n\n"
+            "¿Cómo lo ves con este nuevo valor?"
+        )
+        test_id = TEST_ID
+
+    key = "test:" + test_id + ":" + hashlib.sha256(phone.encode()).hexdigest()[:24]
     if db[COLLECTION].find_one({"_id": key}, {"_id": 1}):
         print("BLOCKED: an attempt for this test was already recorded; no retries")
         return 2
 
-    # A naturally worded customer-facing message. No unverified name, past
-    # contact, stated objections, or claims of a previous consultation.
-    # The test-only allowlist, campaign ID, and CRM isolation stay invisible.
-    message = (
-        "Hola, ¿cómo estás? Soy de PROCASA 😊\n\n"
-        "Te escribo porque el departamento de San Miguel tuvo una rebaja: "
-        "ahora está en UF 2.690, 100 UF menos que antes (UF 2.790).\n\n"
-        "Con este nuevo precio quizás valga la pena darle otra mirada. "
-        "Acá está la publicación actualizada:\n"
-        "https://www.procasa.cl/6436\n\n"
-        "¿Cómo lo ves con este nuevo valor?"
-    )
     if not send:
         print("DRY RUN PASSED: isolated recipient and current price verified; no WhatsApp sent")
         print(message)
         return 0
 
     now = datetime.now(timezone.utc)
-    db[COLLECTION].insert_one({
+    campaign = {
         "_id": key,
         "phone_normalized": phone,
         "test_mode": True,
@@ -94,11 +131,18 @@ def run_test_once(*, send: bool = False) -> int:
         "new_price_uf": NEW_UF,
         "operation": "Venta",
         "channel": "whatsapp",
-        "campaign_version": "price_drop_pilot_v13_regression_test",
+        "campaign_version": campaign_version,
         "status": "SENDING",
         "isolation_version": "test_webhook_before_crm_v1",
         "created_at": now,
-    })
+    }
+    if campaign_version == VERSION:
+        # This roleplay evidence exists only in the isolated test campaign.
+        campaign.update({
+            "outbound_message": message,
+            "inquiry_evidence_at": inquiry_evidence,
+        })
+    db[COLLECTION].insert_one(campaign)
     # One provider attempt; timeout/unknown is never auto-retried.
     try:
         receipt = send_whatsapp_message_detailed_sync(phone, message)

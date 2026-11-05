@@ -628,7 +628,8 @@ def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded(
     ):
         assert prohibited not in message_source
     assert '"test_mode": True' in source
-    assert '"campaign_version": "price_drop_pilot_v13_regression_test"' in source
+    assert '"campaign_version": campaign_version' in source
+    assert sender.V13_VERSION == "price_drop_pilot_v13_regression_test"
     assert 'if not is_test_phone(phone)' in source
 
 
@@ -641,6 +642,28 @@ def test_v3_sender_dry_run_never_calls_provider_or_creates_campaign(isolated, mo
         raise AssertionError("Dry run sent a WhatsApp")
     monkeypatch.setattr(sender, "send_whatsapp_message_detailed_sync", forbidden_send)
     assert sender.run_test_once(send=False) == 0
+    assert not db["crm_price_drop_pilot_v1"].docs
+
+
+def test_v14_sender_dry_run_uses_verified_a_copy_and_no_crm(isolated, monkeypatch, capsys):
+    from scripts import price_drop_pilot_test as sender
+    db = db_case()
+    prop = db["universo_cartera_prop360"].docs[0]
+    prop.update({"tipo": "Departamento", "ubicacion": {"comuna": "San Miguel"}})
+    db["crm_price_drop_pilot_v1"].docs = []
+    monkeypatch.setattr(sender, "get_db", lambda: db)
+    monkeypatch.setenv("PRICE_DROP_PILOT_TEST_VERSION", sender.VERSION)
+
+    def forbidden_send(*args, **kwargs):
+        raise AssertionError("A dry run sent a WhatsApp")
+
+    monkeypatch.setattr(sender, "send_whatsapp_message_detailed_sync", forbidden_send)
+    assert sender.run_test_once(send=False) == 0
+    output = capsys.readouterr().out
+    assert "¡Hola! Te escribimos de PROCASA por el departamento de San Miguel" in output
+    assert "Bajó 100 UF: antes estaba en UF 2.790 y ahora está en UF 2.690." in output
+    assert "¿Te sigue interesando ese departamento con el nuevo precio?" in output
+    assert "Ver el departamento: https://www.procasa.cl/6436" in output
     assert not db["crm_price_drop_pilot_v1"].docs
 
 

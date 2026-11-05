@@ -23,6 +23,7 @@ No se envió ningún WhatsApp. No se contactaron leads ni ejecutivos reales, no 
 | `price_drop_pilot_guard_v13.py`, `price_drop_pilot_followup_v12.py` | Interpretación determinista y redacción de respuestas. |
 | `price_drop_campaign_classifier.py` | Clasifica intención y estado de campaña; no redacta respuestas. |
 | `price_drop_campaign_real.py` | Vista previa y controles de envío real: precio, consentimiento, consulta previa, baja/bloqueo, identidad y duplicados; atribución y marcadores de campaña para envíos aceptados. |
+| `scripts/price_drop_pilot_test.py` | V13 sigue como versión predeterminada. `PRICE_DROP_PILOT_TEST_VERSION=price_drop_pilot_natural_v14` opta por una sola apertura V14 al teléfono allowlisted; el registro aislado conserva el texto enviado y la evidencia de roleplay, sin consultar CRM. |
 | `chatbot/core.py`, `grok_client.py` | Prompt y generador comercial habituales. |
 | `scripts/price_drop_pilot_test.py` | Sender de prueba preexistente para una propiedad de muestra y con bandera `--send`; no se ejecutó ni modificó. |
 
@@ -38,9 +39,9 @@ La candidata valida precios UF, medidas, dirección/unidad, referencia a consult
 
 El contexto, respuesta original, salida final, reglas que intervinieron, errores, reparaciones, modelo, intentos al proveedor, latencia y tokens disponibles quedan en el turno aislado. El cliente actual no proporciona costo, por lo que se registra como no disponible.
 
-## Vista previa del mensaje inicial
+## Mensaje de la prueba telefónica
 
-Ejemplo ficticio: propiedad 6436, departamento de San Miguel, precio anterior UF 2.790 y precio vigente verificado UF 2.690, con evidencia de consulta previa.
+El emisor aislado `scripts/price_drop_pilot_test.py --send` construye este mensaje con los datos de Prop360 verificados al momento del envío. La consulta anterior se simula solo para este teléfono de prueba y queda marcada como un escenario de roleplay en el registro aislado; no se lee ni escribe historial CRM.
 
 > ¡Hola! ¿Cómo estás? 😊 Te escribimos de PROCASA porque hace un tiempo consultaste por el departamento de San Miguel.
 >
@@ -51,7 +52,7 @@ Ejemplo ficticio: propiedad 6436, departamento de San Miguel, precio anterior UF
 >
 > ¿Te gustaría volver a mirarlo con este nuevo precio?
 
-La referencia a la consulta anterior se omite si falta evidencia. La segunda propiedad ficticia prueba una casa en La Florida, código 92817 y precios UF 5.600/5.350. La vista previa bloquea precio no verificado, propiedad que no está disponible para venta, precio propuesto distinto del vigente, código inválido o enlace que no corresponda a Procasa y al código.
+La referencia a la consulta anterior se omite si falta evidencia. La segunda propiedad ficticia prueba una casa en La Florida, código 92817 y precios UF 5.600/5.350. La construcción bloquea precio no verificado, propiedad que no está disponible para venta, precio propuesto distinto del vigente, código inválido o enlace que no corresponda a Procasa y al código.
 
 ## Evidencia ejecutada
 
@@ -77,7 +78,7 @@ La respuesta falsa de visita se eliminó y el dato de precio verificado se conse
 
 ## Comparación de veinte conversaciones y rúbrica
 
-El archivo `tests/fixtures/price_drop_conversations_v14.json` contiene veinte escenarios conversacionales de varios turnos, derivados de los ejemplos y casos límite de la solicitud. Astra entregó después una batería y una rúbrica en otro chat, junto con tres opciones de mensaje inicial y recomendó la opción A. Este fixture se creó antes de recibir esa respuesta y todavía no corresponde a la batería de Astra; no se ha puntuado con su rúbrica. La opción A es más breve y pregunta si sigue interesando el departamento; la vista previa implementada aún usa el texto anterior, así que falta incorporarla y evaluarla.
+El archivo `tests/fixtures/price_drop_conversations_v14.json` contiene veinte escenarios conversacionales de varios turnos, derivados de los ejemplos y casos límite de la solicitud. Astra entregó después una batería y una rúbrica en otro chat, junto con tres opciones de mensaje inicial y recomendó la opción A. La prueba telefónica ahora usa esa apertura concisa y la prueba de unidad fija su texto para el caso verificado. El fixture de veinte conversaciones se creó antes de recibir la batería de Astra; aún no corresponde a sus escenarios ni está puntuado con su rúbrica.
 
 La comparación completa V13.1 / V14 / generador comercial original con conversaciones completas y modelo real **no se ejecutó** en este entorno. El usuario informa que ha probado desde su teléfono actuando como cliente; esas pruebas son evidencia del recorrido que atendió el servicio desplegado, pero no se ha identificado qué commit/versión las atendió ni se han adjuntado sus transcripciones. V14 todavía está integrada solo en `process_test_inbound`; la campaña real construye su apertura en `price_drop_campaign_real._message` y procesa respuestas por la cola normal y `chatbot.core`. Por tanto, esas pruebas no acreditan el comportamiento de V14 ni su activación para leads reales.
 
@@ -102,4 +103,4 @@ Los validadores de salida cubren afirmaciones críticas conocidas, pero no demue
 
 Se corrigieron dos defectos detectados al revisar el código: la reparación ahora recibe la respuesta original y las infracciones detectadas; el presupuesto del historial conserva primero los turnos más recientes y después restituye el orden cronológico. Se agregaron regresiones para ambos casos. La prueba de bootstrap con fecha vencida ahora usa NOW explícito en preview, persistencia y aprobación, sin cambiar el reloj ni los controles de producción.
 
-Verificación posterior: 283 pruebas aprobadas, sin exclusiones, ejecutando test_price_drop_pilot_conversation_v14.py, test_price_drop_pilot_isolation.py y test_price_drop_real_pilot.py con Python 3.13 y UTF-8. Esta verificación reemplaza el resultado con exclusión para la prueba temporal. La evaluación real de conversaciones y la integración de V14 en la ruta de destinatarios reales siguen pendientes; esta revisión no autoriza envíos.
+Verificación posterior: 284 pruebas aprobadas, sin exclusiones, ejecutando test_price_drop_pilot_conversation_v14.py, test_price_drop_pilot_isolation.py y test_price_drop_real_pilot.py con Python 3.13 y UTF-8. Incluye una prueba en seco del emisor V14; no se llamó al proveedor de WhatsApp. Esta verificación reemplaza el resultado con exclusión para la prueba temporal. La evaluación real de conversaciones y la integración de V14 en la ruta de destinatarios reales siguen pendientes; esta revisión no autoriza envíos a leads.

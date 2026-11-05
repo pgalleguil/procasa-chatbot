@@ -115,6 +115,10 @@ jobs:
               tests/test_captacion_redistribution.py
               tests/test_captacion_goals.py
               tests/test_phone_learning.py
+          - suite: Yapo captación visibility gate
+            tests: >-
+              tests/test_captacion_yapo_visibility.py
+              tests/test_captacion_followup_v2.py
           - suite: Dashboard and release
             tests: >-
               tests/test_dashboard_swr_cache.py

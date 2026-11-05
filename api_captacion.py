@@ -16,6 +16,7 @@ from captacion_kpis import (
     DISCARDED_STATES,
     CAPTACION_TERMINAL_STATES,
 )
+from captacion_visibility import apply_captacion_visibility, is_new_yapo_cohort
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 from chatbot.storage import get_db, log_event
@@ -183,6 +184,9 @@ def normalize_captacion_document(doc):
         "probabilidad": doc.get("probabilidad", "S/I"),
         "details": details,
         "classification": classification,
+        "is_new_yapo_cohort": is_new_yapo_cohort(doc),
+        "availability_status": str(doc.get("availability_status") or "").strip().upper(),
+        "html_validation_status": str(doc.get("html_validation_status") or "").strip().upper(),
     }
     result.update(resolve_price_display(doc))
     result.update(build_owner_probability_doc(doc))
@@ -200,6 +204,19 @@ def format_captacion_portal_label(origin):
         "mercadolibre": "MercadoLibre",
     }
     return known_labels.get(value.casefold(), value.replace("_", " ").replace("-", " ").title())
+
+
+def format_captacion_classification_label(value):
+    """Human-readable identity label; preserves the categorical state."""
+    labels = {
+        "DUEÑO_SEGURO": "Dueño seguro",
+        "DUEÑO_PROBABLE": "Dueño probable",
+        "INCIERTO": "Anunciante incierto",
+        "CORREDOR_PROBABLE": "Corredor probable",
+        "CORREDOR_SEGURO": "Corredor seguro",
+    }
+    state = str(value or "").strip().upper()
+    return labels.get(state, "Sin información")
 
 
 def normalize_captacion_property_type(value):
@@ -307,8 +324,8 @@ def _captacion_price_range_condition(currency, price_min=None, price_max=None):
     }
 
 
-def get_captacion_capture_datetime(doc):
-    """Return the first capture timestamp, never the last modification time."""
+def get_captacion_capture_datetime(doc, *, allow_updated_at_fallback=True):
+    """Return a capture timestamp, optionally allowing the legacy update fallback."""
     candidates = [
         doc.get("first_seen"), doc.get("first_seen_at"), doc.get("created_at"),
         doc.get("fecha_captura"), doc.get("processed_at"), doc.get("scraped_at"),
@@ -316,7 +333,8 @@ def get_captacion_capture_datetime(doc):
     object_id = doc.get("_id")
     if isinstance(object_id, ObjectId):
         candidates.append(object_id.generation_time)
-    candidates.append(doc.get("updated_at"))
+    if allow_updated_at_fallback:
+        candidates.append(doc.get("updated_at"))
     for value in candidates:
         if not value:
             continue
@@ -648,10 +666,10 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     coll = get_captacion_collection(db)
     
     # Base: captaciones elegibles de todos los portales soportados.
-    query = {
+    query = apply_captacion_visibility({
         "origen": {"$exists": True, "$nin": [None, ""]},
         "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}
-    }
+    })
 
     def add_condition(condition):
         """Combine independent filters without overwriting another $or."""
@@ -937,7 +955,10 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             perf_context["operation_catalog_cache"] = "hit"
     else:
         pipeline_ops = [
-            {"$match": {"origen": {"$exists": True, "$nin": [None, ""]}, "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)}}},
+            {"$match": apply_captacion_visibility({
+                "origen": {"$exists": True, "$nin": [None, ""]},
+                "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)},
+            })},
             {"$group": {"_id": None, "ops": {"$addToSet": "$operacion"}}}
         ]
         ops_result = list(coll.aggregate(pipeline_ops))
@@ -1057,6 +1078,14 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         "classification.final_state": 1,
         "classification.owner_probability": 1,
         "classification.owner_probability_signals": 1,
+        "batch_id": 1,
+        "yapo_ingestion.source_batch_id": 1,
+        "availability_status": 1,
+        "html_validation_status": 1,
+        "scrape_stage": 1,
+        "canonical_url": 1,
+        "detail_error": 1,
+        "scrape_error": 1,
     }
     preloaded_docs = None
     if order_filter or sort_specs:
@@ -1122,7 +1151,10 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
     for doc in _raw_docs:
         norm = normalize_captacion_document(doc)
         gestion = norm["gestion"]
-        fecha_ref = get_captacion_capture_datetime(doc)
+        is_new_yapo = is_new_yapo_cohort(doc)
+        fecha_ref = get_captacion_capture_datetime(
+            doc, allow_updated_at_fallback=not is_new_yapo,
+        )
         
         dias_portal = 0
         fecha_str = "S/I"
@@ -1140,8 +1172,8 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             except Exception:
                 pass
         
-        # Resolver operacion display
-        op_display = "VENTA"
+        # En los lotes Yapo nuevos, un dato ausente no se presenta como venta.
+        op_display = "Sin información" if is_new_yapo else "VENTA"
         op_raw = norm.get("operacion", "")
         if op_raw and "arr" in str(op_raw).lower():
             op_display = "ARRIENDO"
@@ -1156,15 +1188,28 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
         if pu and m2 and float(m2) > 0:
             uf_m2_val = round(float(pu) / float(m2), 1)
 
+        probability_display = norm["owner_probability_display"]
+        if is_new_yapo and probability_display == "S/I":
+            probability_display = "Probabilidad no calculada"
+        availability_status = str(doc.get("availability_status") or "").strip().upper()
+        availability_display = ""
+        if is_new_yapo:
+            if availability_status in {"", "NO_VERIFICADO"}:
+                availability_display = "Disponibilidad pendiente"
+            elif availability_status == "ACTIVO":
+                availability_display = "Disponibilidad verificada"
+
         items_paginated.append({
             "id": norm["id"],
+            "listing_id": doc.get("listing_id"),
             "url": norm["url"],
             "titulo": norm["titulo"],
             "comuna": norm["comuna"],
             "comuna_slug": norm["comuna_slug"],
             "operacion": op_display,
             "tipo_propiedad": (
-                normalize_captacion_property_type(norm.get("tipo_propiedad")) or "S/I"
+                normalize_captacion_property_type(norm.get("tipo_propiedad"))
+                or ("Sin información" if is_new_yapo else "S/I")
             ).title(),
             "precio": str(norm["precio"]).split("Ref.")[0].strip() if norm["precio"] else "S/I",
             "precio_uf": norm["precio_uf"],
@@ -1175,9 +1220,12 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "price_source_warning": detect_source_price_warning(
                 op_display, norm["precio_uf"], norm["precio_clp"]
             ),
-            "owner_probability_display": norm["owner_probability_display"],
+            "owner_probability_display": probability_display,
             "owner_probability_sort": norm["owner_probability_sort"],
             "owner_probability_title": norm["owner_probability_title"],
+            "classification_state_label": format_captacion_classification_label(norm["classification_state"]),
+            "availability_display": availability_display,
+            "is_new_yapo_cohort": is_new_yapo,
             "uf_m2": uf_m2_val,
             "estado": gestion.get("estado", "NUEVO"),
             "ejecutivo": gestion.get("ejecutivo_asignado") or "Sin asignar",
@@ -1192,6 +1240,7 @@ def get_captacion_list(user_role="agente", user_name="", user_id="", user_email=
             "sort_date": fecha_ref or "",
             "dias_en_portal": dias_portal,
             "fecha_str": fecha_str,
+            "fecha_es_captura": is_new_yapo,
         })
     
     _l_enrich = _perf_time.perf_counter()
@@ -1228,10 +1277,10 @@ def warm_captacion_shared_catalogs():
     warm_started = _perf_time.perf_counter()
     db = get_db()
     coll = get_captacion_collection(db)
-    base_query = {
+    base_query = apply_captacion_visibility({
         "origen": {"$exists": True, "$nin": [None, ""]},
         "classification.state": {"$in": list(VISIBLE_CLASSIFICATION_STATES)},
-    }
+    })
     now = get_chile_now()
 
     portal_cache = getattr(get_captacion_list, "_portal_cache", {})

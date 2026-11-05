@@ -87,6 +87,10 @@ def test_test_campaign_lifecycle_only_mutates_existing_canonical_lead(db, monkey
     assert calls == []
     monkeypatch.setenv(v2.SEND_FLAG, "true")
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    assert v2.send_one(db, lead_id=params()["lead_id"],
+                       campaign_id=CAMPAIGN, sender=sender, now=NOW)["status"] == "CONTEXT_DISABLED"
+    assert calls == []
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
     sent = v2.send_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
                        sender=sender, now=NOW)
     assert sent["status"] == "SENT"
@@ -153,6 +157,7 @@ def test_live_price_change_blocks_test_send(db, monkeypatch):
                    operator="Supervisor", now=NOW)
     monkeypatch.setenv(v2.SEND_FLAG, "true")
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
     db["universo_cartera_prop360"].update_one(
         {"codigo": "6436"}, {"$set": {"tipo_operacion.precio_venta.precio_uf": 2750}})
     calls = []
@@ -168,6 +173,7 @@ def test_unknown_delivery_is_durable_and_not_retried(db, monkeypatch):
                    operator="Supervisor", now=NOW)
     monkeypatch.setenv(v2.SEND_FLAG, "true")
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
     attempts = []
     def broken_sender(*a):
         attempts.append(a)

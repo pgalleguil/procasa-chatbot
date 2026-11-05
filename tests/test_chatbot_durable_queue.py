@@ -739,3 +739,115 @@ def test_provider_duplicate_is_idempotent_across_cutover_and_rollback():
         text="duplicado v2", received_at=NOW + timedelta(seconds=3),
     )
     assert duplicate_v2 == v2_result.job_id
+
+
+def test_late_inbound_after_generation_is_reprocessed_not_marked_responded(monkeypatch):
+    db = DB()
+    add(db, "wamid-first", "hola", NOW)
+    sent = []
+    observed = []
+    injected = []
+
+    def on_duplicate_guard(_db, *, phone, response):
+        if not injected:
+            injected.append(add(db, "wamid-second", "busco depto en Pudahuel",
+                                NOW + timedelta(seconds=20)))
+        return False
+
+    monkeypatch.setattr(queue, "_recent_bot_response_is_duplicate", on_duplicate_guard)
+
+    async def llm(_phone, text):
+        observed.append(text)
+        return "Pudahuel recibido" if "Pudahuel" in text else "Qué buscas?"
+
+    async def sender(_phone, text):
+        sent.append(text)
+        return {"success": True, "provider_message_id": "provider-ok", "http_status": 200}
+
+    first = asyncio.run(queue.process_one_batch(
+        db, worker_id="first", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=15),
+    ))
+    assert first["state"] == queue.ST_FAILED_RETRYABLE
+    assert first["last_error"] == "stale_snapshot_before_provider"
+    assert sent == []
+    assert len(first["job_ids"]) == 2
+
+    final = asyncio.run(queue.process_one_batch(
+        db, worker_id="second", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=45),
+    ))
+    assert final["state"] == queue.ST_RESPONDED
+    assert observed == ["hola", "hola\nbusco depto en Pudahuel"]
+    assert sent == ["Pudahuel recibido"]
+    assert all(db.collection.docs[jid]["state"] == queue.ST_RESPONDED
+               for jid in final["job_ids"])
+
+
+def test_late_producer_race_with_delivery_seal_creates_fresh_batch():
+    class RaceCollection(Collection):
+        ready = False
+
+        def update_one(self, query, update):
+            if (self.ready and query.get("kind") == queue.KIND_JOB
+                    and query.get("state") == queue.ST_RECEIVED):
+                result = super().update_one(query, update)
+                self.ready = False
+                sealed = queue.seal_batch_for_delivery(
+                    db, batch_id=claimed["_id"], worker_id="w-seal",
+                    delivery_token=claimed["delivery_token"],
+                    snapshot_sequence=claimed["snapshot_sequence"],
+                    now=NOW + timedelta(seconds=20),
+                )
+                assert sealed
+                return result
+            return super().update_one(query, update)
+
+    db = DB()
+    db.collection = RaceCollection()
+    original_id = add(db, "wamid-seal-first", "hola", NOW)
+    claimed = queue.claim_pending_batch(
+        db, worker_id="w-seal", now=NOW + timedelta(seconds=15),
+    )
+    db.collection.ready = True
+    late_id = add(db, "wamid-seal-second", "Pudahuel",
+                  NOW + timedelta(seconds=20))
+    original_batch = db.collection.docs[claimed["_id"]]
+    late_job = db.collection.docs[late_id]
+    assert original_batch["job_ids"] == [original_id]
+    assert "active_conversation_key" not in original_batch
+    assert late_job["batch_id"] != claimed["_id"]
+    assert db.collection.docs[late_job["batch_id"]]["job_ids"] == [late_id]
+
+
+def test_inbound_while_provider_sends_gets_new_batch():
+    db = DB()
+    add(db, "wamid-early", "hola", NOW)
+    sent = []
+
+    async def llm(_phone, text):
+        return "Resp: " + text
+
+    async def sender(_phone, response):
+        sent.append(response)
+        if len(sent) == 1:
+            add(db, "wamid-late", "busco depto en Pudahuel",
+                NOW + timedelta(seconds=20))
+        return {"success": True, "provider_message_id": "out-" + str(len(sent)),
+                "http_status": 200}
+
+    a = asyncio.run(queue.process_one_batch(
+        db, worker_id="sender-a", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=15),
+    ))
+    assert a["state"] == queue.ST_RESPONDED
+    assert len(a["job_ids"]) == 1
+
+    b = asyncio.run(queue.process_one_batch(
+        db, worker_id="sender-b", llm=llm, sender=sender,
+        now=NOW + timedelta(seconds=45),
+    ))
+    assert b["state"] == queue.ST_RESPONDED
+    assert len(b["job_ids"]) == 1
+    assert b["_id"] != a["_id"]
+    assert sent == ["Resp: hola", "Resp: busco depto en Pudahuel"]

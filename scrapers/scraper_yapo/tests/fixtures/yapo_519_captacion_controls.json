@@ -1,0 +1,50 @@
+{
+  "batch_id": "issue122_maipu_20261104_141023_35cf",
+  "source_batch_id": "issue122_maipu_20261104_141023_35cf",
+  "records": [
+    {
+      "listing_id": "33215751",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/hermosa-casa-cerca-a-mall-arauco-maipu/33215751",
+      "classification_state": "INCIERTO",
+      "availability_status": "DESACTIVADO",
+      "html_validation_status": "LISTING_REMOVED",
+      "scrape_stage": "ad_removed",
+      "expected_reason": "anuncio_retirado_confirmado"
+    },
+    {
+      "listing_id": "33215722",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/hermosa-casa-en-maipu/33215722",
+      "classification_state": "INCIERTO",
+      "availability_status": "DESACTIVADO",
+      "html_validation_status": "LISTING_REMOVED",
+      "scrape_stage": "ad_removed",
+      "expected_reason": "anuncio_retirado_confirmado"
+    },
+    {
+      "listing_id": "33213261",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/venta-casa-regularizada-5d-2b-2e-metro-las-parcelas/33213261",
+      "classification_state": "INCIERTO",
+      "availability_status": "NO_VERIFICADO",
+      "html_validation_status": "NO_VERIFICADO",
+      "scrape_stage": "needs_rescrape",
+      "detail_error": "RuntimeError: YAPO_BLOCKED: HTTP 403; solicitudes detenidas.",
+      "expected_reason": "extraccion_tecnica_pendiente"
+    },
+    {
+      "listing_id": "33216485",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-3d-3b-walking-closet-y-quincho-bosques-del-sur-maipu/33216485",
+      "classification_state": "CORREDOR_SEGURO",
+      "availability_status": "NO_VERIFICADO",
+      "html_validation_status": "OK",
+      "scrape_stage": "processed"
+    },
+    {
+      "listing_id": "33215229",
+      "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-3-deptos-interiores-con-renta-av-grecia-1382-maipu/33215229",
+      "classification_state": "CORREDOR_SEGURO",
+      "availability_status": "NO_VERIFICADO",
+      "html_validation_status": "OK",
+      "scrape_stage": "processed"
+    }
+  ]
+}

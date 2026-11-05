@@ -1,0 +1,59 @@
+{
+  "report_type": "yapo_task1d_environment_assessment",
+  "created_at_utc": "2026-11-02T14:26:02.435429+00:00",
+  "source_commit": "ba9f25c0edd30e7341dae4011e18bf6a77500b98",
+  "pilot_scope": {
+    "portal": "Yapo.cl",
+    "operation": "venta",
+    "property_type": "casa",
+    "commune": "Maipú",
+    "price_uf_min": 3000,
+    "price_uf_max": 6000
+  },
+  "authorized_test_environment_found": false,
+  "pilot": {
+    "status": "not_run_no_approved_environment_with_proxy_access",
+    "commercial_result_available": false,
+    "ads_found": null,
+    "batch_duplicates": null,
+    "new_ads": null,
+    "filter_matches": null,
+    "commune_pending": null,
+    "preliminary_classification_counts": null,
+    "pages_complete": null,
+    "pages_not_verified": null,
+    "pagination_complete": null,
+    "extraction_errors": null,
+    "yapo_requests": 0,
+    "mongo_reads": 0,
+    "mongo_writes": 0,
+    "deepseek_calls": 0,
+    "deployments": 0
+  },
+  "environment_assessment": [
+    {
+      "environment": "local_windows_runtime",
+      "suitable": false,
+      "evidence": "The Task 1C diagnostic recorded failed DNS resolution for both example.com and the configured proxy, with WSAHOST_NOT_FOUND 11001.",
+      "new_dns_probe_performed": false
+    },
+    {
+      "environment": "github_actions_production_ci",
+      "suitable": false,
+      "runner": "ubuntu-latest",
+      "workflow": ".github/workflows/production-ci.yml",
+      "evidence": "Workflow is limited to main-branch push/pull_request checks, contains no Yapo pilot job, and provides no configured proxy credential variables."
+    },
+    {
+      "environment": "render_service_named_pruebas",
+      "suitable": false,
+      "type": "web_service",
+      "branch": "main",
+      "auto_deploy": false,
+      "proxy_configuration_present": false,
+      "evidence": "Read-only service metadata showed none of PROXY_URL, PROXY_URLS, YAPO_PROXY_URLS, PROXIES, PROXY_USER, or PROXY_PASS configured; the service is not an approved isolated scraper runner."
+    }
+  ],
+  "blocker": "No available non-production test environment has verified DNS, permitted outbound access, and access to the contracted proxy configuration.",
+  "external_action_required": "Restore DNS on an approved test runner or provide an already-authorized non-production runner with the contracted proxy configuration. If proxy-host DNS then fails while control DNS works, verify the exact contracted hostname, port, protocol, and account credentials in the provider dashboard; do not substitute values."
+}

@@ -1,0 +1,1872 @@
+{
+  "source_commit": "86b9ca86c49943ea5d588eaba26fa3790852136f",
+  "offline_sample_size": 50,
+  "source": "local Yapo HTML dumps; sample ordered by hash of filename",
+  "privacy": "seller values, HTML, titles and full descriptions omitted; identity fields are listed as redacted field names",
+  "cases": [
+    {
+      "case_id": "0037af55bdecfa5c",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1298
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1298
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "00481910a8a1defb",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 2204
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "seller_jsonld_name:RE/MAX",
+          "contact_logo_alt:RE/MAX"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 2204
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "005c09c5ee1c6746",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 877
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:houm",
+          "contact_name:houm",
+          "publicador_visible:houm"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 877
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "005cf6f02fd2e6ac",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 1495
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 1495
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "005f81ee38f79462",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 866
+      },
+      "new": {
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 866
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "006aacca6fc93c09",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1810
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1810
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "006e644e219af723",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 627
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 627
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "008d381471b4c740",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1269
+      },
+      "new": {
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1269
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "00a4e01c7cc45b1f",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 1132
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 1132
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "00db6b6ebefa9184",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1796
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1796
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "00dc96664080956a",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 2415
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "seller_jsonld_name:RE/MAX",
+          "contact_logo_alt:RE/MAX"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 2415
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "00e9811783b015ff",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 719
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:houm",
+          "contact_name:houm",
+          "publicador_visible:houm"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 719
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "00e9e2a01b40c5a4",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1731
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1731
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "00ecf72137bc6492",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 869
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 869
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "00ef04e4b4c35737",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1143
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1143
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "01082632153a85ea",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 376
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 376
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "010e979198eafbe5",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 828
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 828
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "0130d0aa4ad70fc0",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 2538
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "seller_jsonld_name:RE/MAX",
+          "contact_logo_alt:RE/MAX"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 2538
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "0131f9615dbe040e",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 949
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 949
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "0144c988c34a3ad4",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1210
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:fuenzalida",
+          "contact_name:fuenzalida",
+          "publicador_visible:fuenzalida"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1210
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "015666a1386d970a",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1130
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1130
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "0160dd815b6ecfe6",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 0
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [],
+        "title_present": true,
+        "description_length": 0
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "016782cdae144f16",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 703
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt"
+        ],
+        "title_present": true,
+        "description_length": 703
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "0167caae06f3f0ff",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:remax",
+          "contact_logo_alt:re/max",
+          "contact_logo_alt:re max"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 1639
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:RE/MAX"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt"
+        ],
+        "title_present": true,
+        "description_length": 1639
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "016c080d9f7c91bf",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 1080
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 1080
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "017c91948504950a",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 0
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 0
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "01811f76d0dc2a3c",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 814
+      },
+      "new": {
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria",
+          "contact_name:gestión inmobiliaria",
+          "contact_name:gestion inmobiliaria",
+          "contact_name:inmobiliaria",
+          "publicador_visible:gestión inmobiliaria",
+          "publicador_visible:gestion inmobiliaria"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 814
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "01817d74e4be0f10",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 830
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:houm",
+          "contact_name:houm",
+          "publicador_visible:houm"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 830
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "0192ebad3c19822b",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 980
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 980
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "019d22759441de2e",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1067
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1067
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "01a25ac596307624",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1317
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:fuenzalida",
+          "contact_name:fuenzalida",
+          "publicador_visible:fuenzalida"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1317
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "01baa6e46c4ab42e",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 0
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [],
+        "title_present": true,
+        "description_length": 0
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "01ca846042f2802e",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 945
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 945
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "01dede5fdce8eb98",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 812
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 812
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "01e8080926a6d6af",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 747
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 747
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "01e889fc411aaf8b",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 157
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 157
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "021717a218e071ac",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:remax",
+          "contact_logo_alt:re/max",
+          "contact_logo_alt:re max"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 1938
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:RE/MAX"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt"
+        ],
+        "title_present": true,
+        "description_length": 1938
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "021ddf4d8db90161",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 956
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:fuenzalida",
+          "contact_name:fuenzalida",
+          "publicador_visible:fuenzalida"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 956
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "021e472eedba8bbd",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 1281
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt"
+        ],
+        "title_present": true,
+        "description_length": 1281
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "0226632aec75ba39",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 691
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 691
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "0236a841d6db0434",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional verificado"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 862
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 862
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "023c1c30a2b9914a",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 906
+      },
+      "new": {
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 906
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "0246b271455ee3ce",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 559
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 559
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "024e0c76aaeb47d0",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1064
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1064
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "024eb05f21fe26a4",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 529
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:fuenzalida",
+          "contact_name:fuenzalida",
+          "publicador_visible:fuenzalida"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 529
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "02504dc16eb0f36d",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1139
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 1139
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "0251fd11ad24838f",
+      "previous": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 846
+      },
+      "new": {
+        "state": "INCIERTO",
+        "rule": "no_strong_publisher_evidence",
+        "evidence": [],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_jsonld_name"
+        ],
+        "title_present": true,
+        "description_length": 846
+      },
+      "changed": false,
+      "human_review": true
+    },
+    {
+      "case_id": "0251fdeac5b7f2e4",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 2183
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "seller_jsonld_name:RE/MAX",
+          "contact_logo_alt:RE/MAX"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 2183
+      },
+      "changed": false,
+      "human_review": false
+    },
+    {
+      "case_id": "025eb8328092bc70",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 734
+      },
+      "new": {
+        "state": "CORREDOR_PROBABLE",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:gestión inmobiliaria",
+          "contact_logo_alt:gestion inmobiliaria",
+          "contact_logo_alt:inmobiliaria"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 734
+      },
+      "changed": true,
+      "human_review": true
+    },
+    {
+      "case_id": "0272d388625d1eea",
+      "previous": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "structural_rules",
+        "evidence": [
+          "seller_type:profesional",
+          "contact_badges_text:profesional"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "seller_jsonld_name",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 822
+      },
+      "new": {
+        "state": "CORREDOR_SEGURO",
+        "rule": "rules_json",
+        "evidence": [
+          "contact_logo_alt:houm",
+          "contact_name:houm",
+          "publicador_visible:houm"
+        ],
+        "identity_fields_redacted": [
+          "publicador_visible",
+          "contact_name",
+          "contact_logo_alt",
+          "seller_type",
+          "contact_badges_text"
+        ],
+        "title_present": true,
+        "description_length": 822
+      },
+      "changed": false,
+      "human_review": false
+    }
+  ],
+  "summary": {
+    "previous_states": {
+      "CORREDOR_SEGURO": 37,
+      "INCIERTO": 13
+    },
+    "new_states": {
+      "INCIERTO": 31,
+      "CORREDOR_SEGURO": 14,
+      "CORREDOR_PROBABLE": 5
+    },
+    "changed_state_count": 23,
+    "human_review_count": 36,
+    "errors": 0,
+    "interpretation": "Offline sample only; changed cases are flagged for human review. Counts are not accuracy, precision, or coverage estimates."
+  }
+}

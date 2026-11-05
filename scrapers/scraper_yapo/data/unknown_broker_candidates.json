@@ -1,0 +1,492 @@
+[
+  {
+    "content_sha256": "b9783d122df85917293592e4dbf5576085646d05ea7ffff1eb382b8ea34def36",
+    "display_name": "Vilches Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Vilches Propiedades|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Vilches Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:23.647513+00:00",
+    "listing_id": "32562399",
+    "normalized_name": "vilches propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/excelente-oportunidad-habitacional-en-la-comuna-de-maipu/32562399"
+  },
+  {
+    "content_sha256": "8573e21bf5514bdf33c306ad3164a87a2f4eb2778c37cf6ab041ac84452c2ea1",
+    "display_name": "RVL Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:RVL Propiedades|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:RVL Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:23.694516+00:00",
+    "listing_id": "32529885",
+    "normalized_name": "rvl propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-portales-maipu/32529885"
+  },
+  {
+    "content_sha256": "09689ea1a613b609da5b9e8fdafc882ffe699164f86b3416cdec94dc6ce8cca9",
+    "display_name": "Propiedades Galvarino",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Propiedades Galvarino|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Propiedades Galvarino|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:23.800663+00:00",
+    "listing_id": "33036150",
+    "normalized_name": "propiedades galvarino",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-5-dorm-en-maipu/33036150"
+  },
+  {
+    "content_sha256": "8ec274f5e40569e022ad427c56dc415e1eb2b60dfb0551f0c1cfd2c8f3060145",
+    "display_name": "Orbital Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Orbital Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:23.817804+00:00",
+    "listing_id": "33135623",
+    "normalized_name": "orbital propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-lago-de-lugano/33135623"
+  },
+  {
+    "content_sha256": "517dc623ba2361c929f67f87618fde38e6897fb627d8413106b63c89ac3b1b2d",
+    "display_name": "Corredora Activa tu Propiedad",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Corredora Activa tu Propiedad|shape:corredora|strength:probable"
+    ],
+    "first_detected_at": "2026-11-03T12:28:23.849154+00:00",
+    "listing_id": "32941109",
+    "normalized_name": "corredora activa tu propiedad",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-monte-aconcagua/32941109"
+  },
+  {
+    "content_sha256": "554235c65b795bb0b07b340d533388ae5e390828039ac79542795c35c06b3581",
+    "display_name": "Vivaqui Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Vivaqui Propiedades|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Vivaqui Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:23.892894+00:00",
+    "listing_id": "32160716",
+    "normalized_name": "vivaqui propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-4-dorm-en-maipu/32160716"
+  },
+  {
+    "content_sha256": "e8cf0bcccc15c3010ef4ec3138dc1a9e24e15004527f902544bb501658524ff8",
+    "display_name": "Propiedades Galvarino",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Propiedades Galvarino|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Propiedades Galvarino|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:23.934617+00:00",
+    "listing_id": "32162621",
+    "normalized_name": "propiedades galvarino",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-5-dorm-en-maipu/32162621"
+  },
+  {
+    "content_sha256": "50974247c2290ddd012b8d1051fe428c03a22775d8905c09a6318c180912803d",
+    "display_name": "Propiedades Galvarino",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Propiedades Galvarino|shape:propiedades|strength:probable",
+      "unknown_business_identity:contact_logo_alt:Propiedades Galvarino|shape:propiedades|strength:probable"
+    ],
+    "first_detected_at": "2026-11-03T12:28:23.954095+00:00",
+    "listing_id": "32162854",
+    "normalized_name": "propiedades galvarino",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-en-maipu/32162854"
+  },
+  {
+    "content_sha256": "71c3fc97a52c06e9bc542591c4258084720f11d9784d795582809eadb2c46f8f",
+    "display_name": "Focus Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Focus Propiedades|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Focus Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:24.068741+00:00",
+    "listing_id": "32076428",
+    "normalized_name": "focus propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-maipu-4-dormitorios-3-banos-metro-las-parcelas/32076428"
+  },
+  {
+    "content_sha256": "e2dcd3114dbd349d436c36295b93b0b239d16f1b6aab1429eccaee566950c51f",
+    "display_name": "Aicn Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Aicn Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:24.123586+00:00",
+    "listing_id": "32665913",
+    "normalized_name": "aicn propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-ciudad-satelite/32665913"
+  },
+  {
+    "content_sha256": "6b6a0eedd15ec630f2ab7e82fd3069b6ee26b451f9438900da69bff53b946cd8",
+    "display_name": "Focus Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Focus Propiedades|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Focus Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:24.370114+00:00",
+    "listing_id": "32877175",
+    "normalized_name": "focus propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-3-dorm-en-maipu/32877175"
+  },
+  {
+    "content_sha256": "2cb5207d405c5995782fff4dd089051cc01f5095454892059785744310001440",
+    "display_name": "Propiedades Nelson Oyarzun",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Propiedades Nelson Oyarzun|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Propiedades Nelson Oyarzun|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:24.510101+00:00",
+    "listing_id": "32104381",
+    "normalized_name": "propiedades nelson oyarzun",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/vendo-casa-como-nueva-138-m2-4-habitaciones-maipu/32104381"
+  },
+  {
+    "content_sha256": "4b2681ac3669c57669206eca27778f281bc8a9b5517847a77abe49337c840358",
+    "display_name": "Godoy Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Godoy Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:24.754072+00:00",
+    "listing_id": "32503443",
+    "normalized_name": "godoy propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-parque-central-ciudad-satelite/32503443"
+  },
+  {
+    "content_sha256": "f0f3fd83d3280e5bfb65a271a25d9082f7e795d3d2afce4a6278da9cd4e3f499",
+    "display_name": "Mitry Corredores Adm. Y Asoc.",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Mitry Corredores Adm. Y Asoc.|shape:corredores|strength:probable"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.071521+00:00",
+    "listing_id": "33201162",
+    "normalized_name": "mitry corredores adm y asoc",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-casa-en-venta-4d-2b-est-maipu-av-lumen-mtro-monte-tabor/33201162"
+  },
+  {
+    "content_sha256": "58244fcaaead7f42c2c3033df097195c6249466b3e351e7759656ce1fd153766",
+    "display_name": "Propiedades SognoPropiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Propiedades SognoPropiedades|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Propiedades SognoPropiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.162011+00:00",
+    "listing_id": "31150652",
+    "normalized_name": "propiedades sognopropiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-3-dormitorios-2-banos-2-estacionamientos-diego-barros-ortiz-maipu/31150652"
+  },
+  {
+    "content_sha256": "68bea6363376714cfa400491fd31c9564d494d0d3312f618db51506718516b86",
+    "display_name": "Coopman Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Coopman Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.237938+00:00",
+    "listing_id": "32229975",
+    "normalized_name": "coopman propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-huerquehue/32229975"
+  },
+  {
+    "content_sha256": "d7b751a4a92c48a38b0280bd56558736dd3b207ab09a3ffade759d0ad077f73b",
+    "display_name": "Mery Reyes Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Mery Reyes Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.278492+00:00",
+    "listing_id": "33209471",
+    "normalized_name": "mery reyes propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/hermosa-casa-en-maipu/33209471"
+  },
+  {
+    "content_sha256": "c2d20a89dae486515ee6e11ae2ee6298a16927c86e926644e22a8537862ffeef",
+    "display_name": "Mery Reyes Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Mery Reyes Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.332725+00:00",
+    "listing_id": "33211046",
+    "normalized_name": "mery reyes propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-maipu/33211046"
+  },
+  {
+    "content_sha256": "5cfd300ee13c5c3150a40eff7bf0fc73591a4331a0d7ee4b01b477026bf58775",
+    "display_name": "DSA Corredores Inmobiliarios SPA",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:DSA Corredores Inmobiliarios SPA|shape:spa|strength:probable"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.420469+00:00",
+    "listing_id": "32925046",
+    "normalized_name": "dsa corredores inmobiliarios spa",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-el-helecho-norte-con-avenida-parque-central/32925046"
+  },
+  {
+    "content_sha256": "8f1d5126327b9123416942058881977ad14de40a6e57a8b56baefd6c0ef9ba34",
+    "display_name": "Centrocasa E.I..R.L.",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Centrocasa E.I..R.L.|shape:eirl|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.584561+00:00",
+    "listing_id": "33185729",
+    "normalized_name": "centrocasa e i r l",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-maipu-cerca-de-futura-estacion-de-metro-tren/33185729"
+  },
+  {
+    "content_sha256": "6fc14c25931a2be066adcbc6950a7eab4cae88a02fbe11b5e6eb8aab6efead56",
+    "display_name": "Punto Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Punto Propiedades|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Punto Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.600606+00:00",
+    "listing_id": "33193232",
+    "normalized_name": "punto propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/se-vende-amplia-propiedad-en-maipu-375-m-de-terreno/33193232"
+  },
+  {
+    "content_sha256": "f26db045f438c6101f56a6921578098a411d1e07d4257e1041c773c8aa8d7048",
+    "display_name": "Faundez Propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Faundez Propiedades|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.625294+00:00",
+    "listing_id": "26688344",
+    "normalized_name": "faundez propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-maipu/26688344"
+  },
+  {
+    "content_sha256": "94a16c80def12e0980b68621921f867b2f256701181522bdeb5e2d47bc0988cc",
+    "display_name": "Gloria Quinteros y Cia Ltda",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Gloria Quinteros y Cia Ltda|shape:ltda|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.674403+00:00",
+    "listing_id": "31504511",
+    "normalized_name": "gloria quinteros y cia ltda",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/condominio-los-alerces-de-maipu/31504511"
+  },
+  {
+    "content_sha256": "81d8f91e494a744b033bce9f85d3ed8cd2150f02f3e7068741b86726ead27091",
+    "display_name": "Propiedades la viña",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Propiedades la viña|shape:propiedades|strength:review_candidate",
+      "unknown_business_identity:contact_logo_alt:Propiedades la viña|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.728347+00:00",
+    "listing_id": "31615725",
+    "normalized_name": "propiedades la vina",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/excelente-modelo-castano-cod-2624/31615725"
+  },
+  {
+    "content_sha256": "226a449471bbbfb5ce620786fa72c02086d6226c9b295fec6b0796f23e0f1fab",
+    "display_name": "de la barra & reyes propiedades",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:de la barra & reyes propiedades|shape:propiedades|strength:probable"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.828257+00:00",
+    "listing_id": "25889195",
+    "normalized_name": "de la barra reyes propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-buena-bonita-en-maipu/25889195"
+  },
+  {
+    "content_sha256": "30a69e932fd2f5d05e47127ae09cd05eeefffb5ef05eba2bf47f7e2e4b0d78ba",
+    "display_name": "Nuñez & Rubio Limitada",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:Nuñez & Rubio Limitada|shape:limitada|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.889755+00:00",
+    "listing_id": "26743644",
+    "normalized_name": "nunez rubio limitada",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-la-comuna-de-maipu-ciudad-satelit/26743644"
+  },
+  {
+    "content_sha256": "1ff4ec568771288fc4bdfed5b9242c155c59620926a7563d2519de8e59298dd1",
+    "display_name": "CRISTI PROPIEDADES",
+    "evidence": [
+      "unknown_business_identity:publicador_visible:CRISTI PROPIEDADES|shape:propiedades|strength:review_candidate"
+    ],
+    "first_detected_at": "2026-11-03T12:28:25.910930+00:00",
+    "listing_id": "32632678",
+    "normalized_name": "cristi propiedades",
+    "status": "pending_manual_verification",
+    "url": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-adriana-perez-llona/32632678"
+  },
+  {
+    "content_sha256": "cc95a0767800ed860ad1ed6c6c0c9a4475c23745dd4631d4870dfb3e9ca11691",
+    "display_name": "TuHouse",
+    "normalized_name": "tuhouse",
+    "seller_profile_id": "15551205",
+    "listing_id": "33149321",
+    "evidence": [
+      "Actividad de corretaje verificada; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.tuhouse.cl/Default.asp",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "9048a6e47d2ae01b8dec09f815bb398a2a7d315ff20332f9d2af244e462e9e82",
+    "display_name": "Hobbins Vitacura",
+    "normalized_name": "hobbins vitacura",
+    "seller_profile_id": "17057667",
+    "listing_id": "32179366",
+    "evidence": [
+      "Oficina de Hobbins Propiedades confirmada; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.hobbins.cl/",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "4c424ecd87fb3f885df6aaf290a016b92f6b14727dcfe12afe53dd9c2edc2610",
+    "display_name": "Inmobilien Chile",
+    "normalized_name": "inmobilien chile",
+    "seller_profile_id": "17858827",
+    "listing_id": "33067915",
+    "evidence": [
+      "Ficha clasifica Inmobilien SpA como corredora; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://chilepropiedades.cl/ver-publicacion/venta/maipu/casa/abate-molina-2600/140440677",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "6347bd5a7ec12a97a3929d1b875ab3d357c1b4ae32683b899e463e3b5b41fd8a",
+    "display_name": "Vivienda Chile",
+    "normalized_name": "vivienda chile",
+    "seller_profile_id": "17065465",
+    "listing_id": "31631448",
+    "evidence": [
+      "Ficha identifica corredora; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://chilepropiedades.cl/ver-corredora/2920893/vivienda-chile/0",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "3b6087b25c634dbd20103f52a20e51c56b80ad39f6d411f35303683423652fbe",
+    "display_name": "Alejandro Jaime V & Asociados",
+    "normalized_name": "alejandro jaime v asociados",
+    "seller_profile_id": "17450178",
+    "listing_id": "32225278",
+    "evidence": [
+      "Marca registrada para negocios inmobiliarios; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.portalchile.org/detalle-marca/alejandro-jaime-v-and-asociados-propiedades-realty-corp-1068156",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "82dcde828df0122408b78ea7e889aeaae4a2e44726ad57b59a920487b3ad10fe",
+    "display_name": "CDProp",
+    "normalized_name": "cdprop",
+    "seller_profile_id": "13725393",
+    "listing_id": "33208422",
+    "evidence": [
+      "Perfil declara corredor de propiedades profesional independiente; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.yapo.cl/user/profile/id/13725393",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "e5c493c615136ec49e381295e3e8523fc35c93af5330f2fa818d0e10f63b9fe0",
+    "display_name": "Portal Arriendo",
+    "normalized_name": "portal arriendo",
+    "seller_profile_id": "13726421",
+    "listing_id": "32382872",
+    "evidence": [
+      "Perfil comercial con avisos de venta y arriendo; no se confirma como marca de corretaje.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://www.yapo.cl/user/profile/id/13726421",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "dca7546e2c68a3ec7a3071dc3185cb0d319fa102771450550996250b064ff28d",
+    "display_name": "MOBILIUM",
+    "normalized_name": "mobilium",
+    "seller_profile_id": "13879590",
+    "listing_id": "26287624",
+    "evidence": [
+      "Empresa de gestión inmobiliaria que comercializa y negocia propiedades; candidato pendiente de alta confirmada.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "https://mobilium.cl/",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "15bdae5c2cccd9c7318c013c9d9b054e4197d8e3d30ae32db074e92847d153af",
+    "display_name": "CastroPropiedades",
+    "normalized_name": "castropropiedades",
+    "seller_profile_id": "13726406",
+    "listing_id": "33197164",
+    "evidence": [
+      "Identidad comercial compacta detectada en HTML local y tipo de cuenta profesional.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "verified_commercial_candidate_not_confirmed_catalog"
+  },
+  {
+    "content_sha256": "30eaf3b32646471f19dec6cf625e7d1d49f9d16896417e7a3a4080a76f2bf265",
+    "display_name": "Pro habital",
+    "normalized_name": "pro habital",
+    "seller_profile_id": "16608516",
+    "listing_id": "30934288",
+    "evidence": [
+      "Nombre comercial candidato; evidencia insuficiente para confirmarlo como corredor.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "pending_manual_verification"
+  },
+  {
+    "content_sha256": "2e5bfe6e78c1c31155e3a39c659ab39e775c2c0006efe0029d1ad68d522006b6",
+    "display_name": "Bustaprop",
+    "normalized_name": "bustaprop",
+    "seller_profile_id": "13769400",
+    "listing_id": "25888323",
+    "evidence": [
+      "Nombre comercial candidato; evidencia insuficiente para confirmarlo como corredor.",
+      "seller_type:PROFESIONAL confirmado en HTML local"
+    ],
+    "evidence_source_url": "",
+    "first_detected_at": "2026-11-03T00:00:00+00:00",
+    "status": "pending_manual_verification"
+  }
+]

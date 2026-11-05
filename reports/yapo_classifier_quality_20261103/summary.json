@@ -1,0 +1,123 @@
+{
+  "canonical_input": "C:\\Users\\pgall\\Documents\\PROCASA\\YapoMaipu\\preimportacion_20261103\\yapo_maipu_preimport_482.json",
+  "canonical_sha256_expected": "dc9bda51a093abd9a1d7c6a741eeacac275724ea74b29ad4cc2a8bba558e12bf",
+  "canonical_sha256_verified_before": "dc9bda51a093abd9a1d7c6a741eeacac275724ea74b29ad4cc2a8bba558e12bf",
+  "canonical_sha256_verified_after": "dc9bda51a093abd9a1d7c6a741eeacac275724ea74b29ad4cc2a8bba558e12bf",
+  "canonical_file_modified": false,
+  "sample_seed": 20261103,
+  "sample_listing_ids": [
+    "32299493",
+    "33098407",
+    "33196456",
+    "32931491",
+    "26143551",
+    "25939035",
+    "33190907",
+    "26610549",
+    "33208287",
+    "28073704",
+    "32632678",
+    "27167566",
+    "27144918",
+    "32306422",
+    "32728499",
+    "25861896",
+    "26135394",
+    "26644524",
+    "26653392",
+    "27111189"
+  ],
+  "input_counts": {
+    "all_records": 482,
+    "originally_uncertain": 92
+  },
+  "after_counts_among_original_92": {
+    "CORREDOR_PROBABLE": 32,
+    "INCIERTO": 59,
+    "DUEÑO_PROBABLE": 1
+  },
+  "changes_from_uncertain": 33,
+  "yapo_listing_type_agent_ids": [
+    "25888323",
+    "29549459",
+    "30934288",
+    "31977083",
+    "32021046",
+    "32227431",
+    "32299493",
+    "32306422",
+    "32502499",
+    "32503443",
+    "32521946",
+    "32632678",
+    "32665586",
+    "32676021",
+    "32741542",
+    "32753293",
+    "32870120",
+    "32880456",
+    "33057092",
+    "33068885",
+    "33092071",
+    "33190907",
+    "33196456"
+  ],
+  "yapo_listing_type_agent_count": 23,
+  "positive_brokerage_fee_evidence_listing_ids": [
+    "25899595",
+    "28073704",
+    "32676021",
+    "32753293",
+    "33098428",
+    "33196456"
+  ],
+  "owner_signal_inventory": {
+    "explicit_owner_declaration_ids": [
+      "25939035",
+      "27979975",
+      "28052500"
+    ],
+    "owner_contact_mismatch_ids": [
+      "27979975",
+      "28052500"
+    ],
+    "owner_contact_support_only_ids": [
+      "25861896",
+      "26640107",
+      "32868386"
+    ],
+    "owner_review_union_ids": [
+      "25861896",
+      "25939035",
+      "26640107",
+      "27979975",
+      "28052500",
+      "32868386"
+    ],
+    "owner_probable_ids": [
+      "25939035"
+    ]
+  },
+  "owner_signal_review_count": 6,
+  "exact_profile_correlation_promotions": [
+    "32677581",
+    "33098407",
+    "32672728",
+    "33208287"
+  ],
+  "exact_profile_correlation_count": 4,
+  "local_html_validation": {
+    "records_checked": 92,
+    "all_html_files_exist": true,
+    "all_stored_sha256_match": true,
+    "all_full_descriptions_match_html": true,
+    "all_titles_match_html": true,
+    "all_listing_advertiser_types_match_html": true,
+    "truncated_descriptions": []
+  },
+  "deepseek_calls": 0,
+  "mongo_writes": 0,
+  "new_yapo_requests": 0,
+  "catalog_promotions": 0,
+  "classification_error_rate_claimed": false
+}

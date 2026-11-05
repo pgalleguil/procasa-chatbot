@@ -104,4 +104,18 @@ backfill*.py
 # Archivos del sistema
 .DS_Store
 Thumbs.db
+
+# Reviewable Yapo deterministic-first broker classification and offline QA
+!scrapers/
+!scrapers/scraper_yapo/
+!scrapers/scraper_yapo/classification_pipeline.py
+!scrapers/scraper_yapo/reclassify_saved_pilot.py
+!scrapers/scraper_yapo/data/
+scrapers/scraper_yapo/data/*
+!scrapers/scraper_yapo/data/known_broker_brands.json
+!scrapers/scraper_yapo/data/known_broker_brands_audit.json
+!scrapers/scraper_yapo/data/unknown_broker_candidates.json
+!scrapers/scraper_yapo/tests/
+scrapers/scraper_yapo/tests/*
+!scrapers/scraper_yapo/tests/test_classification_pipeline.py
 !tests/test_commercial_intake_property_context.py

@@ -1,0 +1,149 @@
+{
+  "scope": "TAREA 2A first broker filter",
+  "new_brands_added": [
+    "Kutt Property",
+    "Brokers Inmobiliarios",
+    "Dataprop Propiedades",
+    "AINA",
+    "Grupo Premium",
+    "Focolare Propiedades",
+    "Nexxos Chile",
+    "Invierte Propiedades",
+    "In House Propiedades",
+    "eXp Realty Chile",
+    "Propitech",
+    "Corretajes Prosal",
+    "Liona Propiedades"
+  ],
+  "changes": [
+    {
+      "canonical_brand": "RE/MAX",
+      "previous_forms": [
+        "remax",
+        "re/max",
+        "re max"
+      ],
+      "action": "collapsed to one normalized brand",
+      "provenance": [
+        "previous known_broker_brands.json",
+        "tests/test_broker_regression.py RE/MAX listing regression"
+      ]
+    },
+    {
+      "canonical_brand": "Engel & Völkers",
+      "previous_forms": [
+        "engel & volkers",
+        "engel volkers"
+      ],
+      "action": "collapsed to one normalized brand",
+      "provenance": [
+        "previous known_broker_brands.json"
+      ]
+    },
+    {
+      "canonical_brand": "ProUrbe",
+      "previous_forms": [
+        "pro urbe",
+        "proube"
+      ],
+      "action": "kept the verified spelling and removed a likely transposition",
+      "provenance": [
+        "previous known_broker_brands.json",
+        "tests/test_broker_regression.py PROurbe logo regression"
+      ]
+    },
+    {
+      "canonical_brands": [
+        "RE/MAX",
+        "ProUrbe",
+        "Engel & Völkers"
+      ],
+      "aliases": [
+        "REMAX",
+        "PRO URBE",
+        "Engel Volkers"
+      ],
+      "action": "added explicit normalized aliases; matching records the alias that matched",
+      "provenance": [
+        "previous known_broker_brands.json spelling variants",
+        "tests/test_broker_regression.py RE/MAX and PROurbe regressions"
+      ]
+    },
+    {
+      "previous_forms": [
+        "TOCTOC",
+        "Portal Inmobiliario",
+        "Chilepropiedades",
+        "GoPlaceIt",
+        "EasyProp"
+      ],
+      "action": "moved to portal_platforms; these names alone do not identify the advertiser as a broker",
+      "provenance": [
+        "previous known_broker_brands.json",
+        "portal/platform names already present in the Yapo project catalog"
+      ]
+    },
+    {
+      "previous_forms": [
+        "enlace inmobiliario"
+      ],
+      "action": "removed from broker brand matches as a generic commercial phrase; not promoted to a new brand",
+      "provenance": [
+        "previous known_broker_brands.json"
+      ]
+    },
+    {
+      "canonical_brands": [
+        "Kutt Property",
+        "Brokers Inmobiliarios",
+        "Dataprop Propiedades",
+        "AINA",
+        "Grupo Premium",
+        "Focolare Propiedades",
+        "Nexxos Chile",
+        "Invierte Propiedades",
+        "In House Propiedades",
+        "eXp Realty Chile",
+        "Propitech",
+        "Corretajes Prosal",
+        "Liona Propiedades"
+      ],
+      "action": "added exact publisher-name matches observed in the complete Maipu 3,000–6,000 UF Yapo pilot; each official site documents brokerage, broker services, or a professional brokerage network. Matching remains restricted to confirmed publisher identity/logo fields.",
+      "provenance": [
+        "Kutt Property: https://info.kutt.cl/kutt-corredores",
+        "Brokers Inmobiliarios: https://www.brokersinmobiliarios.cl/",
+        "Dataprop Propiedades: https://app.dataprop.cl/",
+        "AINA: https://www.aina.cl/",
+        "Grupo Premium: https://gpremium.cl/corredora-de-propiedades/",
+        "Focolare Propiedades: https://focolare.cl/nosotros.html",
+        "Nexxos Chile: https://www.nexxoschile.cl/",
+        "Invierte Propiedades: https://inviertepropiedades.com/",
+        "In House Propiedades: https://www.inhousepropiedades.cl/",
+        "eXp Realty Chile: https://www.expchile.cl/",
+        "Propitech: https://propitech.cl/nosotros",
+        "Corretajes Prosal: https://prosal.cl/",
+        "Liona Propiedades: https://lionapropiedades.cl/"
+      ]
+    }
+  ],
+  "verification_note": "National catalog expanded from 24 to 1,276 canonical names using the public sources above. This is a sourced, dated catalog of names discoverable in these public registers/directories, not a claim that every brokerage in Chile has a public or registered name.",
+  "national_catalog_refresh": {
+    "verified_on": "2026-11-03",
+    "catalog_brand_count": 1276,
+    "source_names_deduplicated": 1259,
+    "new_names_added_vs_previous_catalog": 1252,
+    "uaf_business_or_trade_names": 771,
+    "toppropiedades_business_directory_names": 326,
+    "propiedadesya_business_directory_names": 47,
+    "aina_business_directory_names": 115,
+    "excluded": "RUTs, contact details, and people-only names without a business/trade identity signal.",
+    "sources": {
+      "UAF register of obliged entities, category Corredores de Propiedades, as of 2025-12-31": "https://www.uaf.cl/media/documentos/Sujetos_obligados_inscritos_en_la_UAF_al_31.12.2025.pdf",
+      "TopPropiedades national broker directory": "https://www.toppropiedades.cl/corredores",
+      "PropiedadesYa broker directory": "https://propiedadesya.com/corredores",
+      "AINA member directory": "https://www.aina.cl/socios",
+      "VISAN Propiedades confirmed Yapo listing": "https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa-en-venta-de-4-dorm-en-maipu/32200413"
+    },
+    "matching": "Publisher fields use complete normalized names and aliases; matching ignores case, accent and spaces within or between name parts. Descriptions require a first-party commercial signature to avoid treating third-party mentions as the advertiser."
+  }
+}

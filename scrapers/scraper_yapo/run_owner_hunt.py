@@ -1,0 +1,449 @@
+﻿from __future__ import annotations
+
+import argparse
+import json
+import sys
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+
+try:
+    from .classifier_rules import build_deepseek_context, build_rule_context, classify_yapo_batch, classify_yapo_listing
+    from .config import AppConfig, get_config
+    from .discovery import discover_listing_urls
+    from .downloader import assess_yapo_availability, download_html
+    from .export_reports import export_batch_reports
+    from .extractor import extract_listing_fields
+    from .enrich import _enrich_property_fields
+    from .mongo_store import MongoStore
+    from .proxy_manager import ProxyManager
+    from .pilot import run_pilot
+    from .publisher_profile import enrich_batch_publisher_profiles
+except ImportError:  # direct execution from scrapers/scraper_yapo
+    from scrapers.scraper_yapo.classifier_rules import build_deepseek_context, build_rule_context, classify_yapo_batch, classify_yapo_listing
+    from scrapers.scraper_yapo.config import AppConfig, get_config
+    from scrapers.scraper_yapo.discovery import discover_listing_urls
+    from scrapers.scraper_yapo.downloader import assess_yapo_availability, download_html
+    from scrapers.scraper_yapo.export_reports import export_batch_reports
+    from scrapers.scraper_yapo.extractor import extract_listing_fields
+    from scrapers.scraper_yapo.enrich import _enrich_property_fields
+    from scrapers.scraper_yapo.mongo_store import MongoStore
+    from scrapers.scraper_yapo.proxy_manager import ProxyManager
+    from scrapers.scraper_yapo.pilot import run_pilot
+    from scrapers.scraper_yapo.publisher_profile import enrich_batch_publisher_profiles
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _listing_id_from_record(record: dict[str, Any]) -> str:
+    if record.get("listing_id"):
+        return str(record["listing_id"])
+    match = re.search(r"/(\d{6,})(?:[/?#]|$)", str(record.get("url") or ""))
+    return match.group(1) if match else ""
+
+
+def _exclude_existing(records: list[dict[str, Any]], config: AppConfig, write_db: bool) -> tuple[list[dict[str, Any]], int]:
+    if not write_db or not records:
+        return records, 0
+    store = MongoStore(config)
+    prepared = [{**record, "listing_id": _listing_id_from_record(record)} for record in records]
+    existing = store.existing_listing_ids([record["listing_id"] for record in prepared])
+    fresh = [record for record in prepared if record["listing_id"] not in existing]
+    return fresh, len(prepared) - len(fresh)
+
+
+def _reports_dir(config: AppConfig) -> Path:
+    config.ensure_layout()
+    return config.reports_dir
+
+
+def _discovery_path(config: AppConfig, batch_id: str) -> Path:
+    return _reports_dir(config) / f"discovered_{batch_id}.json"
+
+
+def _processed_path(config: AppConfig, batch_id: str) -> Path:
+    return _reports_dir(config) / f"processed_{batch_id}.json"
+
+
+def _latest_discovery_file(config: AppConfig) -> Path | None:
+    candidates = sorted(config.reports_dir.glob("discovered_*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0] if candidates else None
+
+
+def _save_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Owner-hunt Yapo scraper")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    discover = subparsers.add_parser("discover", help="Discover listing URLs")
+    discover.add_argument("--start-url", action="append", default=[], help="Starting Yapo search URL")
+    discover.add_argument("--max-pages", type=int, default=None, help="Optional safety ceiling; a capped run is reported incomplete")
+    discover.add_argument("--max-urls", type=int, default=None, help="Optional safety ceiling; a capped run is reported incomplete")
+    discover.add_argument("--until-end", action="store_true", help="Keep walking pages until the end")
+    discover.add_argument("--batch-id", default="", help="Optional batch identifier")
+    discover.add_argument("--dry-run", action="store_true", help="Keep discovery local only")
+    discover.add_argument("--target-commune", action="append", default=[], help="Keep only listings whose search tile matches this commune")
+
+    process = subparsers.add_parser("process", help="Process discovered HTML")
+    process.add_argument("--batch-id", default="", help="Discovery batch to load")
+    process.add_argument("--limit", type=int, default=100, help="Max records to process")
+    process.add_argument("--offset", type=int, default=0, help="Start offset in the batch")
+    process.add_argument("--write-db", action="store_true", help="Write results to MongoDB")
+    process.add_argument("--dry-run", action="store_true", help="Do not write to MongoDB")
+    process.add_argument("--no-llm", action="store_true", help="Disable DeepSeek calls")
+
+    run_full = subparsers.add_parser("run-full", help="Discover and process in one step")
+    run_full.add_argument("--start-url", action="append", default=[], help="Starting Yapo search URL")
+    run_full.add_argument("--max-pages", type=int, default=None, help="Optional safety ceiling; a capped run is reported incomplete")
+    run_full.add_argument("--max-urls", type=int, default=None, help="Optional safety ceiling; a capped run is reported incomplete")
+    run_full.add_argument("--until-end", action="store_true", help="Keep walking pages until the end")
+    run_full.add_argument("--batch-id", default="", help="Optional batch identifier")
+    run_full.add_argument("--limit", type=int, default=100, help="Max records to process")
+    run_full.add_argument("--offset", type=int, default=0, help="Start offset in the batch")
+    run_full.add_argument("--write-db", action="store_true", help="Write results to MongoDB")
+    run_full.add_argument("--dry-run", action="store_true", help="Do not write to MongoDB")
+    run_full.add_argument("--no-llm", action="store_true", help="Disable DeepSeek calls")
+    run_full.add_argument("--target-commune", action="append", default=[], help="Keep only listings whose search tile matches this commune")
+
+    export = subparsers.add_parser("export", help="Export CSV and summary for a batch")
+    export.add_argument("--batch-id", required=True, help="Batch identifier")
+
+    pilot = subparsers.add_parser("pilot", help="Read-only compatibility adapter for one configured Yapo search URL")
+    pilot.add_argument("--start-url", required=True, help="Yapo search URL whose category, commune and filters are parsed and reverified")
+    pilot.add_argument("--batch-id", default="", help="Optional batch identifier")
+
+    return parser
+
+
+def _batch_id_from_records(records: list[dict[str, Any]], fallback: str = "") -> str:
+    if fallback:
+        return fallback
+    for record in records:
+        batch_id = record.get("batch_id")
+        if batch_id:
+            return str(batch_id)
+    return AppConfig().generate_batch_id()
+
+
+def _save_discovery_batch(config: AppConfig, records: list[dict[str, Any]], batch_id: str) -> Path:
+    path = _discovery_path(config, batch_id)
+    _save_json(path, records)
+    return path
+
+
+def _finalize_local_classification(extracted: dict[str, Any], rule_context: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Compatibility wrapper around the single deterministic classifier."""
+    return classify_yapo_listing(extracted)
+
+
+def _process_single_record(
+    record: dict[str, Any],
+    config: AppConfig,
+    proxy_manager: ProxyManager,
+    *,
+    no_llm: bool,
+    write_db: bool,
+    mongo_store: MongoStore | None,
+    defer_persistence: bool = False,
+) -> dict[str, Any]:
+    url = record["url"]
+    batch_id = str(record.get("batch_id") or config.generate_batch_id())
+    download = download_html(url, config, proxy_manager, batch_id=batch_id)
+    availability = assess_yapo_availability(
+        download.html,
+        fetch_source=download.fetch_source,
+        validation_status=download.validation_status,
+        status_code=download.status_code,
+        flashproxy_verified=str(getattr(download, "proxy_provider", "")) == "flashproxy",
+    )
+    extracted = extract_listing_fields(download.html, source_url=url)
+    extracted["discovery_comuna"] = record.get("discovery_comuna", "")
+    extracted = _enrich_property_fields(extracted, url, config.uf_valor_clp, config.uf_fecha)
+    extracted["html_validation_status"] = download.validation_status
+    extracted["html_validation_reason"] = download.validation_reason
+    if mongo_store is not None and download.validation_status == "OK":
+        extracted["publisher_profile_context"] = mongo_store.publisher_profile_context(extracted)
+
+    rule_context = build_rule_context(extracted)
+    # DeepSeek is deliberately not imported or called in any CLI path.
+    classification = _finalize_local_classification(extracted, rule_context)
+
+    combined = {
+        **record,
+        **extracted,
+        "html_path": str(download.html_path),
+        "html_validation_status": download.validation_status,
+        "html_validation_reason": download.validation_reason,
+        "fetch_source": download.fetch_source,
+        **availability,
+        "rule_context": rule_context,
+        "deepseek_context": build_deepseek_context(extracted),
+        "classification": classification,
+        "llm_description_original_len": len(extracted.get("descripcion", extracted.get("description", ""))),
+        "llm_description_sent_len": 0,
+        "llm_description_truncated": False,
+        "llm_description_strategy": "deepseek_disabled",
+        "processed_at": _utcnow(),
+        "scrape_stage": (
+            "ad_removed"
+            if download.validation_status == "LISTING_REMOVED"
+            else "needs_rescrape"
+            if download.validation_status in {"INVALID", "BLOCKED"}
+            else "processed"
+        ),
+    }
+
+    if classification is not None and availability["availability_status"] != "ACTIVO":
+        reason = (
+            "yapo_listing_deactivated"
+            if availability["availability_status"] == "DESACTIVADO"
+            else "yapo_availability_not_confirmed"
+        )
+        classification = dict(classification)
+        classification["manual_review_required"] = True
+        classification["manual_review_reason"] = reason
+        classification["assignment_ready"] = False
+        classification["exclude_from_assignment"] = True
+        classification["assignment_block_reasons"] = sorted(set([
+            *(classification.get("assignment_block_reasons") or []), reason,
+        ]))
+        combined["classification"] = classification
+        combined["manual_review_required"] = True
+
+    if classification is not None and not defer_persistence:
+        from captacion_assignment_eligibility import mark_assignment_readiness
+        mark_assignment_readiness(combined)
+
+    if write_db and mongo_store is not None and not defer_persistence:
+        mongo_store.upsert_listing(combined)
+
+    return combined
+
+
+def _process_batch(
+    records: list[dict[str, Any]],
+    config: AppConfig,
+    *,
+    no_llm: bool,
+    write_db: bool,
+) -> list[dict[str, Any]]:
+    proxy_manager = ProxyManager.from_config(config)
+    mongo_store = None
+    if write_db and not config.mongo_uri:
+        raise RuntimeError("MONGO_URI no configurado.")
+    if write_db:
+        mongo_store = MongoStore(config)
+
+    results: list[dict[str, Any]] = []
+    for record in records:
+        try:
+            results.append(
+                _process_single_record(
+                    record,
+                    config,
+                    proxy_manager,
+                    no_llm=no_llm,
+                    write_db=write_db,
+                    mongo_store=mongo_store,
+                    defer_persistence=True,
+                )
+            )
+        except Exception as exc:
+            results.append({
+                **record,
+                "error": str(exc),
+                "scrape_stage": "error",
+                "availability_status": "NO_VERIFICADO",
+                "availability_checked_at": "",
+                "availability_source": "technical_error",
+                "availability_evidence": [f"processing_error:{type(exc).__name__}"],
+                "processed_at": _utcnow(),
+            })
+
+    enrich_batch_publisher_profiles(results, config, batch_id=_batch_id_from_records(records))
+    valid_indexes = [
+        index for index, result in enumerate(results)
+        if isinstance(result.get("classification"), dict)
+        and result.get("scrape_stage") != "error"
+    ]
+    batch_results = classify_yapo_batch([results[index] for index in valid_indexes]) if valid_indexes else []
+    for index, classification in zip(valid_indexes, batch_results):
+        result = results[index]
+        if isinstance(classification, dict):
+            result["classification"] = classification
+            if result.get("availability_status") != "ACTIVO":
+                reason = (
+                    "yapo_listing_deactivated"
+                    if result.get("availability_status") == "DESACTIVADO"
+                    else "yapo_availability_not_confirmed"
+                )
+                classification = dict(classification)
+                classification["manual_review_required"] = True
+                classification["manual_review_reason"] = reason
+                classification["assignment_ready"] = False
+                classification["exclude_from_assignment"] = True
+                classification["assignment_block_reasons"] = sorted(set([
+                    *(classification.get("assignment_block_reasons") or []), reason,
+                ]))
+                result["classification"] = classification
+                result["manual_review_required"] = True
+        from captacion_assignment_eligibility import mark_assignment_readiness
+        mark_assignment_readiness(result)
+
+    if write_db and mongo_store is not None:
+        for result in results:
+            if result.get("scrape_stage") != "error":
+                mongo_store.upsert_listing(result)
+    return results
+
+
+def _cmd_discover(args: argparse.Namespace, config: AppConfig) -> int:
+    batch_id = args.batch_id or config.generate_batch_id()
+    records = discover_listing_urls(
+        args.start_url,
+        max_pages=args.max_pages,
+        max_urls=args.max_urls,
+        until_end=args.until_end,
+        batch_id=batch_id,
+        target_communes=args.target_commune,
+    )
+    records = [{**record, "batch_id": batch_id} for record in records]
+    _save_discovery_batch(config, records, batch_id)
+    print(json.dumps({"batch_id": batch_id, "count": len(records)}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _run_post_scrape_distribution():
+    """Dispara la distribucion de captaciones nuevas tras persistir el lote."""
+    import subprocess
+    import sys as _sys
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "run_distribution_after_scrape.py"
+    if not script.exists():
+        print(f"  [POST-SCRAPE] Script de distribucion no encontrado: {script}")
+        return
+    try:
+        r = subprocess.run(
+            [_sys.executable, str(script)],
+            capture_output=True, text=True, timeout=300,
+        )
+        if r.stdout.strip():
+            print(r.stdout.strip())
+        if r.returncode != 0 and r.stderr.strip():
+            print(f"  [POST-SCRAPE] stderr: {r.stderr.strip()[-400:]}")
+    except Exception as e:
+        print(f"  [POST-SCRAPE] No se pudo distribuir: {e}")
+
+
+def _cmd_process(args: argparse.Namespace, config: AppConfig) -> int:
+    batch_path = _discovery_path(config, args.batch_id) if args.batch_id else _latest_discovery_file(config)
+    if batch_path is None or not batch_path.exists():
+        raise RuntimeError("No discovery batch found. Run `discover` first or pass --batch-id.")
+    records = _load_json(batch_path)
+    if not isinstance(records, list):
+        raise RuntimeError(f"Invalid discovery batch: {batch_path}")
+
+    batch_id = args.batch_id or batch_path.stem.replace("discovered_", "", 1)
+    slice_records = records[args.offset : args.offset + args.limit] if args.limit else records[args.offset :]
+    processed = _process_batch(slice_records, config, no_llm=args.no_llm, write_db=args.write_db and not args.dry_run)
+    processed_path = _processed_path(config, batch_id)
+    _save_json(processed_path, processed)
+    export_batch_reports(processed, batch_id, config)
+    if args.write_db and not args.dry_run and processed:
+        _run_post_scrape_distribution()
+    print(json.dumps({"batch_id": batch_id, "processed": len(processed), "path": str(processed_path)}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def _cmd_run_full(args: argparse.Namespace, config: AppConfig) -> int:
+    batch_id = args.batch_id or config.generate_batch_id()
+    records = discover_listing_urls(
+        args.start_url,
+        max_pages=args.max_pages,
+        max_urls=args.max_urls,
+        until_end=args.until_end,
+        batch_id=batch_id,
+        target_communes=args.target_commune,
+    )
+    records = [{**record, "batch_id": batch_id} for record in records]
+    _save_discovery_batch(config, records, batch_id)
+
+    discovered_total = len(records)
+    records, duplicates = _exclude_existing(records, config, args.write_db and not args.dry_run)
+    slice_records = records[args.offset : args.offset + args.limit] if args.limit else records[args.offset :]
+    processed = _process_batch(slice_records, config, no_llm=args.no_llm, write_db=args.write_db and not args.dry_run)
+    processed_path = _processed_path(config, batch_id)
+    _save_json(processed_path, processed)
+    export_batch_reports(processed, batch_id, config)
+    if args.write_db and not args.dry_run and processed:
+        _run_post_scrape_distribution()
+    print(
+        json.dumps(
+            {
+                "batch_id": batch_id,
+                "discovered": discovered_total,
+                "new_after_dedup": len(records),
+                "duplicates_discarded": duplicates,
+                "processed": len(processed),
+                "discovery_path": str(_discovery_path(config, batch_id)),
+                "processed_path": str(processed_path),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _cmd_export(args: argparse.Namespace, config: AppConfig) -> int:
+    candidates = [
+        _processed_path(config, args.batch_id),
+        _discovery_path(config, args.batch_id),
+    ]
+    source = next((path for path in candidates if path.exists()), None)
+    if source is None:
+        raise RuntimeError(f"Batch not found: {args.batch_id}")
+    records = _load_json(source)
+    if not isinstance(records, list):
+        raise RuntimeError(f"Invalid batch payload: {source}")
+    paths = export_batch_reports(records, args.batch_id, config)
+    print(json.dumps({key: str(value) for key, value in paths.items()}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    config = get_config()
+
+    if args.command == "discover":
+        return _cmd_discover(args, config)
+    if args.command == "process":
+        return _cmd_process(args, config)
+    if args.command == "run-full":
+        return _cmd_run_full(args, config)
+    if args.command == "export":
+        return _cmd_export(args, config)
+    if args.command == "pilot":
+        result = run_pilot(args.start_url, config, batch_id=args.batch_id or None)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    raise RuntimeError(f"Unknown command: {args.command}")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

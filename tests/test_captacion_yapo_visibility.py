@@ -365,7 +365,7 @@ def test_real_captacion_route_renders_only_eligible_rows_on_first_page(monkeypat
     assert response.status_code == 200
     html = response.text
     assert "71 resultados" in html
-    assert "Anunciante / probabilidad" in html
+    assert "Anunciante / indicador" in html
     assert "Dueño probable" in html or "Anunciante incierto" in html
     assert "Probabilidad no calculada" in html
     assert "Disponibilidad pendiente" in html

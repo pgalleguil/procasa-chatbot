@@ -29,6 +29,37 @@ def doc(description="Descripción completa de una propiedad sin otras señales."
     return result
 
 
+def yapo_disabled_owner_declaration():
+    item = doc(
+        "Propiedad con todos sus papeles al día, vende su propietario, sin comisión.",
+        listing_id="33190839",
+        seller_name="Menares",
+    )
+    classification = item["classification"]
+    classification.update({
+        "state": "DUEÑO_PROBABLE",
+        "source": "owner_declaration_grammar",
+        "state_source": "classification.canonical_final",
+        "deepseek_status": "DISABLED",
+        "owner_evidence": [{
+            "rule_id": "OWNER_SALE_BY_OWNER",
+            "attribution": "advertiser_declaration_candidate",
+            "strength": "ALTA",
+            "fragment": "vende su propietario",
+            "field": "description",
+        }, {
+            "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+            "field": "listing_advertiser_type",
+            "fragment": "Propietario",
+            "strength": "MEDIA",
+        }],
+    })
+    classification.pop("decision_source", None)
+    classification.pop("rule_state", None)
+    classification.pop("deepseek_raw", None)
+    return item
+
+
 def test_neutral_complete_is_exactly_fifty():
     item = doc(seller_name="Particular")
     result = calculate_owner_probability(item, calculated_at=NOW)
@@ -195,3 +226,85 @@ def test_structured_deepseek_evidence_is_weighted_but_not_a_probability():
 def test_deepseek_quote_validation_tolerates_one_encoding_replacement_only():
     assert _quote_in_source("sin comisión", "Venta directa, sin comisi?n de corretaje")
     assert not _quote_in_source("somos una inmobiliaria", "Venta directa, sin comisión")
+
+
+def test_real_listing_33190839_returns_separate_heuristic_score_without_changing_state():
+    item = yapo_disabled_owner_declaration()
+    before = dict(item["classification"])
+    result = calculate_owner_probability(
+        item,
+        calculated_at=NOW,
+        allow_deterministic_evidence_without_deepseek=True,
+    )
+    assert result["owner_probability"] is None
+    assert result["owner_probability_heuristic_score"] == 100
+    assert result["owner_probability_heuristic_contradiction"] == "DUEÑO_PROBABLE_ABOVE_89"
+    assert result["owner_probability_heuristic_kind"] == "DETERMINISTIC_SCORE"
+    assert result["owner_probability_heuristic_calibrated"] is False
+    assert result["owner_probability_heuristic_version"] == "owner-probability-evidence-v1"
+    assert result["owner_probability_heuristic_calculated_at"] == NOW.isoformat()
+    assert result["owner_probability_heuristic_completeness"]["complete"] is False
+    assert result["owner_probability_heuristic_completeness"]["deepseek_bypassed_for_heuristic_score"] is True
+    assert item["classification"] == before
+
+
+def test_opt_in_does_not_turn_personal_name_alone_into_a_score():
+    item = yapo_disabled_owner_declaration()
+    item["description"] = "Casa de dos dormitorios, coordinar visita por teléfono."
+    item["classification"].pop("owner_evidence")
+    result = calculate_owner_probability(
+        item,
+        calculated_at=NOW,
+        allow_deterministic_evidence_without_deepseek=True,
+    )
+    assert result["owner_probability"] is None
+    assert result["owner_probability_heuristic_score"] is None
+    assert "INSUFFICIENT_DETERMINISTIC_EVIDENCE" in result["owner_probability_heuristic_completeness"]["reasons"]
+
+
+def test_professional_profile_and_portal_owner_type_conflict_alone_stay_unscored():
+    item = yapo_disabled_owner_declaration()
+    item["description"] = "Casa con tres dormitorios, patio y estacionamiento. Coordinar visita."
+    item["seller_type"] = "PROFESIONAL"
+    item["classification"]["owner_evidence"] = [{
+        "rule_id": "LISTING_ADVERTISER_OWNER_TYPE",
+        "field": "listing_advertiser_type",
+        "fragment": "Propietario",
+    }]
+    result = calculate_owner_probability(
+        item,
+        calculated_at=NOW,
+        allow_deterministic_evidence_without_deepseek=True,
+    )
+    assert result["owner_probability_heuristic_score"] is None
+    assert "INSUFFICIENT_DETERMINISTIC_EVIDENCE" in result["owner_probability_heuristic_completeness"]["reasons"]
+    applied_codes = {s["code"] for s in result["owner_probability_heuristic_signals"]["applied"]}
+    assert "SELLER_TYPE_AGENT_OR_COMPANY" in applied_codes
+
+
+def test_opt_in_does_not_bypass_deepseek_timeout_or_invalid_html():
+    timed_out = yapo_disabled_owner_declaration()
+    timed_out["classification"]["deepseek_status"] = "TIMEOUT"
+    timeout_result = calculate_owner_probability(
+        timed_out,
+        calculated_at=NOW,
+        allow_deterministic_evidence_without_deepseek=True,
+    )
+    assert timeout_result.get("owner_probability_heuristic_score") is None
+    assert timeout_result["owner_probability"] is None
+
+    invalid_html = yapo_disabled_owner_declaration()
+    invalid_html["html_validation_status"] = "INVALID"
+    invalid_result = calculate_owner_probability(
+        invalid_html,
+        calculated_at=NOW,
+        allow_deterministic_evidence_without_deepseek=True,
+    )
+    assert invalid_result.get("owner_probability_heuristic_score") is None
+    assert invalid_result["owner_probability"] is None
+
+
+def test_default_path_does_not_expose_heuristic_for_disabled_deepseek():
+    result = calculate_owner_probability(yapo_disabled_owner_declaration(), calculated_at=NOW)
+    assert result["owner_probability"] is None
+    assert "owner_probability_heuristic_score" not in result

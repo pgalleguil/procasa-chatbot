@@ -4653,7 +4653,7 @@
                             {% set precio_sort = current_sorts.get('precio') %}
                             <th class="text-center sortable" data-col="precio" title="{{ 'Orden actual: ascendente.' if precio_sort and precio_sort.direction == 'asc' else 'Orden actual: descendente.' if precio_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Precio {% if precio_sort %}<span class="sort-direction">{{ '↑ asc.' if precio_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                             {% set probability_sort = current_sorts.get('owner_probability') %}
-                            <th class="text-center sortable" data-col="owner_probability" title="Clasificación del anunciante y probabilidad numérica cuando fue calculada. {{ 'Orden actual: ascendente.' if probability_sort and probability_sort.direction == 'asc' else 'Orden actual: descendente.' if probability_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Anunciante / probabilidad {% if probability_sort %}<span class="sort-direction">{{ '↑ asc.' if probability_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
+                            <th class="text-center sortable" data-col="owner_probability" title="Clasificación del anunciante; el valor puede ser una probabilidad calculada o un puntaje heurístico identificado. {{ 'Orden actual: ascendente.' if probability_sort and probability_sort.direction == 'asc' else 'Orden actual: descendente.' if probability_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Anunciante / indicador {% if probability_sort %}<span class="sort-direction">{{ '↑ asc.' if probability_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
                             <th class="text-center">Gestión</th>
                             {% set antiguedad_sort = current_sorts.get('antiguedad') %}
                             <th class="text-center sortable" data-col="antiguedad" title="Fecha de captura o antigüedad, según el origen del dato. {{ 'Orden actual: ascendente.' if antiguedad_sort and antiguedad_sort.direction == 'asc' else 'Orden actual: descendente.' if antiguedad_sort else 'Haz clic para ordenar.' }}" style="cursor:pointer;user-select:none;">Fecha / antigüedad {% if antiguedad_sort %}<span class="sort-direction">{{ '↑ asc.' if antiguedad_sort.direction == 'asc' else '↓ desc.' }}</span>{% else %}<span class="sort-direction-neutral">↕</span>{% endif %}</th>
@@ -4687,7 +4687,7 @@
                                 {% endif %}
                                 </div>
                             </td>
-                            <td class="text-center" data-label="Anunciante / probabilidad"
+                            <td class="text-center" data-label="Anunciante / indicador"
                                 data-sort="{{ item.owner_probability_sort }}"
                                 title="{{ item.owner_probability_title }}">
                                 <div class="mobile-cell-value">

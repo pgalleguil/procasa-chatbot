@@ -276,6 +276,7 @@ def calculate_owner_probability(
     *,
     extracted: dict[str, Any] | None = None,
     calculated_at: datetime | None = None,
+    allow_deterministic_evidence_without_deepseek: bool = False,
 ) -> dict[str, Any]:
     """Return probability metadata without modifying ``doc`` or its state."""
     extracted = extracted or {}
@@ -293,7 +294,45 @@ def calculate_owner_probability(
         "owner_probability_expected_state": "INCOMPLETE",
         "owner_probability_contradiction": None,
     }
-    if not completeness["complete"]:
+    deepseek_only_block = (
+        not completeness["complete"]
+        and completeness.get("deepseek_required") is True
+        and completeness.get("deepseek_valid") is False
+        and completeness.get("deepseek_status") == "DISABLED"
+        and all(
+            reason.startswith("DEEPSEEK_REQUIRED_")
+            for reason in completeness.get("reasons", [])
+        )
+    )
+    deterministic_mode = (
+        allow_deterministic_evidence_without_deepseek
+        and completeness.get("deepseek_status") in {"DISABLED", "NOT_REQUIRED"}
+        and (completeness["complete"] or deepseek_only_block)
+    )
+    if deterministic_mode:
+        # Keep heuristic output outside owner_probability: the CRM uses that
+        # calibrated field in compatibility and assignment gates.
+        base.update({
+            "owner_probability_heuristic_score": None,
+            "owner_probability_heuristic_kind": "DETERMINISTIC_SCORE",
+            "owner_probability_heuristic_calibrated": False,
+            "owner_probability_heuristic_source": OWNER_PROBABILITY_SOURCE,
+            "owner_probability_heuristic_version": OWNER_PROBABILITY_VERSION,
+            "owner_probability_heuristic_calculated_at": when.isoformat(),
+            "owner_probability_heuristic_calculation_mode": "deterministic_signals_only",
+            "owner_probability_source": None,
+            "owner_probability_completeness": {
+                **completeness,
+                "complete": False,
+                "reasons": sorted(set(
+                    list(completeness.get("reasons") or [])
+                    + ["CALIBRATED_PROBABILITY_NOT_CALCULATED"]
+                )),
+            },
+        })
+    if not completeness["complete"] and not (
+        deterministic_mode and deepseek_only_block
+    ):
         return base
 
     candidates: list[dict[str, Any]] = []
@@ -377,6 +416,52 @@ def calculate_owner_probability(
             str(seller_type_raw), "seller_type",
         ))
 
+    # Yapo's deterministic v6/v7 classifier already persists cited owner rules.
+    # Reuse only direct first-party evidence from those known rule outputs; this
+    # bridge is opt-in so the shared Toctoc and legacy paths remain unchanged.
+    if allow_deterministic_evidence_without_deepseek and str(doc.get("origen") or "").strip().lower() == "yapo":
+        classification = doc.get("classification") if isinstance(doc.get("classification"), dict) else {}
+        classification_v3 = doc.get("classification_v3") if isinstance(doc.get("classification_v3"), dict) else {}
+        source = str(classification.get("source") or classification_v3.get("source") or "").strip().lower()
+        version = str(classification.get("classifier_version") or classification_v3.get("classifier_version") or "").strip().lower()
+        known_deterministic_source = source in {
+            "owner_declaration_grammar", "private_party_declaration", "contextual_rules",
+            "contradictory_context",
+        } or version.startswith("yapo-deterministic-")
+        evidence = classification.get("owner_evidence") or classification.get("owner_signal_evidence")
+        if not evidence:
+            evidence = classification_v3.get("owner_evidence") or classification_v3.get("owner_signal_evidence")
+        if known_deterministic_source and isinstance(evidence, list):
+            for item in evidence:
+                if not isinstance(item, dict):
+                    continue
+                rule_id = str(item.get("rule_id") or "").strip().upper()
+                attribution = str(item.get("attribution") or "").strip().lower()
+                strength = str(item.get("strength") or "").strip().upper()
+                fragment = str(item.get("fragment") or item.get("evidence") or "").strip()
+                field = str(item.get("field") or "").strip()
+                if (
+                    rule_id == "OWNER_SALE_BY_OWNER"
+                    and attribution == "advertiser_declaration_candidate"
+                    and strength == "ALTA"
+                    and fragment
+                    and not any(signal["code"] == "OWNER_FIRST_PERSON_EXPLICIT" for signal in candidates)
+                ):
+                    candidates.append(_make_signal(
+                        "OWNER_FIRST_PERSON_EXPLICIT", "owner_identity", 35,
+                        fragment, "classification.owner_evidence",
+                    ))
+                elif (
+                    rule_id == "LISTING_ADVERTISER_OWNER_TYPE"
+                    and field == "listing_advertiser_type"
+                    and _text(fragment) in {"dueno", "duena", "propietario", "propietaria"}
+                    and not any(signal["code"] == "SELLER_TYPE_OWNER" for signal in candidates)
+                ):
+                    candidates.append(_make_signal(
+                        "SELLER_TYPE_OWNER", "seller_type_and_badge", 10,
+                        fragment, "classification.owner_evidence",
+                    ))
+
     seller_is_pro = _first(doc, extracted, "seller_is_pro")
     badge_text = " ".join(str(value) for _, value in _all_values(
         doc, extracted, ("contact_badges_text", "seller_type_evidence")
@@ -458,6 +543,9 @@ def calculate_owner_probability(
     structured = extracted.get("deepseek_structured_evidence")
     if structured is None:
         structured = (doc.get("classification") or {}).get("deepseek_structured_evidence")
+    deepseek_evidence_valid = completeness.get("deepseek_valid") is True
+    if not deepseek_evidence_valid:
+        structured = None
     for item in structured or []:
         if not isinstance(item, dict):
             continue
@@ -473,6 +561,61 @@ def calculate_owner_probability(
         ))
 
     applied, suppressed = _select_family_signals(candidates)
+    deterministic_signals = [
+        signal for signal in applied
+        if not str(signal.get("source") or "").startswith("deepseek_structured:")
+    ]
+    sufficient_signal_codes = {
+        "OWNER_FIRST_PERSON_EXPLICIT",
+        "OWNER_FIRST_PERSON_POSSESSION",
+        "COMMISSION_OR_BROKERAGE_FEES",
+        "EXPLICIT_COMMERCIAL_IDENTITY",
+        "COMMERCIAL_DESCRIPTION",
+        "COMMERCIAL_PROFILE_CORRELATION",
+        "FOUR_TO_SEVEN_PROPERTIES_90D",
+        "EIGHT_OR_MORE_PROPERTIES_90D",
+    }
+    sufficient_deterministic_signals = [
+        signal for signal in deterministic_signals
+        if signal.get("code") in sufficient_signal_codes
+    ]
+    if deterministic_mode:
+        if not sufficient_deterministic_signals:
+            incomplete = dict(completeness)
+            incomplete["complete"] = False
+            incomplete["reasons"] = sorted(set(
+                list(completeness.get("reasons") or [])
+                + ["INSUFFICIENT_DETERMINISTIC_EVIDENCE"]
+            ))
+            incomplete["deterministic_signal_codes"] = [s["code"] for s in deterministic_signals]
+            incomplete["minimum_deterministic_evidence"] = sorted(sufficient_signal_codes)
+            if deepseek_only_block:
+                base["owner_probability_heuristic_completeness"] = incomplete
+                base["owner_probability_heuristic_signals"] = {
+                    "base": 50,
+                    "applied": applied,
+                    "suppressed": suppressed,
+                    "family_rule": "one strongest signal per family",
+                }
+            else:
+                base["owner_probability_completeness"] = incomplete
+                base["owner_probability_signals"] = {
+                    "base": 50,
+                    "applied": applied,
+                    "suppressed": suppressed,
+                    "family_rule": "one strongest signal per family",
+                }
+            return base
+        completeness = {
+            **completeness,
+            "deepseek_bypassed_for_heuristic_score": deepseek_only_block,
+            "heuristic_score_evidence_basis": "deterministic_signals_only",
+            "deterministic_signal_codes": [s["code"] for s in deterministic_signals],
+            "minimum_deterministic_evidence": sorted(sufficient_signal_codes),
+            "classification_semantic_review_complete": not deepseek_only_block,
+            "heuristic_score_complete": True,
+        }
+
     raw_score = max(0, min(100, 50 + sum(signal["weight"] for signal in applied)))
     probability = round(raw_score / 100, 2)
     state = normalize_state((doc.get("classification") or {}).get("state"))
@@ -481,6 +624,8 @@ def calculate_owner_probability(
         contradiction = "INCIERTO_BELOW_50"
     elif state == "DUEÑO_PROBABLE" and raw_score < 70:
         contradiction = "DUEÑO_PROBABLE_BELOW_70"
+    elif state == "DUEÑO_PROBABLE" and raw_score >= 90:
+        contradiction = "DUEÑO_PROBABLE_ABOVE_89"
     elif state == "DUEÑO_SEGURO" and raw_score < 90:
         contradiction = "DUEÑO_SEGURO_BELOW_90"
     elif state == "CORREDOR_SEGURO" and raw_score > 19:
@@ -490,16 +635,32 @@ def calculate_owner_probability(
     quality = "COMPLETE_NEUTRAL" if not applied else (
         "COMPLETE_STRONG_EVIDENCE" if max_strength >= 35 else "COMPLETE_PARTIAL_EVIDENCE"
     )
+    if deterministic_mode:
+        quality = "HEURISTIC_STRONG_EVIDENCE" if max_strength >= 35 else "HEURISTIC_PARTIAL_EVIDENCE"
+    signals_result = {
+        "base": 50,
+        "applied": applied,
+        "suppressed": suppressed,
+        "raw_score": raw_score,
+        "neutral": not applied,
+        "family_rule": "one strongest signal per family",
+    }
+    if deterministic_mode:
+        # Heuristic scores must not satisfy the existing probability or
+        # assignment gates, so they are stored in a separate result field.
+        base.update({
+            "owner_probability_heuristic_score": raw_score,
+            "owner_probability_heuristic_signals": signals_result,
+            "owner_probability_heuristic_quality": quality,
+            "owner_probability_heuristic_band": probability_band(probability),
+            "owner_probability_heuristic_contradiction": contradiction,
+            "owner_probability_heuristic_completeness": completeness,
+        })
+        return base
+
     base.update({
         "owner_probability": probability,
-        "owner_probability_signals": {
-            "base": 50,
-            "applied": applied,
-            "suppressed": suppressed,
-            "raw_score": raw_score,
-            "neutral": not applied,
-            "family_rule": "one strongest signal per family",
-        },
+        "owner_probability_signals": signals_result,
         "owner_probability_evidence_quality": quality,
         "owner_probability_band": probability_band(probability),
         "owner_probability_expected_state": expected_state_for_probability(probability),

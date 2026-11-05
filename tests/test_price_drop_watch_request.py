@@ -47,7 +47,7 @@ def test_record_customer_request_once_without_campaign_send():
     d = docs[0]
     assert d["lead_id"] == lead_id
     assert d["status"] == "PENDING_HUMAN_REVIEW"
-    assert d["requested_at"] == NOW
+    assert d["requested_at"].replace(tzinfo=timezone.utc) == NOW
     assert d["automatic_sending_enabled"] is False
     assert db["crm_price_drop_campaigns_v1"].count_documents({}) == 0
     assert db["crm_price_drop_campaign_dispatches_v1"].count_documents({}) == 0

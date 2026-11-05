@@ -72,28 +72,45 @@ def _property_price(db, code: str, old: int, new: int) -> datetime:
 
 
 def _inquiry_before(lead: dict, code: str, drop_at: datetime) -> bool:
-    if str((lead.get("prospecto") or {}).get("codigo") or "") != code:
-        return False
+    """Require dated, *property-specific* customer evidence before the drop.
+
+    An unrelated old customer message plus the current prospecto.codigo is
+    not evidence of a past inquiry about that listing.
+    """
     for message in lead.get("messages") or []:
-        if message.get("role") not in ("user", "customer"):
+        if not isinstance(message, dict) or message.get("role") not in ("user", "customer"):
             continue
-        if not (message.get("content") or "").strip():
+        text = str(message.get("content") or "")
+        if not text.strip():
+            continue
+        raw_stamp = str(message.get("timestamp") or "")
+        if not ("+" in raw_stamp[10:] or raw_stamp.endswith("Z")):
             continue
         try:
-            stamp = utc(datetime.fromisoformat(
-                str(message.get("timestamp") or "").replace("Z", "+00:00")
-            ))
+            stamp = utc(datetime.fromisoformat(raw_stamp.replace("Z", "+00:00")))
         except (ValueError, TypeError):
             continue
-        # A timestamp with no timezone is not verifiable real outreach evidence.
-        if not (message.get("timestamp") and
-                ("+" in str(message["timestamp"])[10:] or
-                 str(message["timestamp"]).endswith("Z"))):
+        if stamp >= drop_at:
             continue
-        if stamp < drop_at:
+        metadata = message.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        keys = ("property_code", "codigo_propiedad", "codigo", "listing_code")
+        declared = {str(metadata.get(k) or "").strip() for k in keys}
+        has_explicit_code = code in declared
+        # Also accept an explicit property code/link in the customer text.
+        referenced = re.search(
+            r"\\b(?:cod(?:igo)?|propiedad)\\s*[:#]?\\s*(\\d{4,6})\\b",
+            text, re.I,
+        )
+        if referenced:
+            has_explicit_code = has_explicit_code or referenced.group(1) == code
+        if re.search(r"https?://(?:www\\.)?procasa\\.cl/(?:propiedad/)?"
+                     + re.escape(code) + r"(?!\\d)", text, re.I):
+            has_explicit_code = True
+        if has_explicit_code:
             return True
     return False
-
 
 def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
                 property_code: str, old_price_uf: int, new_price_uf: int,

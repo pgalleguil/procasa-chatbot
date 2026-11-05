@@ -130,14 +130,26 @@ def test_heuristic_score_is_explicitly_labeled_and_never_fills_probability():
         },
     }
     view = build_owner_probability_doc(item)
-    assert view["owner_probability_display"] == "85/100 · heurística"
+    assert view["owner_probability_display"] == "85% · heurística"
     assert view["owner_probability_sort"] == 85
     assert "no es una probabilidad calibrada estadísticamente" in view["owner_probability_title"]
 
     one_point = build_owner_probability_doc({"classification": {"owner_probability_heuristic_score": 1}})
     zero_points = build_owner_probability_doc({"classification": {"owner_probability_heuristic_score": 0}})
-    assert one_point["owner_probability_display"] == "1/100 · heurística"
-    assert zero_points["owner_probability_display"] == "0/100 · heurística"
+    assert one_point["owner_probability_display"] == "1% · heurística"
+    assert zero_points["owner_probability_display"] == "0% · heurística"
+
+
+def test_neutral_baseline_is_displayed_as_percent_and_explained():
+    view = build_owner_probability_doc({"classification": {
+        "owner_probability": None,
+        "owner_probability_heuristic_score": 50,
+        "owner_probability_heuristic_kind": "NEUTRAL_BASELINE",
+        "owner_probability_heuristic_calibrated": False,
+        "owner_probability_heuristic_signals": {"applied": [], "suppressed": [{"code": "SELLER_TYPE_AGENT_OR_COMPANY"}]},
+    }})
+    assert view["owner_probability_display"] == "50% · heurística (neutral)"
+    assert "perfil Profesional de Yapo" in view["owner_probability_title"]
 
 
 def test_heuristic_score_does_not_unlock_an_assignment_gate():

@@ -262,7 +262,7 @@ def test_opt_in_does_not_turn_personal_name_alone_into_a_score():
     assert "INSUFFICIENT_DETERMINISTIC_EVIDENCE" in result["owner_probability_heuristic_completeness"]["reasons"]
 
 
-def test_professional_profile_and_portal_owner_type_conflict_alone_stay_unscored():
+def test_professional_profile_and_weak_conflicting_signals_get_only_neutral_baseline():
     item = yapo_disabled_owner_declaration()
     item["description"] = "Casa con tres dormitorios, patio y estacionamiento. Coordinar visita."
     item["seller_type"] = "PROFESIONAL"
@@ -276,10 +276,14 @@ def test_professional_profile_and_portal_owner_type_conflict_alone_stay_unscored
         calculated_at=NOW,
         allow_deterministic_evidence_without_deepseek=True,
     )
-    assert result["owner_probability_heuristic_score"] is None
-    assert "INSUFFICIENT_DETERMINISTIC_EVIDENCE" in result["owner_probability_heuristic_completeness"]["reasons"]
-    applied_codes = {s["code"] for s in result["owner_probability_heuristic_signals"]["applied"]}
-    assert "SELLER_TYPE_AGENT_OR_COMPANY" in applied_codes
+    assert result["owner_probability"] is None
+    assert result["owner_probability_heuristic_score"] == 50
+    assert result["owner_probability_heuristic_kind"] == "NEUTRAL_BASELINE"
+    assert result["owner_probability_heuristic_calibrated"] is False
+    assert result["owner_probability_heuristic_signals"]["applied"] == []
+    suppressed_codes = {s["code"] for s in result["owner_probability_heuristic_signals"]["suppressed"]}
+    assert "SELLER_TYPE_AGENT_OR_COMPANY" in suppressed_codes
+    assert result["owner_probability_heuristic_completeness"]["neutral_baseline_applied"] is True
 
 
 def test_opt_in_does_not_bypass_deepseek_timeout_or_invalid_html():

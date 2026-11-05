@@ -6975,6 +6975,27 @@ async def process_pending_leads_loop():
             else:
                 sla_notification_status.update({"status": "disabled", "health": "DISABLED"})
 
+            # Only the allowlisted tester may receive V2 simulated admin
+            # and property-executive notices. All status/receipts live in
+            # leads; no notification-specific collection is created.
+            if os.getenv("PRICE_DROP_LEADS_V2_TEST_NOTICES_ENABLED", "").lower() in {"1", "true", "yes"}:
+                try:
+                    from chatbot.price_drop_leads_v2 import send_test_notice_once
+                    from chatbot.storage import get_db as _get_v2_notice_db
+                    for role in ("administrator", "property_executive"):
+                        notice_result = await asyncio.get_running_loop().run_in_executor(
+                            _WORKER_THREAD_POOL,
+                            lambda r=role: send_test_notice_once(_get_v2_notice_db(), role=r),
+                        )
+                        if notice_result.get("status") not in {"IDLE", "DISABLED"}:
+                            logger.info(
+                                "[PRICE_DROP_V2_TEST_NOTICE] role=%s status=%s campaign_id=%s",
+                                role, notice_result.get("status"),
+                                notice_result.get("campaign_id"),
+                            )
+                except Exception:
+                    logger.exception("[PRICE_DROP_V2_TEST_NOTICE] worker failed; no automatic resend")
+
             # Dedicated, opt-in campaign response notices. Independent from
             # the new-lead assignment notifications, Hot SLA worker and its
             # business-hour scheduler. Runs in a sync thread; one queued

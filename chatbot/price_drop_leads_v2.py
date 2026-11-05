@@ -486,9 +486,10 @@ def send_test_notice_once(db, *, role: str,
     if not tester:
         return {"status": "TEST_PHONE_NOT_CONFIGURED"}
     candidates = list(db[LEADS].find({
+        "$or": [{"phone": tester}, {"contact_phone_normalized": tester}],
         f"{ROOT}.notifications.{role}.status": "PENDING_SIMULATION",
     }, {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
-        "price_drop_v2.campaigns": 1}).limit(3))
+        "price_drop_v2.campaigns": 1}).limit(2))
     selected = []
     for lead in candidates:
         if not _same_phone(lead, tester):

@@ -194,6 +194,7 @@ def create_inbound_job(
     received_at=None,
     is_from_me=False,
     max_wait_seconds=None,
+    _sealed_attach_retries=0,
 ):
     """Idempotently persist one inbound and attach it to one durable batch."""
     provider_id = str(inbound_provider_message_id or "").strip()
@@ -346,13 +347,33 @@ def create_inbound_job(
         now + timedelta(seconds=quiet_seconds),
         maximum_deadline,
     )
-    coll.update_one(
+    linked = coll.update_one(
         {"_id": batch_id, "kind": KIND_BATCH, "active_conversation_key": conversation_key},
         {"$addToSet": {"job_ids": job_id}, "$set": {
             "updated_at": now, "last_message_at": now,
             "window_end_at": max(previous_deadline, current_deadline),
         }, "$inc": {"conversation_sequence": 1}},
     )
+    if linked.matched_count != 1:
+        # An outbound response can seal this batch between the producer's
+        # lookup and job attachment. Its active key is then released so a
+        # fresh batch can accept this inbound. Never return success for a job
+        # that the sealed snapshot did not include.
+        restored = coll.update_one(
+            {"_id": job_id, "kind": KIND_JOB, "batch_id": batch_id,
+             "state": ST_BATCHING},
+            {"$set": {"state": ST_RECEIVED, "updated_at": now},
+             "$unset": {"batch_id": ""}},
+        )
+        if restored.matched_count != 1 or _sealed_attach_retries >= 3:
+            raise RuntimeError("inbound_job_raced_with_delivery_seal")
+        return create_inbound_job(
+            db, inbound_provider_message_id=provider_id,
+            conversation_id=conversation_id, lead_id=lead_id,
+            phone=phone, text=clean_text, received_at=now,
+            max_wait_seconds=max_wait_seconds,
+            _sealed_attach_retries=_sealed_attach_retries + 1,
+        )
     return job_id
 
 
@@ -506,6 +527,26 @@ def claim_pending_batch(db, *, worker_id, lease_seconds=120, now=None):
             "snapshot_sequence": candidate.get("conversation_sequence", 0),
             "delivery_token": delivery_token,
         }, "$inc": {"claim_count": 1}},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def seal_batch_for_delivery(db, *, batch_id, worker_id, delivery_token,
+                            snapshot_sequence, now=None):
+    """Atomically fence new inbounds before provider I/O.
+
+    If a producer already attached new content, the sequence check fails and
+    the worker must regenerate. If the fence wins, the old batch releases its
+    active key so subsequent arrivals create a different response batch.
+    """
+    now = now or utc_now()
+    return db[JOB_COLLECTION].find_one_and_update(
+        {"_id": batch_id, "kind": KIND_BATCH, "state": ST_PROCESSING,
+         "lease_owner": worker_id, "delivery_token": delivery_token,
+         "conversation_sequence": snapshot_sequence,
+         "active_conversation_key": {"$exists": True}},
+        {"$set": {"delivery_sealed_at": now, "updated_at": now},
+         "$unset": {"active_conversation_key": ""}},
         return_document=ReturnDocument.AFTER,
     )
 
@@ -886,6 +927,35 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
         db, phone=claimed["phone"], batch_id=batch_id,
         generation_id=generation_id, status="generated", content=response,
     )
+
+    # There is a real race AFTER the post-LLM sequence check: bookkeeping,
+    # commercial intake and safety guards can take seconds. Seal atomically
+    # before "started" and provider I/O, or requeue the entire batch with its
+    # newly attached messages. Never mark those unprocessed jobs responded.
+    sealed = await asyncio.to_thread(
+        seal_batch_for_delivery, db, batch_id=batch_id, worker_id=worker_id,
+        delivery_token=token,
+        snapshot_sequence=claimed.get("snapshot_sequence",
+                                      claimed.get("conversation_sequence", 0)),
+    )
+    if not sealed:
+        await asyncio.to_thread(
+            _update_generated_response, db, phone=claimed["phone"],
+            batch_id=batch_id, generation_id=generation_id,
+            status="suppressed", content=response,
+        )
+        await asyncio.to_thread(
+            record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,
+            delivery_token=token, status="stale_snapshot_before_provider",
+            error="new_inbound_during_response_preparation",
+        )
+        return await asyncio.to_thread(
+            finalize_batch, db, batch_id=batch_id,
+            state=ST_FAILED_RETRYABLE,
+            error="stale_snapshot_before_provider",
+            worker_id=worker_id, delivery_token=token,
+            next_attempt_at=now or utc_now(),
+        )
 
     await asyncio.to_thread(
         record_delivery_attempt, db, batch_id=batch_id, worker_id=worker_id,

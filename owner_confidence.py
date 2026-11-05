@@ -15,6 +15,17 @@ def _percentage(value):
     return round(value)
 
 
+def _score_points(value):
+    """Read a 0–100 heuristic score without treating 1 point as 100%."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not 0 <= value <= 100:
+        return None
+    return round(value)
+
+
 def build_classification_confidence_doc(doc):
     """Render only the technical confidence of the selected classification."""
     classification = (doc or {}).get("classification") or {}
@@ -62,24 +73,33 @@ def build_owner_score_doc(doc):
 
 
 def build_owner_probability_doc(doc):
-    """Render the only owner-likelihood metric exposed by the CRM."""
+    """Render a stored probability or clearly labeled deterministic score."""
     classification = (doc or {}).get("classification") or {}
     value = _percentage(classification.get("owner_probability"))
+    heuristic = False
+    if value is None:
+        value = _score_points(classification.get("owner_probability_heuristic_score"))
+        heuristic = value is not None
     if value is None:
         return {
             "owner_probability_display": "S/I",
             "owner_probability_sort": -1,
             "owner_probability_title": "Cálculo pendiente o evidencia insuficiente",
         }
-    signals = classification.get("owner_probability_signals") or {}
+    signal_field = "owner_probability_heuristic_signals" if heuristic else "owner_probability_signals"
+    signals = classification.get(signal_field) or {}
     applied = signals.get("applied") or [] if isinstance(signals, dict) else []
     labels = [
         f"{item.get('code')}: {item.get('evidence', '')}"
         for item in applied[:5] if isinstance(item, dict)
     ]
-    title = " | ".join(labels) if labels else "Resultado neutral: sin señales útiles"
+    if heuristic:
+        title_prefix = "Puntaje heurístico; no es una probabilidad calibrada estadísticamente"
+        title = " | ".join([title_prefix, *labels])
+    else:
+        title = " | ".join(labels) if labels else "Resultado neutral: sin señales útiles"
     return {
-        "owner_probability_display": f"{value}%",
+        "owner_probability_display": f"{value}/100 · heurística" if heuristic else f"{value}%",
         "owner_probability_sort": value,
         "owner_probability_title": title,
     }

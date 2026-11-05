@@ -115,3 +115,49 @@ def test_detail_indicator_uses_only_owner_probability_view_fields():
     assert "prop.score_captacion" not in block
     assert "classification.confidence" not in block
     assert ">50<" not in block
+
+
+def test_heuristic_score_is_explicitly_labeled_and_never_fills_probability():
+    item = {
+        "classification": {
+            "owner_probability": None,
+            "owner_probability_heuristic_score": 85,
+            "owner_probability_heuristic_kind": "DETERMINISTIC_SCORE",
+            "owner_probability_heuristic_calibrated": False,
+            "owner_probability_heuristic_signals": {
+                "applied": [{"code": "OWNER_FIRST_PERSON_EXPLICIT", "evidence": "vendo mi casa"}],
+            },
+        },
+    }
+    view = build_owner_probability_doc(item)
+    assert view["owner_probability_display"] == "85/100 · heurística"
+    assert view["owner_probability_sort"] == 85
+    assert "no es una probabilidad calibrada estadísticamente" in view["owner_probability_title"]
+
+    one_point = build_owner_probability_doc({"classification": {"owner_probability_heuristic_score": 1}})
+    zero_points = build_owner_probability_doc({"classification": {"owner_probability_heuristic_score": 0}})
+    assert one_point["owner_probability_display"] == "1/100 · heurística"
+    assert zero_points["owner_probability_display"] == "0/100 · heurística"
+
+
+def test_heuristic_score_does_not_unlock_an_assignment_gate():
+    item = complete_doc()
+    item["classification"].update({
+        "state": "DUEÑO_PROBABLE",
+        "assignment_ready": True,
+        "owner_probability": None,
+    })
+    before = assignment_eligibility(item)
+    item["classification"].update({
+        "owner_probability_heuristic_score": 85,
+        "owner_probability_heuristic_kind": "DETERMINISTIC_SCORE",
+        "owner_probability_heuristic_calibrated": False,
+        "owner_probability_heuristic_completeness": {
+            "complete": False,
+            "reasons": ["DEEPSEEK_REQUIRED_DISABLED"],
+        },
+    })
+    after = assignment_eligibility(item)
+    assert before == after
+    assert after[0] is False
+    assert "owner_probability_missing" in after[1]

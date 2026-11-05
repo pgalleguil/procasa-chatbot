@@ -327,11 +327,13 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
     label = classify_price_drop_reply(text).as_dict()
     cid = ctx["campaign_id"]
     lead = db[LEADS].find_one(
-        {ROOT: {"$elemMatch": {"campaign_id": cid, "status": {
-            "$in": ["SENT", "RESPONDED"]}}}},
-        {"_id": 1, "phone": 1},
+        {"$or": [{"phone": normalize_phone_strict(phone)},
+                 {"contact_phone_normalized": normalize_phone_strict(phone)}],
+         ROOT: {"$elemMatch": {"campaign_id": cid, "status": {
+             "$in": ["SENT", "RESPONDED"]}}}},
+        {"_id": 1, "phone": 1, "contact_phone_normalized": 1},
     )
-    if not lead or normalize_phone_strict(lead.get("phone") or "") != normalize_phone_strict(phone):
+    if not lead or not _same_phone(lead, phone):
         return {"status": "NOT_CAMPAIGN_REPLY"}
     stopped = label["label"] == "BAJA"
     positive = label["label"] in {"INTERES_DECLARADO", "PRIORIDAD_COMERCIAL"}

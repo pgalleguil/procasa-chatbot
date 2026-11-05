@@ -240,9 +240,9 @@ def _message(code: str, old: float, new: float) -> str:
     return (
         "¡Hola! ¿Cómo estás? 😊\n\n"
         "Te escribimos de PROCASA porque hace un tiempo consultaste por "
-        f"el departamento de San Miguel (código {code}), "
-        f"cuando costaba UF {f(old)}.\n\n"
-        f"Quería contarte que bajó UF {f(old - new)} y ahora está en UF {f(new)}.\n\n"
+        f"el departamento {('de San Miguel ' if code == '6436' else '')}"
+        f"(código {code}), cuando costaba UF {f(old)}.\n\n"
+        f"Quería contarte que bajó {f(old - new)} UF y ahora está en UF {f(new)}.\n\n"
         f"Te dejo la publicación actualizada: https://www.procasa.cl/{code}\n\n"
         "Con este nuevo precio, ¿te sigue interesando?\n\n"
         "Si prefieres no recibir más avisos, solo dínoslo."

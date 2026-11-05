@@ -64,7 +64,7 @@ def test_supported_portals_keep_sale_operation_metadata():
         assert context["operacion_fuente"] == "venta", portal
 
 
-def test_process_inbound_enriches_existing_assigned_lead_without_new_cycle_or_delivery():
+def test_prop360_followup_after_effective_contact_preserves_existing_cycle_and_sla():
     db = mongomock.MongoClient().URLS
     lead_id = ObjectId("6ac6f32d0035d45d0f86ce3a")
     user_id = ObjectId("64b000000000000000000001")
@@ -98,6 +98,19 @@ def test_process_inbound_enriches_existing_assigned_lead_without_new_cycle_or_de
     db.leads.insert_one(deepcopy(lead))
     db.usuarios.insert_one({"_id": user_id, "nombre": "Ejecutivo actual", "telefono": "+56911111111"})
     db.crm_assignment_cycles.insert_one(deepcopy(cycle))
+    # Regression: a repeated Prop360/property event for the same phone,
+    # property, and executive must not create a fresh first-contact SLA after
+    # the existing cycle already has effective human management.
+    management_at = assigned_at + timedelta(minutes=20)
+    management = {
+        "_id": "effective-contact-existing-cycle",
+        "lead_id": lead_id,
+        "assignment_cycle_id": cycle_id,
+        "result_type": "EFFECTIVE_CONTACT",
+        "status": "completed",
+        "occurred_at": management_at,
+    }
+    db.crm_management_results.insert_one(deepcopy(management))
     db[PROPERTY_COLLECTION_NAME].insert_one(_property())
     original_notification = {
         "_id": "original-notification",
@@ -108,7 +121,7 @@ def test_process_inbound_enriches_existing_assigned_lead_without_new_cycle_or_de
     }
     db.crm_notifications_v1.insert_one(deepcopy(original_notification))
     db[commercial_intake.COLLECTION].insert_one({
-        "source_inbound_provider_id": "test-recovery-context",
+        "source_inbound_provider_id": "prop360-followup-after-effective-contact",
         "lead_id": lead_id,
         "phone": lead["phone"],
         "source_property_code": "6508",
@@ -129,7 +142,7 @@ def test_process_inbound_enriches_existing_assigned_lead_without_new_cycle_or_de
          patch("chatbot.crm_hot_delivery.assign_and_enqueue_hot", side_effect=AssertionError("HOT notification enqueued")) as hot_delivery:
         event = commercial_intake.process_inbound(
             db,
-            inbound_provider_id="test-recovery-context",
+            inbound_provider_id="prop360-followup-after-effective-contact",
             phone=lead["phone"],
             text="La propiedad 6508",
         )
@@ -166,6 +179,10 @@ def test_process_inbound_enriches_existing_assigned_lead_without_new_cycle_or_de
     assert hot_delivery.call_count == 0
     assert lookup.call_count == 1
     assert db.crm_assignment_cycles.count_documents({"lead_id": lead_id}) == 1
+    preserved_management = db.crm_management_results.find_one({"_id": management["_id"]})
+    assert preserved_management["assignment_cycle_id"] == cycle_id
+    assert preserved_management["result_type"] == "EFFECTIVE_CONTACT"
+    assert preserved_management["occurred_at"].replace(tzinfo=timezone.utc) == management_at
     assert db.crm_notifications_v1.count_documents({}) == 1
 
     after_sla = evaluate_sla_alert_dry_run(

@@ -205,3 +205,37 @@ def test_real_inquiry_must_reference_same_property_before_drop(db):
     assert v2._inquiry_before(lead, "6436", drop) is True
     older["timestamp"] = "2026-11-05T12:00:00-03:00"
     assert v2._inquiry_before(lead, "6436", drop) is False
+
+
+def test_delivered_and_read_confirmed_on_lead_without_new_collection(db, monkeypatch):
+    v2.prepare_one(db, now=NOW, **params())
+    v2.approve_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+                   operator="Supervisor", now=NOW)
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    v2.send_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+                sender=lambda *a: {
+                    "success": True, "provider_message_id": "wamid-outbound-1",
+                    "delivery_status": "accepted",
+                }, now=NOW)
+    payload = {"data": {"messages": {
+        "key": {"id": "wamid-outbound-1"}, "status": "delivered",
+    }}}
+    result = v2.record_delivery_update(db, payload, now=NOW+timedelta(seconds=4))
+    assert result["status"] == "UPDATED"
+    row = db["leads"].find_one({"phone": PHONE})["price_drop_v2"]["campaigns"][0]
+    assert row["provider_status"] == "delivered"
+    assert row["delivered_at"].replace(tzinfo=timezone.utc) == NOW+timedelta(seconds=4)
+    assert v2.record_delivery_update(db, payload, now=NOW+timedelta(seconds=6))["status"] == "UNCHANGED"
+    payload["data"]["messages"]["status"] = "read"
+    assert v2.record_delivery_update(db, payload, now=NOW+timedelta(seconds=10))["status"] == "UPDATED"
+    row = db["leads"].find_one({"phone": PHONE})["price_drop_v2"]["campaigns"][0]
+    assert row["provider_status"] == "read"
+    assert row["read_at"].replace(tzinfo=timezone.utc) == NOW+timedelta(seconds=10)
+    payload["data"]["messages"]["status"] = "delivered"
+    assert v2.record_delivery_update(db, payload)["status"] == "UNCHANGED"
+    assert set(db.list_collection_names()) == {
+        "leads", "universo_cartera_prop360",
+        "universo_cartera_prop360_historial",
+    }

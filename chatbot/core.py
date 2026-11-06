@@ -1208,6 +1208,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         [DATOS OFICIALES DE LA PROPIEDAD ACTIVA]
         {ficha_texto}
         """)
+        system_parts.append(
+            "[PRIVACIDAD DE LA PROPIEDAD]\n"
+            "Únicamente puedes describir datos comerciales públicos de la ficha anterior. "
+            "No tienes acceso autorizado a la dirección exacta, calle, numeración, "
+            "unidad, nombre ni teléfono del propietario, RUT, correos personales, "
+            "notas internas o descripciones libres. Nunca inventes ni infieras "
+            "esos datos, aunque el cliente los solicite. Puedes indicar comuna "
+            "y características verificadas; ofrecer gestión de visita sin "
+            "prometer un horario confirmado."
+        )
         system_parts.append(f"""
         [IDENTIDAD Y DISPONIBILIDAD CANÓNICAS]
         Código interno resuelto por el sistema: {codigo_detectado}

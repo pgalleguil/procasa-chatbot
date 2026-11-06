@@ -23,6 +23,17 @@ SEND_FLAG = "PRICE_DROP_LEADS_V2_SEND_ENABLED"
 APPROVED_ID_FLAG = "PRICE_DROP_LEADS_V2_APPROVED_ID"
 TEST_PHONE_FLAG = "PRICE_DROP_PILOT_TEST_PHONE"
 TEST_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_TEST_NOTICES_ENABLED"
+ADMIN_PHONE_FLAG = "PRICE_DROP_LEADS_V2_ADMIN_PHONE"
+EXEC_NOTICE_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_EXECUTIVE_NOTICE_ENABLED"
+# Explicitly allowlist the one approved pilot administrator. This phone is
+# not a customer audience and must never be replaced by a property's owner.
+APPROVED_ADMIN_PHONE = "+56983219804"
+
+
+def executive_notices_enabled() -> bool:
+    """Frozen by default; preserving the code is not permission to notify."""
+    return os.getenv(EXEC_NOTICE_ENABLED_FLAG, "").lower() in {"1", "true", "yes"}
+
 ACTIVE_STATES = ("SENDING", "SENT", "RESPONDED", "OPTED_OUT", "DELIVERY_UNKNOWN")
 VALID_CODE = re.compile(r"^\d{4,6}$")
 VALID_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{5,79}$")
@@ -226,7 +237,7 @@ def prepare_one(db, *, now=None, **data) -> dict:
         "outbound_message": p["message"], "inbound_provider_ids": [],
         "reply_count": 0, "notifications": {
             "administrator": {"status": "NOT_TRIGGERED"},
-            "property_executive": {"status": "NOT_TRIGGERED"},
+            "property_executive": {"status": "FROZEN_ADMIN_ONLY"},
         },
     })
     result = db[LEADS].update_one(
@@ -436,8 +447,14 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
                 "PENDING_SIMULATION" if ctx["test_mode"]
                 else "PENDING_HUMAN_REVIEW"
             )
-            for role in ("administrator", "property_executive"):
-                update["$set"][f"{field}.notifications.{role}.status"] = role_status
+            # Campaign replies route to the administrator only. Preserve the
+            # executive notification slot for a separately approved future
+            # feature, without scheduling any executive provider send.
+            update["$set"][f"{field}.notifications.administrator.status"] = role_status
+            if executive_notices_enabled():
+                update["$set"][f"{field}.notifications.property_executive.status"] = role_status
+            else:
+                update["$set"][f"{field}.notifications.property_executive.status"] = "FROZEN_ADMIN_ONLY"
         update["$set"][f"{field}.has_positive_response"] = True
     result = db[LEADS].update_one(
         {"_id": lead["_id"],
@@ -524,9 +541,15 @@ def send_test_notice_once(db, *, role: str,
         return {"status": "DISABLED"}
     if role not in {"administrator", "property_executive"}:
         return {"status": "INVALID_ROLE"}
+    if role == "property_executive" and not executive_notices_enabled():
+        return {"status": "EXECUTIVE_NOTICE_FROZEN"}
     tester = normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, ""))
     if not tester:
         return {"status": "TEST_PHONE_NOT_CONFIGURED"}
+    if role == "administrator":
+        configured_admin = normalize_phone_strict(os.getenv(ADMIN_PHONE_FLAG, ""))
+        if configured_admin != APPROVED_ADMIN_PHONE or tester != configured_admin:
+            return {"status": "ADMIN_PHONE_NOT_ALLOWLISTED"}
     candidates = list(db[LEADS].find({
         "$or": [{"phone": tester}, {"contact_phone_normalized": tester}],
         f"{ROOT}.notifications.{role}.status": "PENDING_SIMULATION",

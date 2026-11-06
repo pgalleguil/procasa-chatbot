@@ -1531,7 +1531,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # =======================================================
     # 7. EXCEPCIÓN: FORZAR FICHA (RESPALDO ORIGINAL)
     # =======================================================
-    specific_property_response = build_specific_property_response(original_message, propiedad)
+    specific_property_response = build_specific_property_response(
+        original_message, propiedad, price_drop_context=pilot_context,
+    )
     if specific_property_response:
         respuesta = specific_property_response
     elif propiedad and "ficha" in original_message.lower() and not is_specific_property_question(original_message):

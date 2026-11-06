@@ -266,14 +266,19 @@ def test_both_simulated_notices_go_only_to_test_phone_once(db, monkeypatch):
     assert v2.send_test_notice_once(db, role="administrator", sender=sender)["status"] == "DISABLED"
     assert calls == []
     monkeypatch.setenv(v2.TEST_NOTICE_FLAG, "true")
-    assert v2.send_test_notice_once(db, role="administrator", sender=sender, now=NOW)["status"] == "SENT"
-    assert v2.send_test_notice_once(db, role="property_executive", sender=sender, now=NOW)["status"] == "SENT"
+    assert v2.send_test_notice_once(db, role="administrator", sender=sender, now=NOW+timedelta(seconds=30))["status"] == "DEFERRED_CUSTOMER_ACTIVE"
+    assert calls == []
+    assert v2.send_test_notice_once(db, role="administrator", sender=sender, now=NOW+timedelta(seconds=180))["status"] == "SENT"
+    assert v2.send_test_notice_once(db, role="property_executive", sender=sender, now=NOW+timedelta(seconds=200))["status"] == "DEFERRED_INTERNAL_THROTTLE"
+    assert v2.send_test_notice_once(db, role="property_executive", sender=sender, now=NOW+timedelta(seconds=275))["status"] == "SENT"
     assert v2.send_test_notice_once(db, role="administrator", sender=sender)["status"] == "IDLE"
     assert v2.send_test_notice_once(db, role="property_executive", sender=sender)["status"] == "IDLE"
     assert len(calls) == 2 and all(phone == PHONE for phone, _ in calls)
     assert "ADMINISTRADOR" in calls[0][1]
     assert "EJECUTIVO DE LA PROPIEDAD" in calls[1][1]
     assert "sí, me interesa" in calls[0][1]
+    assert "/crm/lead-id/690000000000000000000777" in calls[0][1]
+    assert "/crm/lead-id/690000000000000000000777" in calls[1][1]
     assert "\\n" not in calls[0][1]
     camp = db["leads"].find_one({"phone": PHONE})["price_drop_v2"]["campaigns"][0]
     assert camp["notifications"]["administrator"]["status"] == "SENT"

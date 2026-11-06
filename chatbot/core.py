@@ -1916,10 +1916,35 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             str(original_message or ""), re.IGNORECASE,
         ))
         if response_mentions_owner or response_claims_owner or asks_for_owner:
-            respuesta = (
-                "Estoy verificando con el equipo quién está a cargo de tu consulta. "
-                "Aún no puedo confirmar qué ejecutivo la está atendiendo."
-            )
+            if asks_for_owner:
+                respuesta = (
+                    "Estoy verificando con el equipo quién está a cargo de tu consulta. "
+                    "Aún no puedo confirmar qué ejecutivo la está atendiendo."
+                )
+            elif specific_property_response:
+                # Assignment integrity must not override authoritative listing
+                # fields requested by the client (e.g. expenses/orientation).
+                respuesta = specific_property_response
+            else:
+                # Remove unsupported ownership claims without discarding an
+                # otherwise useful property answer or the commercial reply.
+                safe_sentences = [
+                    sentence.strip() for sentence in re.split(
+                        r"(?<=[.!?])\s+|\n+", str(respuesta or "")
+                    )
+                    if sentence.strip() and not re.search(
+                        r"\b(?:ejecutiv[oa]|asesor[oa]|responsable\s+de|"
+                        r"asignaci[oó]n|a\s+cargo|te\s+atiende)\b",
+                        sentence, re.IGNORECASE,
+                    ) and not any(
+                        name.casefold() in sentence.casefold()
+                        for name in assignment_names
+                    )
+                ]
+                respuesta = " ".join(safe_sentences).strip() or (
+                    "Puedo ayudarte con las consultas sobre este departamento. "
+                    "¿Qué detalle te gustaría revisar?"
+                )
             await _run_sync(record_observability_event, "assignment_conflict_escalated", {
                 "conversation_id": conversation_id,
                 "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
@@ -1928,6 +1953,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     previous_bot_responses = [
         str(item.get("content") or "") for item in historial
         if item.get("role") == "assistant"
+        and item.get("delivery_status") not in {
+            "generated", "provider_attempt", "suppressed", "delivery_unknown"
+        }
     ]
     if is_substantial_duplicate(respuesta, previous_bot_responses[-5:]):
         await _run_sync(record_observability_event, "bot_response_duplicate_blocked", {
@@ -1941,6 +1969,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                 "[DUPLICATE_RESPONSE_RETAINED] nueva consulta detectada; "
                 "se conserva la respuesta informativa en vez de usar fallback"
             )
+
+    # For an explicitly sent V2 price-drop campaign, a short interest or visit
+    # preference must get a useful customer acknowledgement, not a neutral
+    # duplicate fallback or an unsupported confirmed booking.
+    if pilot_context and pilot_context.get("version") == "price_drop_leads_v2":
+        from .price_drop_v2_customer_response import stabilize_v2_reply
+        respuesta = stabilize_v2_reply(
+            original_message, respuesta, context=pilot_context,
+            visit_preference=visit_preference if visit_preference_captured_this_turn else None,
+        )
 
     respuesta = enforce_whatsapp_response_length(respuesta, original_message)
 

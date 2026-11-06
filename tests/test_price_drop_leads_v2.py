@@ -282,3 +282,26 @@ def test_both_simulated_notices_go_only_to_test_phone_once(db, monkeypatch):
         "leads", "universo_cartera_prop360",
         "universo_cartera_prop360_historial",
     }
+
+
+def test_prior_mlc_alias_proves_actual_inquiry_not_generic_chat(db):
+    prop = db["universo_cartera_prop360"]
+    prop.update_one({"codigo": "6436"}, {"$set": {
+        "publicaciones.aliases": [{
+            "external_id": "MLC-3776431868", "resolvable": True,
+            "publication_status": "historical",
+        }],
+    }})
+    listing_ids = v2._verified_listing_ids(db, "6436")
+    assert "mlc-3776431868" in listing_ids
+    lead = db["leads"].find_one({"phone": PHONE})
+    drop = datetime(2026, 10, 14, 11, 52, 43, tzinfo=timezone.utc)
+    lead["messages"].append({
+        "role": "user",
+        "content": "Hola, preguntas sobre https://departamento.mercadolibre.cl/MLC-3776431868",
+        "timestamp": "2026-07-16T14:20:55-04:00",
+    })
+    assert v2._inquiry_before(lead, "6436", drop, listing_ids)
+    assert not v2._inquiry_before(lead, "6436", drop)
+    lead["messages"][-1]["content"] = "Hola, busco un departamento"
+    assert not v2._inquiry_before(lead, "6436", drop, listing_ids)

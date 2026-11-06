@@ -214,8 +214,9 @@ def context_instruction(context: dict) -> str:
         "No lo trates como un lead nuevo ni solicites de nuevo su teléfono. "
         "Un 'sí' ambiguo expresa interés informativo, NO confirma una visita, oferta ni reserva. "
         "Responde sobre esta propiedad y ofrece información o coordinar visita. "
-        "Si pide visita, consulta únicamente día o rango horario y deriva según el flujo CRM existente; "
-        "no prometas una visita confirmada. Si rechaza o pide no recibir mensajes, respétalo. "
+        "Si pide visita, registra la preferencia de día u horario, pero no prometas una visita confirmada. "
+        "En esta campaña V2 el seguimiento es del administrador: no afirmes que avisaste al ejecutivo "
+        "ni inicies una notificación comercial a ejecutivos. Si rechaza o pide no recibir mensajes, respétalo. "
         "Si pregunta por otras propiedades, prioriza su petición nueva. "
         "No afirmes que se envió el WhatsApp si el cliente lo niega; ofrece verificarlo."
     )

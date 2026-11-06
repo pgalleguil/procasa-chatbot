@@ -78,6 +78,9 @@ def enable(monkeypatch, campaign_id="piloto6436_20261105"):
     monkeypatch.setenv("PRICE_DROP_REAL_PILOT_ENABLED", "true")
     monkeypatch.setenv("PRICE_DROP_REAL_PILOT_APPROVED_ID", campaign_id)
     monkeypatch.setenv("PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED", "true")
+    # Legacy functionality is retained but frozen in production by default.
+    # Existing contract tests explicitly opt into the historical sender.
+    monkeypatch.setenv("PRICE_DROP_CAMPAIGN_EXEC_FROZEN", "false")
 
 
 def test_price_drop_message_natural_and_not_pushy():

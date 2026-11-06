@@ -17,6 +17,8 @@ CAMPAIGN = "test_leads_6436_20261105"
 @pytest.fixture
 def db(monkeypatch):
     monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
+    monkeypatch.setenv(v2.ADMIN_PHONE_FLAG, PHONE)
+    monkeypatch.delenv(v2.EXEC_NOTICE_ENABLED_FLAG, raising=False)
     testdb = mongomock.MongoClient()["URLS"]
     testdb["universo_cartera_prop360"].insert_one({
         "codigo": "6436", "disponible_prop360": True,
@@ -138,7 +140,7 @@ def test_test_campaign_lifecycle_only_mutates_existing_canonical_lead(db, monkey
     assert c["reply_count"] == 1
     assert c["status"] == "RESPONDED"
     assert c["notifications"]["administrator"]["status"] == "PENDING_SIMULATION"
-    assert c["notifications"]["property_executive"]["status"] == "PENDING_SIMULATION"
+    assert c["notifications"]["property_executive"]["status"] == "FROZEN_ADMIN_ONLY"
     assert set(db.list_collection_names()) == {
         "leads", "universo_cartera_prop360",
         "universo_cartera_prop360_historial",
@@ -243,7 +245,7 @@ def test_delivered_and_read_confirmed_on_lead_without_new_collection(db, monkeyp
     }
 
 
-def test_both_simulated_notices_go_only_to_test_phone_once(db, monkeypatch):
+def test_admin_notice_goes_only_to_approved_phone_and_executive_stays_frozen(db, monkeypatch):
     v2.prepare_one(db, now=NOW, **params())
     v2.approve_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
                    operator="Supervisor", now=NOW)
@@ -269,20 +271,19 @@ def test_both_simulated_notices_go_only_to_test_phone_once(db, monkeypatch):
     assert v2.send_test_notice_once(db, role="administrator", sender=sender, now=NOW+timedelta(seconds=30))["status"] == "DEFERRED_CUSTOMER_ACTIVE"
     assert calls == []
     assert v2.send_test_notice_once(db, role="administrator", sender=sender, now=NOW+timedelta(seconds=180))["status"] == "SENT"
-    assert v2.send_test_notice_once(db, role="property_executive", sender=sender, now=NOW+timedelta(seconds=200))["status"] == "DEFERRED_INTERNAL_THROTTLE"
-    assert v2.send_test_notice_once(db, role="property_executive", sender=sender, now=NOW+timedelta(seconds=275))["status"] == "SENT"
+    assert v2.send_test_notice_once(db, role="property_executive", sender=sender, now=NOW+timedelta(seconds=200))["status"] == "EXECUTIVE_NOTICE_FROZEN"
+    assert v2.send_test_notice_once(db, role="property_executive", sender=sender, now=NOW+timedelta(seconds=275))["status"] == "EXECUTIVE_NOTICE_FROZEN"
     assert v2.send_test_notice_once(db, role="administrator", sender=sender)["status"] == "IDLE"
-    assert v2.send_test_notice_once(db, role="property_executive", sender=sender)["status"] == "IDLE"
-    assert len(calls) == 2 and all(phone == PHONE for phone, _ in calls)
+    assert v2.send_test_notice_once(db, role="property_executive", sender=sender)["status"] == "EXECUTIVE_NOTICE_FROZEN"
+    assert len(calls) == 1 and calls[0][0] == PHONE
     assert "ADMINISTRADOR" in calls[0][1]
-    assert "EJECUTIVO DE LA PROPIEDAD" in calls[1][1]
+    assert "EJECUTIVO DE LA PROPIEDAD" not in calls[0][1]
     assert "sí, me interesa" in calls[0][1]
     assert "/crm/lead-id/690000000000000000000777" in calls[0][1]
-    assert "/crm/lead-id/690000000000000000000777" in calls[1][1]
     assert "\\n" not in calls[0][1]
     camp = db["leads"].find_one({"phone": PHONE})["price_drop_v2"]["campaigns"][0]
     assert camp["notifications"]["administrator"]["status"] == "SENT"
-    assert camp["notifications"]["property_executive"]["status"] == "SENT"
+    assert camp["notifications"]["property_executive"]["status"] == "FROZEN_ADMIN_ONLY"
     assert set(db.list_collection_names()) == {
         "leads", "universo_cartera_prop360",
         "universo_cartera_prop360_historial",

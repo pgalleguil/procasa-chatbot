@@ -7009,7 +7009,13 @@ async def process_pending_leads_loop():
                 try:
                     from chatbot.price_drop_leads_v2 import send_test_notice_once
                     from chatbot.storage import get_db as _get_v2_notice_db
-                    for role in ("administrator", "property_executive"):
+                    roles = ("administrator",)
+                    # Executive alert path stays in source but is frozen
+                    # unless separately and explicitly re-enabled in the future.
+                    from chatbot.price_drop_leads_v2 import executive_notices_enabled
+                    if executive_notices_enabled():
+                        roles += ("property_executive",)
+                    for role in roles:
                         notice_result = await asyncio.get_running_loop().run_in_executor(
                             _WORKER_THREAD_POOL,
                             lambda r=role: send_test_notice_once(_get_v2_notice_db(), role=r),

@@ -850,19 +850,32 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     try:
         lead = await asyncio.to_thread(db["leads"].find_one, {"phone": claimed["phone"]}, {"conversation_status": 1})
         if (lead or {}).get("conversation_status") != "BLOCKED_EXTERNAL_BROKER":
-            from .commercial_intake import ensure_indexes, process_inbound
-            await asyncio.to_thread(ensure_indexes, db)
-            for item in claimed.get("snapshot") or []:
-                job = await asyncio.to_thread(
-                    db[JOB_COLLECTION].find_one, {"_id": item["job_id"]}
+            # Replies to an already SENT V2 campaign are *follow-up* on an
+            # existing lead, not a new commercial assignment. Prevent the
+            # regular intake from generating an executive HOT notice while
+            # keeping the normal conversational worker and V2 attribution.
+            from .price_drop_leads_v2 import active_context as v2_campaign_context
+            price_drop_ctx = await asyncio.to_thread(
+                v2_campaign_context, db, phone=claimed["phone"], message=text,
+            )
+            if price_drop_ctx is not None:
+                logger.info(
+                    "[PRICE_DROP_ADMIN_ONLY] commercial intake bypassed for existing campaign lead"
                 )
-                if job:
-                    await asyncio.to_thread(
-                        process_inbound, db,
-                        inbound_provider_id=item.get("provider_id"),
-                        phone=claimed["phone"], text=item.get("text") or "",
-                        received_at=job.get("received_at"), is_test=bool(job.get("is_test")),
+            else:
+                from .commercial_intake import ensure_indexes, process_inbound
+                await asyncio.to_thread(ensure_indexes, db)
+                for item in claimed.get("snapshot") or []:
+                    job = await asyncio.to_thread(
+                        db[JOB_COLLECTION].find_one, {"_id": item["job_id"]}
                     )
+                    if job:
+                        await asyncio.to_thread(
+                            process_inbound, db,
+                            inbound_provider_id=item.get("provider_id"),
+                            phone=claimed["phone"], text=item.get("text") or "",
+                            received_at=job.get("received_at"), is_test=bool(job.get("is_test")),
+                        )
     except Exception:
         logger.exception("[COMMERCIAL_INTAKE] durable commercial processing failed")
 

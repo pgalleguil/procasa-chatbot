@@ -122,3 +122,36 @@ def test_no_invented_property_characteristics():
     )
     assert result.count("la ficha no informa") == 3
     assert "$85.000" not in result
+
+
+def test_campaign_price_drop_question_keeps_the_verified_delta():
+    from chatbot.customer_response_semantics import build_specific_property_response
+    context = {"version": "price_drop_leads_v2", "property_code": "6436",
+               "old_price_uf": 2790, "new_price_uf": 2690}
+    response = build_specific_property_response(
+        "¿Cuánto bajó de precio y cuánto paga de gastos comunes?",
+        sample(), price_drop_context=context,
+    )
+    assert "bajó 100 UF" in response
+    assert "UF 2.790" in response and "UF 2.690" in response
+    assert "$85.000" in response
+    assert "+56999999999" not in response
+
+
+def test_negotiation_does_not_promise_unverified_discount():
+    from chatbot.customer_response_semantics import build_specific_property_response
+    response = build_specific_property_response(
+        "¿Se puede negociar el precio?", sample(),
+    )
+    assert "debe evaluarla administración" in response
+    assert "no puedo confirmar" in response
+    assert "Propietario" not in response
+
+
+def test_price_drop_question_without_verified_campaign_cannot_invent_history():
+    from chatbot.customer_response_semantics import build_specific_property_response
+    response = build_specific_property_response(
+        "¿Cuánto bajó de precio?", sample(),
+    )
+    assert "No tengo una rebaja confirmada" in response
+    assert "UF 2.690" in response

@@ -1488,6 +1488,31 @@ async def lifespan(app: FastAPI):
         ready_ms,
     )
     
+    # The V2 6436 tester runs only when explicitly armed for this one phone.
+    # PREVIEW only reads, SEND writes only the canonical lead; the provider
+    # attempt is guarded by atomic status and never repeats on startup.
+    v2_price_drop_test_task = None
+    v2_price_drop_mode = str(os.getenv(
+        "PRICE_DROP_LEADS_V2_TEST_BOOTSTRAP_MODE", "off"
+    )).strip().lower()
+    if v2_price_drop_mode in {"preview", "send"}:
+        async def _run_v2_one_phone_price_drop():
+            try:
+                from scripts.price_drop_leads_v2_bootstrap import run_bootstrap
+                from chatbot.storage import get_db as _v2_test_db
+                outcome = await asyncio.get_running_loop().run_in_executor(
+                    _WEB_THREAD_POOL, lambda: run_bootstrap(_v2_test_db()),
+                )
+                logger.info(
+                    "[PRICE_DROP_LEADS_V2_TEST_BOOTSTRAP] mode=%s status=%s reason=%s campaign_id=%s provider_message_id=%s",
+                    v2_price_drop_mode, outcome.get("status"),
+                    outcome.get("reason", ""), outcome.get("campaign_id", ""),
+                    outcome.get("provider_message_id", ""),
+                )
+            except Exception:
+                logger.exception("[PRICE_DROP_LEADS_V2_TEST_BOOTSTRAP] failed; no automatic retry")
+        v2_price_drop_test_task = asyncio.create_task(_run_v2_one_phone_price_drop())
+
     # Explicit one-shot test bootstrap. Disabled by default. The script
     # inserts a deterministic Mongo _id BEFORE contacting WhatsApp, so any
     # restart/deploy cannot send the same campaign twice. This never invokes
@@ -1578,6 +1603,8 @@ async def lifespan(app: FastAPI):
     yield
     
     # Shutdown logic
+    if v2_price_drop_test_task is not None:
+        v2_price_drop_test_task.cancel()
     if price_drop_send_task is not None:
         price_drop_send_task.cancel()
     if price_drop_exec_recovery_task is not None:

@@ -134,13 +134,15 @@ def public_property_facts(property_doc):
                        if p.get("disponible_prop360") is True else "No confirmada")
     f["fotos"] = ("https://www.procasa.cl/" + f["codigo"]
                    if f["codigo"].isdigit() else "Consultar publicación")
-    f["mascotas"] = "No se especifican condiciones; confirmar antes de asumir que se permiten"
+    f["mascotas"] = "La ficha no indica si acepta mascotas; hay que confirmarlo"
     return f
 
 
 def _line(key, facts):
     val = facts[key]
-    if key in _SURFACES and val != "No informado":
+    if val == "No informado":
+        return _LABELS[key] + ": la ficha no informa este dato; hay que confirmarlo."
+    if key in _SURFACES:
         val += " m²"
     return _LABELS[key] + ": " + val
 

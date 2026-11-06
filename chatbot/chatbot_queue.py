@@ -544,7 +544,16 @@ def seal_batch_for_delivery(db, *, batch_id, worker_id, delivery_token,
         {"_id": batch_id, "kind": KIND_BATCH, "state": ST_PROCESSING,
          "lease_owner": worker_id, "delivery_token": delivery_token,
          "conversation_sequence": snapshot_sequence,
-         "active_conversation_key": {"$exists": True}},
+         "$or": [
+             {"active_conversation_key": {"$exists": True}},
+             # After a confirmed HTTP 429, the prior delivery seal has already
+             # released this key. Re-claim that same stable snapshot without
+             # demanding a key that cannot reappear. Unknown deliveries stay
+             # terminal and are never eligible for this path.
+             {"delivery_sealed_at": {"$exists": True},
+              "delivery_attempts": {"$elemMatch": {
+                  "status": "failed_retryable", "error": "http_429"}}},
+         ]},
         {"$set": {"delivery_sealed_at": now, "updated_at": now},
          "$unset": {"active_conversation_key": ""}},
         return_document=ReturnDocument.AFTER,

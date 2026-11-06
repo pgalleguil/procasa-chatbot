@@ -130,130 +130,15 @@ def format_uf_chilena(value) -> str:
 
 
 def formatear_ficha_tecnica(propiedad: dict, lead_executive: str = None) -> str:
+    """Only verified public Prop360 data enter the model or reach WhatsApp.
+
+    Shared by initial inquiries and price-drop campaigns. Never use the free
+    text description, raw address, owner contact details, or names from the
+    property document. Lead assignment is a separate internal CRM operation.
     """
-    Toma un diccionario con datos de propiedad y lo formatea como un texto claro
-    para inyectarlo al contexto del LLM.
-    Se omite al ejecutivo original de la propiedad para evitar falsas expectativas,
-    mostrando solo al ejecutivo efectivamente asignado al lead si existe.
-    Compatible con el esquema anidado del scraper prop360 (tipo_operacion, ubicacion,
-    caracteristicas, observaciones) y con el esquema plano antiguo.
-    """
-    # ── Sub-documentos del nuevo esquema ─────────────────────────────────────
-    tipo_op   = propiedad.get("tipo_operacion") or {}
-    ubicacion = propiedad.get("ubicacion") or {}
-    caract    = propiedad.get("caracteristicas") or {}
-    obs       = propiedad.get("observaciones") or {}
-    estado    = propiedad.get("estado") or {}
+    from .public_property_facts import public_property_summary
+    return public_property_summary(propiedad)
 
-    # ── Tipo y operación ──────────────────────────────────────────────────────
-    tipo      = tipo_op.get("tipo") or propiedad.get("tipo") or "N/D"
-    es_venta  = tipo_op.get("venta") or False
-    es_arriendo = tipo_op.get("arriendo") or False
-    if es_venta:
-        operacion = "Venta"
-    elif es_arriendo:
-        operacion = "Arriendo"
-    else:
-        operacion = propiedad.get("operacion") or "N/D"
-
-    # ── Precios ───────────────────────────────────────────────────────────────
-    precio_bloque_venta   = tipo_op.get("precio_venta") or {}
-    precio_bloque_arriendo = tipo_op.get("precio_arriendo") or {}
-    precio_bloque = precio_bloque_venta if es_venta else precio_bloque_arriendo
-
-    precio_clp_raw = (
-        precio_bloque.get("precio_clp")
-        or propiedad.get("precio_clp")
-    )
-    precio_uf_raw = (
-        precio_bloque.get("precio_uf")
-        or propiedad.get("precio_uf")
-    )
-    gastos_comunes_raw = tipo_op.get("gastos_comunes") or propiedad.get("gastos_comunes") or 0
-
-    precio_clp     = safe_int_conversion(precio_clp_raw) or 0
-    gastos_comunes = safe_int_conversion(gastos_comunes_raw) or 0
-    precio_uf_str  = format_uf_chilena(precio_uf_raw) if precio_uf_raw is not None else "N/D"
-    precio_clp_str = f"${precio_clp:,}" if precio_clp else "N/D"
-
-    # ── Ubicación ─────────────────────────────────────────────────────────────
-    region  = ubicacion.get("region")  or propiedad.get("region")  or "N/D"
-    comuna  = ubicacion.get("comuna")  or propiedad.get("comuna")  or "N/D"
-    sector  = ubicacion.get("sector")  or propiedad.get("sector")  or ""
-
-    # ── Características ───────────────────────────────────────────────────────
-    dormitorios      = caract.get("dormitorios")                 or propiedad.get("dormitorios")      or "N/D"
-    banos            = caract.get("banos")                       or propiedad.get("banos")            or "N/D"
-    sup_util         = caract.get("superficie_util")             or propiedad.get("m2_utiles")        or "N/D"
-    sup_total        = caract.get("superficie_total")            or propiedad.get("m2_totales")       or "N/D"
-    sup_terreno      = caract.get("superficie_terreno")          or propiedad.get("superficie_terreno") or "N/D"
-    sup_construida   = caract.get("superficie_construida")       or propiedad.get("superficie_construida") or "N/D"
-    sup_terraza      = caract.get("superficie_terraza")          or propiedad.get("m2_terraza")       or "N/D"
-    estac_cub        = caract.get("estacionamientos_cubiertos")  or propiedad.get("estacionamientos") or 0
-    estac_desc       = caract.get("estacionamientos_descubiertos") or 0
-    estacionamientos = (safe_int_conversion(estac_cub) or 0) + (safe_int_conversion(estac_desc) or 0)
-    bodegas          = caract.get("bodegas")                     or propiedad.get("bodega")           or 0
-    orientacion      = caract.get("orientacion")                 or propiedad.get("orientacion")      or "N/D"
-    ano_construccion = caract.get("ano_construccion")            or propiedad.get("ano_construccion") or "N/D"
-    num_pisos        = caract.get("numero_pisos")                or propiedad.get("numero_pisos")     or "N/D"
-
-    # ── Observaciones y descripción ───────────────────────────────────────────
-    descripcion = (
-        obs.get("descripcion")
-        or propiedad.get("descripcion_clean")
-        or propiedad.get("descripcion")
-        or ""
-    )
-    titulo = obs.get("titulo") or propiedad.get("titulo") or ""
-
-    # ── Ejecutivo (Solo si hay asignación efectiva al lead) ─────────────
-    # Se ignora intencionalmente estado.get("ejecutivo") para no confundir al LLM.
-    ejecutivo = lead_executive if (lead_executive and lead_executive not in ["No Asignado", "Sin Asignar", None, ""]) else None
-
-    # ── Construir texto ───────────────────────────────────────────────────────
-    lineas = [
-        f"Código interno:     {propiedad.get('codigo', 'N/D')}",
-        f"Tipo:               {tipo}",
-        f"Operación:          {operacion}",
-        f"Región:             {region}",
-        f"Comuna:             {comuna}",
-    ]
-    if sector:
-        lineas.append(f"Sector:             {sector}")
-    lineas += [
-        f"Precio:             {precio_uf_str} UF | {precio_clp_str}",
-    ]
-    if gastos_comunes:
-        lineas.append(f"Gastos comunes:     ${gastos_comunes:,}")
-    lineas += [
-        f"Dormitorios:        {dormitorios}",
-        f"Baños:              {banos}",
-        f"Sup. útil:          {sup_util} m²",
-        f"Sup. total:         {sup_total} m²",
-    ]
-    if sup_terreno and sup_terreno != "N/D":
-        lineas.append(f"Sup. terreno:       {sup_terreno} m²")
-    if sup_construida and sup_construida != "N/D":
-        lineas.append(f"Sup. construida:    {sup_construida} m²")
-    if sup_terraza and sup_terraza != "N/D":
-        lineas.append(f"Terraza:            {sup_terraza} m²")
-    lineas += [
-        f"Estacionamientos:   {estacionamientos if estacionamientos else 'N/D'}",
-        f"Bodegas:            {bodegas if bodegas else 'No'}",
-        f"Orientación:        {orientacion}",
-    ]
-    if ano_construccion != "N/D":
-        lineas.append(f"Año construcción:   {ano_construccion}")
-    if num_pisos != "N/D":
-        lineas.append(f"N° pisos:           {num_pisos}")
-    if ejecutivo:
-        lineas.append(f"Ejecutivo asignado: {ejecutivo}")
-    if titulo:
-        lineas.append(f"Título:             {titulo}")
-    if descripcion:
-        lineas.append(f"Descripción:        {descripcion[:400]}")
-
-    return "\n    ".join(lineas)
 
 
 def _buscar_propiedad_en_universo(db, raw_value, portal: str | None = None):
@@ -1323,6 +1208,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         [DATOS OFICIALES DE LA PROPIEDAD ACTIVA]
         {ficha_texto}
         """)
+        system_parts.append(
+            "[PRIVACIDAD DE LA PROPIEDAD]\n"
+            "Únicamente puedes describir datos comerciales públicos de la ficha anterior. "
+            "No tienes acceso autorizado a la dirección exacta, calle, numeración, "
+            "unidad, nombre ni teléfono del propietario, RUT, correos personales, "
+            "notas internas o descripciones libres. Nunca inventes ni infieras "
+            "esos datos, aunque el cliente los solicite. Puedes indicar comuna "
+            "y características verificadas; ofrecer gestión de visita sin "
+            "prometer un horario confirmado."
+        )
         system_parts.append(f"""
         [IDENTIDAD Y DISPONIBILIDAD CANÓNICAS]
         Código interno resuelto por el sistema: {codigo_detectado}

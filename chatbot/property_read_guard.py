@@ -7,6 +7,7 @@ database objects. It does not modify source records.
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 
 from config import Config
 
@@ -46,6 +47,23 @@ _SAFE_FIELDS = frozenset({
 SAFE_PROPERTY_PROJECTION = {name: 1 for name in sorted(_SAFE_FIELDS)}
 SAFE_PROPERTY_PROJECTION["_id"] = 0
 
+# Structured, public amenities only. Free-form tokens are not trusted:
+# they could embed owner names, phone numbers or exact addresses.
+PUBLIC_AMENITIES = frozenset({
+    "has_terrace", "mascotas", "jardinformado", "piscina", "has_grill",
+    "bodega", "banovisita", "condominio", "cocina", "has_tap_water",
+    "has_closet", "has_internet_access", "has_dinning_room",
+    "has_electric_light", "amoblado", "has_guest_parking",
+    "has_air_conditioning", "has_security", "with_laundry_connection",
+    "walkincloset", "has_patio", "lavadero", "has_common_laundry",
+    "has_balcony", "has_natural_gas", "recepcion",
+    "with_gated_community", "has_multipurpose_room", "regularizada",
+    "has_playground", "has_party_room", "gimnasio",
+})
+
+_PRIVATE_TEXT_RE = re.compile(r"@|\+?56\s?9\d{8}|\b\d{7,9}\b|https?://", re.I)
+
+
 _PROPERTY_COLLECTIONS = frozenset({
     "universo_cartera", "universo_cartera_prop360",
     Config.PROPERTY_COLLECTION_NAME, Config.COLLECTION_NAME,
@@ -55,7 +73,8 @@ _PROPERTY_COLLECTIONS = frozenset({
 def _safe_scalar(value):
     return (
         isinstance(value, (str, int, float, bool))
-        and (not isinstance(value, str) or len(value) <= 10000)
+        and (not isinstance(value, str)
+             or (len(value) <= 120 and not _PRIVATE_TEXT_RE.search(value)))
     )
 
 
@@ -77,9 +96,12 @@ def _filter_property(doc: dict | None) -> dict | None:
                         or not all(isinstance(x, (int, float)) for x in current)):
                     continue
             elif path == "caracteristicas.features":
-                if (not isinstance(current, list) or len(current) > 200
-                        or not all(isinstance(x, str) and len(x) <= 100
-                                   for x in current)):
+                if not isinstance(current, list) or len(current) > 200:
+                    continue
+                current = [feature for feature in current
+                           if isinstance(feature, str)
+                           and feature in PUBLIC_AMENITIES]
+                if not current:
                     continue
             elif not _safe_scalar(current):
                 continue

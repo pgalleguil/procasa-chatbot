@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 
 from .conversation_policy import extract_visit_preference
+from .public_property_facts import requested_public_fact_keys
 
 _INTEREST_ONLY = re.compile(
     r"^\s*(?:(?:s[ií]|bueno|ok|okay|dale|claro)[,!. ]+)?"
@@ -37,12 +38,21 @@ def stabilize_v2_reply(message: str, response: str, *,
     if not preference and re.search(r"\bme\s+interesa\b", text, re.I):
         preference = extract_visit_preference(text, visit_context=True)
     if preference:
-        return (
-            f"Perfecto, registré tu preferencia de horario ({preference}) "
-            f"para conocer el departamento {code}. 😊 "
-            "La visita todavía no está confirmada; un ejecutivo debe validar "
-            "la disponibilidad y coordinarla contigo."
+        acknowledgement = (
+            f"Registré tu preferencia de horario ({preference}) para conocer "
+            f"la propiedad {code}. La visita todavía no está confirmada; "
+            "administración debe validar la disponibilidad y coordinarla contigo."
         )
+        # If the same WhatsApp turn also asks about the property, preserve
+        # every verified fact: a scheduling acknowledgement must not erase it.
+        asks_facts = bool(requested_public_fact_keys(text)) or bool(re.search(
+            r"\b(?:ficha|informaci[oó]n|caracter[ií]sticas|detalles)\b", text, re.I,
+        ))
+        if asks_facts and str(response or "").strip():
+            if "todavía no está confirmada" in response:
+                return response
+            return f"{response.strip()}\n\n{acknowledgement}"
+        return acknowledgement
 
     # General interest is not a request to schedule an immediate visit.
     if _INTEREST_ONLY.fullmatch(text):

@@ -132,7 +132,7 @@ def _inquiry_before(lead: dict, code: str, drop_at: datetime,
         has_explicit_code = code in declared
         # Also accept an explicit property code/link in the customer text.
         referenced = re.search(
-            r"\b(?:cod(?:igo)?|propiedad)\s*[:#]?\s*(\d{4,6})\b",
+            r"\b(?:c[oó]d(?:igo)?|propiedad)\s*[:#]?\s*(\d{4,6})\b",
             text, re.I,
         )
         if referenced:

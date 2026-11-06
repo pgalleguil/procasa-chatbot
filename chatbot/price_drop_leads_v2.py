@@ -43,6 +43,22 @@ class PilotBlocked(ValueError):
     pass
 
 
+def is_hot_campaign_eligible(lead: dict) -> bool:
+    """Only current canonical HOT leads in open stages may receive campaigns.
+
+    Read the CRM-persisted canonical value, never reconstruct temperature from
+    old interests, "hot_since", assignment history or an outreach response.
+    """
+    if str(lead.get("lead_temperature_effective") or "").strip().upper() != "HOT":
+        return False
+    # Either CRM stage mirror can veto eligibility. Never allow an open
+    # stale mirror to mask CLOSED_LOST / CLOSED_WON in the other field.
+    return all(
+        str(lead.get(field) or "").strip().upper() not in {"CLOSED_LOST", "CLOSED_WON"}
+        for field in ("pipeline_stage", "stage")
+    )
+
+
 def utc(value: datetime) -> datetime:
     if not isinstance(value, datetime):
         raise PilotBlocked("datetime_required")
@@ -199,6 +215,8 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         }, {"_id": 1}).limit(2))
         if len(duplicates) != 1 or duplicates[0]["_id"] != lid:
             raise PilotBlocked("ambiguous_lead_identity")
+        if not is_hot_campaign_eligible(lead):
+            raise PilotBlocked("lead_not_current_hot")
     drop_at = _property_price(db, property_code, old_price_uf, new_price_uf)
     if not test_mode and not _inquiry_before(
         lead, property_code, drop_at, _verified_listing_ids(db, property_code)
@@ -240,13 +258,24 @@ def prepare_one(db, *, now=None, **data) -> dict:
             "property_executive": {"status": "FROZEN_ADMIN_ONLY"},
         },
     })
+    # The HOT check is also part of the atomic claim. If CRM cools/closes
+    # the lead after preview, prepare cannot persist a stale eligibility.
+    claim_filter = {
+        "_id": p["lead_id"],
+        f"{ROOT}.campaign_id": {"$ne": p["campaign_id"]},
+        ROOT: {"$not": {"$elemMatch": {
+            "property_code": p["property_code"],
+            "status": {"$in": ["PREPARED", "APPROVED", *ACTIVE_STATES]},
+        }}},
+    }
+    if not p["test_mode"]:
+        claim_filter.update({
+            "lead_temperature_effective": "HOT",
+            "pipeline_stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
+            "stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
+        })
     result = db[LEADS].update_one(
-        {"_id": p["lead_id"],
-         f"{ROOT}.campaign_id": {"$ne": p["campaign_id"]},
-         ROOT: {"$not": {"$elemMatch": {
-             "property_code": p["property_code"],
-             "status": {"$in": ["PREPARED", "APPROVED", *ACTIVE_STATES]},
-         }}}},
+        claim_filter,
         {"$push": {ROOT: row}},
     )
     if result.modified_count != 1:
@@ -259,9 +288,25 @@ def approve_one(db, *, lead_id: str, campaign_id: str, operator: str, now=None) 
     if not str(operator or "").strip():
         raise PilotBlocked("operator_approval_required")
     stamp = utc(now or datetime.now(timezone.utc))
+    # A customer campaign must still be HOT at approval, not only at preview.
+    lead = db[LEADS].find_one({"_id": _lead_id(lead_id)}, {"price_drop_v2.campaigns": 1,
+        "lead_temperature_effective": 1, "pipeline_stage": 1, "stage": 1}) or {}
+    campaign = next((row for row in ((lead.get("price_drop_v2") or {}).get("campaigns") or [])
+                     if row.get("campaign_id") == campaign_id), None)
+    if campaign and not campaign.get("test_mode") and not is_hot_campaign_eligible(lead):
+        raise PilotBlocked("lead_not_current_hot")
+    approval_filter = {
+        "_id": _lead_id(lead_id),
+        ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "PREPARED"}},
+    }
+    if campaign and not campaign.get("test_mode"):
+        approval_filter.update({
+            "lead_temperature_effective": "HOT",
+            "pipeline_stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
+            "stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
+        })
     result = db[LEADS].update_one(
-        {"_id": _lead_id(lead_id),
-         ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "PREPARED"}}},
+        approval_filter,
         {"$set": {f"{ROOT}.$.status": "APPROVED",
                   f"{ROOT}.$.approved_by": str(operator)[:80],
                   f"{ROOT}.$.approved_at": stamp}},
@@ -284,17 +329,28 @@ def send_one(db, *, lead_id: str, campaign_id: str,
               if x.get("campaign_id") == campaign_id), None)
     if not c or c.get("status") != "APPROVED":
         return {"status": "NOT_APPROVED"}
-    # Phase 1 is single-recipient acceptance only. Real clients require a
-    # reviewed, 3-person audience and dual notification before this gate opens.
+    # Validate HOT again immediately before any irreversible provider call.
+    # This remains mandatory if a real-client sender is approved in future.
+    if not c.get("test_mode") and not is_hot_campaign_eligible(lead):
+        return {"status": "BLOCKED_NOT_CURRENT_HOT"}
+    # Real-client sending remains separately locked until acceptance of the
+    # reviewed three-person pilot and its admin-only notification path.
     if not c.get("test_mode"):
         return {"status": "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"}
     if normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")) != c.get("phone_normalized"):
         return {"status": "TEST_PHONE_NOT_ALLOWLISTED"}
     _property_price(db, c["property_code"], c["old_price_uf"], c["new_price_uf"])
     stamp = utc(now or datetime.now(timezone.utc))
+    send_claim = {"_id": lead["_id"], ROOT: {"$elemMatch": {
+        "campaign_id": campaign_id, "status": "APPROVED"}}}
+    if not c.get("test_mode"):
+        send_claim.update({
+            "lead_temperature_effective": "HOT",
+            "pipeline_stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
+            "stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
+        })
     claimed = db[LEADS].update_one(
-        {"_id": lead["_id"], ROOT: {"$elemMatch": {
-            "campaign_id": campaign_id, "status": "APPROVED"}}},
+        send_claim,
         {"$set": {f"{ROOT}.$.status": "SENDING",
                   f"{ROOT}.$.attempted_at": stamp}},
     )

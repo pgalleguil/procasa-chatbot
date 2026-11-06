@@ -60,6 +60,7 @@ jobs:
               tests/test_price_drop_watch_request.py
               tests/test_price_drop_leads_v2.py
               tests/test_price_drop_admin_only.py
+              tests/test_price_drop_hot_only.py
               tests/test_price_drop_leads_v2_bootstrap.py
               tests/test_price_drop_v2_customer_response.py
           - suite: Owner campaign price revalidation

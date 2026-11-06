@@ -162,7 +162,12 @@ def public_property_summary(property_doc):
 
 def requested_public_fact_keys(message):
     text = _normalized(message)
-    return [key for key, regex in _FIELDS.items() if re.search(regex,text)]
+    found = [key for key, regex in _FIELDS.items() if re.search(regex, text)]
+    if re.search(r"\b(superficie|metros?|m2)\b", text) and not any(
+        key in found for key in ("util", "total", "terreno", "construida")
+    ):
+        found.extend(("util", "total"))
+    return found
 
 
 def answer_public_property_question(message, property_doc):

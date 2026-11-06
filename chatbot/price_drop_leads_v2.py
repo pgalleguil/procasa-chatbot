@@ -276,10 +276,12 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         # One CRM conversation record, tagged with the campaign reference.
         # An echo from WhatsApp must be de-duplicated by provider_message_id.
         db[LEADS].update_one(
-            {"_id": lead["_id"], "messages.metadata.provider_message_id": {
+            {"_id": lead["_id"], "messages.provider_message_id": {
                 "$ne": receipt["provider_message_id"]}},
             {"$push": {"messages": {
                 "role": "assistant", "content": c["outbound_message"],
+                "provider_message_id": receipt["provider_message_id"],
+                "delivery_status": "accepted",
                 "timestamp": stamp.isoformat(),
                 "metadata": {"tipo": "price_drop_outreach",
                              "campaign_id": campaign_id,

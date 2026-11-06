@@ -417,9 +417,14 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
     if len(docs) != 1:
         return None
     lead = docs[0]
-    campaign = next((x for x in (lead.get("price_drop_v2") or {}).get("campaigns") or []
-                     if x.get("status") in ("SENT", "RESPONDED")
-                     and utc(x.get("sent_at")) <= now < utc(x.get("expires_at"))), None)
+    candidates = [
+        x for x in (lead.get("price_drop_v2") or {}).get("campaigns") or []
+        if x.get("status") in ("SENT", "RESPONDED")
+        and isinstance(x.get("sent_at"), datetime)
+        and isinstance(x.get("expires_at"), datetime)
+        and utc(x["sent_at"]) <= now < utc(x["expires_at"])
+    ]
+    campaign = max(candidates, key=lambda x: utc(x["sent_at"])) if candidates else None
     if not campaign or not _same_phone(lead, canonical):
         return None
     code = campaign["property_code"]

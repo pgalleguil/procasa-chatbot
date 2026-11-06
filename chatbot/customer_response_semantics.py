@@ -23,6 +23,25 @@ def build_specific_property_response(message: str, property_doc: dict | None) ->
     if not property_doc or not is_specific_property_question(message):
         return None
     normalized = str(message or "").casefold()
+    asks_expenses = bool(re.search(r"\bgastos?\s+comunes\b", normalized))
+    asks_orientation = bool(re.search(r"\borientaci[oó]n\b", normalized))
+    if asks_expenses or asks_orientation:
+        # Authoritative Prop360 fields; do not replace a property answer with
+        # an internal CRM assignment status even during an owner conflict.
+        operation = property_doc.get("tipo_operacion") or {}
+        features = property_doc.get("caracteristicas") or {}
+        parts = []
+        if asks_expenses:
+            expenses = operation.get("gastos_comunes")
+            if isinstance(expenses, (int, float)) and not isinstance(expenses, bool) and expenses > 0:
+                parts.append(f"Los gastos comunes publicados son ${int(expenses):,}.".replace(",", "."))
+            else:
+                parts.append("La ficha no informa el valor de los gastos comunes; hay que confirmarlo.")
+        if asks_orientation:
+            orientation = str(features.get("orientacion") or property_doc.get("orientacion") or "").strip()
+            parts.append(f"La orientación publicada es {orientation}." if orientation else
+                         "La ficha no informa la orientación; hay que confirmarla.")
+        return " ".join(parts)
     if not re.search(r"\bmascot(?:a|as)\b", normalized):
         return None
     containers = [property_doc, property_doc.get("caracteristicas") or {},

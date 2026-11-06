@@ -170,8 +170,18 @@ def answer_public_property_question(message, property_doc):
         return None
     normalized = _normalized(message)
     keys = requested_public_fact_keys(message)
-    full = bool(_FULL.search(normalized))
     private = bool(_PRIVATE.search(normalized))
+    explicitly_full = bool(re.search(
+        r"\b(toda\s+(?:la\s+)?(?:ficha|informacion)|informacion\s+completa|"
+        r"ficha\s+(?:tecnica|completa)|todos?\s+los\s+(?:datos|detalles)|"
+        r"cuentame\s+todo|resumen\s+completo|caracteristicas\s+completas)\b",
+        normalized,
+    ))
+    # '¿La ficha dice si acepta mascotas?' is a single-field question,
+    # not a request to overwrite the answer with an entire fact sheet.
+    full = bool(_FULL.search(normalized)) and (
+        explicitly_full or (not keys and not private)
+    )
     if not (keys or full or private):
         return None
     facts = public_property_facts(property_doc)

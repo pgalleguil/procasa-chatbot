@@ -51,8 +51,12 @@ def is_hot_campaign_eligible(lead: dict) -> bool:
     """
     if str(lead.get("lead_temperature_effective") or "").strip().upper() != "HOT":
         return False
-    stage = str(lead.get("pipeline_stage") or lead.get("stage") or "").strip().upper()
-    return stage not in {"CLOSED_LOST", "CLOSED_WON"}
+    # Either CRM stage mirror can veto eligibility. Never allow an open
+    # stale mirror to mask CLOSED_LOST / CLOSED_WON in the other field.
+    return all(
+        str(lead.get(field) or "").strip().upper() not in {"CLOSED_LOST", "CLOSED_WON"}
+        for field in ("pipeline_stage", "stage")
+    )
 
 
 def utc(value: datetime) -> datetime:

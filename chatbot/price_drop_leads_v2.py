@@ -72,7 +72,35 @@ def _property_price(db, code: str, old: int, new: int) -> datetime:
     return utc(when)
 
 
-def _inquiry_before(lead: dict, code: str, drop_at: datetime) -> bool:
+def _verified_listing_ids(db, code: str) -> set[str]:
+    """Read current and historic publication IDs linked to this exact Prop360 property."""
+    prop = db["universo_cartera_prop360"].find_one(
+        {"codigo": code}, {"publicaciones": 1},
+    ) or {}
+    pub = prop.get("publicaciones") or {}
+    values: set[str] = set()
+    for alias in pub.get("aliases") or []:
+        if isinstance(alias, dict) and alias.get("resolvable") is True:
+            ext = str(alias.get("external_id") or "").strip()
+            if len(ext) >= 7:
+                values.add(ext.casefold())
+    for key in ("portal_inmobiliario", "yapo", "toctoc", "procasa"):
+        portal = pub.get(key) or {}
+        for publication in (portal.get("publicaciones") or {}).values():
+            if not isinstance(publication, dict):
+                continue
+            for attr in ("external_id", "code", "code_unique"):
+                raw = publication.get(attr)
+                entries = raw if isinstance(raw, list) else [raw]
+                for candidate in entries:
+                    external = str(candidate or "").strip()
+                    if len(external) >= 7:
+                        values.add(external.casefold())
+    return values
+
+
+def _inquiry_before(lead: dict, code: str, drop_at: datetime,
+                    listing_ids: set[str] | None = None) -> bool:
     """Require dated, *property-specific* customer evidence before the drop.
 
     An unrelated old customer message plus the current prospecto.codigo is
@@ -109,6 +137,13 @@ def _inquiry_before(lead: dict, code: str, drop_at: datetime) -> bool:
         if re.search(r"https?://(?:www\\.)?procasa\\.cl/(?:propiedad/)?"
                      + re.escape(code) + r"(?!\\d)", text, re.I):
             has_explicit_code = True
+        if not has_explicit_code:
+            lowered = text.casefold()
+            has_explicit_code = any(
+                re.search(r"(?<![a-z0-9])" + re.escape(listing_id)
+                          + r"(?![a-z0-9])", lowered)
+                for listing_id in (listing_ids or set())
+            )
         if has_explicit_code:
             return True
     return False
@@ -151,7 +186,9 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         if len(duplicates) != 1 or duplicates[0]["_id"] != lid:
             raise PilotBlocked("ambiguous_lead_identity")
     drop_at = _property_price(db, property_code, old_price_uf, new_price_uf)
-    if not test_mode and not _inquiry_before(lead, property_code, drop_at):
+    if not test_mode and not _inquiry_before(
+        lead, property_code, drop_at, _verified_listing_ids(db, property_code)
+    ):
         raise PilotBlocked("pre_drop_inquiry_not_verified")
     if any(c.get("campaign_id") == campaign_id for c in
            (lead.get("price_drop_v2") or {}).get("campaigns") or []):

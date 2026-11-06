@@ -107,6 +107,8 @@ def test_test_campaign_lifecycle_only_mutates_existing_canonical_lead(db, monkey
     assert len(lead["messages"]) == 2
     assert lead["messages"][-1]["metadata"]["campaign_id"] == CAMPAIGN
     assert lead["messages"][-1]["metadata"]["provider_message_id"] == "test-provider-6436"
+    assert lead["messages"][-1]["provider_message_id"] == "test-provider-6436"
+    assert lead["messages"][-1]["delivery_status"] == "accepted"
     assert set(db.list_collection_names()) == {
         "leads", "universo_cartera_prop360",
         "universo_cartera_prop360_historial",

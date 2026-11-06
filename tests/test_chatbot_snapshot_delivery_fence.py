@@ -160,3 +160,71 @@ def test_inbound_rehomed_when_producer_and_delivery_fence_race(sandbox, monkeypa
     fresh = collection.find_one({"_id": later["batch_id"]})
     assert fresh["job_ids"] == [late_id]
     assert fresh["state"] == queue.ST_BATCHING
+
+
+
+def test_http_429_retry_respects_prior_delivery_seal(sandbox):
+    """Regression: 429 after seal must not retry stale_snapshot forever."""
+    db = sandbox
+    now = datetime.now(timezone.utc)
+    inbound(db, "id-429", "me interesa mañana a las 10", now)
+    attempts = []
+
+    async def llm(phone, text):
+        return "Preferencia registrada; visita pendiente de confirmar."
+
+    async def sender(phone, text):
+        attempts.append(text)
+        if len(attempts) == 1:
+            return {"success": False, "http_status": 429, "retry_after": 60}
+        return {"success": True, "http_status": 200, "provider_message_id": "after-429"}
+
+    first = run(queue.process_one_batch(
+        db, worker_id="test-429-1", llm=llm, sender=sender,
+        now=now + timedelta(seconds=20),
+    ))
+    assert first["state"] == queue.ST_FAILED_RETRYABLE
+    assert first["last_error"] == "http_429"
+    assert first.get("active_conversation_key") is None
+    assert first.get("delivery_sealed_at") is not None
+    second = run(queue.process_one_batch(
+        db, worker_id="test-429-2", llm=llm, sender=sender,
+        now=now + timedelta(seconds=95),
+    ))
+    assert second["state"] == queue.ST_RESPONDED
+    assert second["outbound_provider_message_id"] == "after-429"
+    assert len(attempts) == 2
+
+
+def test_429_retry_rejects_new_inbound_during_new_generation(sandbox, monkeypatch):
+    """An earlier 429 must not defeat the fresh snapshot fence."""
+    db = sandbox
+    now = datetime.now(timezone.utc)
+    inbound(db, "original-429", "me interesa", now)
+    calls = []
+    async def llm(phone, text):
+        if "nuevo dato" not in text and len(calls) == 1:
+            inbound(db, "late-429", "nuevo dato",
+                    now + timedelta(seconds=90))
+        return "Respuesta " + text
+
+    async def sender(phone, text):
+        calls.append(text)
+        if len(calls) == 1:
+            return {"success": False, "http_status": 429, "retry_after": 60}
+        return {"success": True, "http_status": 200, "provider_message_id": "retry-429"}
+
+    first = run(queue.process_one_batch(
+        db, worker_id="before", llm=llm, sender=sender,
+        now=now + timedelta(seconds=20),
+    ))
+    assert first["state"] == queue.ST_FAILED_RETRYABLE
+    # The second invocation can regenerate after the new inbound. It must not
+    # send the stale content if the producer attaches a new message.
+    second = run(queue.process_one_batch(
+        db, worker_id="after", llm=llm, sender=sender,
+        now=now + timedelta(seconds=95),
+    ))
+    assert second["state"] in {queue.ST_RESPONDED, queue.ST_FAILED_RETRYABLE}
+    if second["state"] == queue.ST_RESPONDED:
+        assert "nuevo dato" not in calls[-1] or len(calls) == 2

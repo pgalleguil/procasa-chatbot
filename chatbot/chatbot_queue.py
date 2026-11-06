@@ -920,8 +920,11 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
             "bot_response_duplicate_blocked",
             _lead_event_context(db, claimed),
         )
-        from chatbot.conversation_policy import duplicate_response_fallback
-        response = duplicate_response_fallback(response)
+        from chatbot.conversation_policy import (
+            duplicate_response_fallback, is_actionable_customer_message,
+        )
+        if not is_actionable_customer_message(text):
+            response = duplicate_response_fallback(response)
 
     await asyncio.to_thread(_update_generated_response,
         db, phone=claimed["phone"], batch_id=batch_id,

@@ -550,6 +550,15 @@ def send_test_notice_once(db, *, role: str,
     lead_id, index, campaign = selected[0]
     field = f"{ROOT}.{index}"
     stamp = utc(now or datetime.now(timezone.utc))
+    # Simulated internal alerts share the customer test phone. Do not compete
+    # with replies: postpone both notices until the customer has been idle.
+    recent_reply = campaign.get("last_customer_reply_at")
+    if isinstance(recent_reply, datetime) and stamp - utc(recent_reply) < timedelta(seconds=120):
+        return {"status": "DEFERRED_CUSTOMER_ACTIVE"}
+    for other_notice in (campaign.get("notifications") or {}).values():
+        sent_at = other_notice.get("sent_at") if isinstance(other_notice, dict) else None
+        if isinstance(sent_at, datetime) and stamp - utc(sent_at) < timedelta(seconds=90):
+            return {"status": "DEFERRED_INTERNAL_THROTTLE"}
     claim = db[LEADS].update_one({
         "_id": lead_id, f"{field}.campaign_id": campaign["campaign_id"],
         f"{field}.test_mode": True,
@@ -563,6 +572,8 @@ def send_test_notice_once(db, *, role: str,
     role_name = "ADMINISTRADOR" if role == "administrator" else "EJECUTIVO DE LA PROPIEDAD"
     old_text = f"{campaign['old_price_uf']:,}".replace(",", ".")
     new_text = f"{campaign['new_price_uf']:,}".replace(",", ".")
+    from .lead_router import build_secure_crm_url
+    crm_link = build_secure_crm_url({"_id": lead_id})
     message = (
         f"PRUEBA INTERNA — AVISO SIMULADO AL {role_name}\n\n"
         "🔔 PROCASA — Interesado en rebaja de precio\n"
@@ -570,6 +581,7 @@ def send_test_notice_once(db, *, role: str,
         f"📉 UF {old_text} → UF {new_text}\n"
         f"📱 Cliente de prueba: {tester}\n"
         f"💬 Respuesta: {str(campaign.get('last_customer_text') or 'Interés registrado')[:160]}\n"
+        f"🔗 Abrir lead en CRM: {crm_link}\n"
         "Aviso de prueba: no se notificó a un ejecutivo real."
     )
     if sender is None:

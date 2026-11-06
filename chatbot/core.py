@@ -456,6 +456,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
                                      full_history: list, window_minutes: int,
                                      lead_type_label: str, alert_phone: str | None = None) -> dict:
         """Wait for the canonical CRM handoff and record its durable outcome."""
+        # An existing V2 rebaja lead has an administrator-only follow-up.
+        # The campaign classifier records interest/visit in leads. Do not
+        # initiate the normal executive handoff from the chatbot as well.
+        if pilot_context and pilot_context.get("version") == "price_drop_leads_v2":
+            await _run_sync(record_observability_event, "price_drop_executive_handoff_frozen", {
+                "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,
+                "campaign_id": pilot_context.get("campaign_id"),
+                "alert_type": alert_type,
+            })
+            return {"status": "ADMIN_ONLY_FOLLOWUP", "reason": "campaign_executive_notices_frozen"}
         event_base = {
             "conversation_id": conversation_id,
             "lead_id": str(lead_doc_full.get("_id")) if lead_doc_full.get("_id") else None,

@@ -113,12 +113,15 @@ def _inquiry_before(lead: dict, code: str, drop_at: datetime,
         if not text.strip():
             continue
         raw_stamp = str(message.get("timestamp") or "")
-        if not ("+" in raw_stamp[10:] or raw_stamp.endswith("Z")):
-            continue
         try:
-            stamp = utc(datetime.fromisoformat(raw_stamp.replace("Z", "+00:00")))
+            parsed = datetime.fromisoformat(raw_stamp.replace("Z", "+00:00"))
         except (ValueError, TypeError):
             continue
+        # Chile normally uses NEGATIVE UTC offsets. Check parsed tzinfo,
+        # never a '+' substring, or valid Santiago inquiry times disappear.
+        if parsed.tzinfo is None:
+            continue
+        stamp = utc(parsed)
         if stamp >= drop_at:
             continue
         metadata = message.get("metadata") or {}

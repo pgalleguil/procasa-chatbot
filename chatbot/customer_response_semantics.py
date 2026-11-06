@@ -19,14 +19,17 @@ def _format_uf(value) -> str:
     return f"{int(integer):,}".replace(",", ".") + (f",{decimal}" if decimal else "")
 
 
-def build_specific_property_response(message: str, property_doc: dict | None) -> str | None:
+def build_specific_property_response(message: str, property_doc: dict | None,
+                                     *, price_drop_context: dict | None = None) -> str | None:
     """Answer any verified public property question, not only GC/orientation.
 
     New leads and price-drop replies share this reader. A strict public-field
     allowlist blocks exact addresses, owner details and free-text notes.
     """
     from .public_property_facts import answer_public_property_question
-    return answer_public_property_question(message, property_doc)
+    return answer_public_property_question(
+        message, property_doc, campaign_context=price_drop_context,
+    )
 
 
 def rag_customer_response(properties: list[dict] | None) -> str:

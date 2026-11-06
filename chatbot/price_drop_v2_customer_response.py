@@ -46,12 +46,12 @@ def stabilize_v2_reply(message: str, response: str, *,
         # If the same WhatsApp turn also asks about the property, preserve
         # every verified fact: a scheduling acknowledgement must not erase it.
         asks_facts = bool(requested_public_fact_keys(text)) or bool(re.search(
-            r"\\b(?:ficha|informaci[oó]n|caracter[ií]sticas|detalles)\\b", text, re.I,
+            r"\b(?:ficha|informaci[oó]n|caracter[ií]sticas|detalles)\b", text, re.I,
         ))
         if asks_facts and str(response or "").strip():
             if "todavía no está confirmada" in response:
                 return response
-            return f"{response.strip()}\\n\\n{acknowledgement}"
+            return f"{response.strip()}\n\n{acknowledgement}"
         return acknowledgement
 
     # General interest is not a request to schedule an immediate visit.

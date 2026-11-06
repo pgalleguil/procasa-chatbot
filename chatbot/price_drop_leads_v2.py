@@ -227,6 +227,8 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         raise PilotBlocked("campaign_already_recorded")
     if any(c.get("property_code") == property_code
            and c.get("status") in ("PREPARED", "APPROVED", *ACTIVE_STATES)
+           and not (test_mode and c.get("test_mode") is True
+                    and c.get("status") in ("SENT", "RESPONDED"))
            for c in (lead.get("price_drop_v2") or {}).get("campaigns") or []):
         raise PilotBlocked("active_campaign_for_property")
     return {
@@ -265,7 +267,8 @@ def prepare_one(db, *, now=None, **data) -> dict:
         f"{ROOT}.campaign_id": {"$ne": p["campaign_id"]},
         ROOT: {"$not": {"$elemMatch": {
             "property_code": p["property_code"],
-            "status": {"$in": ["PREPARED", "APPROVED", *ACTIVE_STATES]},
+            "status": {"$in": (["PREPARED", "APPROVED", "SENDING", "OPTED_OUT", "DELIVERY_UNKNOWN"]
+                     if p["test_mode"] else ["PREPARED", "APPROVED", *ACTIVE_STATES])},
         }}},
     }
     if not p["test_mode"]:

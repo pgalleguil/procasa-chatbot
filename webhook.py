@@ -4179,14 +4179,21 @@ async def webhook(
                 record_sla_reassignment_delivery_status_webhook,
             )
             sla_result = record_sla_reassignment_delivery_status_webhook(data)
-            # Read/write only the dedicated price-drop ledger; never route a
-            # provider status event into a customer conversation.
+            # V2 stores delivery receipts on the canonical lead. The legacy
+            # function remains read-compatible for older already-sent campaigns.
+            # Neither path treats receipts as new customer WhatsApp messages.
+            try:
+                from chatbot.price_drop_leads_v2 import record_delivery_update as v2_delivery_update
+                from chatbot.storage import get_db as _campaign_db
+                v2_delivery_update(_campaign_db(), data)
+            except Exception:
+                logger.exception("[PRICE_DROP_LEADS_V2] receipt tracking unavailable")
             try:
                 from chatbot.price_drop_campaign_real import record_delivery_update
                 from chatbot.storage import get_db as _campaign_db
                 record_delivery_update(_campaign_db(), data)
             except Exception:
-                logger.exception("[PRICE_DROP_CAMPAIGN] receipt tracking unavailable")
+                logger.exception("[PRICE_DROP_CAMPAIGN] legacy receipt tracking unavailable")
             return weekly_updated, sla_result
 
         weekly_updated, sla_result = await asyncio.get_running_loop().run_in_executor(
@@ -4420,14 +4427,25 @@ async def webhook(
         # a prior, explicitly approved price-drop send without altering CRM/SLA.
         # Tracking failures must not prevent a normal chatbot response.
         try:
-            from chatbot.price_drop_campaign_real import record_inbound
-            await loop.run_in_executor(
+            # V2 stores its complete price-drop state on the canonical lead.
+            # An attributed V2 reply must not also write a legacy campaign turn.
+            from chatbot.price_drop_leads_v2 import record_inbound as record_lead_price_drop
+            v2_result = await loop.run_in_executor(
                 _WEB_THREAD_POOL,
-                lambda: record_inbound(
+                lambda: record_lead_price_drop(
                     _sync_db(), phone=phone,
                     provider_message_id=str(provider_message_id), text=text,
                 ),
             )
+            if v2_result.get("status") == "NOT_CAMPAIGN_REPLY":
+                from chatbot.price_drop_campaign_real import record_inbound
+                await loop.run_in_executor(
+                    _WEB_THREAD_POOL,
+                    lambda: record_inbound(
+                        _sync_db(), phone=phone,
+                        provider_message_id=str(provider_message_id), text=text,
+                    ),
+                )
         except Exception:
             logger.exception("[PRICE_DROP_CAMPAIGN] inbound audit unavailable")
         return JSONResponse({"ok": True, "job_id": str(job_id)}, status_code=200)
@@ -6956,6 +6974,27 @@ async def process_pending_leads_loop():
                         })
             else:
                 sla_notification_status.update({"status": "disabled", "health": "DISABLED"})
+
+            # Only the allowlisted tester may receive V2 simulated admin
+            # and property-executive notices. All status/receipts live in
+            # leads; no notification-specific collection is created.
+            if os.getenv("PRICE_DROP_LEADS_V2_TEST_NOTICES_ENABLED", "").lower() in {"1", "true", "yes"}:
+                try:
+                    from chatbot.price_drop_leads_v2 import send_test_notice_once
+                    from chatbot.storage import get_db as _get_v2_notice_db
+                    for role in ("administrator", "property_executive"):
+                        notice_result = await asyncio.get_running_loop().run_in_executor(
+                            _WORKER_THREAD_POOL,
+                            lambda r=role: send_test_notice_once(_get_v2_notice_db(), role=r),
+                        )
+                        if notice_result.get("status") not in {"IDLE", "DISABLED"}:
+                            logger.info(
+                                "[PRICE_DROP_V2_TEST_NOTICE] role=%s status=%s campaign_id=%s",
+                                role, notice_result.get("status"),
+                                notice_result.get("campaign_id"),
+                            )
+                except Exception:
+                    logger.exception("[PRICE_DROP_V2_TEST_NOTICE] worker failed; no automatic resend")
 
             # Dedicated, opt-in campaign response notices. Independent from
             # the new-lead assignment notifications, Hot SLA worker and its

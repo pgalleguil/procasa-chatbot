@@ -44,14 +44,14 @@ def test_record_customer_request_once_without_campaign_send():
 
     docs = list(db[COLLECTION].find())
     assert len(docs) == 1
-    d = docs[0]
-    assert d["lead_id"] == lead_id
+    d = docs[0]["price_drop_v2"]["watch_requests"]["17184"]
     assert d["status"] == "PENDING_HUMAN_REVIEW"
+    assert d["property_code"] == "17184"
     assert d["requested_at"].replace(tzinfo=timezone.utc) == NOW
     assert d["automatic_sending_enabled"] is False
-    assert db["crm_price_drop_campaigns_v1"].count_documents({}) == 0
-    assert db["crm_price_drop_campaign_dispatches_v1"].count_documents({}) == 0
+    # No duplicate watch or campaign collections are created.
     assert db["leads"].count_documents({}) == 1
+    assert set(db.list_collection_names()) == {"leads", "universo_cartera_prop360"}
 
 
 def test_no_record_without_verified_lead_property_or_explicit_request():
@@ -67,7 +67,7 @@ def test_no_record_without_verified_lead_property_or_explicit_request():
     db["universo_cartera_prop360"].insert_one({"codigo": "17184"})
     assert register_price_drop_watch(db, **{**base, "customer_text": "me interesa"})["status"] == "NOT_REQUESTED"
     assert register_price_drop_watch(db, **{**base, "property_code": ""})["status"] == "MISSING_CONTEXT"
-    assert db[COLLECTION].count_documents({}) == 0
+    assert "price_drop_v2" not in db["leads"].find_one({"_id": lead_id})
 
 
 def test_core_handles_request_before_generic_rag_and_llm():

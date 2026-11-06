@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 
 from .phone_utils import normalize_phone_strict
 
-COLLECTION = "crm_price_drop_watch_requests_v1"
+COLLECTION = "leads"
+WATCH_ROOT = "price_drop_v2.watch_requests"
 
 
 def _plain(text: str) -> str:
@@ -54,25 +55,30 @@ def register_price_drop_watch(
     stamp = now or datetime.now(timezone.utc)
     if stamp.tzinfo is None:
         raise ValueError("timezone_required")
-    key = f"{lead_id}:{code}"
-    # Upsert is the only write here. No change to CRM stage, consent,
-    # assignment, SLA or real campaign state.
-    result = db[COLLECTION].update_one(
-        {"_id": key},
-        {"$setOnInsert": {
-            "_id": key,
-            "lead_id": lead_id,
-            "phone_normalized": canonical,
-            "property_code": code,
-            "requested_at": stamp,
-            "customer_request": str(customer_text)[:450],
-            "source": "whatsapp_explicit_customer_request",
-            "status": "PENDING_HUMAN_REVIEW",
-            "automatic_sending_enabled": False,
-        }},
-        upsert=True,
+    # The lead itself is the source of truth. One idempotent, atomic
+    # property-scoped slot per customer; no campaign/watch/dispatch collection.
+    # A previous unsubscribe or fulfilled request is NEVER re-enabled by
+    # repeating the same chat message.
+    field = f"{WATCH_ROOT}.{code}"
+    record = {
+        "property_code": code,
+        "requested_at": stamp,
+        "customer_request": str(customer_text)[:450],
+        "source": "whatsapp_explicit_customer_request",
+        "status": "PENDING_HUMAN_REVIEW",
+        "automatic_sending_enabled": False,
+    }
+    outcome = db["leads"].update_one(
+        {"_id": lead_id, "phone": phone, field: {"$exists": False}},
+        {"$set": {field: record}},
+    )
+    if outcome.modified_count == 1:
+        return {"status": "RECORDED", "property_code": code}
+    existing = db["leads"].find_one(
+        {"_id": lead_id, "phone": phone, field: {"$exists": True}},
+        {"_id": 1},
     )
     return {
-        "status": "RECORDED" if result.upserted_id is not None else "ALREADY_RECORDED",
+        "status": "ALREADY_RECORDED" if existing else "LEAD_NOT_VERIFIED",
         "property_code": code,
     }

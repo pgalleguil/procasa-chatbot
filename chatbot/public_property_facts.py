@@ -170,12 +170,20 @@ def requested_public_fact_keys(message):
     return found
 
 
-def answer_public_property_question(message, property_doc):
+def answer_public_property_question(message, property_doc, *, campaign_context=None):
     if not property_doc:
         return None
     normalized = _normalized(message)
     keys = requested_public_fact_keys(message)
     private = bool(_PRIVATE.search(normalized))
+    asks_drop = bool(re.search(
+        r"\b(cuanto\s+(bajo|rebajaron|rebajo)|rebaja\s+de\s+precio|"
+        r"cuantas?\s+uf\s+(bajo|bajaron)|bajo\s+de\s+precio)\b", normalized
+    ))
+    asks_negotiation = bool(re.search(
+        r"\b(negociar|negociable|negociacion|contraoferta|hacer\s+una\s+oferta)\b",
+        normalized
+    ))
     explicitly_full = bool(re.search(
         r"\b(toda\s+(?:la\s+)?(?:ficha|informacion)|informacion\s+completa|"
         r"ficha\s+(?:tecnica|completa)|todos?\s+los\s+(?:datos|detalles)|"
@@ -187,10 +195,29 @@ def answer_public_property_question(message, property_doc):
     full = bool(_FULL.search(normalized)) and (
         explicitly_full or (not keys and not private)
     )
-    if not (keys or full or private):
+    if not (keys or full or private or asks_drop or asks_negotiation):
         return None
     facts = public_property_facts(property_doc)
-    response = public_property_summary(property_doc) if full else "\n".join(_line(k,facts) for k in keys)
+    if full:
+        response = public_property_summary(property_doc)
+    else:
+        response = "\n".join(_line(k,facts) for k in keys if not (asks_drop and k == "precio"))
+    if asks_drop:
+        ctx = campaign_context or {}
+        old_price, new_price = ctx.get("old_price_uf"), ctx.get("new_price_uf")
+        if ctx.get("version") == "price_drop_leads_v2" and old_price is not None and new_price is not None:
+            reduction = float(old_price) - float(new_price)
+            drop_text = (
+                "La propiedad bajó " + _num(reduction) + " UF: de UF "
+                + _num(old_price) + " a UF " + _num(new_price) + "."
+            ) if reduction > 0 else "No tengo una rebaja adicional verificada."
+        else:
+            drop_text = "No tengo una rebaja confirmada para informar; precio actual: " + facts["precio"] + "."
+        response = (response + "\n" if response else "") + drop_text
+    if asks_negotiation:
+        negotiation = ("Una posible negociación debe evaluarla administración con "
+                       "el propietario; no puedo confirmar descuentos adicionales.")
+        response = (response + "\n" if response else "") + negotiation
     if private:
         response += ("\n" if response else "") + (
             "Por privacidad no compartimos la dirección exacta ni los datos "

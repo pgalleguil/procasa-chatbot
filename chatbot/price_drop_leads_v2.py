@@ -129,13 +129,13 @@ def _inquiry_before(lead: dict, code: str, drop_at: datetime,
         has_explicit_code = code in declared
         # Also accept an explicit property code/link in the customer text.
         referenced = re.search(
-            r"\\b(?:cod(?:igo)?|propiedad)\\s*[:#]?\\s*(\\d{4,6})\\b",
+            r"\b(?:cod(?:igo)?|propiedad)\s*[:#]?\s*(\d{4,6})\b",
             text, re.I,
         )
         if referenced:
             has_explicit_code = has_explicit_code or referenced.group(1) == code
-        if re.search(r"https?://(?:www\\.)?procasa\\.cl/(?:propiedad/)?"
-                     + re.escape(code) + r"(?!\\d)", text, re.I):
+        if re.search(r"https?://(?:www\.)?procasa\.cl/(?:propiedad/)?"
+                     + re.escape(code) + r"(?!\d)", text, re.I):
             has_explicit_code = True
         if not has_explicit_code:
             lowered = text.casefold()
@@ -558,15 +558,17 @@ def send_test_notice_once(db, *, role: str,
     if claim.modified_count != 1:
         return {"status": "ALREADY_CLAIMED"}
     role_name = "ADMINISTRADOR" if role == "administrator" else "EJECUTIVO DE LA PROPIEDAD"
+    old_text = f"{campaign['old_price_uf']:,}".replace(",", ".")
+    new_text = f"{campaign['new_price_uf']:,}".replace(",", ".")
     message = (
         f"PRUEBA INTERNA — AVISO SIMULADO AL {role_name}\n\n"
         "🔔 PROCASA — Interesado en rebaja de precio\n"
         f"🏠 Propiedad: {campaign['property_code']}\n"
-        f"📉 UF {campaign['old_price_uf']:,} → UF {campaign['new_price_uf']:,}\n"
+        f"📉 UF {old_text} → UF {new_text}\n"
         f"📱 Cliente de prueba: {tester}\n"
         f"💬 Respuesta: {str(campaign.get('last_customer_text') or 'Interés registrado')[:160]}\n"
         "Aviso de prueba: no se notificó a un ejecutivo real."
-    ).replace(",", ".")
+    )
     if sender is None:
         from .whatsapp_client import send_whatsapp_message_detailed_sync
         sender = send_whatsapp_message_detailed_sync

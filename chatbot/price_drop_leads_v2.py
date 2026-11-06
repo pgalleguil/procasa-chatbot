@@ -206,8 +206,6 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
     else:
         if not consent_reviewed or not str(consent_basis or "").strip():
             raise PilotBlocked("consent_review_required")
-        if not is_hot_campaign_eligible(lead):
-            raise PilotBlocked("lead_not_current_hot")
         variants = phone_identity_variants(canonical)
         duplicates = list(db[LEADS].find({
             "$or": [
@@ -217,6 +215,8 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         }, {"_id": 1}).limit(2))
         if len(duplicates) != 1 or duplicates[0]["_id"] != lid:
             raise PilotBlocked("ambiguous_lead_identity")
+        if not is_hot_campaign_eligible(lead):
+            raise PilotBlocked("lead_not_current_hot")
     drop_at = _property_price(db, property_code, old_price_uf, new_price_uf)
     if not test_mode and not _inquiry_before(
         lead, property_code, drop_at, _verified_listing_ids(db, property_code)

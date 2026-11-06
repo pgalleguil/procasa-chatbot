@@ -239,3 +239,44 @@ def test_delivered_and_read_confirmed_on_lead_without_new_collection(db, monkeyp
         "leads", "universo_cartera_prop360",
         "universo_cartera_prop360_historial",
     }
+
+
+def test_both_simulated_notices_go_only_to_test_phone_once(db, monkeypatch):
+    v2.prepare_one(db, now=NOW, **params())
+    v2.approve_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+                   operator="Supervisor", now=NOW)
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    v2.send_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+                sender=lambda *args: {
+                    "success": True, "provider_message_id": "out-notice-test",
+                    "delivery_status": "accepted",
+                }, now=NOW)
+    assert v2.record_inbound(db, phone=PHONE, provider_message_id="in-notice-test",
+                             text="sí, me interesa", now=NOW+timedelta(seconds=3))["status"] == "ATTRIBUTED"
+
+    calls = []
+    def sender(phone, message):
+        calls.append((phone, message))
+        return {"success": True, "provider_message_id": "internal-" + str(len(calls))}
+
+    assert v2.send_test_notice_once(db, role="administrator", sender=sender)["status"] == "DISABLED"
+    assert calls == []
+    monkeypatch.setenv(v2.TEST_NOTICE_FLAG, "true")
+    assert v2.send_test_notice_once(db, role="administrator", sender=sender, now=NOW)["status"] == "SENT"
+    assert v2.send_test_notice_once(db, role="property_executive", sender=sender, now=NOW)["status"] == "SENT"
+    assert v2.send_test_notice_once(db, role="administrator", sender=sender)["status"] == "IDLE"
+    assert v2.send_test_notice_once(db, role="property_executive", sender=sender)["status"] == "IDLE"
+    assert len(calls) == 2 and all(phone == PHONE for phone, _ in calls)
+    assert "ADMINISTRADOR" in calls[0][1]
+    assert "EJECUTIVO DE LA PROPIEDAD" in calls[1][1]
+    assert "sí, me interesa" in calls[0][1]
+    assert "\\n" not in calls[0][1]
+    camp = db["leads"].find_one({"phone": PHONE})["price_drop_v2"]["campaigns"][0]
+    assert camp["notifications"]["administrator"]["status"] == "SENT"
+    assert camp["notifications"]["property_executive"]["status"] == "SENT"
+    assert set(db.list_collection_names()) == {
+        "leads", "universo_cartera_prop360",
+        "universo_cartera_prop360_historial",
+    }

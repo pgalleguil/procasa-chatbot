@@ -23,6 +23,10 @@ ALLOWED_LABELS = frozenset({"INTERES_DECLARADO", "PRIORIDAD_COMERCIAL"})
 
 
 def _active() -> bool:
+    # Preserve the legacy executive notice implementation but freeze all
+    # campaign-triggered executive deliveries until separate authorization.
+    if os.getenv("PRICE_DROP_CAMPAIGN_EXEC_FROZEN", "true").lower() in {"1", "true", "yes"}:
+        return False
     return (
         os.getenv(GATE, "").lower() in {"1", "true", "yes"}
         and os.getenv("PRICE_DROP_REAL_PILOT_CONTEXT_ENABLED", "").lower()

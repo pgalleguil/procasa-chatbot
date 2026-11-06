@@ -479,7 +479,7 @@ def is_actionable_customer_message(message: str) -> bool:
             r"disponible|precio|gastos?|visita|coordinar|agendar|otro\s+d[ií]a|"
             r"empezar|iniciar|informaci[oó]n|monto|garant[ií]a|document(?:o|os)?|"
             r"requisit(?:o|os)?|complementar|cr[eé]dito|hipotecario|financiamiento|"
-            r"corredor(?:a)?|mascota|orientaci[oó]n|estacionamiento|bodega|"
+            r"corredor(?:a)?|me\s+interesa|estoy\s+interesad[oa]|mascota|orientaci[oó]n|estacionamiento|bodega|"
             r"contado|pie|arrendar|arriendo|comprar|compra)\b",
             normalized,
         )

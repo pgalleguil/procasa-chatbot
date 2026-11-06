@@ -61,7 +61,7 @@ PUBLIC_AMENITIES = frozenset({
     "has_playground", "has_party_room", "gimnasio",
 })
 
-_PRIVATE_TEXT_RE = re.compile(r"@|\\+?56\\s?9\\d{8}|\\b\\d{7,9}\\b|https?://", re.I)
+_PRIVATE_TEXT_RE = re.compile(r"@|\+?56\s?9\d{8}|\b\d{7,9}\b|https?://", re.I)
 
 
 _PROPERTY_COLLECTIONS = frozenset({

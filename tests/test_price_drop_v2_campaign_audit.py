@@ -141,6 +141,14 @@ def test_clp_qa_context_and_conversational_reply_keep_clp(db, monkeypatch):
     reply = stabilize_v2_reply("me interesa", "Respuesta comercial", context=ctx)
     assert "$152.000.000" in reply
     assert "UF" not in reply
+    from chatbot.public_property_facts import answer_public_property_question
+    prop = db["universo_cartera_prop360"].find_one({"codigo": "16479"})
+    price_answer = answer_public_property_question(
+        "¿Cuánto bajó el precio?", prop, campaign_context=ctx)
+    assert "$8.000.000" in price_answer
+    assert "$160.000.000" in price_answer
+    assert "$152.000.000" in price_answer
+    assert " UF" not in price_answer
 
 
 def _approved_simulation(db, monkeypatch):

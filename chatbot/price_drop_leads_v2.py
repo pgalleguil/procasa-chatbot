@@ -28,6 +28,17 @@ TEST_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_TEST_NOTICES_ENABLED"
 ADMIN_PHONE_FLAG = "PRICE_DROP_LEADS_V2_ADMIN_PHONE"
 EXEC_NOTICE_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_EXECUTIVE_NOTICE_ENABLED"
 REAL_ADMIN_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_REAL_ADMIN_NOTICES_ENABLED"
+REAL_PILOT_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_REAL_PILOT_ENABLED"
+REAL_PILOT_RECIPIENTS_FLAG = "PRICE_DROP_LEADS_V2_REAL_PILOT_RECIPIENTS"
+# Narrow price windows for the approved three-property proposal. These are
+# public property values, not customer identifiers. The three recipient IDs
+# must be configured separately, after documented human consent review.
+REAL_PILOT_PRICE_WINDOWS = {
+    "6436": ("UF", 2790, 2690),
+    "6377": ("UF", 5123, 5074),
+    "16479": ("CLP", 160000000, 152000000),
+}
+
 # Explicitly allowlist the one approved pilot administrator. This phone is
 # not a customer audience and must never be replaced by a property's owner.
 APPROVED_ADMIN_PHONE = "+56983219804"
@@ -79,6 +90,81 @@ def utc(value: datetime) -> datetime:
 def _same_phone(lead: dict, phone: str) -> bool:
     actual = lead.get("contact_phone_normalized") or lead.get("phone")
     return normalize_phone_strict(actual or "") == normalize_phone_strict(phone or "")
+
+
+def _real_pilot_send_blocker(db, lead: dict, campaign: dict) -> str | None:
+    """Fail closed until exactly three independently reviewed recipients are set.
+
+    This is a temporary three-property pilot release gate. The recipient
+    allowlist is configured at runtime, never embedded in this public source.
+    The gate never prepares/approves a campaign or sends on startup.
+    """
+    if os.getenv(REAL_PILOT_ENABLED_FLAG, "").strip().lower() not in {"1", "true", "yes"}:
+        return "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
+
+    rows = [row.strip() for row in os.getenv(
+        REAL_PILOT_RECIPIENTS_FLAG, "").split(";") if row.strip()]
+    if len(rows) != 3:
+        return "REAL_SEND_NOT_ALLOWLISTED"
+    allowed: dict[str, str] = {}
+    for row in rows:
+        parts = [part.strip() for part in row.split(":")]
+        if len(parts) != 2:
+            return "REAL_SEND_NOT_ALLOWLISTED"
+        lead_id, property_code = parts
+        if (not re.fullmatch(r"[0-9a-fA-F]{24}", lead_id)
+                or property_code not in REAL_PILOT_PRICE_WINDOWS
+                or lead_id.lower() in allowed
+                or property_code in allowed.values()):
+            return "REAL_SEND_NOT_ALLOWLISTED"
+        allowed[lead_id.lower()] = property_code
+    if set(allowed.values()) != set(REAL_PILOT_PRICE_WINDOWS):
+        return "REAL_SEND_NOT_ALLOWLISTED"
+
+    code = str(campaign.get("property_code") or "")
+    if allowed.get(str(lead.get("_id") or "").lower()) != code:
+        return "REAL_SEND_NOT_ALLOWLISTED"
+    actual_window = (
+        campaign.get("currency") or "UF",
+        campaign.get("old_price_clp") if code == "16479" else campaign.get("old_price_uf"),
+        campaign.get("new_price_clp") if code == "16479" else campaign.get("new_price_uf"),
+    )
+    if actual_window != REAL_PILOT_PRICE_WINDOWS[code]:
+        return "REAL_SEND_WRONG_PRICE_OR_PROPERTY"
+
+    if (campaign.get("consent_reviewed") is not True
+            or not str(campaign.get("consent_basis") or "").strip()
+            or not str(campaign.get("approved_by") or "").strip()
+            or not isinstance(campaign.get("approved_at"), datetime)):
+        return "REAL_SEND_CONSENT_OR_APPROVAL_MISSING"
+    if campaign.get("simulated_prior_inquiry") is not False:
+        return "REAL_SEND_SIMULATED_INQUIRY"
+
+    phone = normalize_phone_strict(campaign.get("phone_normalized") or "")
+    if (not phone or not has_real_phone(phone)
+            or not _same_phone(lead, phone)
+            or lead.get("phone_is_synthetic")
+            or lead.get("contact_identity_incomplete")):
+        return "REAL_SEND_PHONE_CHANGED"
+    variants = phone_identity_variants(phone)
+    matches = list(db[LEADS].find({
+        "$or": [{"phone": {"$in": variants}},
+                {"contact_phone_normalized": {"$in": variants}}],
+    }, {"_id": 1}).limit(2))
+    if len(matches) != 1 or matches[0]["_id"] != lead["_id"]:
+        return "REAL_SEND_AMBIGUOUS_PHONE"
+
+    if (not isinstance(campaign.get("price_drop_at"), datetime)
+            or not isinstance(campaign.get("inquiry_evidence_at"), datetime)):
+        return "REAL_SEND_INQUIRY_NOT_VERIFIED"
+    original = _inquiry_before(
+        lead, code, utc(campaign["price_drop_at"]),
+        _verified_listing_ids(db, code), return_evidence=True,
+    )
+    if (not original
+            or utc(original["inquiry_at"]) != utc(campaign["inquiry_evidence_at"])):
+        return "REAL_SEND_INQUIRY_NOT_VERIFIED"
+    return None
 
 
 def _property_price(db, code: str, old: int, new: int,
@@ -502,11 +588,13 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     # Historical recovery is NOT HOT-only; closed opportunities remain blocked.
     if not c.get("test_mode") and not is_open_campaign_eligible(lead):
         return {"status": "BLOCKED_CLOSED_PIPELINE"}
-    # Real-client sending remains separately locked until acceptance of the
-    # reviewed three-person pilot and its admin-only notification path.
+    # Real sending is opt-in and limited to the three explicitly listed
+    # lead/property pairs; test sending still uses its original phone allowlist.
     if not c.get("test_mode"):
-        return {"status": "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"}
-    if normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")) != c.get("phone_normalized"):
+        blocker = _real_pilot_send_blocker(db, lead, c)
+        if blocker:
+            return {"status": blocker}
+    elif normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")) != c.get("phone_normalized"):
         return {"status": "TEST_PHONE_NOT_ALLOWLISTED"}
     currency = c.get("currency") or "UF"
     old = c.get("old_price_clp") if currency == "CLP" else c.get("old_price_uf")

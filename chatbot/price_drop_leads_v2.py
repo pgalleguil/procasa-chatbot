@@ -62,6 +62,14 @@ def is_hot_campaign_eligible(lead: dict) -> bool:
     )
 
 
+def is_open_campaign_eligible(lead: dict) -> bool:
+    """Historical property inquiry qualifies without HOT; closed lead does not."""
+    return all(
+        str(lead.get(field) or "").strip().upper() not in {"CLOSED_LOST", "CLOSED_WON"}
+        for field in ("pipeline_stage", "stage")
+    )
+
+
 def utc(value: datetime) -> datetime:
     if not isinstance(value, datetime):
         raise PilotBlocked("datetime_required")
@@ -343,8 +351,8 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         }, {"_id": 1}).limit(2))
         if len(duplicates) != 1 or duplicates[0]["_id"] != lid:
             raise PilotBlocked("ambiguous_lead_identity")
-        if not is_hot_campaign_eligible(lead):
-            raise PilotBlocked("lead_not_current_hot")
+        if not is_open_campaign_eligible(lead):
+            raise PilotBlocked("lead_closed_pipeline_stage")
     drop_at = _property_price(
         db, property_code, old_value, new_value, currency=currency,
     )
@@ -411,8 +419,7 @@ def prepare_one(db, *, now=None, **data) -> dict:
             "property_executive": {"status": "FROZEN_ADMIN_ONLY"},
         },
     })
-    # The HOT check is also part of the atomic claim. If CRM cools/closes
-    # the lead after preview, prepare cannot persist a stale eligibility.
+    # Closed leads cannot be prepared, but a change from HOT to COLD is allowed.
     claim_filter = {
         "_id": p["lead_id"],
         f"{ROOT}.campaign_id": {"$ne": p["campaign_id"]},
@@ -433,7 +440,6 @@ def prepare_one(db, *, now=None, **data) -> dict:
         claim_filter["price_drop_v2.qa_session.campaign_id"] = p["campaign_id"]
     if not p["test_mode"]:
         claim_filter.update({
-            "lead_temperature_effective": "HOT",
             "pipeline_stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
             "stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
         })
@@ -451,20 +457,19 @@ def approve_one(db, *, lead_id: str, campaign_id: str, operator: str, now=None) 
     if not str(operator or "").strip():
         raise PilotBlocked("operator_approval_required")
     stamp = utc(now or datetime.now(timezone.utc))
-    # A customer campaign must still be HOT at approval, not only at preview.
+    # Campaigns must still target open opportunities at approval.
     lead = db[LEADS].find_one({"_id": _lead_id(lead_id)}, {"price_drop_v2.campaigns": 1,
         "lead_temperature_effective": 1, "pipeline_stage": 1, "stage": 1}) or {}
     campaign = next((row for row in ((lead.get("price_drop_v2") or {}).get("campaigns") or [])
                      if row.get("campaign_id") == campaign_id), None)
-    if campaign and not campaign.get("test_mode") and not is_hot_campaign_eligible(lead):
-        raise PilotBlocked("lead_not_current_hot")
+    if campaign and not campaign.get("test_mode") and not is_open_campaign_eligible(lead):
+        raise PilotBlocked("lead_closed_pipeline_stage")
     approval_filter = {
         "_id": _lead_id(lead_id),
         ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "PREPARED"}},
     }
     if campaign and not campaign.get("test_mode"):
         approval_filter.update({
-            "lead_temperature_effective": "HOT",
             "pipeline_stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
             "stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
         })
@@ -494,10 +499,9 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         return {"status": "NOT_APPROVED"}
     if lead_must_not_be_contacted(lead):
         return {"status": "BLOCKED_OPTED_OUT"}
-    # Validate HOT again immediately before any irreversible provider call.
-    # This remains mandatory if a real-client sender is approved in future.
-    if not c.get("test_mode") and not is_hot_campaign_eligible(lead):
-        return {"status": "BLOCKED_NOT_CURRENT_HOT"}
+    # Historical recovery is NOT HOT-only; closed opportunities remain blocked.
+    if not c.get("test_mode") and not is_open_campaign_eligible(lead):
+        return {"status": "BLOCKED_CLOSED_PIPELINE"}
     # Real-client sending remains separately locked until acceptance of the
     # reviewed three-person pilot and its admin-only notification path.
     if not c.get("test_mode"):
@@ -513,7 +517,6 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         "campaign_id": campaign_id, "status": "APPROVED"}}}
     if not c.get("test_mode"):
         send_claim.update({
-            "lead_temperature_effective": "HOT",
             "pipeline_stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
             "stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
         })

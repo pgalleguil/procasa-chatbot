@@ -73,7 +73,7 @@ def use_natural_verified_property_reply(message: str, model_reply: str,
     # No campaign delivered to this lead: never allow a spontaneous claim of
     # an earlier price or price-drop notification in a normal property answer.
     if not campaign_context and re.search(
-        r"\b(?:rebaj\w*|antes costaba|bajo de precio|bajaron el precio)\b", answer,
+        r"\b(?:rebaj\w*|antes costaba|bajo de precio|bajo\s+\d+\s*(?:uf|pesos?)|bajaron el precio)\b", answer,
     ):
         return False
 

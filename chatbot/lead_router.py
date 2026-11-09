@@ -126,37 +126,31 @@ def _active_agent_record(name: str, db=None):
 
 
 def _territorial_available_agent(norm_comuna: str, *, excluded_name: str = "") -> str:
-    """Use the available team for the same comuna; never route to another region blindly.
+    """For an inactive owner, apply the CRM's scored SLA rescue globally.
 
-    No eligible agent means a pending, unassigned lead for supervisor review.
+    Lack of same-comuna coverage must never strand a lead while another
+    eligible, notified commercial agent is available.
     """
-    comuna = normalize_text(norm_comuna).replace("-", " ").strip()
-    if not comuna:
-        return UNASSIGNED_LABEL
-    db = get_db()
-    eligible = []
-    for user in db["usuarios"].find(
-        {"rol": "agente", "is_active": True},
-        {"nombre": 1, "comunas_interes": 1, "comunas_interes_norm": 1},
-    ):
-        name = user.get("nombre") or ""
-        if (not name or normalize_text(name) == normalize_text(excluded_name)
-                or is_executive_temporarily_inactive(name)):
-            continue
-        preferences = (user.get("comunas_interes_norm") or []) + (user.get("comunas_interes") or [])
-        if any(normalize_text(item).replace("-", " ").strip() == comuna for item in preferences):
-            eligible.append(name)
-    if not eligible:
-        logger.warning("[ROUTER] Sin agente activo con cobertura para comuna %r", norm_comuna)
-        return UNASSIGNED_LABEL
-    eligible.sort(key=normalize_text)
-    state_col = db["lead_routing_state"]
-    state_key = "territorial_active_rr:" + comuna.replace(" ", "-")
-    state = state_col.find_one({"id": state_key}) or {}
-    next_index = (int(state.get("last_index", -1)) + 1) % len(eligible)
-    state_col.update_one({"id": state_key}, {"$set": {"last_index": next_index}}, upsert=True)
-    return eligible[next_index]
+    from .lead_inactive_rescue import select_active_sla_rescuer
 
+    db = get_db()
+    selected, reason = select_active_sla_rescuer(
+        db,
+        excluded_name=excluded_name,
+        is_temporarily_inactive=is_executive_temporarily_inactive,
+        normalize=normalize_text,
+    )
+    if selected and _active_agent_record(selected, db=db):
+        logger.info(
+            "[ROUTER] Inactive owner=%s comuna=%s rescued_by=%s reason=%s",
+            excluded_name, norm_comuna, selected, reason,
+        )
+        return selected
+    logger.error(
+        "[ROUTER] No available agent for inactive owner=%s comuna=%s reason=%s",
+        excluded_name, norm_comuna, reason,
+    )
+    return UNASSIGNED_LABEL
 
 def get_active_executive(name: str, norm_comuna: str = "") -> str:
     """Check real-time user availability rather than a static name list or phone."""

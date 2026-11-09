@@ -13,7 +13,7 @@ from typing import Any, Callable
 from pymongo import ReturnDocument
 
 from .phone_utils import normalize_phone_strict, phone_identity_variants, has_real_phone
-from .price_drop_campaign_classifier import classify_price_drop_reply
+from .price_drop_campaign_classifier import classify_price_drop_reply, lead_must_not_be_contacted
 from .price_drop_campaign_real import _lead_id, _message
 
 LEADS = "leads"
@@ -208,8 +208,7 @@ def reset_test_qa_session(db, *, campaign_id: str, operator: str,
     if len(rows) != 1:
         return {"status": "BLOCKED", "reason": "qa_test_lead_ambiguous"}
     lead = rows[0]
-    if (lead.get("conversation_status") in {"STOPPED_BY_CLIENT", "STOPPED", "BLOCKED"}
-            or (lead.get("price_drop_v2") or {}).get("opted_out")):
+    if lead_must_not_be_contacted(lead):
         return {"status": "BLOCKED", "reason": "qa_test_lead_opted_out"}
     prior = (lead.get("price_drop_v2") or {}).get("qa_session") or {}
     if prior.get("campaign_id") == campaign_id:
@@ -279,9 +278,7 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         raise PilotBlocked("lead_phone_mismatch")
     if lead.get("phone_is_synthetic") or lead.get("contact_identity_incomplete"):
         raise PilotBlocked("incomplete_contact_identity")
-    if (lead.get("conversation_status") in {"STOPPED_BY_CLIENT", "STOPPED", "BLOCKED"}
-            or (lead.get("price_drop_campaign_v1") or {}).get("opted_out")
-            or (lead.get("price_drop_v2") or {}).get("opted_out")):
+    if lead_must_not_be_contacted(lead):
         raise PilotBlocked("lead_opted_out")
     if test_mode:
         if canonical != normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")):
@@ -431,6 +428,8 @@ def send_one(db, *, lead_id: str, campaign_id: str,
               if x.get("campaign_id") == campaign_id), None)
     if not c or c.get("status") != "APPROVED":
         return {"status": "NOT_APPROVED"}
+    if lead_must_not_be_contacted(lead):
+        return {"status": "BLOCKED_OPTED_OUT"}
     # Validate HOT again immediately before any irreversible provider call.
     # This remains mandatory if a real-client sender is approved in future.
     if not c.get("test_mode") and not is_hot_campaign_eligible(lead):
@@ -515,11 +514,15 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
          ROOT: {"$elemMatch": {"status": {"$in": ["SENT", "RESPONDED"]},
                                "expires_at": {"$gt": now}}}},
         {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
-         "price_drop_v2.campaigns": 1, "price_drop_v2.qa_session": 1},
+         "price_drop_v2.campaigns": 1, "price_drop_v2.qa_session": 1,
+         "price_drop_v2.opted_out": 1, "price_drop_campaign_v1.opted_out": 1,
+         "conversation_status": 1},
     ).limit(2))
     if len(docs) != 1:
         return None
     lead = docs[0]
+    if lead_must_not_be_contacted(lead):
+        return None
     qa = (lead.get("price_drop_v2") or {}).get("qa_session") or {}
     cutoff = utc(qa["started_at"]) if (
         canonical == APPROVED_ADMIN_PHONE
@@ -608,7 +611,19 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
         "$inc": {f"{field}.reply_count": 1},
     }
     if stopped:
-        update["$set"]["price_drop_v2.opted_out"] = True
+        # Closed search / explicit opt-out is global to outbound campaigns and
+        # future chatbot turns, without changing CRM temperature or SLA.
+        update["$set"].update({
+            "price_drop_v2.opted_out": True,
+            "price_drop_v2.opted_out_at": now,
+            "price_drop_campaign_v1.opted_out": True,
+            "conversation_status": "STOPPED_BY_CLIENT",
+            "conversation_status_reason": label["reason"],
+            "conversation_status_evidence": str(text)[:300],
+            "conversation_status_at": now.isoformat(),
+            "conversation_status_version": "commercial_close_no_contact_v1",
+            f"{field}.opted_out_at": now,
+        })
     if positive:
         stored_campaign = next(
             (row for row in (lead.get("price_drop_v2") or {}).get("campaigns") or []

@@ -98,13 +98,13 @@ def test_clp_preview_and_audited_lead_record_are_durable_but_no_send(db, monkeyp
     assert stored["status"] == "PREPARED"
     assert stored["phone_normalized"] == PHONE
     assert stored["inquiry_message_id"] == "original-customer-123"
-    assert stored["prepared_at"] == NOW
+    assert stored["prepared_at"].replace(tzinfo=timezone.utc) == NOW
     assert stored["consent_reviewed"] is True
     assert stored["consent_basis"]
     assert v2.approve_one(db, lead_id=str(LEAD_ID), campaign_id=CID,
                           operator="Supervisor de prueba", now=NOW)["status"] == "APPROVED"
     stored = db["leads"].find_one({"_id": LEAD_ID})["price_drop_v2"]["campaigns"][0]
-    assert stored["approved_at"] == NOW
+    assert stored["approved_at"].replace(tzinfo=timezone.utc) == NOW
     assert stored["approved_by"] == "Supervisor de prueba"
     monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
     monkeypatch.setenv(v2.SEND_FLAG, "true")
@@ -182,7 +182,7 @@ def test_all_replies_audited_deduplicated_and_decline_cancels_notice(db, monkeyp
     events = db["leads"].find_one({"_id": LEAD_ID})["price_drop_v2"]["reply_events"]
     assert len(events) == 2
     assert events[0]["campaign_id"] == CID
-    assert row["first_response_at"] == NOW+timedelta(minutes=3)
+    assert row["first_response_at"].replace(tzinfo=timezone.utc) == NOW+timedelta(minutes=3)
     assert events[1]["classification"]["alternatives_requested"] is True
     assert row["first_positive_reply_text"] == "Sí, me interesa"
     assert row["last_positive_reply_text"] == "No esta, busco otras casas"
@@ -245,7 +245,7 @@ def test_real_admin_notice_gated_exact_admin_only_and_once(db, monkeypatch):
     row = db["leads"].find_one({"_id": LEAD_ID})["price_drop_v2"]["campaigns"][0]
     assert row["notifications"]["administrator"]["status"] == "SENT"
     assert row["notifications"]["administrator"]["provider_message_id"] == "admin-accepted"
-    assert row["notifications"]["administrator"]["sent_at"] == NOW+timedelta(minutes=3)
+    assert row["notifications"]["administrator"]["sent_at"].replace(tzinfo=timezone.utc) == NOW+timedelta(minutes=3)
     assert row["notifications"]["property_executive"]["status"] == "FROZEN_ADMIN_ONLY"
     assert v2.send_real_admin_notice_once(db, sender=sender,
                                          now=NOW+timedelta(minutes=5))["status"] == "IDLE"

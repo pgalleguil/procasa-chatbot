@@ -465,7 +465,7 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         recipient_user_id = str((active_cycle or {}).get("assigned_to_user_id") or "")
         try:
             from bson import ObjectId
-            recipient = db["usuarios"].find_one({"_id": ObjectId(recipient_user_id)})
+            recipient = db["usuarios"].find_one({"_id": ObjectId(recipient_user_id), "is_active": True, "rol": "agente"})
         except Exception:
             recipient = None
         recipient_phone = (
@@ -495,7 +495,7 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
     if not reuse:
         executive, _unused, assignment_type = find_responsible_executive(
             property_code=code, comuna=comuna, lead_phone=phone)
-        recipient = db["usuarios"].find_one({"nombre": executive, "is_active": {"$ne": False}})
+        recipient = db["usuarios"].find_one({"nombre": executive, "is_active": True, "rol": "agente"})
         recipient_phone = (recipient or {}).get("telefono") or (recipient or {}).get("tel") or (recipient or {}).get("movil")
     if not recipient or not recipient_phone:
         db[COLLECTION].update_one({"_id": event["_id"]}, {"$set": {
@@ -517,9 +517,9 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
     if cycle_owner_id and cycle_owner_id != str(recipient.get("_id")):
         try:
             from bson import ObjectId
-            recipient = db["usuarios"].find_one({"_id": ObjectId(cycle_owner_id), "is_active": {"$ne": False}})
+            recipient = db["usuarios"].find_one({"_id": ObjectId(cycle_owner_id), "is_active": True})
         except Exception:
-            recipient = db["usuarios"].find_one({"nombre": cycle.get("assigned_to_display_name"), "is_active": {"$ne": False}})
+            recipient = db["usuarios"].find_one({"nombre": cycle.get("assigned_to_display_name"), "is_active": True})
         recipient_phone = (recipient or {}).get("telefono") or (recipient or {}).get("tel") or (recipient or {}).get("movil")
         if not recipient or not recipient_phone:
             record_assignment_integrity_alert(

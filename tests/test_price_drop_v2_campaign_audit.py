@@ -179,9 +179,11 @@ def test_all_replies_audited_deduplicated_and_decline_cancels_notice(db, monkeyp
                              now=NOW+timedelta(minutes=5))["status"] == "DUPLICATE_IGNORED"
     row = db["leads"].find_one({"_id": LEAD_ID})["price_drop_v2"]["campaigns"][0]
     assert row["reply_count"] == 2
-    assert len(row["response_events"]) == 2
+    events = db["leads"].find_one({"_id": LEAD_ID})["price_drop_v2"]["reply_events"]
+    assert len(events) == 2
+    assert events[0]["campaign_id"] == CID
     assert row["first_response_at"] == NOW+timedelta(minutes=3)
-    assert row["response_events"][1]["classification"]["alternatives_requested"] is True
+    assert events[1]["classification"]["alternatives_requested"] is True
     assert row["first_positive_reply_text"] == "Sí, me interesa"
     assert row["last_positive_reply_text"] == "No esta, busco otras casas"
     assert row["notifications"]["administrator"]["status"] == "PENDING_SIMULATION"
@@ -192,7 +194,7 @@ def test_all_replies_audited_deduplicated_and_decline_cancels_notice(db, monkeyp
     assert row["status"] == "DECLINED"
     assert row["notifications"]["administrator"]["status"] == "CANCELED"
     assert row["reply_count"] == 3
-    assert len(row["response_events"]) == 3
+    assert len(db["leads"].find_one({"_id": LEAD_ID})["price_drop_v2"]["reply_events"]) == 3
     assert v2.active_context(db, phone=PHONE, message="hola",
                              now=NOW+timedelta(minutes=7)) is None
 

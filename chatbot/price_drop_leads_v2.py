@@ -13,7 +13,9 @@ from typing import Any, Callable
 from pymongo import ReturnDocument
 
 from .phone_utils import normalize_phone_strict, phone_identity_variants, has_real_phone
-from .price_drop_campaign_classifier import classify_price_drop_reply, lead_must_not_be_contacted
+from .price_drop_campaign_classifier import (
+    classify_price_drop_reply, lead_must_not_be_contacted, ALTERNATIVES,
+)
 from .price_drop_campaign_real import _lead_id, _message
 
 LEADS = "leads"
@@ -34,7 +36,7 @@ def executive_notices_enabled() -> bool:
     """Frozen by default; preserving the code is not permission to notify."""
     return os.getenv(EXEC_NOTICE_ENABLED_FLAG, "").lower() in {"1", "true", "yes"}
 
-ACTIVE_STATES = ("SENDING", "SENT", "RESPONDED", "OPTED_OUT", "DELIVERY_UNKNOWN")
+ACTIVE_STATES = ("SENDING", "SENT", "RESPONDED", "DECLINED", "OPTED_OUT", "DELIVERY_UNKNOWN")
 VALID_CODE = re.compile(r"^\d{4,6}$")
 VALID_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{5,79}$")
 
@@ -127,7 +129,8 @@ def _verified_listing_ids(db, code: str) -> set[str]:
 
 
 def _inquiry_before(lead: dict, code: str, drop_at: datetime,
-                    listing_ids: set[str] | None = None) -> bool:
+                    listing_ids: set[str] | None = None, *,
+                    return_evidence: bool = False) -> bool | dict | None:
     """Require dated, *property-specific* customer evidence before the drop.
 
     An unrelated old customer message plus the current prospecto.codigo is
@@ -175,8 +178,15 @@ def _inquiry_before(lead: dict, code: str, drop_at: datetime,
                 for listing_id in (listing_ids or set())
             )
         if has_explicit_code:
+            if return_evidence:
+                return {
+                    "inquiry_at": stamp,
+                    "message_id": str(message.get("message_id") or
+                                      message.get("provider_message_id") or "")[:128],
+                    "reference": code if code in declared or referenced else "verified_listing",
+                }
             return True
-    return False
+    return None if return_evidence else False
 
 def _old_completed_test(campaign: dict, code: str, cutoff: datetime | None) -> bool:
     """Only earlier, finished test sends may be superseded in one-phone QA."""
@@ -298,10 +308,14 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         if not is_hot_campaign_eligible(lead):
             raise PilotBlocked("lead_not_current_hot")
     drop_at = _property_price(db, property_code, old_price_uf, new_price_uf)
-    if not test_mode and not _inquiry_before(
-        lead, property_code, drop_at, _verified_listing_ids(db, property_code)
-    ):
-        raise PilotBlocked("pre_drop_inquiry_not_verified")
+    inquiry_evidence = None
+    if not test_mode:
+        inquiry_evidence = _inquiry_before(
+            lead, property_code, drop_at, _verified_listing_ids(db, property_code),
+            return_evidence=True,
+        )
+        if not inquiry_evidence:
+            raise PilotBlocked("pre_drop_inquiry_not_verified")
     qa = (lead.get("price_drop_v2") or {}).get("qa_session") or {}
     cutoff = utc(qa["started_at"]) if (
         test_mode and qa.get("campaign_id") == campaign_id
@@ -327,6 +341,9 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         "consent_basis": str(consent_basis or "")[:180] if not test_mode else "test_only_not_real_consent",
         "simulated_prior_inquiry": bool(test_mode),
         "qa_session_started_at": cutoff,
+        "inquiry_evidence_at": (inquiry_evidence or {}).get("inquiry_at"),
+        "inquiry_message_id": (inquiry_evidence or {}).get("message_id"),
+        "inquiry_reference": (inquiry_evidence or {}).get("reference"),
         "message": _message(property_code, old_price_uf, new_price_uf),
     }
 
@@ -338,11 +355,12 @@ def prepare_one(db, *, now=None, **data) -> dict:
     row = {k: p[k] for k in (
         "campaign_id", "property_code", "old_price_uf", "new_price_uf",
         "price_drop_at", "test_mode", "consent_reviewed", "consent_basis",
-        "simulated_prior_inquiry", "phone_normalized", "qa_session_started_at")}
+        "simulated_prior_inquiry", "phone_normalized", "qa_session_started_at",
+        "inquiry_evidence_at", "inquiry_message_id", "inquiry_reference")}
     row.update({
         "status": "PREPARED", "prepared_at": stamp,
         "outbound_message": p["message"], "inbound_provider_ids": [],
-        "reply_count": 0, "notifications": {
+        "reply_count": 0, "response_events": [], "notifications": {
             "administrator": {"status": "NOT_TRIGGERED"},
             "property_executive": {"status": "FROZEN_ADMIN_ONLY"},
         },
@@ -596,10 +614,13 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
         return {"status": "NOT_CAMPAIGN_REPLY"}
     field = f"{ROOT}.{campaign_index}"
     stopped = label["label"] == "BAJA"
-    positive = label["label"] in {"INTERES_DECLARADO", "PRIORIDAD_COMERCIAL"}
+    declined = label["label"] == "RECHAZADO"
+    positive = label["label"] in {"INTERES_DECLARADO", "PRIORIDAD_COMERCIAL", ALTERNATIVES}
+    existing_campaign = (lead.get("price_drop_v2") or {}).get("campaigns", [])[campaign_index]
+    resolved_status = "OPTED_OUT" if stopped else "DECLINED" if declined else "RESPONDED"
     update = {
         "$set": {
-            f"{field}.status": "OPTED_OUT" if stopped else "RESPONDED",
+            f"{field}.status": resolved_status,
             f"{field}.last_classification": label,
             f"{field}.last_customer_reply_at": now,
             f"{field}.last_inbound_provider_id": str(provider_message_id),
@@ -607,9 +628,23 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
         },
         "$addToSet": {
             "price_drop_v2.processed_inbound_provider_ids": str(provider_message_id),
+            f"{field}.inbound_provider_ids": str(provider_message_id),
         },
+        "$push": {f"{field}.response_events": {
+            "provider_message_id": str(provider_message_id),
+            "received_at": now,
+            "text": str(text)[:350],
+            "classification": label,
+        }},
         "$inc": {f"{field}.reply_count": 1},
     }
+    if existing_campaign.get("reply_count", 0) == 0:
+        update["$set"][f"{field}.first_response_at"] = now
+    if stopped or declined:
+        update["$set"][f"{field}.notifications.administrator.status"] = "CANCELED"
+        update["$set"][f"{field}.notifications.property_executive.status"] = "FROZEN_ADMIN_ONLY"
+        if declined:
+            update["$set"][f"{field}.declined_at"] = now
     if stopped:
         # Closed search / explicit opt-out is global to outbound campaigns and
         # future chatbot turns, without changing CRM temperature or SLA.

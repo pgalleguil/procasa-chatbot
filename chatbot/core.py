@@ -1642,6 +1642,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "llamar", "llamen", "llamada", "contactar", "contacto", "ejecutivo",
         "asesor", "humano", "supervisor", "gerente"
     ]
+    from .price_drop_campaign_classifier import has_do_not_call_preference
+    from .conversation_policy import suppress_negated_call_intent
+    no_call_preference = has_do_not_call_preference(original_message)
+    intencion = suppress_negated_call_intent(intencion, original_message)
 
     if intencion == "consulta_general":
         if should_offer_visit_data(
@@ -1654,7 +1658,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             visit_data_state={},
         ):
             intencion = "agendar_visita"
-        elif any(t in msg_l for t in contact_terms):
+        elif any(t in msg_l for t in contact_terms) and not no_call_preference:
             intencion = "contacto_directo"
 
     # A broad model label is not sufficient to request personal data or trigger

@@ -211,17 +211,30 @@ def context_instruction(context: dict) -> str:
     else:
         old_price = "UF " + _format_uf(context["old_price_uf"])
         new_price = "UF " + _format_uf(context["new_price_uf"])
-    return (
+    instruction = (
         "[PILOTO DE REACTIVACIÓN POR REBAJA - CONTEXTO VERIFICADO]\n"
         f"El cliente recibió un WhatsApp informativo sobre la propiedad en VENTA código {code}, "
         f"rebajada de {old_price} a {new_price}. El precio actual fue cotejado con Prop360. "
         "Su mensaje actual puede ser respuesta a esa comunicación aunque sea 'sí', 'me interesa' o 'cuéntame'. "
         "No lo trates como un lead nuevo ni solicites de nuevo su teléfono. "
         "Un 'sí' ambiguo expresa interés informativo, NO confirma una visita, oferta ni reserva. "
-        "Responde sobre esta propiedad y ofrece información o coordinar visita. "
+        "Responde sobre esta propiedad con datos verificados. No propongas, ofrezcas ni preguntes por "
+        "una visita a menos que el cliente la solicite explícitamente en este turno. "
         "Si pide visita, registra la preferencia de día u horario, pero no prometas una visita confirmada. "
         "En esta campaña V2 el seguimiento es del administrador: no afirmes que avisaste al ejecutivo "
         "ni inicies una notificación comercial a ejecutivos. Si rechaza o pide no recibir mensajes, respétalo. "
         "Si pregunta por otras propiedades, prioriza su petición nueva. "
         "No afirmes que se envió el WhatsApp si el cliente lo niega; ofrece verificarlo."
     )
+    preferences = context.get("customer_preferences") or {}
+    if preferences.get("do_not_call") is True:
+        instruction += (
+            " Preferencia vigente registrada: no pedir ni proponer llamadas telefónicas; "
+            "mantén la conversación por el canal escrito."
+        )
+    if preferences.get("visit_declined") is True:
+        instruction += (
+            " Preferencia vigente registrada: no volver a proponer ni preguntar por visitas; "
+            "responde las consultas informativas y mantén el contexto de la propiedad."
+        )
+    return instruction

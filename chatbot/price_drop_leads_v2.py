@@ -1134,6 +1134,7 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
                                "expires_at": {"$gt": now}}}},
         {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
          "price_drop_v2.campaigns": 1, "price_drop_v2.qa_session": 1,
+         "price_drop_v2.contact_preferences": 1,
          "price_drop_v2.opted_out": 1, "price_drop_campaign_v1.opted_out": 1,
          "conversation_status": 1},
     ).limit(2))
@@ -1194,6 +1195,9 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
         "operation": "Venta",
         "outbound_message": campaign["outbound_message"],
         "test_mode": bool(campaign.get("test_mode")),
+        "customer_preferences": dict(
+            (lead.get("price_drop_v2") or {}).get("contact_preferences") or {}
+        ),
     }
 
 
@@ -1202,11 +1206,20 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
     """Classify campaign replies directly on the lead without new collections."""
     if not provider_message_id or not text or not text.strip():
         return {"status": "NOT_CAMPAIGN_REPLY"}
+    # Report duplicates consistently even after an opt-out closed campaign
+    # context. The provider receipt ID is globally unique and this read is
+    # safe for replies whose original campaign is no longer active.
+    if db[LEADS].find_one(
+        {"price_drop_v2.processed_inbound_provider_ids": str(provider_message_id)},
+        {"_id": 1},
+    ):
+        return {"status": "DUPLICATE_IGNORED"}
     ctx = active_context(db, phone=phone, message=text, now=now)
     if not ctx:
         return {"status": "NOT_CAMPAIGN_REPLY"}
     now = utc(now or datetime.now(timezone.utc))
-    label = classify_price_drop_reply(text).as_dict()
+    classification = classify_price_drop_reply(text)
+    label = classification.as_dict()
     cid = ctx["campaign_id"]
     lead = db[LEADS].find_one(
         {"$or": [{"phone": normalize_phone_strict(phone)},
@@ -1214,7 +1227,8 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
          ROOT: {"$elemMatch": {"campaign_id": cid, "status": {
              "$in": ["SENT", "RESPONDED"]}}}},
         {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
-         "price_drop_v2.campaigns": 1},
+         "price_drop_v2.campaigns": 1,
+         "price_drop_v2.contact_preferences": 1},
     )
     if not lead or not _same_phone(lead, phone):
         return {"status": "NOT_CAMPAIGN_REPLY"}
@@ -1278,6 +1292,47 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
             # customer's global stop request without reopening contact.
             f"{field}.notifications.administrator_info.status": "PENDING_INFO",
             f"{field}.notifications.administrator_info.reason": label["reason"],
+        })
+    if classification.do_not_call:
+        preference = {
+            "price_drop_v2.contact_preferences.do_not_call": True,
+            "price_drop_v2.contact_preferences.do_not_call_evidence": str(text)[:300],
+            "price_drop_v2.contact_preferences.do_not_call_updated_at": now,
+            f"{field}.customer_preferences.do_not_call": True,
+            f"{field}.customer_preferences.do_not_call_evidence": str(text)[:300],
+            f"{field}.customer_preferences.updated_at": now,
+        }
+        update["$set"].update(preference)
+    elif classification.explicit_contact and (
+            (lead.get("price_drop_v2") or {}).get("contact_preferences") or {}
+    ).get("do_not_call") is True:
+        # A newer direct request for a call is an explicit change to the
+        # earlier channel preference. Keep the audit trail while lifting it.
+        update["$set"].update({
+            "price_drop_v2.contact_preferences.do_not_call": False,
+            "price_drop_v2.contact_preferences.do_not_call_revoked_at": now,
+            "price_drop_v2.contact_preferences.do_not_call_revoked_by_campaign": cid,
+            f"{field}.customer_preferences.do_not_call": False,
+            f"{field}.customer_preferences.do_not_call_revoked_at": now,
+        })
+    if classification.visit_declined:
+        update["$set"].update({
+            "price_drop_v2.contact_preferences.visit_declined": True,
+            "price_drop_v2.contact_preferences.visit_declined_evidence": str(text)[:300],
+            "price_drop_v2.contact_preferences.visit_declined_updated_at": now,
+            f"{field}.customer_preferences.visit_declined": True,
+            f"{field}.customer_preferences.visit_declined_evidence": str(text)[:300],
+            f"{field}.customer_preferences.updated_at": now,
+        })
+    elif classification.explicit_visit and (
+            (lead.get("price_drop_v2") or {}).get("contact_preferences") or {}
+    ).get("visit_declined") is True:
+        update["$set"].update({
+            "price_drop_v2.contact_preferences.visit_declined": False,
+            "price_drop_v2.contact_preferences.visit_declined_revoked_at": now,
+            "price_drop_v2.contact_preferences.visit_declined_revoked_by_campaign": cid,
+            f"{field}.customer_preferences.visit_declined": False,
+            f"{field}.customer_preferences.visit_declined_revoked_at": now,
         })
     if positive:
         update["$set"][f"{field}.last_positive_reply_text"] = str(text)[:350]
@@ -1558,15 +1613,23 @@ def send_real_admin_notice_once(db, *,
         "BUSCA_ALTERNATIVAS": "Solicita otras propiedades",
     }.get(classification.get("label"), "Interés comercial registrado")
     reason = str(classification.get("reason") or "interest_recorded")
-    notice_text = (
-        "🔔 PROCASA — Respuesta a campaña de rebaja\n"
-        f"Propiedad: {code} | {price_text(old)} → {price_text(new)}\n"
-        f"Cliente: {phone}\n"
-        f"Señal: {signal} ({reason})\n"
-        f"Respuesta: {last_positive or 'Interés registrado'}\n"
-        f"CRM: {crm_link}\n"
-        "Revisar conversación antes de gestionar. No es un lead nuevo."
-    )
+    preferences = campaign.get("customer_preferences") or {}
+    preference_lines = []
+    if preferences.get("do_not_call") is True:
+        preference_lines.append("Preferencia vigente: no llamar al cliente.")
+    if preferences.get("visit_declined") is True:
+        preference_lines.append("No proponer visita mientras esa preferencia siga vigente.")
+    notice_lines = [
+        "🔔 PROCASA — Respuesta a campaña de rebaja",
+        f"Propiedad: {code} | {price_text(old)} → {price_text(new)}",
+        f"Cliente: {phone}",
+        f"Señal: {signal} ({reason})",
+        f"Respuesta: {last_positive or 'Interés registrado'}",
+        *preference_lines,
+        f"CRM: {crm_link}",
+        "Revisar conversación antes de gestionar. No es un lead nuevo.",
+    ]
+    notice_text = "\n".join(notice_lines)
     field = f"{ROOT}.{index}"
     claimed = db[LEADS].update_one({
         "_id": lead["_id"],

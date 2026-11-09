@@ -848,8 +848,23 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     # Commercial work is a separate durable state machine. It observes the
     # verified inbound snapshot, but cannot reuse or block chatbot delivery.
     try:
-        lead = await asyncio.to_thread(db["leads"].find_one, {"phone": claimed["phone"]}, {"conversation_status": 1})
-        if (lead or {}).get("conversation_status") != "BLOCKED_EXTERNAL_BROKER":
+        lead = await asyncio.to_thread(
+            db["leads"].find_one, {"phone": claimed["phone"]},
+            {"conversation_status": 1,
+             "price_drop_v2.opted_out": 1,
+             "price_drop_campaign_v1.opted_out": 1},
+        )
+        lead = lead or {}
+        globally_suppressed = (
+            lead.get("conversation_status") in {
+                "STOPPED_BY_CLIENT", "STOPPED", "BLOCKED", "BLOCKED_EXTERNAL_BROKER",
+            }
+            or (lead.get("price_drop_v2") or {}).get("opted_out") is True
+            or (lead.get("price_drop_campaign_v1") or {}).get("opted_out") is True
+        )
+        if globally_suppressed:
+            logger.info("[COMMERCIAL_INTAKE] skipped for globally suppressed lead")
+        else:
             # Replies to an already SENT V2 campaign are *follow-up* on an
             # existing lead, not a new commercial assignment. Prevent the
             # regular intake from generating an executive HOT notice while

@@ -106,3 +106,91 @@ def test_active_lookup_accepts_pymongo_style_database_without_bool(routing_db):
     user = lead_router._active_agent_record("Rocío Aliaga", db=DatabaseWithoutTruthValue())
     assert user is not None
     assert user["nombre"] == "Rocío Aliaga"
+
+
+def _sla_score_row(user_id, name, *, speed, sla, backlog=3):
+    return {
+        "user_id": str(user_id), "executive": name,
+        "identity_key": name.lower(), "executive_key": name.lower(),
+        "active": True, "role": "agente", "legacy": False,
+        "sample_size": 40, "sla_compliance_rate": sla,
+        "attention_rate": sla,
+        "p50_first_management_business_minutes": speed,
+        "p90_first_management_business_minutes": speed * 2,
+        "open_current_policy": backlog,
+        "unmanaged_current_policy": backlog,
+        "expired_current_policy": 0,
+        "shadow_received_count": 0,
+    }
+
+
+def _seed_sla_snapshot(db, rows):
+    from datetime import datetime, timezone
+    db.crm_assignment_cycles.insert_one({
+        "assigned_by": "sla_reassignment",
+        "assigned_at": datetime.now(timezone.utc),
+        "cycle_status": "closed",
+        "unassigned_at": datetime.now(timezone.utc),
+        "candidate_scores_snapshot": rows,
+    })
+
+
+def test_inactive_rocio_uses_global_sla_ranking_not_commune_round_robin(routing_db):
+    """No Valparaíso agent: use SLA score across the active commercial team."""
+    _agent(routing_db, "Rocío Aliaga", active=False)
+    erika = _agent(routing_db, "Erika Garrido", active=True, communes=("La Florida",))
+    susana = _agent(routing_db, "Susana Ensignia", active=True, communes=("Ñuñoa",))
+    _seed_sla_snapshot(routing_db, [
+        _sla_score_row(erika, "Erika Garrido", speed=10, sla=0.95, backlog=2),
+        _sla_score_row(susana, "Susana Ensignia", speed=80, sla=0.30, backlog=80),
+    ])
+    name, phone, kind = lead_router.find_responsible_executive(property_code="6436")
+    assert (name, phone, kind) == ("Erika Garrido", "+56911111111", "PROPERTY")
+
+
+def test_inactive_rocio_uses_frozen_tier_priority_when_hernan_eligible(routing_db):
+    """The same frozen SLA Tier 1 preference applies, not a parallel policy."""
+    _agent(routing_db, "Rocío Aliaga", active=False)
+    hernan = _agent(routing_db, "Hernán Castro", active=True, communes=("Maipú",))
+    erika = _agent(routing_db, "Erika Garrido", active=True, communes=("La Florida",))
+    _seed_sla_snapshot(routing_db, [
+        _sla_score_row(hernan, "Hernán Castro", speed=12, sla=0.92, backlog=4),
+        _sla_score_row(erika, "Erika Garrido", speed=90, sla=0.34, backlog=60),
+    ])
+    assert lead_router.find_responsible_executive(property_code="6436")[0] == "Hernán Castro"
+
+
+def test_sla_score_never_resurrects_inactive_agent(routing_db):
+    _agent(routing_db, "Rocío Aliaga", active=False)
+    erika = _agent(routing_db, "Erika Garrido", active=False, communes=("La Florida",))
+    susana = _agent(routing_db, "Susana Ensignia", active=True, communes=("Ñuñoa",))
+    _seed_sla_snapshot(routing_db, [
+        _sla_score_row(erika, "Erika Garrido", speed=5, sla=1, backlog=0),
+        _sla_score_row(susana, "Susana Ensignia", speed=90, sla=0.35, backlog=70),
+    ])
+    assert lead_router.find_responsible_executive(property_code="6436")[0] == "Susana Ensignia"
+
+
+def test_no_recent_sla_snapshot_still_assigns_to_active_staff(routing_db):
+    """Availability beats territorial vacancy, even when scores are missing."""
+    _agent(routing_db, "Rocío Aliaga", active=False)
+    _agent(routing_db, "Erika Garrido", active=True, communes=("La Florida",))
+    result = lead_router.find_responsible_executive(property_code="6436")
+    assert result == ("Erika Garrido", "+56911111111", "PROPERTY")
+
+
+def test_routing_excludes_active_administrator_mislabelled_agent(routing_db):
+    _agent(routing_db, "Rocío Aliaga", active=False)
+    hernan = _agent(routing_db, "Hernán Castro", active=True, communes=("Maipú",))
+    from chatbot.crm_sla_policy_freeze import RM_ADMIN_EXCLUDED_USER_IDS
+    administrator_id = ObjectId(next(iter(RM_ADMIN_EXCLUDED_USER_IDS)))
+    routing_db.usuarios.insert_one({
+        "_id": administrator_id,
+        "nombre": "Administrador", "rol": "agente",
+        "is_active": True, "telefono": "+56922222222",
+    })
+    _seed_sla_snapshot(routing_db, [
+        _sla_score_row(administrator_id, "Administrador", speed=3, sla=1, backlog=0),
+        _sla_score_row(hernan, "Hernán Castro", speed=80, sla=0.31, backlog=20),
+    ])
+    assert lead_router.find_responsible_executive(property_code="6436")[0] == "Hernán Castro"

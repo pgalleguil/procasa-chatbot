@@ -77,3 +77,51 @@ def test_a_missing_verified_field_must_not_be_invented():
         "¿Tiene estacionamiento?",
         "Sí, tiene dos estacionamientos techados.", PROPERTY,
     )
+
+
+def test_normal_customer_reply_cannot_invent_a_sent_price_drop():
+    assert not use_natural_verified_property_reply(
+        "¿Qué orientación tiene?",
+        "Tiene orientación sur-poniente. Además, bajó 100 UF antes de que nos escribieras.",
+        PROPERTY,
+    )
+
+
+def test_campaign_context_requires_actual_provider_message_id(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from bson import ObjectId
+    import mongomock
+    from chatbot import price_drop_leads_v2 as v2
+
+    phone = "+56983219804"
+    now = datetime(2026, 11, 9, 13, 0, tzinfo=timezone.utc)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    db = mongomock.MongoClient()["URLS"]
+    db["leads"].insert_one({
+        "_id": ObjectId(),
+        "phone": phone,
+        "price_drop_v2": {"campaigns": [{
+            "campaign_id": "test_leads_6436_20261109",
+            "property_code": "6436",
+            "old_price_uf": 2790,
+            "new_price_uf": 2690,
+            "status": "PREPARED",
+            "provider_message_id": "",
+            "sent_at": now - timedelta(minutes=5),
+            "expires_at": now + timedelta(days=1),
+            "outbound_message": "Aviso de rebaja",
+            "test_mode": True,
+        }]},
+    })
+    # The independent price revalidation is not germane to the send gate.
+    monkeypatch.setattr(v2, "_property_price", lambda *args: None)
+    assert v2.active_context(db, phone=phone, message="me interesa", now=now) is None
+    db["leads"].update_one({"phone": phone}, {"$set": {"price_drop_v2.campaigns.0.status": "SENT"}})
+    assert v2.active_context(db, phone=phone, message="me interesa", now=now) is None
+    db["leads"].update_one({"phone": phone}, {"$set": {
+        "price_drop_v2.campaigns.0.provider_message_id": "real-accepted-provider-message",
+    }})
+    context = v2.active_context(db, phone=phone, message="me interesa", now=now)
+    assert context is not None
+    assert context["old_price_uf"] == 2790
+    assert context["new_price_uf"] == 2690

@@ -38,12 +38,12 @@ _STOP = re.compile(
 # A client who already solved their housing search is not a dormant lead.
 # Treat this as a marketing-suppression signal, even without the word STOP.
 _ALREADY_FOUND = re.compile(
-    r"\\b(?:ya|finalmente|al final)\\s+"
-    r"(?:encontre|compre|consegui|arrende)\\s+"
-    r"(?:(?:un|una|otro|otra|mi|la|el)\\s+)?"
-    r"(?:casa|propiedad|departamento|depto|vivienda)\\b"
-    r"|\\b(?:ya|finalmente)\\s+tengo\\s+(?:mi|una|un)\\s+"
-    r"(?:casa|propiedad|departamento|vivienda)\\b",
+    r"\b(?:ya|finalmente|al final)\s+"
+    r"(?:encontre|compre|consegui|arrende)\s+"
+    r"(?:(?:un|una|otro|otra|mi|la|el)\s+)?"
+    r"(?:casa|propiedad|departamento|depto|vivienda)\b"
+    r"|\b(?:ya|finalmente)\s+tengo\s+(?:mi|una|un)\s+"
+    r"(?:casa|propiedad|departamento|vivienda)\b",
 )
 
 _DECLINE = re.compile(

@@ -32,7 +32,7 @@ def _plain(text: str) -> str:
 
 
 _STOP = re.compile(
-    r"\b(?:stop|darme de baja|quiero la baja|elimin(?:a|en) mi numero|"
+    r"\b(?:stop|no me envien mas mensajes|no deseo recibir mensajes|darme de baja|quiero la baja|elimin(?:a|en) mi numero|"
     r"no me (?:escriban|contacten|manden (?:mas )?mensajes)|"
     r"no quiero (?:mas )?mensajes|dejen de escribir(?:me)?)\b",
 )

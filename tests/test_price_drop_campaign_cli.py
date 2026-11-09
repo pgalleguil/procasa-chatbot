@@ -1,0 +1,494 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+
+import mongomock
+import pytest
+from bson import ObjectId
+
+from chatbot import price_drop_leads_v2 as v2
+from chatbot.price_drop_campaign_classifier import classify_price_drop_reply
+from chatbot.price_drop_campaign_discovery import (
+    discover_price_drops, find_candidates_for_event,
+)
+from chatbot.price_drop_reconciliation import (
+    pending_receipts, record_accepted_receipt, reconcile_pending_receipts,
+)
+from scripts import enviar_piloto_rebajas as cli
+
+NOW = datetime(2026, 11, 9, 13, 0, tzinfo=timezone.utc)  # Monday, 10:00 in Santiago.
+DROP = datetime(2026, 10, 14, 15, 0, tzinfo=timezone.utc)
+CAMPAIGN = "event_test_6436_20261014"
+
+
+def _db():
+    return mongomock.MongoClient()["URLS"]
+
+
+def _seed_property(db, *, code="6436", currency="UF", current=2690,
+                   available=True, published=True, aliases=None):
+    pricing = {"moneda_publicada": currency, "precio_publicado": current}
+    if currency == "UF":
+        pricing["precio_uf"] = current
+    db["universo_cartera_prop360"].insert_one({
+        "codigo": code, "disponible_prop360": available,
+        "estado": {"oficina": "PROCASA SUCRE"},
+        "ubicacion": {"comuna": "San Miguel"},
+        "tipo_operacion": {"venta": True, "tipo": "Departamento", "precio_venta": pricing},
+        "publicaciones": {
+            "aliases": aliases or [],
+            "procasa": {"publicaciones": {"venta": {
+                "publicada": published, "estado": "ACTIVA", "operacion": "venta",
+                "url": f"https://www.procasa.cl/propiedad/{code}",
+            }}},
+        },
+    })
+
+
+def _history(db, code, at, old, new, currency="UF", *, history_id=None):
+    db["universo_cartera_prop360_historial"].insert_one({
+        "_id": history_id or ObjectId(), "codigo": code,
+        "campo": "precio_publicado", "fecha": at.isoformat(),
+        "moneda_anterior": currency, "moneda_nueva": currency,
+        "monto_anterior": old, "monto_nuevo": new,
+    })
+
+
+def _event_db(*, code="6436", currency="UF", current=2690,
+              old=2790, new=2690, at=DROP, aliases=None):
+    db = _db()
+    _seed_property(db, code=code, currency=currency, current=current, aliases=aliases)
+    _history(db, code, at, old, new, currency)
+    return db
+
+
+def _candidate(db, *, phone, temperature="NORMAL", content=None, timestamp=None,
+               lead_id=None, campaigns=None, extra=None):
+    lead_id = lead_id or ObjectId()
+    row = {
+        "_id": lead_id, "phone": phone,
+        "contact_phone_normalized": phone,
+        "lead_temperature_effective": temperature,
+        "pipeline_stage": "CONTACTED", "stage": "CONTACTED",
+        "messages": [{
+            "role": "user", "content": content or "Me interesa la propiedad código 6436",
+            "timestamp": (timestamp or DROP - timedelta(days=1)).isoformat(),
+        }],
+    }
+    if campaigns is not None:
+        row["price_drop_v2"] = {"campaigns": campaigns}
+    if extra:
+        row.update(extra)
+    db["leads"].insert_one(row)
+    return lead_id
+
+
+def _dispatch_db(monkeypatch, count=3):
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    ids = []
+    phones = ["+56983219801", "+56983219802", "+56983219803", "+56983219805"]
+    temperatures = ["HOT", "NORMAL", "COLD", "HOT"]
+    for index in range(count):
+        lead_id = _candidate(
+            db, phone=(phones[index] if index < len(phones)
+                       else f"+5691234{index:04d}"),
+            temperature=temperatures[index % len(temperatures)],
+            timestamp=DROP - timedelta(days=10),
+        )
+        phone = db["leads"].find_one({"_id": lead_id})["phone"]
+        db["leads"].update_one({"_id": lead_id}, {"$push": {"messages": {
+            "role": "user", "content": "Sigo interesado en la propiedad código 6436",
+            "timestamp": (NOW - timedelta(hours=1)).isoformat(),
+        }}})
+        ids.append(str(lead_id))
+        v2.prepare_one(db, now=NOW, lead_id=lead_id, phone=phone,
+                       campaign_id=CAMPAIGN, property_code="6436",
+                       old_price_uf=2790, new_price_uf=2690,
+                       test_mode=False, contact_basis_reviewed=True,
+                       contact_basis_type=v2.DIRECT_RESPONSE_BASIS_TYPE,
+                       contact_basis="Consulta verificable de la propiedad")
+        v2.review_whatsapp_contact(
+            db, lead_id=lead_id, campaign_id=CAMPAIGN,
+            operator="QA operator",
+            evidence="Opt-in WhatsApp CRM reference 2026-10-01", now=NOW,
+        )
+        v2.approve_one(db, lead_id=lead_id, campaign_id=CAMPAIGN,
+                       operator="QA operator", now=NOW)
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, "true")
+    monkeypatch.setenv(v2.REAL_CAMPAIGNS_ENABLED_FLAG, "true")
+    monkeypatch.delenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", raising=False)
+    return db, event, ids
+
+
+def _run(db, *, campaign_id=CAMPAIGN, max_messages=20, daily_cap=50,
+         confirm=None, sleep_fn=None, sender=None, now_fn=lambda: NOW,
+         link_verifier=lambda code, now: True, journal_path=None, rng=lambda lo, hi: 450):
+    return cli.execute_campaign(
+        db, campaign_id=campaign_id, max_messages=max_messages,
+        min_delay_seconds=300, max_delay_seconds=600,
+        provider_plan="trial", daily_provider_cap=daily_cap,
+        live_links_verified=True, confirm=confirm or (lambda _: f"ENVIAR {campaign_id}"),
+        sleep_fn=sleep_fn or (lambda seconds: None),
+        sender=sender or (lambda phone, text: {
+            "success": True, "provider_message_id": f"mock-{phone[-4:]}",
+            "delivery_status": "accepted",
+        }), now_fn=now_fn, provider_ready=lambda: True,
+        journal_path=journal_path, rng=rng, link_verifier=link_verifier,
+    )
+
+
+def test_discovery_finds_only_current_step_and_preserves_multistep_history():
+    db = _db()
+    _seed_property(db, current=2490)
+    _history(db, "6436", DROP - timedelta(days=2), 2790, 2690)
+    _history(db, "6436", DROP - timedelta(days=1), 2690, 2590)
+    _history(db, "6436", DROP, 2590, 2490, history_id="latest-step")
+    events = discover_price_drops(db, now=NOW)
+    assert len(events) == 1
+    assert (events[0].old_price, events[0].new_price, events[0].current_price) == (2590, 2490, 2490)
+    assert events[0].history_id == "latest-step"
+    assert len(cli._history_steps(db, events[0])) == 3
+    after_notice = cli._history_steps(db, events[0], DROP - timedelta(days=1, seconds=1))
+    assert [(row.old_price, row.new_price) for row in after_notice] == [(2690, 2590), (2590, 2490)]
+
+
+def test_discovery_discards_increases_currency_conversions_and_stale_prices():
+    db = _event_db(current=2690)
+    _history(db, "6436", DROP + timedelta(hours=1), 2690, 2790)  # Increase.
+    db["universo_cartera_prop360_historial"].insert_one({
+        "codigo": "6436", "campo": "precio_publicado", "fecha": DROP.isoformat(),
+        "moneda_anterior": "UF", "moneda_nueva": "CLP",
+        "monto_anterior": 2690, "monto_nuevo": 100000000,
+    })
+    _history(db, "6436", DROP, 2790, 2690, history_id="duplicate-event-row")
+    events = discover_price_drops(db, now=NOW)
+    assert len(events) == 1
+    assert events[0].currency == "UF"
+    assert events[0].new_price == 2690
+
+
+@pytest.mark.parametrize("available,published,current", [
+    (False, True, 2690), (True, False, 2690), (True, True, 2675),
+])
+def test_discovery_rejects_unavailable_unpublished_or_changed_property(available, published, current):
+    db = _db()
+    _seed_property(db, available=available, published=published, current=current)
+    _history(db, "6436", DROP, 2790, 2690)
+    assert discover_price_drops(db, now=NOW) == []
+
+
+def test_discovery_keeps_clp_without_converting_and_stable_event_identity():
+    db = _event_db(code="16479", currency="CLP", current=152000000,
+                   old=160000000, new=152000000)
+    event = discover_price_drops(db, now=NOW)[0]
+    assert event.currency == "CLP"
+    assert event.old_price == 160000000 and event.new_price == 152000000
+    assert event.event_id == discover_price_drops(db, now=NOW)[0].event_id
+
+
+def test_lead_who_asked_between_drops_is_eligible_for_the_later_drop_only():
+    db = _event_db()
+    event1 = discover_price_drops(db, now=NOW)[0]
+    event2 = replace(event1, event_id="rebaja_6436_20261015T150000_UF_later",
+                     campaign_id="rebaja_6436_20261015T150000_UF_later",
+                     dropped_at=DROP + timedelta(days=1), old_price=2690,
+                     new_price=2500, current_price=2500)
+    lead_id = _candidate(
+        db, phone="+56983219801", timestamp=DROP + timedelta(hours=1),
+        content="Quiero saber más de la propiedad código 6436",
+    )
+    old_result = find_candidates_for_event(db, event1)[0]
+    later_result = find_candidates_for_event(db, event2)[0]
+    assert str(lead_id) == old_result["lead_id"] == later_result["lead_id"]
+    assert old_result["reason"] == "no_dated_property_inquiry_before_drop"
+    assert later_result["eligible"] is True
+
+
+def test_yapo_historical_alias_is_a_property_specific_inquiry():
+    db = _event_db(code="16479", currency="CLP", current=152000000,
+                   old=160000000, new=152000000,
+                   aliases=[{"external_id": "32248293", "resolvable": True}])
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219801",
+                         content="Estoy interesado en https://www.yapo.cl/propiedades/32248293")
+    row = find_candidates_for_event(db, event)[0]
+    assert row["lead_id"] == str(lead_id)
+    assert row["eligible"] is True
+    assert row["inquiry_reference"] == "listing_id:32248293"
+
+
+def test_candidate_selection_prioritizes_all_temperatures_and_verifies_alias_dates():
+    db = _event_db(aliases=[{"external_id": "MLC-3776431868", "resolvable": True}])
+    event = discover_price_drops(db, now=NOW)[0]
+    ids = [
+        _candidate(db, phone="+56983219801", temperature="COLD",
+                   content="https://departamento.mercadolibre.cl/MLC-3776431868"),
+        _candidate(db, phone="+56983219802", temperature="NORMAL"),
+        _candidate(db, phone="+56983219803", temperature="HOT"),
+        _candidate(db, phone="+56983219805", temperature="HOT",
+                   timestamp=DROP + timedelta(minutes=1)),
+    ]
+    rows = find_candidates_for_event(db, event)
+    by_id = {row["lead_id"]: row for row in rows}
+    assert by_id[str(ids[0])]["eligible"] is True
+    assert by_id[str(ids[0])]["inquiry_reference"].startswith("listing_id:")
+    assert by_id[str(ids[1])]["eligible"] is True
+    assert by_id[str(ids[2])]["eligible"] is True
+    assert by_id[str(ids[3])]["reason"] == "no_dated_property_inquiry_before_drop"
+    assert [row["temperature"] for row in rows[:3]] == ["HOT", "NORMAL", "COLD"]
+
+
+def test_candidate_selection_rejects_duplicate_identity_opt_out_and_completed_search():
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    duplicate_id = _candidate(db, phone="+56983219801")
+    db["leads"].insert_one({"phone": "56983219801", "messages": []})
+    opted_out_id = _candidate(db, phone="+56983219802", extra={
+        "price_drop_v2": {"opted_out": True},
+    })
+    closed_id = _candidate(db, phone="+56983219803", extra={"pipeline_stage": "CLOSED_WON"})
+    rows = {row["lead_id"]: row for row in find_candidates_for_event(db, event)}
+    assert rows[str(duplicate_id)]["reason"] == "duplicate_phone"
+    assert rows[str(opted_out_id)]["eligible"] is False
+    assert rows[str(closed_id)]["reason"] == "closed_opportunity"
+
+
+def test_dedupe_blocks_same_event_unknown_and_declined_but_allows_new_drop():
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    sent_id = _candidate(db, phone="+56983219801", campaigns=[{
+        "campaign_id": event.event_id, "property_code": "6436", "status": "SENT",
+        "sent_at": DROP + timedelta(days=1), "new_price_uf": 2690,
+    }])
+    unresolved_id = _candidate(db, phone="+56983219802", campaigns=[{
+        "campaign_id": "older-event", "property_code": "6436", "status": "DELIVERY_UNKNOWN",
+    }])
+    declined_id = _candidate(db, phone="+56983219803", campaigns=[{
+        "campaign_id": "old-decline", "property_code": "6436", "status": "DECLINED",
+    }])
+    new_event = replace(
+        event, event_id="rebaja_6436_20261101T120000_UF_new", campaign_id="rebaja_6436_20261101T120000_UF_new",
+        dropped_at=DROP + timedelta(days=18), old_price=2690, new_price=2590,
+        current_price=2590,
+    )
+    result = {row["lead_id"]: row for row in find_candidates_for_event(db, event)}
+    assert result[str(sent_id)]["reason"] == "event_already_attempted"
+    assert result[str(unresolved_id)]["reason"] == "unresolved_previous_delivery"
+    assert result[str(declined_id)]["reason"] == "property_declined"
+    new_result = {row["lead_id"]: row for row in find_candidates_for_event(db, new_event)}
+    assert new_result[str(sent_id)]["eligible"] is True
+
+
+def test_prepare_new_event_stores_cumulative_history_and_reference_price(monkeypatch):
+    db = _db()
+    _seed_property(db, current=2490)
+    _history(db, "6436", DROP - timedelta(days=2), 2790, 2690)
+    _history(db, "6436", DROP - timedelta(days=1), 2690, 2590)
+    _history(db, "6436", DROP, 2590, 2490)
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219801", temperature="HOT",
+                         timestamp=DROP - timedelta(days=10))
+    db["leads"].update_one({"_id": lead_id}, {"$push": {
+        "price_drop_v2.campaigns": {
+            "campaign_id": "previous-price-notice", "property_code": "6436",
+            "status": "SENT", "sent_at": DROP - timedelta(days=2) + timedelta(hours=1),
+            "new_price_uf": 2690,
+        },
+    }})
+    result = cli.prepare_selected(
+        db, event=event, lead_ids=[str(lead_id)], operator="QA operator",
+        contact_basis_reviewed=True, whatsapp_contact_reviewed=True,
+        whatsapp_contact_evidence="Opt-in CRM reviewed 2026-10-01",
+    )
+    assert result["prepared_count"] == 1
+    campaign = db["leads"].find_one({"_id": lead_id})["price_drop_v2"]["campaigns"][-1]
+    assert campaign["price_reference"] == 2690
+    assert [(row["old_price"], row["new_price"])
+            for row in campaign["price_history_steps"]] == [(2690, 2590), (2590, 2490)]
+    assert "cuando estaba en UF 2.690" in campaign["outbound_message"]
+
+
+def test_event_and_message_history_dedupe_prevents_a_second_same_event():
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219801")
+    db["leads"].update_one({"_id": lead_id}, {"$push": {"messages": {
+        "role": "assistant", "content": "Aviso de precio UF 2.790 a UF 2.690 para propiedad 6436",
+        "provider_message_id": "provider-existing", "delivery_status": "accepted",
+    }}})
+    candidate = find_candidates_for_event(db, event)[0]
+    assert candidate["eligible"] is False
+    assert candidate["reason"] == "prior_price_drop_message_needs_review"
+
+
+def test_run_limit_waits_between_sends_and_leaves_remaining_approved(monkeypatch, tmp_path):
+    db, _, ids = _dispatch_db(monkeypatch, count=3)
+    waits, sent = [], []
+    result = _run(db, max_messages=2, sleep_fn=waits.append,
+                  sender=lambda phone, text: sent.append((phone, text)) or {
+                      "success": True, "provider_message_id": f"mock-{phone[-4:]}",
+                      "delivery_status": "accepted",
+                  }, journal_path=tmp_path / "receipts.json")
+    assert result["status"] == "LIMIT_REACHED"
+    assert result["attempts"] == 2 and result["pending"] == 1
+    assert len(sent) == 2 and waits == [450]
+    statuses = [db["leads"].find_one({"_id": ObjectId(lead_id)})["price_drop_v2"]["campaigns"][0]["status"]
+                for lead_id in ids]
+    assert statuses.count("SENT") == 2 and statuses.count("APPROVED") == 1
+
+
+def test_maximum_twenty_keeps_two_of_twenty_two_pending(monkeypatch, tmp_path):
+    db, _, _ = _dispatch_db(monkeypatch, count=22)
+    waits = []
+    result = _run(db, max_messages=20, sleep_fn=waits.append,
+                  journal_path=tmp_path / "twenty.json")
+    assert result["status"] == "LIMIT_REACHED"
+    assert result["attempts"] == 20 and result["pending"] == 2
+    assert len(waits) == 19
+    assert all(300 <= seconds <= 600 for seconds in waits)
+
+
+def test_default_batch_has_no_wait_after_last_and_acceptance_is_in_chat_history(monkeypatch, tmp_path):
+    db, _, ids = _dispatch_db(monkeypatch, count=3)
+    waits = []
+    result = _run(db, sleep_fn=waits.append, journal_path=tmp_path / "receipts.json")
+    assert result["status"] == "COMPLETED" and result["attempts"] == 3
+    assert waits == [450, 450]
+    for lead_id in ids:
+        lead = db["leads"].find_one({"_id": ObjectId(lead_id)})
+        sent = lead["price_drop_v2"]["campaigns"][0]
+        message = next(row for row in lead["messages"] if row.get("provider_message_id"))
+        assert sent["status"] == "SENT"
+        assert message["role"] == "assistant"
+        assert message["content"] == sent["outbound_message"]
+        assert message["metadata"]["tipo"] == "price_drop_outreach"
+        assert message["metadata"]["campaign_id"] == CAMPAIGN
+        assert message["delivery_status"] == "accepted"
+    assert pending_receipts(tmp_path / "receipts.json") == []
+
+
+def test_cancel_does_not_call_provider_and_unknown_delivery_stops(monkeypatch, tmp_path):
+    db, _, _ = _dispatch_db(monkeypatch, count=3)
+    calls = []
+    cancelled = _run(db, confirm=lambda _: "no", sender=lambda *args: calls.append(args),
+                     journal_path=tmp_path / "cancel.json")
+    assert cancelled["status"] == "CANCELLED" and calls == []
+    unknown = _run(db, sender=lambda *args: {"success": False},
+                   journal_path=tmp_path / "unknown.json")
+    assert unknown["status"] == "STOPPED_FOR_RECONCILIATION"
+    assert unknown["attempts"] == 1 and unknown["pending"] == 2
+    assert len(calls) == 0
+
+
+def test_daily_cap_pause_interrupt_and_out_of_hours_are_safe(monkeypatch, tmp_path):
+    db, _, _ = _dispatch_db(monkeypatch, count=3)
+    limited = _run(db, daily_cap=1, journal_path=tmp_path / "daily.json")
+    assert limited["status"] == "LIMIT_REACHED" and limited["attempts"] == 1
+    db, _, _ = _dispatch_db(monkeypatch, count=2)
+    def interrupt(_seconds):
+        raise KeyboardInterrupt
+    paused = _run(db, sleep_fn=interrupt, journal_path=tmp_path / "pause.json")
+    assert paused["status"] == "INTERRUPTED_DURING_PAUSE"
+    assert paused["attempts"] == 1 and paused["pending"] == 1
+    db, _, _ = _dispatch_db(monkeypatch, count=2)
+    closing_time = datetime(2026, 11, 9, 21, 55, tzinfo=timezone.utc)
+    crossed = _run(db, now_fn=lambda: closing_time, rng=lambda _lo, _hi: 600,
+                   journal_path=tmp_path / "closing.json")
+    assert crossed["status"] == "STOPPED_OUTSIDE_BUSINESS_HOURS"
+    assert crossed["attempts"] == 1 and crossed["pending"] == 1
+    db, _, _ = _dispatch_db(monkeypatch, count=2)
+    late = datetime(2026, 11, 9, 23, 30, tzinfo=timezone.utc)
+    stopped = _run(db, now_fn=lambda: late, journal_path=tmp_path / "late.json")
+    assert stopped["status"] == "BLOCKED" and stopped["reason"] == "outside_business_hours"
+
+
+def test_limits_and_link_review_fail_closed(monkeypatch, tmp_path):
+    with pytest.raises(cli.CliError, match="max_messages"):
+        cli.validate_limits(0, 300, 600)
+    with pytest.raises(cli.CliError, match="not_be_negative"):
+        cli.validate_limits(3, -1, 600)
+    with pytest.raises(cli.CliError, match="at_least_60"):
+        cli.validate_limits(3, 5, 600, provider_plan="trial")
+    with pytest.raises(cli.CliError, match="daily_cap_must_not_exceed_50"):
+        cli.validate_limits(3, 300, 600, provider_plan="trial", daily_cap=51)
+    db, _, _ = _dispatch_db(monkeypatch, count=2)
+    result = _run(db, link_verifier=lambda code, now: False,
+                  journal_path=tmp_path / "link.json")
+    assert result["status"] == "BLOCKED_RECIPIENTS_PENDING"
+    assert result["attempts"] == 0 and result["pending"] == 2
+
+
+@pytest.mark.parametrize("channel", ["official", "wasenderapi"])
+def test_text_sender_requires_recent_customer_message_or_template(monkeypatch, tmp_path, channel):
+    db, _, _ = _dispatch_db(monkeypatch, count=1)
+    monkeypatch.setenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", channel)
+    db["leads"].update_one({}, {"$set": {
+        "messages.1.timestamp": (DROP - timedelta(days=10)).isoformat(),
+    }})
+    result = _run(db, journal_path=tmp_path / "official.json")
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "whatsapp_24_hour_window_expired_template_required"
+
+
+def test_reconciliation_restores_accepted_message_without_duplicate_echo(monkeypatch, tmp_path):
+    db, _, ids = _dispatch_db(monkeypatch, count=1)
+    lead_id = ObjectId(ids[0])
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "price_drop_v2.campaigns.0.status": "SENDING",
+        "price_drop_v2.campaigns.0.attempted_at": NOW,
+    }})
+    journal = tmp_path / "reconcile.json"
+    record_accepted_receipt(journal, lead_id=ids[0], campaign_id=CAMPAIGN,
+                            provider_message_id="wa-accepted-1", accepted_at=NOW)
+    result = reconcile_pending_receipts(db, journal, now=NOW)
+    assert result["reconciled"] == 1 and result["unresolved"] == []
+    lead = db["leads"].find_one({"_id": lead_id})
+    assert lead["price_drop_v2"]["campaigns"][0]["status"] == "SENT"
+    assert len(lead["messages"]) == 3
+    assert lead["messages"][-1]["provider_message_id"] == "wa-accepted-1"
+
+    db, _, ids = _dispatch_db(monkeypatch, count=1)
+    lead_id = ObjectId(ids[0])
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "price_drop_v2.campaigns.0.status": "SENDING",
+        "price_drop_v2.campaigns.0.attempted_at": NOW,
+    }, "$push": {"messages": {
+        "role": "assistant", "content": "accepted echo", "provider_message_id": "wa-echo-1",
+    }}})
+    journal = tmp_path / "echo.json"
+    record_accepted_receipt(journal, lead_id=ids[0], campaign_id=CAMPAIGN,
+                            provider_message_id="wa-echo-1", accepted_at=NOW)
+    result = reconcile_pending_receipts(db, journal, now=NOW)
+    lead = db["leads"].find_one({"_id": lead_id})
+    assert result["reconciled"] == 1
+    assert len([row for row in lead["messages"] if row.get("provider_message_id") == "wa-echo-1"]) == 1
+
+
+def test_context_and_reply_classification_use_existing_v2_policy(monkeypatch, tmp_path):
+    db, _, ids = _dispatch_db(monkeypatch, count=1)
+    _run(db, journal_path=tmp_path / "context.json")
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    phone = db["leads"].find_one({"_id": ObjectId(ids[0])})["phone"]
+    assert v2.active_context(db, phone=phone, message="me interesa",
+                             now=NOW + timedelta(days=3))["campaign_id"] == CAMPAIGN
+    assert v2.active_context(db, phone=phone, message="hola",
+                             now=NOW + timedelta(days=8)) is None
+    assert any(row.get("metadata", {}).get("campaign_id") == CAMPAIGN
+               for row in db["leads"].find_one({"_id": ObjectId(ids[0])})["messages"])
+    assert classify_price_drop_reply("sí, me interesa").label == "INTERES_DECLARADO"
+    assert classify_price_drop_reply("¿cuánto cuesta?").label == "CONSULTA_INFORMATIVA"
+    assert classify_price_drop_reply("quiero visitar").explicit_visit is True
+    assert classify_price_drop_reply("no me interesa").label == "RECHAZADO"
+    assert classify_price_drop_reply("no me escriban más").label == "BAJA"
+
+
+def test_webhook_outbound_echo_is_ignored_by_existing_ingress_policy():
+    from chatbot.webhook_event_policy import is_outbound_message_event
+    assert is_outbound_message_event({"event": "message.sent"}) is True
+    assert is_outbound_message_event({"data": {"event": "messages.sent"}}) is True
+    assert is_outbound_message_event({"event": "message.received"}) is False

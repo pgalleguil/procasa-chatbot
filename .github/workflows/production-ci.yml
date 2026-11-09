@@ -35,6 +35,10 @@ jobs:
             campanas/owner_campaign_live_sender.py
       - name: Verify production ancestry
         run: python scripts/verify_production_deploy_base.py --approved-main-ref origin/main --head HEAD
+      - name: Compile manual price-drop campaign files
+        run: >-
+          python -m py_compile chatbot/price_drop_campaign_discovery.py
+          chatbot/price_drop_reconciliation.py scripts/enviar_piloto_rebajas.py
 
   critical-tests:
     name: Critical suites
@@ -44,6 +48,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - suite: Manual price-drop campaign CLI
+            tests: >-
+              tests/test_price_drop_campaign_cli.py
           - suite: Chatbot snapshot delivery fence
             tests: >-
               tests/test_chatbot_snapshot_delivery_fence.py

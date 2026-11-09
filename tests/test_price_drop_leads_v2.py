@@ -327,9 +327,13 @@ def _approved_real_pilot_sample(db, monkeypatch):
             "role": "user",
             "content": "Estoy interesado en la propiedad código 6436",
             "timestamp": "2026-10-01T10:00:00-03:00",
+        }, {
+            "role": "user",
+            "content": "Sigo interesado en la propiedad código 6436",
+            "timestamp": (NOW - timedelta(hours=1)).isoformat(),
         }],
     })
-    campaign_id = "pilot_three_rebajas_acceptance_20261109"
+    campaign_id = v2.REAL_PILOT_CAMPAIGN_ID
     p = params(
         lead_id=lead_id, phone=phone, campaign_id=campaign_id,
         test_mode=False, contact_basis_reviewed=True,
@@ -337,11 +341,18 @@ def _approved_real_pilot_sample(db, monkeypatch):
         contact_basis="Consulta previa de la misma propiedad (fixture de prueba)",
     )
     assert v2.prepare_one(db, now=NOW, **p)["status"] == "PREPARED"
+    assert v2.review_whatsapp_contact(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        operator="Operador de pruebas",
+        evidence="Consentimiento explícito fixture CRM 2026-10-01",
+        now=NOW,
+    )["status"] == "WHATSAPP_CONTACT_REVIEWED"
     assert v2.approve_one(db, lead_id=lead_id, campaign_id=campaign_id,
                           operator="Operador de pruebas", now=NOW)["status"] == "APPROVED"
     monkeypatch.setenv(v2.SEND_FLAG, "true")
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, campaign_id)
     monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, "true")
     monkeypatch.setenv(v2.REAL_PILOT_RECIPIENTS_FLAG, (
         f"{lead_id}:6436;"
         "690000000000000000000798:6377;"
@@ -356,6 +367,10 @@ def test_real_pilot_remains_locked_until_separate_runtime_activation(db, monkeyp
     def sender(*args):
         provider_calls.append(args)
         return {"success": True, "provider_message_id": "should-not-send"}
+    monkeypatch.setenv("RENDER", "true")
+    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                       sender=sender, now=NOW)["status"] == "MANUAL_CAMPAIGNS_DISABLED_ON_RENDER"
+    monkeypatch.delenv("RENDER")
     assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
                        sender=sender, now=NOW)["status"] == "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
     monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
@@ -430,6 +445,22 @@ def test_real_pilot_blocks_duplicate_or_lost_historic_inquiry(db, monkeypatch):
     )
     assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
                        sender=sender, now=NOW)["status"] == "REAL_SEND_INQUIRY_NOT_VERIFIED"
+    assert calls == []
+
+
+def test_real_text_sender_blocks_a_closed_24_hour_window(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
+    db["leads"].update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {"messages.1.timestamp": "2026-10-14T11:52:43-03:00"}},
+    )
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "whatsapp_24_hour_window_expired_template_required"
     assert calls == []
 
 

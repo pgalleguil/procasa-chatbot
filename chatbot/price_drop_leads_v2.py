@@ -30,6 +30,9 @@ EXEC_NOTICE_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_EXECUTIVE_NOTICE_ENABLED"
 REAL_ADMIN_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_REAL_ADMIN_NOTICES_ENABLED"
 REAL_PILOT_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_REAL_PILOT_ENABLED"
 REAL_PILOT_RECIPIENTS_FLAG = "PRICE_DROP_LEADS_V2_REAL_PILOT_RECIPIENTS"
+REAL_CAMPAIGNS_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_REAL_CAMPAIGNS_ENABLED"
+WHATSAPP_CONTACT_REVIEWED_FLAG = "PRICE_DROP_LEADS_V2_WHATSAPP_CONTACT_REVIEWED"
+REAL_PILOT_CAMPAIGN_ID = "pilot_real_rebajas_20261109_v2"
 # Narrow price windows for the approved three-property proposal. These are
 # public property values, not customer identifiers. The three recipient IDs
 # must be configured separately, after a human reviews the contact basis.
@@ -96,6 +99,59 @@ def _same_phone(lead: dict, phone: str) -> bool:
     return normalize_phone_strict(actual or "") == normalize_phone_strict(phone or "")
 
 
+def _real_campaign_history_blocker(lead: dict, campaign: dict) -> str | None:
+    code = str(campaign.get("property_code") or "")
+    campaign_id = str(campaign.get("campaign_id") or "")
+    event_id = str(campaign.get("event_id") or campaign_id)
+    campaigns = (lead.get("price_drop_v2") or {}).get("campaigns") or []
+    if any(row.get("campaign_id") != campaign_id
+           and str(row.get("property_code") or "") == code
+           and row.get("status") == "DECLINED" for row in campaigns):
+        return "property_previously_declined"
+    for message in lead.get("messages") or []:
+        if not isinstance(message, dict):
+            continue
+        metadata = message.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            continue
+        if (metadata.get("campaign_id") in {campaign_id, event_id}
+                or metadata.get("price_drop_event_id") == event_id
+                or event_id in (metadata.get("history_event_ids") or [])):
+            return "event_already_in_message_history"
+    return None
+
+
+def _text_sender_window_blocker(lead: dict, now: datetime) -> str | None:
+    """The configured senders only send plain text, so require an open window."""
+    if os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi").strip().lower() \
+            not in {"wasenderapi", "official"}:
+        return "whatsapp_channel_mode_invalid"
+    inbound = []
+    for message in lead.get("messages") or []:
+        if not isinstance(message, dict) or message.get("role") not in {"user", "customer"}:
+            continue
+        value = message.get("timestamp")
+        if isinstance(value, datetime):
+            parsed = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        elif isinstance(value, str):
+            try:
+                parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if parsed.tzinfo is None:
+                continue
+        else:
+            continue
+        if parsed.utcoffset() is not None:
+            inbound.append(parsed.astimezone(timezone.utc))
+    if not inbound:
+        return "whatsapp_24_hour_window_expired_template_required"
+    latest = max(inbound)
+    if latest > now or now - latest > timedelta(hours=24):
+        return "whatsapp_24_hour_window_expired_template_required"
+    return None
+
+
 def _real_pilot_send_blocker(db, lead: dict, campaign: dict) -> str | None:
     """Fail closed until exactly three independently reviewed recipients are set.
 
@@ -142,8 +198,14 @@ def _real_pilot_send_blocker(db, lead: dict, campaign: dict) -> str | None:
             or not str(campaign.get("approved_by") or "").strip()
             or not isinstance(campaign.get("approved_at"), datetime)):
         return "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
+    if (campaign.get("whatsapp_contact_reviewed") is not True
+            or not str(campaign.get("whatsapp_contact_evidence") or "").strip()):
+        return "WHATSAPP_CONTACT_AUTHORIZATION_MISSING"
     if campaign.get("simulated_prior_inquiry") is not False:
         return "REAL_SEND_SIMULATED_INQUIRY"
+    history_blocker = _real_campaign_history_blocker(lead, campaign)
+    if history_blocker:
+        return history_blocker
 
     phone = normalize_phone_strict(campaign.get("phone_normalized") or "")
     if (not phone or not has_real_phone(phone)
@@ -168,6 +230,52 @@ def _real_pilot_send_blocker(db, lead: dict, campaign: dict) -> str | None:
     )
     if (not original
             or utc(original["inquiry_at"]) != utc(campaign["inquiry_evidence_at"])):
+        return "REAL_SEND_INQUIRY_NOT_VERIFIED"
+    return None
+
+
+def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
+    """Fail-closed gate for separately approved, event-specific campaigns."""
+    if os.getenv(REAL_CAMPAIGNS_ENABLED_FLAG, "").strip().lower() not in {"1", "true", "yes"}:
+        return "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
+    if (campaign.get("contact_basis_reviewed") is not True
+            or campaign.get("contact_basis_type") != DIRECT_RESPONSE_BASIS_TYPE
+            or not str(campaign.get("contact_basis") or "").strip()
+            or not str(campaign.get("approved_by") or "").strip()
+            or not isinstance(campaign.get("approved_at"), datetime)):
+        return "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
+    if (campaign.get("whatsapp_contact_reviewed") is not True
+            or not str(campaign.get("whatsapp_contact_evidence") or "").strip()):
+        return "WHATSAPP_CONTACT_AUTHORIZATION_MISSING"
+    if campaign.get("simulated_prior_inquiry") is not False:
+        return "REAL_SEND_SIMULATED_INQUIRY"
+    if str(campaign.get("event_id") or campaign.get("campaign_id") or "") != str(
+            campaign.get("campaign_id") or ""):
+        return "campaign_event_identity_mismatch"
+    history_blocker = _real_campaign_history_blocker(lead, campaign)
+    if history_blocker:
+        return history_blocker
+    phone = normalize_phone_strict(campaign.get("phone_normalized") or "")
+    if (not phone or not has_real_phone(phone) or not _same_phone(lead, phone)
+            or lead.get("phone_is_synthetic") or lead.get("contact_identity_incomplete")):
+        return "REAL_SEND_PHONE_CHANGED"
+    variants = phone_identity_variants(phone)
+    matches = list(db[LEADS].find({
+        "$or": [{"phone": {"$in": variants}},
+                {"contact_phone_normalized": {"$in": variants}}],
+    }, {"_id": 1}).limit(2))
+    if len(matches) != 1 or matches[0]["_id"] != lead["_id"]:
+        return "REAL_SEND_AMBIGUOUS_PHONE"
+    if (not isinstance(campaign.get("price_drop_at"), datetime)
+            or not isinstance(campaign.get("inquiry_evidence_at"), datetime)):
+        return "REAL_SEND_INQUIRY_NOT_VERIFIED"
+    code = str(campaign.get("property_code") or "")
+    evidence = _inquiry_before(
+        lead, code, utc(campaign["price_drop_at"]),
+        _verified_listing_ids(db, code), return_evidence=True,
+    )
+    if (not evidence
+            or utc(evidence["inquiry_at"]) != utc(campaign["inquiry_evidence_at"])):
         return "REAL_SEND_INQUIRY_NOT_VERIFIED"
     return None
 
@@ -270,30 +378,41 @@ def _inquiry_before(lead: dict, code: str, drop_at: datetime,
         keys = ("property_code", "codigo_propiedad", "codigo", "listing_code")
         declared = {str(metadata.get(k) or "").strip() for k in keys}
         has_explicit_code = code in declared
+        reference = f"metadata_property_code:{code}" if has_explicit_code else ""
         # Also accept an explicit property code/link in the customer text.
         referenced = re.search(
             r"\b(?:c[oó]d(?:igo)?|propiedad)\s*[:#]?\s*(\d{4,6})\b",
             text, re.I,
         )
         if referenced:
-            has_explicit_code = has_explicit_code or referenced.group(1) == code
+            if referenced.group(1) == code:
+                has_explicit_code = True
+                reference = f"property_code:{code}"
         if re.search(r"https?://(?:www\.)?procasa\.cl/(?:propiedad/)?"
                      + re.escape(code) + r"(?!\d)", text, re.I):
             has_explicit_code = True
+            reference = f"procasa_url:{code}"
         if not has_explicit_code:
             lowered = text.casefold()
-            has_explicit_code = any(
-                re.search(r"(?<![a-z0-9])" + re.escape(listing_id)
-                          + r"(?![a-z0-9])", lowered)
-                for listing_id in (listing_ids or set())
-            )
+            normalized_text = re.sub(r"[^a-z0-9]", "", lowered)
+            for listing_id in (listing_ids or set()):
+                if len(listing_id) < 7:
+                    continue
+                normalized_id = re.sub(r"[^a-z0-9]", "", listing_id.casefold())
+                if (re.search(r"(?<![a-z0-9])" + re.escape(listing_id.casefold())
+                              + r"(?![a-z0-9])", lowered)
+                        or re.search(r"(?<![a-z0-9])" + re.escape(normalized_id)
+                                     + r"(?![a-z0-9])", normalized_text)):
+                    has_explicit_code = True
+                    reference = f"listing_id:{listing_id}"
+                    break
         if has_explicit_code:
             if return_evidence:
                 return {
                     "inquiry_at": stamp,
                     "message_id": str(message.get("message_id") or
                                       message.get("provider_message_id") or "")[:128],
-                    "reference": code if code in declared or referenced else "verified_listing",
+                    "reference": reference or f"verified_listing:{code}",
                 }
             return True
     return None if return_evidence else False
@@ -307,6 +426,39 @@ def _old_completed_test(campaign: dict, code: str, cutoff: datetime | None) -> b
         and campaign.get("status") in {"SENT", "RESPONDED"}
         and isinstance(campaign.get("sent_at"), datetime)
         and utc(campaign["sent_at"]) < cutoff
+    )
+
+
+def _same_price_drop_event(campaign: dict, *, event_id: str,
+                           history_event_ids: list[str], currency: str,
+                           old_price: int, new_price: int) -> bool:
+    """Detect duplicate price events while allowing later drops on one listing."""
+    existing_event = str(campaign.get("event_id") or "")
+    existing_history = {
+        str(value) for value in (campaign.get("history_event_ids") or [])
+    }
+    current_history = {str(value) for value in history_event_ids or []}
+    if existing_event and existing_event == str(event_id):
+        return True
+    if existing_history.intersection(current_history | {str(event_id)}):
+        return True
+    # Pre-event-ledger campaigns cannot be matched by event ID. Treat the
+    # same currency and price pair as a duplicate until a distinct event ID
+    # is available, while permitting a later recurrence once both rows carry
+    # their event IDs.
+    if existing_event or existing_history:
+        return False
+    campaign_currency = str(campaign.get("currency") or "").upper()
+    if not campaign_currency:
+        campaign_currency = "CLP" if campaign.get("old_price_clp") is not None else "UF"
+    old_value = (campaign.get("old_price_clp") if currency == "CLP"
+                 else campaign.get("old_price_uf"))
+    new_value = (campaign.get("new_price_clp") if currency == "CLP"
+                 else campaign.get("new_price_uf"))
+    return (
+        campaign_currency == currency
+        and old_value == old_price
+        and new_value == new_price
     )
 
 
@@ -401,7 +553,12 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
                 contact_basis_type: str = "",
                 contact_basis: str = "", currency: str = "UF",
                 old_price_clp: int | None = None,
-                new_price_clp: int | None = None) -> dict:
+                new_price_clp: int | None = None,
+                event_id: str | None = None,
+                history_event_ids: list[str] | None = None,
+                price_reference: int | float | None = None,
+                price_history_steps: list[dict] | None = None,
+                outbound_message_override: str | None = None) -> dict:
     """Read-only preflight. Tests use an explicit existing canonical lead."""
     if not VALID_ID.fullmatch(campaign_id) or not VALID_CODE.fullmatch(property_code):
         raise PilotBlocked("invalid_id_or_property")
@@ -468,11 +625,58 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
     if any(c.get("campaign_id") == campaign_id for c in
            (lead.get("price_drop_v2") or {}).get("campaigns") or []):
         raise PilotBlocked("campaign_already_recorded")
-    if any(c.get("property_code") == property_code
-           and c.get("status") in ("PREPARED", "APPROVED", *ACTIVE_STATES)
-           and not (test_mode and _old_completed_test(c, property_code, cutoff))
-           for c in (lead.get("price_drop_v2") or {}).get("campaigns") or []):
+    same_property = [
+        c for c in (lead.get("price_drop_v2") or {}).get("campaigns") or []
+        if c.get("property_code") == property_code
+    ]
+    if any(c.get("status") in {"SENDING", "DELIVERY_UNKNOWN"} for c in same_property):
+        raise PilotBlocked("unresolved_previous_delivery")
+    if any(c.get("status") in {"DECLINED", "OPTED_OUT"} for c in same_property):
+        raise PilotBlocked("property_previously_declined")
+    if any(c.get("status") in {"PREPARED", "APPROVED"} for c in same_property):
         raise PilotBlocked("active_campaign_for_property")
+    if any(
+        c.get("status") in {"SENT", "RESPONDED"}
+        and not _old_completed_test(c, property_code, cutoff)
+        and _same_price_drop_event(
+            c, event_id=str(event_id or campaign_id),
+            history_event_ids=list(history_event_ids or [event_id or campaign_id]),
+            currency=currency, old_price=old_value, new_price=new_value,
+        )
+        for c in same_property
+    ):
+        raise PilotBlocked("active_campaign_for_property")
+    message = (
+        str(outbound_message_override).strip()
+        if outbound_message_override is not None
+        else (_message(property_code, old_value, new_value)
+              if currency == "UF" else _clp_outreach_message(
+                  property_code, old_value, new_value))
+    )
+    if not message:
+        raise PilotBlocked("outbound_message_required")
+    if price_reference is not None and (
+            isinstance(price_reference, bool) or not isinstance(price_reference, (int, float))
+            or price_reference <= 0):
+        raise PilotBlocked("price_reference_invalid")
+    clean_history = []
+    for step in price_history_steps or []:
+        if not isinstance(step, dict):
+            raise PilotBlocked("price_history_step_invalid")
+        try:
+            step_currency = str(step.get("currency") or "").upper()
+            step_old, step_new = int(step["old_price"]), int(step["new_price"])
+            step_id = str(step["event_id"])
+            step_at = str(step["dropped_at"])
+            if (step_currency not in {"UF", "CLP"} or not step_old > step_new > 0
+                    or not step_id or not step_at):
+                raise ValueError
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PilotBlocked("price_history_step_invalid") from exc
+        clean_history.append({
+            "event_id": step_id[:100], "dropped_at": step_at[:40],
+            "currency": step_currency, "old_price": step_old, "new_price": step_new,
+        })
     return {
         "lead_id": lid, "phone_normalized": canonical,
         "campaign_id": campaign_id, "property_code": property_code,
@@ -488,11 +692,13 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         "inquiry_evidence_at": (inquiry_evidence or {}).get("inquiry_at"),
         "inquiry_message_id": (inquiry_evidence or {}).get("message_id"),
         "inquiry_reference": (inquiry_evidence or {}).get("reference"),
-        "message": (
-            _message(property_code, old_value, new_value)
-            if currency == "UF" else _clp_outreach_message(
-                property_code, old_value, new_value)
-        ),
+        "event_id": str(event_id or campaign_id),
+        "history_event_ids": sorted(set(
+            str(item) for item in (history_event_ids or [event_id or campaign_id])
+        )),
+        "price_reference": price_reference,
+        "price_history_steps": clean_history,
+        "message": message,
     }
 
 
@@ -508,6 +714,12 @@ def prepare_one(db, *, now=None, **data) -> dict:
         "simulated_prior_inquiry", "phone_normalized", "qa_session_started_at",
         "inquiry_evidence_at", "inquiry_message_id", "inquiry_reference")}
     row.update({
+        "event_id": p["event_id"],
+        "history_event_ids": p["history_event_ids"],
+        "price_reference": p["price_reference"],
+        "price_history_steps": p["price_history_steps"],
+    })
+    row.update({
         "status": "PREPARED", "prepared_at": stamp,
         "outbound_message": p["message"],
         "reply_count": 0, "notifications": {
@@ -521,7 +733,10 @@ def prepare_one(db, *, now=None, **data) -> dict:
         f"{ROOT}.campaign_id": {"$ne": p["campaign_id"]},
         ROOT: {"$not": {"$elemMatch": {
             "property_code": p["property_code"],
-            "status": {"$in": ["PREPARED", "APPROVED", *ACTIVE_STATES]},
+            "status": {"$in": [
+                "PREPARED", "APPROVED", "SENDING", "DELIVERY_UNKNOWN",
+                "DECLINED", "OPTED_OUT",
+            ]},
         }}},
     }
     if p["test_mode"] and p["qa_session_started_at"] is not None:
@@ -580,8 +795,39 @@ def approve_one(db, *, lead_id: str, campaign_id: str, operator: str, now=None) 
     return {"status": "APPROVED", "campaign_id": campaign_id}
 
 
+def review_whatsapp_contact(db, *, lead_id: str, campaign_id: str,
+                            operator: str, evidence: str, now=None) -> dict:
+    """Record a human-verified, campaign-specific WhatsApp opt-in reference.
+
+    Evidence should identify the source and date in the CRM; do not paste a
+    full consent transcript or unrelated personal data into this field.
+    Only prepared or approved, unsent campaigns may be reviewed.
+    """
+    operator = str(operator or "").strip()
+    evidence = str(evidence or "").strip()
+    if not operator or len(evidence) < 8:
+        raise PilotBlocked("whatsapp_contact_authorization_evidence_required")
+    stamp = utc(now or datetime.now(timezone.utc))
+    result = db[LEADS].update_one(
+        {"_id": _lead_id(lead_id), ROOT: {"$elemMatch": {
+            "campaign_id": campaign_id, "status": {"$in": ["PREPARED", "APPROVED"]},
+            "provider_message_id": {"$in": [None, ""]},
+        }}},
+        {"$set": {
+            f"{ROOT}.$.whatsapp_contact_reviewed": True,
+            f"{ROOT}.$.whatsapp_contact_evidence": evidence[:240],
+            f"{ROOT}.$.whatsapp_contact_reviewed_by": operator[:80],
+            f"{ROOT}.$.whatsapp_contact_reviewed_at": stamp,
+        }},
+    )
+    if result.modified_count != 1:
+        raise PilotBlocked("campaign_not_reviewable_or_already_attempted")
+    return {"status": "WHATSAPP_CONTACT_REVIEWED", "campaign_id": campaign_id}
+
+
 def send_one(db, *, lead_id: str, campaign_id: str,
-             sender: Callable[[str, str], dict] | None = None, now=None) -> dict:
+             sender: Callable[[str, str], dict] | None = None, now=None,
+             recovery_journal_path=None) -> dict:
     """One irreversible attempt; no sender invoked without separate gates."""
     if not (os.getenv(SEND_FLAG, "").lower() in {"true", "1", "yes"}
             and os.getenv(APPROVED_ID_FLAG) == campaign_id):
@@ -593,17 +839,31 @@ def send_one(db, *, lead_id: str, campaign_id: str,
               if x.get("campaign_id") == campaign_id), None)
     if not c or c.get("status") != "APPROVED":
         return {"status": "NOT_APPROVED"}
+    stamp = utc(now or datetime.now(timezone.utc))
+    if not c.get("test_mode") and (
+            os.getenv("RENDER", "").strip().lower() == "true"
+            or os.getenv("RENDER_SERVICE_ID")):
+        return {"status": "MANUAL_CAMPAIGNS_DISABLED_ON_RENDER"}
     if lead_must_not_be_contacted(lead):
         return {"status": "BLOCKED_OPTED_OUT"}
     # Historical recovery is NOT HOT-only; closed opportunities remain blocked.
     if not c.get("test_mode") and not is_open_campaign_eligible(lead):
         return {"status": "BLOCKED_CLOSED_PIPELINE"}
-    # Real sending is explicitly limited to the three listed lead/property
-    # pairs; test sending still uses its original phone allowlist.
+    # The approved three-recipient campaign retains its narrow allowlist.
+    # A future event with the same property and price is still a new campaign.
     if not c.get("test_mode"):
-        blocker = _real_pilot_send_blocker(db, lead, c)
+        blocker = (_real_pilot_send_blocker(db, lead, c)
+                   if campaign_id == REAL_PILOT_CAMPAIGN_ID
+                   else _real_campaign_send_blocker(db, lead, c))
         if blocker:
             return {"status": blocker}
+        if os.getenv(WHATSAPP_CONTACT_REVIEWED_FLAG, "").strip().lower() not in {
+            "1", "true", "yes"
+        }:
+            return {"status": "WHATSAPP_CONTACT_REVIEW_REQUIRED"}
+        window_blocker = _text_sender_window_blocker(lead, stamp)
+        if window_blocker:
+            return {"status": window_blocker}
     elif normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")) != c.get("phone_normalized"):
         return {"status": "TEST_PHONE_NOT_ALLOWLISTED"}
     currency = c.get("currency") or "UF"
@@ -613,7 +873,6 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         _property_price(db, c["property_code"], old, new, currency="CLP")
     else:
         _property_price(db, c["property_code"], old, new)
-    stamp = utc(now or datetime.now(timezone.utc))
     send_claim = {"_id": lead["_id"], ROOT: {"$elemMatch": {
         "campaign_id": campaign_id, "status": "APPROVED"}}}
     if not c.get("test_mode"):
@@ -646,27 +905,86 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     if accepted:
         set_fields[f"{ROOT}.$.sent_at"] = stamp
         set_fields[f"{ROOT}.$.expires_at"] = stamp + timedelta(days=7)
-    db[LEADS].update_one(
-        {"_id": lead["_id"],
-         ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "SENDING"}}},
-        {"$set": set_fields},
-    )
     if accepted:
-        # One CRM conversation record, tagged with the campaign reference.
-        # An echo from WhatsApp must be de-duplicated by provider_message_id.
-        db[LEADS].update_one(
-            {"_id": lead["_id"], "messages.provider_message_id": {
-                "$ne": receipt["provider_message_id"]}},
-            {"$push": {"messages": {
-                "role": "assistant", "content": c["outbound_message"],
+        journal_recorded = False
+        if recovery_journal_path is not None:
+            try:
+                from .price_drop_reconciliation import record_accepted_receipt
+                record_accepted_receipt(
+                    recovery_journal_path, lead_id=str(lead["_id"]),
+                    campaign_id=campaign_id,
+                    provider_message_id=str(receipt["provider_message_id"]),
+                    accepted_at=stamp,
+                )
+                journal_recorded = True
+            except Exception:
+                # The Mongo write below is still attempted with the receipt in
+                # memory. If it also fails, the run stops for manual recovery.
+                pass
+        message = {
+            "role": "assistant", "content": c["outbound_message"],
+            "provider_message_id": receipt["provider_message_id"],
+            "delivery_status": "accepted", "timestamp": stamp.isoformat(),
+            "metadata": {
+                "tipo": "price_drop_outreach", "campaign_id": campaign_id,
+                "price_drop_event_id": str(c.get("event_id") or campaign_id),
+                "property_code": str(c.get("property_code") or ""),
+                "currency": currency,
                 "provider_message_id": receipt["provider_message_id"],
-                "delivery_status": "accepted",
-                "timestamp": stamp.isoformat(),
-                "metadata": {"tipo": "price_drop_outreach",
-                             "campaign_id": campaign_id,
-                             "provider_message_id": receipt["provider_message_id"]},
-            }}},
-        )
+                "provider_status": str(receipt.get("delivery_status") or "accepted"),
+                "old_price_uf": c.get("old_price_uf"),
+                "new_price_uf": c.get("new_price_uf"),
+                "old_price_clp": c.get("old_price_clp"),
+                "new_price_clp": c.get("new_price_clp"),
+                "price_drop_at": c.get("price_drop_at"),
+                "history_event_ids": c.get("history_event_ids") or [],
+                "price_reference": c.get("price_reference"),
+                "price_history_steps": c.get("price_history_steps") or [],
+            },
+        }
+        try:
+            persisted = db[LEADS].update_one(
+                {"_id": lead["_id"],
+                 ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "SENDING"}},
+                 "messages.provider_message_id": {"$ne": receipt["provider_message_id"]}},
+                {"$set": set_fields, "$push": {"messages": message}},
+            )
+            if persisted.modified_count != 1:
+                # A genuine WaSender echo can win the race and append first.
+                echo = db[LEADS].find_one(
+                    {"_id": lead["_id"], "messages.provider_message_id":
+                     receipt["provider_message_id"]}, {"_id": 1})
+                if not echo:
+                    raise RuntimeError("accepted_message_persistence_conflict")
+                persisted = db[LEADS].update_one(
+                    {"_id": lead["_id"],
+                     ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "SENDING"}}},
+                    {"$set": set_fields},
+                )
+                if persisted.modified_count != 1:
+                    raise RuntimeError("accepted_campaign_persistence_conflict")
+            if journal_recorded:
+                from .price_drop_reconciliation import clear_accepted_receipt
+                clear_accepted_receipt(
+                    recovery_journal_path, lead_id=str(lead["_id"]),
+                    campaign_id=campaign_id,
+                    provider_message_id=str(receipt["provider_message_id"]),
+                )
+        except Exception:
+            return {"status": "HISTORY_RECONCILIATION_REQUIRED",
+                    "campaign_id": campaign_id,
+                    "provider_message_id": receipt.get("provider_message_id")}
+    else:
+        try:
+            db[LEADS].update_one(
+                {"_id": lead["_id"],
+                 ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "SENDING"}}},
+                {"$set": set_fields},
+            )
+        except Exception:
+            return {"status": "HISTORY_RECONCILIATION_REQUIRED",
+                    "campaign_id": campaign_id,
+                    "provider_message_id": receipt.get("provider_message_id")}
     return {"status": status, "campaign_id": campaign_id,
             "provider_message_id": receipt.get("provider_message_id")}
 

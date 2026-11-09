@@ -15,9 +15,10 @@ from typing import Callable
 from chatbot.price_drop_leads_v2 import (
     DIRECT_RESPONSE_BASIS_TYPE, REAL_PILOT_PRICE_WINDOWS,
     REAL_PILOT_RECIPIENTS_FLAG,
-    PilotBlocked, approve_one, prepare_one, preview_one, send_one,
+    PilotBlocked, approve_one, prepare_one, preview_one, review_whatsapp_contact, send_one,
 )
 from chatbot.price_drop_campaign_real import _lead_id
+from chatbot.price_drop_reconciliation import default_journal_path
 
 
 def _recipients() -> dict[str, str]:
@@ -44,10 +45,13 @@ def run_action(db, *, mode: str, code: str, campaign_id: str,
                operator: str = "", contact_basis_reviewed: bool = False,
                contact_basis_type: str = "",
                contact_basis: str = "", confirmed_live_link: bool = False,
+               whatsapp_contact_reviewed: bool = False,
+               whatsapp_contact_evidence: str = "",
                confirm_action: str = "",
                sender: Callable[[str, str], dict] | None = None) -> dict:
     """Explicit action with no implicit progression through campaign states."""
-    if mode not in {"status", "preview", "prepare", "approve", "send-one"}:
+    if mode not in {"status", "preview", "prepare", "approve",
+                    "review-whatsapp-contact", "send-one"}:
         return {"status": "BLOCKED", "reason": "invalid_mode"}
     if code not in REAL_PILOT_PRICE_WINDOWS:
         return {"status": "BLOCKED", "reason": "unapproved_property"}
@@ -83,8 +87,9 @@ def run_action(db, *, mode: str, code: str, campaign_id: str,
             "writes": 0, "sends": 0,
         }
 
-    if mode in {"prepare", "approve", "send-one"}:
+    if mode in {"prepare", "approve", "review-whatsapp-contact", "send-one"}:
         expected = {"prepare": "PREPARE_", "approve": "APPROVE_",
+                    "review-whatsapp-contact": "REVIEW_WHATSAPP_",
                     "send-one": "SEND_"}[mode] + code
         if not str(operator).strip() or confirm_action != expected:
             return {"status": "BLOCKED", "reason": "explicit_operator_confirmation_required"}
@@ -124,6 +129,14 @@ def run_action(db, *, mode: str, code: str, campaign_id: str,
                 return {"status": "BLOCKED", "reason": "documented_contact_basis_required"}
             result = prepare_one(db, **data)
             return {**result, "recipient_last4": suffix, "sends": 0}
+        if mode == "review-whatsapp-contact":
+            if not whatsapp_contact_reviewed or len(whatsapp_contact_evidence.strip()) < 8:
+                return {"status": "BLOCKED", "reason": "whatsapp_contact_authorization_evidence_required"}
+            result = review_whatsapp_contact(
+                db, lead_id=lead_id, campaign_id=campaign_id,
+                operator=operator, evidence=whatsapp_contact_evidence,
+            )
+            return {**result, "recipient_last4": suffix, "sends": 0}
         if mode == "approve":
             result = approve_one(db, lead_id=lead_id, campaign_id=campaign_id,
                                  operator=operator)
@@ -131,7 +144,8 @@ def run_action(db, *, mode: str, code: str, campaign_id: str,
         # Sending requires all V2 runtime flags in addition to this CLI
         # confirmation. No attempt is automatically retried on uncertainty.
         result = send_one(db, lead_id=lead_id, campaign_id=campaign_id,
-                          sender=sender)
+                          sender=sender,
+                          recovery_journal_path=default_journal_path())
         return {**result, "recipient_last4": suffix}
     except (PilotBlocked, ValueError) as exc:
         return {"status": "BLOCKED", "reason": str(exc),
@@ -141,7 +155,8 @@ def run_action(db, *, mode: str, code: str, campaign_id: str,
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", required=True,
-                        choices=("status", "preview", "prepare", "approve", "send-one"))
+                        choices=("status", "preview", "prepare", "approve",
+                                 "review-whatsapp-contact", "send-one"))
     parser.add_argument("--property", required=True,
                         choices=tuple(REAL_PILOT_PRICE_WINDOWS))
     parser.add_argument("--campaign-id", required=True)
@@ -150,6 +165,8 @@ def main() -> int:
     parser.add_argument("--contact-basis-type", choices=(DIRECT_RESPONSE_BASIS_TYPE,),
                         default="")
     parser.add_argument("--contact-basis", default="")
+    parser.add_argument("--whatsapp-contact-reviewed", action="store_true")
+    parser.add_argument("--whatsapp-contact-evidence", default="")
     parser.add_argument("--confirmed-live-link", action="store_true")
     parser.add_argument("--confirm-action", default="")
     args = parser.parse_args()
@@ -160,6 +177,8 @@ def main() -> int:
         contact_basis_reviewed=args.contact_basis_reviewed,
         contact_basis_type=args.contact_basis_type,
         contact_basis=args.contact_basis,
+        whatsapp_contact_reviewed=args.whatsapp_contact_reviewed,
+        whatsapp_contact_evidence=args.whatsapp_contact_evidence,
         confirmed_live_link=args.confirmed_live_link,
         confirm_action=args.confirm_action,
     )

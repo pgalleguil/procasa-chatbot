@@ -13,7 +13,7 @@ import os
 import re
 from difflib import SequenceMatcher
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from pymongo.errors import DuplicateKeyError
@@ -1419,15 +1419,31 @@ def process_test_inbound(db: Any, phone: str, provider_message_id: str, text: st
     phone_norm = normalize_phone_strict(phone)
     key = hashlib.sha256(f"{phone_norm}|{provider_message_id}".encode()).hexdigest()
     now = datetime.now(timezone.utc)
+    # MongoDB stores dates at millisecond precision. Several turns can arrive
+    # within one millisecond, so keep a per-campaign monotonic timestamp for
+    # deterministic history ordering even when the wall clock ties or moves
+    # backwards slightly.
+    created_at = now.replace(microsecond=(now.microsecond // 1000) * 1000)
+    latest_turn = list(db[TURN_COLLECTION].find(
+        {"campaign_id": ctx["campaign_id"], "status": "SENT"},
+        {"created_at": 1},
+    ).sort("created_at", -1).limit(1))
+    previous_created_at = latest_turn[0].get("created_at") if latest_turn else None
+    if isinstance(previous_created_at, datetime):
+        if previous_created_at.tzinfo is None:
+            previous_created_at = previous_created_at.replace(tzinfo=timezone.utc)
+        else:
+            previous_created_at = previous_created_at.astimezone(timezone.utc)
+        if created_at <= previous_created_at:
+            created_at = previous_created_at + timedelta(milliseconds=1)
     try:
         db[TURN_COLLECTION].insert_one({
             "_id": key, "campaign_id": ctx["campaign_id"],
             "customer_text": text[:1600], "provider_inbound_id": str(provider_message_id),
-            "created_at": now, "status": "RECEIVED",
+            "created_at": created_at, "status": "RECEIVED",
         })
     except DuplicateKeyError:
         return {"status": "duplicate_suppressed"}
-
     if STOP.search(text):
         db[COLLECTION].update_one({"_id": ctx["campaign_id"], "test_mode": True}, {
             "$set": {"status": "STOPPED", "stopped_at": now}

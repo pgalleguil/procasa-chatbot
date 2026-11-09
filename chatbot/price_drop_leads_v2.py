@@ -660,11 +660,15 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
             f"{field}.opted_out_at": now,
         })
     if positive:
+        update["$set"][f"{field}.last_positive_reply_text"] = str(text)[:350]
+        update["$set"][f"{field}.last_positive_reply_at"] = now
         stored_campaign = next(
             (row for row in (lead.get("price_drop_v2") or {}).get("campaigns") or []
              if row.get("campaign_id") == cid), {},
         )
         if not stored_campaign.get("has_positive_response"):
+            update["$set"][f"{field}.first_positive_reply_text"] = str(text)[:350]
+            update["$set"][f"{field}.first_positive_reply_at"] = now
             role_status = (
                 "PENDING_SIMULATION" if ctx["test_mode"]
                 else "PENDING_HUMAN_REVIEW"

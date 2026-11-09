@@ -115,24 +115,61 @@ def get_special_raquel_replacement() -> str:
     )
     return candidate
 
-def get_active_executive(name: str, norm_comuna: str = "") -> str:
-    """Retorna el reemplazo si el ejecutivo está en vacaciones, o si no está disponible, deriva a RR."""
-    norm_name = normalize_text(name)
-    if is_executive_temporarily_inactive(name):
-        if normalize_text(RAQUEL_CHENEAUX) in norm_name:
-            replacement = get_special_raquel_replacement()
-            logger.info(f"[VACATION] Redirigiendo asignación de {name} al reemplazo especial: {replacement}")
-            name = replacement
-        else:
-            logger.info(f"[VACATION] Redirigiendo asignación de {name} a reemplazo por defecto: {DEFAULT_VACATION_REPLACEMENT}")
-            name = DEFAULT_VACATION_REPLACEMENT
-            
-    # Check again if the new/current name is Raquel and she is unavailable today
-    if normalize_text(RAQUEL_CHENEAUX) in normalize_text(name) and is_raquel_unavailable():
-        logger.info(f"[VACATION] {name} no trabaja hoy (Lunes o Miércoles). Derivando a Round Robin.")
-        return get_next_round_robin_executive(norm_comuna)
+def _active_agent_record(name: str, db=None):
+    """Only an explicitly active CRM agent can receive a new lead."""
+    if not name or is_executive_temporarily_inactive(name):
+        return None
+    store = db or get_db()
+    return store["usuarios"].find_one({
+        "nombre": name, "rol": "agente", "is_active": True,
+    })
 
-    return name
+
+def _territorial_available_agent(norm_comuna: str, *, excluded_name: str = "") -> str:
+    """Use the available team for the same comuna; never route to another region blindly.
+
+    No eligible agent means a pending, unassigned lead for supervisor review.
+    """
+    comuna = normalize_text(norm_comuna).replace("-", " ").strip()
+    if not comuna:
+        return UNASSIGNED_LABEL
+    db = get_db()
+    eligible = []
+    for user in db["usuarios"].find(
+        {"rol": "agente", "is_active": True},
+        {"nombre": 1, "comunas_interes": 1, "comunas_interes_norm": 1},
+    ):
+        name = user.get("nombre") or ""
+        if (not name or normalize_text(name) == normalize_text(excluded_name)
+                or is_executive_temporarily_inactive(name)):
+            continue
+        preferences = (user.get("comunas_interes_norm") or []) + (user.get("comunas_interes") or [])
+        if any(normalize_text(item).replace("-", " ").strip() == comuna for item in preferences):
+            eligible.append(name)
+    if not eligible:
+        logger.warning("[ROUTER] Sin agente activo con cobertura para comuna %r", norm_comuna)
+        return UNASSIGNED_LABEL
+    eligible.sort(key=normalize_text)
+    state_col = db["lead_routing_state"]
+    state_key = "territorial_active_rr:" + comuna.replace(" ", "-")
+    state = state_col.find_one({"id": state_key}) or {}
+    next_index = (int(state.get("last_index", -1)) + 1) % len(eligible)
+    state_col.update_one({"id": state_key}, {"$set": {"last_index": next_index}}, upsert=True)
+    return eligible[next_index]
+
+
+def get_active_executive(name: str, norm_comuna: str = "") -> str:
+    """Check real-time user availability rather than a static name list or phone."""
+    if _active_agent_record(name):
+        if normalize_text(name) != normalize_text(RAQUEL_CHENEAUX) or not is_raquel_unavailable():
+            return name
+    if normalize_text(name) == normalize_text(RAQUEL_CHENEAUX):
+        replacement = get_special_raquel_replacement()
+        if _active_agent_record(replacement):
+            return replacement
+    logger.info("[ROUTER] Ejecutivo %r no habilitado; buscando agente activo territorial", name)
+    return _territorial_available_agent(norm_comuna, excluded_name=name)
+
 
 # Lista para Round Robin (Jorge Pablo Caro - RM).
 # Erika deja de recibir propiedades JPC en RM; el reparto queda entre
@@ -222,9 +259,9 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
         next_index = (last_index + i) % len(ROUND_ROBIN_TEAM)
         candidate = ROUND_ROBIN_TEAM[next_index]
         
-        # Filtro Vacaciones: Saltar si está en vacaciones
-        if is_executive_temporarily_inactive(candidate):
-            logger.info(f"[ROUTER] Saltando a {candidate} (En modo vacaciones).")
+        # The CRM's explicit active flag and agent role are authoritative.
+        if not _active_agent_record(candidate, db=db):
+            logger.info("[ROUTER] Saltando candidato no activo: %s", candidate)
             continue
             
         # Filtro Raquel: No trabaja lunes y miércoles
@@ -255,7 +292,8 @@ def get_next_round_robin_executive(norm_comuna: str = "") -> str:
     # Fallback extremo (si algo fallara en el loop)
     # Evito llamar a get_active_executive con Erika de nuevo para prevenir recursividad, ERIKA puede ser el default
     # Este fallback también debe respetar que Erika no recibe JPC en RM.
-    return HERNAN_CASTRO
+    logger.warning("[ROUTER] Ningún candidato del reparto RM está activo")
+    return UNASSIGNED_LABEL
 
 from .constants import UNASSIGNED_LABEL
 
@@ -317,7 +355,7 @@ def get_active_executive_phone(executive_name: str) -> Optional[str]:
     """Return a phone only for an explicitly active, exact CRM user."""
     if not executive_name or executive_name == UNASSIGNED_LABEL:
         return None
-    user = get_db()["usuarios"].find_one({"nombre": executive_name, "is_active": True})
+    user = get_db()["usuarios"].find_one({"nombre": executive_name, "rol": "agente", "is_active": True})
     if not user:
         logger.warning("[LOOKUP] Ejecutivo no activo o no inequívoco: %r", executive_name)
         return None
@@ -404,13 +442,8 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
         ROCIO_ALIAGA,
     ]
     
-    # Check if the original executive is active in the users collection
-    is_active_user = False
-    if original_executive and original_executive != UNASSIGNED_LABEL:
-        # get_executive_phone does a lookup in 'usuarios'
-        test_phone = get_executive_phone(original_executive)
-        if test_phone:
-            is_active_user = True
+    # Phone presence is not evidence of active employment or availability.
+    is_active_user = bool(_active_agent_record(original_executive, db=db))
 
     matched_member = next((member for member in our_team if normalize_text(member) in norm_exec), None)
     
@@ -449,29 +482,16 @@ def find_responsible_executive(property_code: Optional[str] = None, comuna: Opti
             target_executive_name = f"{words[0]} {words[1]}"
             logger.info(f"[ROUTER] Acortando nombre de ejecutivo: '{original_executive}' a '{target_executive_name}'")
     
-    # Get phone for the determined executive
-    phone = get_executive_phone(target_executive_name)
-    
-    # If we couldn't find the phone for the target, but we had an original executive with phone in the property card?
-    # Algunas fichas nuevas todavía traen teléfonos de respaldo a nivel raíz.
-    if not phone and target_executive_name == original_executive:
-         phone = prop.get("movil_ejecutivo") or prop.get("fono_ejecutivo")
-
-    # Final Safety Check: Asegurar que el el final no esté de vacaciones (por si se coló por otra regla)
+    # Final guard covers direct property, regional, replacement and RR routes.
     target_executive_name = get_active_executive(target_executive_name, norm_comuna)
+    if target_executive_name in (UNASSIGNED_LABEL, "", None):
+        logger.warning("[ROUTER] Lead pendiente: sin ejecutivo activo para propiedad/comuna")
+        return UNASSIGNED_LABEL, None, "NO_ELIGIBLE_EXECUTIVE"
 
-    # FALLBACK DE EMERGENCIA: Si no hay teléfono o es No Asignado, asignamos a Round Robin
-    # PERO: Respetamos la decisión de dejarlo como pendiente si la propiedad NO EXISTE (Rule refinement)
-    if target_executive_name == UNASSIGNED_LABEL or target_executive_name == "":
-        logger.warning(f"[ROUTER] Fallback: Sin ejecutivo válido. Asignando a Round Robin (RM).")
-        target_executive_name = get_next_round_robin_executive("")
-        phone = get_executive_phone(target_executive_name)
-        
-        
-    elif not phone:
-        # NUEVA REGLA DE INTEGRIDAD: Si sabemos quién es, pero no está su teléfono, SE LO QUEDA IGUAL,
-        # solo que el envío de Whatsapp fallará más abajo (y quedará guardado silenciosamente).
-        logger.warning(f"[ROUTER] El ejecutivo '{target_executive_name}' no tiene teléfono en DB. Se mantiene el Lead pero no recibirá Whatsapp.")
+    # Never use a property's legacy phone to bypass the active CRM user check.
+    phone = get_active_executive_phone(target_executive_name)
+    if not phone:
+        logger.warning("[ROUTER] Ejecutivo activo %r sin teléfono de notificación", target_executive_name)
 
     return target_executive_name, phone, assignment_type
 

@@ -22,7 +22,7 @@ from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_
 from .property_lookup import PROPERTY_COLLECTION_NAME
 from .price_drop_campaign_classifier import (
     PRIORITY, INTEREST as CAMPAIGN_INTEREST, INFO, NO_SIGNAL, DECLINED, UNSUBSCRIBED,
-    classify_price_drop_reply,
+    classify_price_drop_reply, lead_must_not_be_contacted,
 )
 
 CAMPAIGNS = "crm_price_drop_campaigns_v1"
@@ -48,6 +48,7 @@ LEAD_PROJECTION = {
     "prospecto.codigo": 1, "created_at": 1, "messages": 1,
     "conversation_status": 1, "contact_identity_incomplete": 1,
     "phone_is_synthetic": 1, "price_drop_campaign_v1.opted_out": 1,
+    "price_drop_v2.opted_out": 1, "price_drop_v2.campaigns": 1,
     "lead_temperature_effective": 1, "lead_temperature": 1,
     "lifecycle.hot_since": 1, "last_intent": 1,
 }
@@ -178,9 +179,7 @@ def _check_recipient(
         raise CampaignBlocked("lead_not_found")
     if lead.get("phone_is_synthetic") or lead.get("contact_identity_incomplete"):
         raise CampaignBlocked("lead_contact_identity_incomplete")
-    if (lead.get("conversation_status") or "") in {
-        "STOPPED_BY_CLIENT", "BLOCKED_EXTERNAL_BROKER", "STOPPED", "BLOCKED",
-    } or (lead.get("price_drop_campaign_v1") or {}).get("opted_out") is True:
+    if lead_must_not_be_contacted(lead):
         raise CampaignBlocked("lead_opted_out_or_blocked")
     phone = normalize_phone_strict(
         lead.get("contact_phone_normalized") or lead.get("phone") or ""

@@ -209,7 +209,7 @@ def _send_alert_once_sync(
             logger.error("[ALERT] canonical Hot blocked identity_status=%s", resolution.status)
             return {"status": "failed", "reason": f"identity_{resolution.status}"}
         due_local = get_next_business_slot(datetime.now(CHILE_TZ))
-        recipient_user = db["usuarios"].find_one({"nombre": exec_name, "is_active": {"$ne": False}})
+        recipient_user = db["usuarios"].find_one({"nombre": exec_name, "is_active": True, "rol": "agente"})
         if not recipient_user or recipient_user.get("_id") is None:
             logger.error("[ALERT] canonical Hot blocked unresolved recipient_user_id")
             return {"status": "failed", "reason": "unresolved_recipient_user_id"}

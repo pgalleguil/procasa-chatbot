@@ -70,6 +70,12 @@ def use_natural_verified_property_reply(message: str, model_reply: str,
     facts = public_property_facts(property_doc)
     if any(facts.get(key) in (None, "", "No informado") for key in keys):
         return False
+    # No campaign delivered to this lead: never allow a spontaneous claim of
+    # an earlier price or price-drop notification in a normal property answer.
+    if not campaign_context and re.search(
+        r"\b(?:rebaj\w*|antes costaba|bajo de precio|bajaron el precio)\b", answer,
+    ):
+        return False
 
     # The LLM must repeat every requested verified value. Never replace a
     # contradictory or incomplete answer with a persuasive but inaccurate one.
@@ -85,6 +91,23 @@ def use_natural_verified_property_reply(message: str, model_reply: str,
                 for token in re.findall(r"(?<!\d)\d[\d., ]*(?!\d)", answer)
             }
             if value_digits not in mentioned_numbers:
+                return False
+        elif key in {"dormitorios", "banos", "bodegas", "estacionamientos", "ascensores"}:
+            field_terms = {
+                "dormitorios": r"dormitorios?|habitaciones?|piezas?",
+                "banos": r"banos?",
+                "bodegas": r"bodegas?",
+                "estacionamientos": r"estacionamientos?|parking",
+                "ascensores": r"ascensores?|elevadores?",
+            }[key]
+            number = re.escape(expected)
+            # A matching number elsewhere in the property description does
+            # not prove that the model answered the requested field.
+            if not re.search(
+                rf"(?:\b{number}\b.{{0,24}}\b(?:{field_terms})\b|"
+                rf"\b(?:{field_terms})\b.{{0,24}}\b{number}\b)",
+                answer,
+            ):
                 return False
         elif key == "equipamiento":
             amenities = [normal(x).strip() for x in expected.split(",")]

@@ -162,3 +162,11 @@ def test_non_test_real_client_still_blocked_by_old_property_campaign(db):
     with pytest.raises(v2.PilotBlocked, match="active_campaign_for_property|pre_drop_inquiry_not_verified"):
         v2.preview_one(db, **request(test_mode=False,
                                     consent_reviewed=True, consent_basis="documented"))
+
+
+
+def test_webhook_startup_invokes_explicit_reset_mode():
+    from pathlib import Path
+    webhook = (Path(__file__).resolve().parents[1] / "webhook.py").read_text()
+    assert 'if v2_price_drop_mode in {"reset", "preview", "send"}:' in webhook
+    assert "from scripts.price_drop_leads_v2_bootstrap import run_bootstrap" in webhook

@@ -724,6 +724,7 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
     if positive:
         update["$set"][f"{field}.last_positive_reply_text"] = str(text)[:350]
         update["$set"][f"{field}.last_positive_reply_at"] = now
+        update["$set"][f"{field}.last_positive_classification"] = label
         stored_campaign = next(
             (row for row in (lead.get("price_drop_v2") or {}).get("campaigns") or []
              if row.get("campaign_id") == cid), {},
@@ -991,13 +992,19 @@ def send_real_admin_notice_once(db, *,
     campaign_id = str(campaign.get("campaign_id") or "")
     last_positive = str(campaign.get("last_positive_reply_text") or
                         campaign.get("first_positive_reply_text") or "")[:160]
-    classification = campaign.get("last_classification") or {}
+    classification = (campaign.get("last_positive_classification")
+                      or campaign.get("last_classification") or {})
+    signal = {
+        "PRIORIDAD_COMERCIAL": "Visita, oferta o contacto solicitado",
+        "INTERES_DECLARADO": "Interés declarado",
+        "BUSCA_ALTERNATIVAS": "Solicita otras propiedades",
+    }.get(classification.get("label"), "Interés comercial registrado")
     reason = str(classification.get("reason") or "interest_recorded")
     notice_text = (
         "🔔 PROCASA — Respuesta a campaña de rebaja\n"
         f"Propiedad: {code} | {price_text(old)} → {price_text(new)}\n"
         f"Cliente: {phone}\n"
-        f"Señal: {reason}\n"
+        f"Señal: {signal} ({reason})\n"
         f"Respuesta: {last_positive or 'Interés registrado'}\n"
         f"CRM: {crm_link}\n"
         "Revisar conversación antes de gestionar. No es un lead nuevo."

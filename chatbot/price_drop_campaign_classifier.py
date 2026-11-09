@@ -50,7 +50,7 @@ _ALREADY_FOUND = re.compile(
 _ALTERNATIVES = re.compile(
     r"\b(?:busco|estoy buscando|quisiera|quiero|me interesan|tienen|hay|"
     r"recomiendame|pueden mostrarme|podrias mostrarme)\b.{0,48}"
-    r"\b(?:otra[s]? (?:propiedades|casas|departamentos|deptos|alternativas|opciones)|"
+    r"\b(?:otr[oa]s? (?:propiedades|casas|departamentos|deptos|alternativas|opciones)|"
     r"mas (?:propiedades|casas|departamentos|deptos|alternativas|opciones)|"
     r"otras en (?:la|el) [a-z]+)\b"
     r"|\b(?:alternativas|otras opciones|otros departamentos|otras propiedades)\b",

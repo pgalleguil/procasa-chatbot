@@ -78,13 +78,13 @@ def use_natural_verified_property_reply(message: str, model_reply: str,
         if key == "precio":
             expected = expected.split(" (referencia")[0]
         if key in {"precio", "gastos"}:
-            # Accept Chilean thousands notation with or without the period.
+            # Chilean prices may be written as 2.690, 2690, $85.000 or 85000.
             value_digits = re.sub(r"\D", "", expected)
-            if not value_digits or not re.search(
-                rf"(?<!\d){value_digits[:1]}[.\s]?"
-                rf"{value_digits[1:]}(?!\d)",
-                answer,
-            ):
+            mentioned_numbers = {
+                re.sub(r"\D", "", token)
+                for token in re.findall(r"(?<!\d)\d[\d., ]*(?!\d)", answer)
+            }
+            if value_digits not in mentioned_numbers:
                 return False
         elif key == "equipamiento":
             amenities = [normal(x).strip() for x in expected.split(",")]

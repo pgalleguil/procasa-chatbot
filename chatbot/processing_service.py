@@ -657,8 +657,13 @@ class LeadProcessingService:
                             assigned_dt = coerce_utc_datetime(assigned_val)
                         else:
                             assigned_dt = assigned_val
-                        exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1}) if exec_name else None
-                        exec_user_id = str(exec_user["_id"]) if exec_user else exec_name
+                        exec_user = db["usuarios"].find_one(
+                            {"nombre": exec_name, "rol": "agente", "is_active": True},
+                            {"_id": 1},
+                        ) if exec_name else None
+                        if not exec_user:
+                            raise ValueError("active_agent_required")
+                        exec_user_id = str(exec_user["_id"])
                         from .crm_metrics import create_assignment_cycle
                         event_id = lead.get("processing_claimed_event_id")
                         cycle = db["crm_assignment_cycles"].find_one({
@@ -685,6 +690,16 @@ class LeadProcessingService:
                         )
                     except Exception as exc:
                         logger.warning("[PROCESS_SERVICE] Error creating cycle: %s", exc)
+                        if str(exc) in {
+                            "active_agent_required",
+                            "cannot create assignment cycle for inactive user",
+                        }:
+                            # Do not persist a new owner mirror when no canonical
+                            # assignment cycle could be created for an active user.
+                            update_data["ejecutivo_asignado"] = UNASSIGNED_LABEL
+                            update_data["prospecto.ejecutivo"] = UNASSIGNED_LABEL
+                            update_data.pop("lifecycle.assigned_at", None)
+                            update_data["processing_cycle_result"] = "blocked_inactive_user"
 
                 update_result = db["leads"].update_one({"_id": query_id}, {"$set": update_data})
                 visible_update_fields = {

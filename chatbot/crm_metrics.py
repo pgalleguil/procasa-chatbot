@@ -343,6 +343,18 @@ def create_assignment_cycle(db, *, lead, assigned_to_user_id, assigned_by,
     if not isinstance(lead, Mapping) or lead.get("_id") is None:
         raise ValueError("canonical lead document is required for assignment cycle")
     lead_id = lead["_id"]
+    # Defense-in-depth: reject an explicitly disabled user even if a caller
+    # selected them just before their account was disabled.
+    try:
+        from bson import ObjectId
+        recipient_id = ObjectId(str(assigned_to_user_id)) if ObjectId.is_valid(str(assigned_to_user_id)) else assigned_to_user_id
+        recipient_user = db["usuarios"].find_one({"_id": recipient_id})
+        if not recipient_user and assigned_to_display_name:
+            recipient_user = db["usuarios"].find_one({"nombre": assigned_to_display_name})
+    except (KeyError, TypeError):
+        recipient_user = None  # Small unit adapters may not expose usuarios.
+    if recipient_user and recipient_user.get("is_active") is False:
+        raise ValueError("cannot create assignment cycle for inactive user")
     # A cycle may only be created from the exact identity already persisted in
     # the canonical leads collection.  This catches callers that accidentally
     # pass a transport id, conversation id, phone, or a stale synthetic row.

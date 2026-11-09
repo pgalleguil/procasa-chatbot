@@ -78,7 +78,7 @@ def test_commercial_intake_valid_phone_routes_once_and_is_idempotent():
         "prospecto": {"codigo": "6508", "ejecutivo": UNASSIGNED_LABEL},
     })
     user_id = ObjectId()
-    db.usuarios.insert_one({"_id": user_id, "nombre": "Ejecutivo", "telefono": "+56911111111"})
+    db.usuarios.insert_one({"_id": user_id, "nombre": "Ejecutivo", "telefono": "+56911111111", "is_active": True, "rol": "agente"})
 
     with patch.object(commercial_intake, "find_responsible_executive", return_value=("Ejecutivo", "+56911111111", "PROPERTY")) as route, \
          patch("chatbot.crm_non_hot_digest.accumulate_non_hot_lead", return_value={"_id": "digest-1"}) as digest:
@@ -111,7 +111,7 @@ def test_commercial_intake_recovery_uses_phone_from_already_linked_lead():
         "prospecto": {"codigo": "6508", "ejecutivo": UNASSIGNED_LABEL},
     })
     db.usuarios.insert_one({
-        "_id": ObjectId(), "nombre": "Ejecutivo", "telefono": "+56911111111",
+        "_id": ObjectId(), "nombre": "Ejecutivo", "telefono": "+56911111111", "is_active": True, "rol": "agente",
     })
     db[commercial_intake.COLLECTION].insert_one({
         "source_inbound_provider_id": "recovery-linked-lead",
@@ -220,7 +220,7 @@ def test_manual_valid_phone_keeps_existing_assignment_and_cycle_path(monkeypatch
     monkeypatch.setattr(manual_entry, "check_lead_duplicate", lambda *_args: ("not_found", None))
     monkeypatch.setattr(manual_entry, "log_event", lambda *_args, **_kwargs: None)
     user_id = ObjectId()
-    db.usuarios.insert_one({"_id": user_id, "nombre": "Ejecutivo", "telefono": "+56911111111"})
+    db.usuarios.insert_one({"_id": user_id, "nombre": "Ejecutivo", "telefono": "+56911111111", "is_active": True, "rol": "agente"})
 
     with patch.object(manual_entry, "find_responsible_executive", return_value=("Ejecutivo", "+56911111111", "PROPERTY")) as route, \
          patch("chatbot.crm_non_hot_digest.accumulate_non_hot_lead", return_value={"_id": "digest-valid"}) as digest:

@@ -96,7 +96,7 @@ def test_process_inbound_enriches_existing_assigned_lead_without_new_cycle_or_de
         "unassigned_at": None,
     }
     db.leads.insert_one(deepcopy(lead))
-    db.usuarios.insert_one({"_id": user_id, "nombre": "Ejecutivo actual", "telefono": "+56911111111"})
+    db.usuarios.insert_one({"_id": user_id, "nombre": "Ejecutivo actual", "telefono": "+56911111111", "rol": "agente", "is_active": True})
     db.crm_assignment_cycles.insert_one(deepcopy(cycle))
     db[PROPERTY_COLLECTION_NAME].insert_one(_property())
     original_notification = {

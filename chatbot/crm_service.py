@@ -316,10 +316,13 @@ class CrmService:
         from .crm_metrics import create_assignment_cycle, coerce_utc_datetime
         assigned_at_utc = coerce_utc_datetime(assigned_at)
         try:
-            recipient_user = db["usuarios"].find_one({"nombre": executive_name, "is_active": {"$ne": False}})
+            recipient_user = db["usuarios"].find_one({"nombre": executive_name, "is_active": True, "rol": "agente"})
         except (KeyError, TypeError):
             recipient_user = None  # Lightweight adapters retain the display-name fallback.
-        assigned_to_user_id = str(recipient_user["_id"]) if recipient_user and recipient_user.get("_id") is not None else executive_name
+        if not recipient_user or recipient_user.get("_id") is None:
+            logger.warning("[CRM_SERVICE] Se rechazó asignación a usuario no activo: %r", executive_name)
+            return False
+        assigned_to_user_id = str(recipient_user["_id"])
         from .crm_assignment_integrity import assignment_context, record_assignment_integrity_alert
         assignment_state = assignment_context(db, lead)
         if assignment_state.get("status") == "conflict":

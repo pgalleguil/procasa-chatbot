@@ -310,6 +310,10 @@ def test_admin_reassignment_service_targets_the_resolved_lead_and_audits_actor(m
     db = mongomock.MongoClient().incident
     lead = {"_id": "lead-1", "phone": "56911111111", "prospecto": {}}
     db[COLLECTION_CONVERSATIONS].insert_one(lead.copy())
+    db["usuarios"].insert_one({
+        "_id": "erika-1", "nombre": "Erika Garrido",
+        "rol": "agente", "is_active": True,
+    })
     events = []
     monkeypatch.setattr(crm_service_module, "get_db", lambda: db)
     monkeypatch.setattr(

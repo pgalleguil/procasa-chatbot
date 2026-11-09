@@ -25,7 +25,7 @@ jobs:
           python -m py_compile \
             webhook.py config.py api_crm.py api_captacion.py \
             captacion_management.py captacion_assignment_eligibility.py \
-            chatbot/crm_assignment_integrity.py chatbot/crm_sla_live_capacity.py \
+            chatbot/crm_assignment_integrity.py chatbot/crm_sla_live_capacity.py chatbot/crm_metrics.py chatbot/crm_service.py chatbot/lead_router.py chatbot/commercial_intake.py \
             chatbot/core.py chatbot/customer_response_semantics.py chatbot/public_property_facts.py chatbot/property_read_guard.py chatbot/price_drop_v2_customer_response.py chatbot/chatbot_queue.py chatbot/link_extractor.py chatbot/rag.py chatbot/property_read_guard.py chatbot/price_drop_pilot.py chatbot/price_drop_pilot_isolation.py chatbot/price_drop_pilot_exec_notice_sim.py chatbot/price_drop_pilot_dual_notice_sim.py chatbot/price_drop_pilot_followup_v12.py chatbot/price_drop_pilot_guard_v13.py chatbot/price_drop_pilot_conversation_v14.py scripts/price_drop_pilot_test.py scripts/price_drop_leads_v2_bootstrap.py chatbot/price_drop_campaign_real.py chatbot/price_drop_leads_v2.py chatbot/price_drop_campaign_exec_alert.py chatbot/price_drop_campaign_classifier.py chatbot/price_drop_campaign_bootstrap.py scripts/price_drop_campaign_real_pilot.py \
             maintenance/repair_procasa_p0_17252.py maintenance/repair_procasa_p0_6732.py \
             maintenance/repair_procasa_prop360_duplicate_cycles.py \
@@ -76,6 +76,7 @@ jobs:
             tests: >-
               tests/test_rut_phone_validation.py
               tests/test_phone_assignment_guards.py
+              tests/test_lead_assignment_active_users.py
           - suite: Property portal resolution regressions
             tests: >-
               tests/test_commercial_intake_property_context.py

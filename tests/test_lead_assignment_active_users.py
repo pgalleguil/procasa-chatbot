@@ -91,3 +91,18 @@ def test_inactive_user_cannot_receive_new_assignment_cycle(routing_db):
             reason="test",
         )
     assert routing_db.crm_assignment_cycles.count_documents({}) == 0
+
+def test_active_lookup_accepts_pymongo_style_database_without_bool(routing_db):
+    """PyMongo Database raises NotImplementedError for boolean evaluation."""
+    _agent(routing_db, "Rocío Aliaga", active=True)
+
+    class DatabaseWithoutTruthValue:
+        def __bool__(self):
+            raise NotImplementedError("Database objects do not implement truth value testing")
+
+        def __getitem__(self, name):
+            return routing_db[name]
+
+    user = lead_router._active_agent_record("Rocío Aliaga", db=DatabaseWithoutTruthValue())
+    assert user is not None
+    assert user["nombre"] == "Rocío Aliaga"

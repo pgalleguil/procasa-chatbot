@@ -311,3 +311,109 @@ def test_prior_mlc_alias_proves_actual_inquiry_not_generic_chat(db):
     assert not v2._inquiry_before(lead, "6436", drop)
     lead["messages"][-1]["content"] = "Hola, busco un departamento"
     assert not v2._inquiry_before(lead, "6436", drop, listing_ids)
+
+
+def _approved_real_pilot_sample(db, monkeypatch):
+    """Three-property allowlist; only one synthetic lead is materialized."""
+    lead_id = "690000000000000000000799"
+    phone = "+56922117788"
+    db["leads"].insert_one({
+        "_id": ObjectId(lead_id),
+        "phone": phone,
+        "lead_temperature_effective": "COLD",
+        "pipeline_stage": "CONTACTED",
+        "messages": [{
+            "role": "user",
+            "content": "Estoy interesado en la propiedad código 6436",
+            "timestamp": "2026-10-01T10:00:00-03:00",
+        }],
+    })
+    campaign_id = "pilot_three_rebajas_acceptance_20261109"
+    p = params(
+        lead_id=lead_id, phone=phone, campaign_id=campaign_id,
+        test_mode=False, consent_reviewed=True,
+        consent_basis="Consentimiento simulado solamente en base de pruebas",
+    )
+    assert v2.prepare_one(db, now=NOW, **p)["status"] == "PREPARED"
+    assert v2.approve_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                          operator="Operador de pruebas", now=NOW)["status"] == "APPROVED"
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, campaign_id)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setenv(v2.REAL_PILOT_RECIPIENTS_FLAG, (
+        f"{lead_id}:6436;"
+        "690000000000000000000798:6377;"
+        "690000000000000000000797:16479"
+    ))
+    return lead_id, campaign_id, phone
+
+
+def test_real_pilot_remains_locked_until_separate_runtime_activation(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    provider_calls = []
+    def sender(*args):
+        provider_calls.append(args)
+        return {"success": True, "provider_message_id": "should-not-send"}
+    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                       sender=sender, now=NOW)["status"] == "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
+    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
+    monkeypatch.setenv(v2.REAL_PILOT_RECIPIENTS_FLAG, f"{lead_id}:6436")
+    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                       sender=sender, now=NOW)["status"] == "REAL_SEND_NOT_ALLOWLISTED"
+    assert provider_calls == []
+
+
+def test_real_pilot_rechecks_consent_and_allows_exactly_one_mock_send(db, monkeypatch):
+    lead_id, campaign_id, phone = _approved_real_pilot_sample(db, monkeypatch)
+    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
+    db["leads"].update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {"price_drop_v2.campaigns.0.consent_reviewed": False}},
+    )
+    provider_calls = []
+    def sender(actual_phone, message):
+        provider_calls.append((actual_phone, message))
+        return {"success": True, "provider_message_id": "mock-real-gate-001",
+                "delivery_status": "accepted"}
+    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                       sender=sender, now=NOW)["status"] == "REAL_SEND_CONSENT_OR_APPROVAL_MISSING"
+    assert provider_calls == []
+    db["leads"].update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {"price_drop_v2.campaigns.0.consent_reviewed": True}},
+    )
+    outcome = v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                          sender=sender, now=NOW)
+    assert outcome["status"] == "SENT"
+    assert len(provider_calls) == 1 and provider_calls[0][0] == phone
+    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                       sender=sender, now=NOW)["status"] == "NOT_APPROVED"
+    assert len(provider_calls) == 1
+    row = db["leads"].find_one({"_id": ObjectId(lead_id)})
+    assert row["price_drop_v2"]["campaigns"][0]["provider_message_id"] == "mock-real-gate-001"
+    assert row["messages"][-1]["metadata"]["tipo"] == "price_drop_outreach"
+    assert set(db.list_collection_names()) == {
+        "leads", "universo_cartera_prop360",
+        "universo_cartera_prop360_historial",
+    }
+
+
+def test_real_pilot_blocks_duplicate_or_lost_historic_inquiry(db, monkeypatch):
+    lead_id, campaign_id, phone = _approved_real_pilot_sample(db, monkeypatch)
+    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
+    calls = []
+    sender = lambda *args: calls.append(args)
+    db["leads"].insert_one({
+        "phone": phone.removeprefix("+"), "messages": [],
+    })
+    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                       sender=sender, now=NOW)["status"] == "REAL_SEND_AMBIGUOUS_PHONE"
+    db["leads"].delete_one({"phone": phone.removeprefix("+")})
+    db["leads"].update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {"messages": [{"role": "user", "content": "Busco otra zona",
+                               "timestamp": "2026-10-01T10:00:00-03:00"}]}},
+    )
+    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                       sender=sender, now=NOW)["status"] == "REAL_SEND_INQUIRY_NOT_VERIFIED"
+    assert calls == []

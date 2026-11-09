@@ -141,7 +141,7 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
         )
     # Conditional hypotheticals are not a declaration of a completed purchase.
     hypothetical_found = ("?" in str(text or "") and bool(re.search(
-        r"\\b(?:si|cuando)\\s+ya\\s+(?:encontre|compre|consegui|arrende)\\b",
+        r"\b(?:si|cuando)\s+ya\s+(?:encontre|compre|consegui|arrende)\b",
         message,
     )))
     if _ALREADY_FOUND.search(message) and not hypothetical_found:

@@ -532,14 +532,40 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None,
 
 def obtener_conversacion(phone: str) -> List[Dict]:
     db = get_db()
-    doc = db[COLLECTION_CONVERSATIONS].find_one({"phone": phone}, {"messages": 1})
+    doc = db[COLLECTION_CONVERSATIONS].find_one(
+        {"phone": phone}, {"messages": 1, "price_drop_v2.qa_session.started_at": 1},
+    )
     if not doc:
         return []
+    # One-phone QA must be a clean conversational session, without deleting
+    # historical CRM messages. Every other customer reads its usual history.
+    raw_messages = doc.get("messages", []) or []
+    from .phone_utils import normalize_phone_strict
+    qa_start = ((doc.get("price_drop_v2") or {}).get("qa_session") or {}).get("started_at")
+    if (normalize_phone_strict(phone) == "+56983219804"
+            and normalize_phone_strict(os.getenv("PRICE_DROP_PILOT_TEST_PHONE", "")) == "+56983219804"
+            and isinstance(qa_start, datetime)):
+        start = qa_start if qa_start.tzinfo else qa_start.replace(tzinfo=timezone.utc)
+        filtered = []
+        for msg in raw_messages:
+            if not isinstance(msg, dict):
+                continue
+            stamp = msg.get("timestamp") or msg.get("created_at")
+            try:
+                parsed = (stamp if isinstance(stamp, datetime)
+                          else datetime.fromisoformat(str(stamp).replace("Z", "+00:00")))
+                if parsed.tzinfo is None:
+                    continue
+                if parsed.astimezone(timezone.utc) >= start:
+                    filtered.append(msg)
+            except (ValueError, TypeError):
+                continue
+        raw_messages = filtered
     excluded_delivery_states = {
         "generated", "provider_attempt", "superseded", "suppressed", "delivery_unknown",
     }
     return [
-        message for message in (doc.get("messages", []) or [])
+        message for message in raw_messages
         if not (
             message.get("role") == "assistant"
             and message.get("delivery_status") in excluded_delivery_states

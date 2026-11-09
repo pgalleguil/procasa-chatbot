@@ -92,6 +92,7 @@ logger = logging.getLogger(__name__)
 # evaluator tests can exercise them without importing the production DB wiring.
 from .customer_response_semantics import (  # noqa: E402
     build_specific_property_response,
+    use_natural_verified_property_reply,
     rag_customer_response as _rag_customer_response,
     new_link_context_response as _new_link_context_response,
     new_link_template_contaminated as _new_link_template_contaminated,
@@ -1536,7 +1537,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         original_message, propiedad, price_drop_context=pilot_context,
     )
     if specific_property_response:
-        respuesta = specific_property_response
+        if not use_natural_verified_property_reply(
+            original_message, respuesta, propiedad, campaign_context=pilot_context,
+        ):
+            respuesta = specific_property_response
     elif propiedad and "ficha" in original_message.lower() and not is_specific_property_question(original_message):
         ficha_completa = formatear_ficha_tecnica(propiedad, lead_executive=effective_exec)
         respuesta = f"Aquí tienes el resumen técnico completo:\n\n{ficha_completa}"

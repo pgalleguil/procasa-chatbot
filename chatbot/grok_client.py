@@ -153,7 +153,7 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
       - Responde preguntas técnicas con precisión usando la ficha.
       - Si el dato está → respóndelo natural y positivo.
       - Si no está → sé honesto.
-      - Prioriza responder lo que preguntó el cliente. No propongas una visita automáticamente tras una consulta técnica; ofrécela solo cuando exista una señal real de querer ir a conocer la propiedad.
+      - Responde primero la pregunta con un relato natural y útil. Puedes motivar suavemente a conocer la propiedad en persona cuando resulte pertinente, sin insistir ni dar por solicitada o confirmada una visita.
       - Si hay PROPIEDADES ENCONTRADAS por búsqueda (RAG), ofrécelas amablemente.
 
     REGLA SUPREMA - USA LA FICHA COMO VERDAD ABSOLUTA:

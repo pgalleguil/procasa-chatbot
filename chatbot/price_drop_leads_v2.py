@@ -528,6 +528,7 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
     candidates = [
         x for x in (lead.get("price_drop_v2") or {}).get("campaigns") or []
         if x.get("status") in ("SENT", "RESPONDED")
+        and str(x.get("provider_message_id") or "").strip()
         and isinstance(x.get("sent_at"), datetime)
         and isinstance(x.get("expires_at"), datetime)
         and utc(x["sent_at"]) <= now < utc(x["expires_at"])

@@ -413,8 +413,8 @@ def prepare_one(db, *, now=None, **data) -> dict:
         "inquiry_evidence_at", "inquiry_message_id", "inquiry_reference")}
     row.update({
         "status": "PREPARED", "prepared_at": stamp,
-        "outbound_message": p["message"], "inbound_provider_ids": [],
-        "reply_count": 0, "response_events": [], "notifications": {
+        "outbound_message": p["message"],
+        "reply_count": 0, "notifications": {
             "administrator": {"status": "NOT_TRIGGERED"},
             "property_executive": {"status": "FROZEN_ADMIN_ONLY"},
         },
@@ -690,9 +690,11 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
         },
         "$addToSet": {
             "price_drop_v2.processed_inbound_provider_ids": str(provider_message_id),
-            f"{field}.inbound_provider_ids": str(provider_message_id),
         },
-        "$push": {f"{field}.response_events": {
+        # Root-level immutable audit log avoids positional-array $push:
+        # every event retains its campaign ID and unique provider receipt.
+        "$push": {"price_drop_v2.reply_events": {
+            "campaign_id": cid,
             "provider_message_id": str(provider_message_id),
             "received_at": now,
             "text": str(text)[:350],

@@ -3913,8 +3913,8 @@ async def api_crm_admin_reassign(request: Request):
     targets = await get_async_db()["usuarios"].find(
         {
             "nombre": re.compile(rf"^{re.escape(executive)}(?:\s|$)", re.IGNORECASE),
-            "rol": {"$in": ["agente", "supervisor", "admin", "jefatura"]},
-            "is_active": {"$ne": False},
+            "rol": "agente",
+            "is_active": True,
         },
         {"nombre": 1},
     ).to_list(length=2)

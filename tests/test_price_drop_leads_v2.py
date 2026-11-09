@@ -417,3 +417,29 @@ def test_real_pilot_blocks_duplicate_or_lost_historic_inquiry(db, monkeypatch):
     assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
                        sender=sender, now=NOW)["status"] == "REAL_SEND_INQUIRY_NOT_VERIFIED"
     assert calls == []
+
+
+def test_real_pilot_cli_requires_explicit_confirmation_and_link_check(db, monkeypatch):
+    from scripts.price_drop_leads_v2_real_pilot import run_action
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    status = run_action(db, mode="status", code="6436", campaign_id=campaign_id)
+    assert status["status"] == "FOUND"
+    assert status["campaign_state"] == "APPROVED"
+    assert status["writes"] == status["sends"] == 0
+    calls = []
+    result = run_action(db, mode="send-one", code="6436",
+                        campaign_id=campaign_id, operator="Tester",
+                        sender=lambda *args: calls.append(args))
+    assert result["reason"] == "explicit_operator_confirmation_required"
+    result = run_action(db, mode="send-one", code="6436",
+                        campaign_id=campaign_id, operator="Tester",
+                        confirm_action="SEND_6436",
+                        sender=lambda *args: calls.append(args))
+    assert result["reason"] == "published_link_not_verified"
+    assert calls == []
+    result = run_action(db, mode="send-one", code="6436",
+                        campaign_id=campaign_id, operator="Tester",
+                        confirm_action="SEND_6436", confirmed_live_link=True,
+                        sender=lambda *args: calls.append(args))
+    assert result["status"] == "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
+    assert calls == []

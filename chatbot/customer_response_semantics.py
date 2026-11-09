@@ -32,6 +32,78 @@ def build_specific_property_response(message: str, property_doc: dict | None,
     )
 
 
+
+def use_natural_verified_property_reply(message: str, model_reply: str,
+                                        property_doc: dict | None,
+                                        *, campaign_context: dict | None = None) -> bool:
+    """Keep the commercial LLM voice when its requested facts agree with Prop360.
+
+    The deterministic reply remains the fallback for unverified values,
+    technical full fichas, private details, price-drop history and negotiation.
+    Never infer a price-drop campaign from the property's current price.
+    """
+    import unicodedata
+    from .public_property_facts import (
+        requested_public_fact_keys, public_property_facts,
+        prefers_natural_property_overview,
+    )
+
+    def normal(text):
+        value = unicodedata.normalize("NFKD", str(text or "").casefold())
+        return "".join(c for c in value if not unicodedata.combining(c))
+
+    question = normal(message)
+    answer = normal(model_reply)
+    if not property_doc or not answer or prefers_natural_property_overview(message):
+        return False
+    # These cases need the deterministic public-fact/privacy/commercial guard.
+    if re.search(
+        r"\b(?:ficha\s+(?:tecnica|completa)|(?:en|como)\s+(?:formato\s+)?"
+        r"(?:lista|tabla)|rebaj[ao]|antes\s+cuanto|negoci|contraoferta|"
+        r"dueno|propietario|direccion\s+exacta|telefono\s+del|rut\s+del)\b",
+        question,
+    ):
+        return False
+    keys = requested_public_fact_keys(message)
+    if not keys:
+        return False
+    facts = public_property_facts(property_doc)
+    if any(facts.get(key) in (None, "", "No informado") for key in keys):
+        return False
+
+    # The LLM must repeat every requested verified value. Never replace a
+    # contradictory or incomplete answer with a persuasive but inaccurate one.
+    for key in keys:
+        expected = normal(facts[key])
+        if key == "precio":
+            expected = expected.split(" (referencia")[0]
+        if key in {"precio", "gastos"}:
+            # Accept Chilean thousands notation with or without the period.
+            value_digits = re.sub(r"\D", "", expected)
+            if not value_digits or not re.search(
+                rf"(?<!\d){value_digits[:1]}[.\s]?"
+                rf"{value_digits[1:]}(?!\d)",
+                answer,
+            ):
+                return False
+        elif key == "equipamiento":
+            amenities = [normal(x).strip() for x in expected.split(",")]
+            if not amenities or not any(x and x in answer for x in amenities):
+                return False
+        elif key == "disponible":
+            if not re.search(r"\b(?:disponib|activ|confirmar)\w*", answer):
+                return False
+        elif key == "fotos":
+            if "procasa.cl/" not in answer:
+                return False
+        else:
+            clean_expected = re.sub(r"[^a-z0-9]", "", expected)
+            clean_answer = re.sub(r"[^a-z0-9]", "", answer)
+            if not clean_expected or clean_expected not in clean_answer:
+                return False
+    return True
+
+
 def rag_customer_response(properties: list[dict] | None) -> str:
     properties = list(properties or [])[:2]
     if not properties:

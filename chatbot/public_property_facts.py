@@ -231,7 +231,18 @@ def answer_public_property_question(message, property_doc, *, campaign_context=N
     if asks_drop:
         ctx = campaign_context or {}
         old_price, new_price = ctx.get("old_price_uf"), ctx.get("new_price_uf")
-        if ctx.get("version") == "price_drop_leads_v2" and old_price is not None and new_price is not None:
+        if (ctx.get("version") == "price_drop_leads_v2"
+                and ctx.get("currency") == "CLP"
+                and ctx.get("old_price_clp") is not None
+                and ctx.get("new_price_clp") is not None):
+            old_clp, new_clp = int(ctx["old_price_clp"]), int(ctx["new_price_clp"])
+            clp = lambda amount: "$" + f"{amount:,}".replace(",", ".")
+            drop_text = (
+                f"La propiedad bajó {clp(old_clp-new_clp)}: "
+                f"de {clp(old_clp)} a {clp(new_clp)}."
+            ) if old_clp > new_clp else "No tengo una rebaja adicional verificada."
+        elif (ctx.get("version") == "price_drop_leads_v2"
+              and old_price is not None and new_price is not None):
             reduction = float(old_price) - float(new_price)
             drop_text = (
                 "La propiedad bajó " + _num(reduction) + " UF: de UF "

@@ -73,22 +73,32 @@ def _same_phone(lead: dict, phone: str) -> bool:
     return normalize_phone_strict(actual or "") == normalize_phone_strict(phone or "")
 
 
-def _property_price(db, code: str, old: int, new: int) -> datetime:
+def _property_price(db, code: str, old: int, new: int,
+                    *, currency: str = "UF") -> datetime:
+    if currency not in {"UF", "CLP"}:
+        raise PilotBlocked("unsupported_campaign_currency")
     prop = db["universo_cartera_prop360"].find_one(
         {"codigo": code},
         {"codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
-         "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1},
+         "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1,
+         "tipo_operacion.precio_venta.precio_publicado": 1,
+         "tipo_operacion.precio_venta.moneda_publicada": 1},
     ) or {}
     sale = prop.get("tipo_operacion") or {}
+    pricing = sale.get("precio_venta") or {}
+    current = (pricing.get("precio_uf") if currency == "UF"
+               else pricing.get("precio_publicado"))
+    current_currency = str(pricing.get("moneda_publicada") or "")
     if not (prop.get("disponible_prop360") is True
             and (prop.get("estado") or {}).get("oficina") == "PROCASA SUCRE"
             and sale.get("venta") is True
-            and (sale.get("precio_venta") or {}).get("precio_uf") == new
-            and old > new > 0):
+            and (currency == "UF" or current_currency == "CLP")
+            and isinstance(old, int) and isinstance(new, int)
+            and current == new and old > new > 0):
         raise PilotBlocked("property_price_or_availability_changed")
     change = db["universo_cartera_prop360_historial"].find_one(
         {"codigo": code, "campo": "precio_publicado",
-         "moneda_anterior": "UF", "moneda_nueva": "UF",
+         "moneda_anterior": currency, "moneda_nueva": currency,
          "monto_anterior": old, "monto_nuevo": new},
         {"fecha": 1},
         sort=[("fecha", -1)],
@@ -272,14 +282,27 @@ def reset_test_qa_session(db, *, campaign_id: str, operator: str,
 
 
 def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
-                property_code: str, old_price_uf: int, new_price_uf: int,
+                property_code: str, old_price_uf: int | None,
+                new_price_uf: int | None,
                 test_mode: bool, consent_reviewed: bool = False,
-                consent_basis: str = "") -> dict:
+                consent_basis: str = "", currency: str = "UF",
+                old_price_clp: int | None = None,
+                new_price_clp: int | None = None) -> dict:
     """Read-only preflight. Tests use an explicit existing canonical lead."""
     if not VALID_ID.fullmatch(campaign_id) or not VALID_CODE.fullmatch(property_code):
         raise PilotBlocked("invalid_id_or_property")
-    if type(old_price_uf) is not int or type(new_price_uf) is not int:
-        raise PilotBlocked("integer_uf_required")
+    if currency not in {"UF", "CLP"}:
+        raise PilotBlocked("unsupported_campaign_currency")
+    if currency == "UF":
+        if type(old_price_uf) is not int or type(new_price_uf) is not int:
+            raise PilotBlocked("integer_uf_required")
+        old_value, new_value = old_price_uf, new_price_uf
+    else:
+        if type(old_price_clp) is not int or type(new_price_clp) is not int:
+            raise PilotBlocked("integer_clp_required")
+        if old_price_uf is not None or new_price_uf is not None:
+            raise PilotBlocked("mixed_currency_values")
+        old_value, new_value = old_price_clp, new_price_clp
     canonical = normalize_phone_strict(phone)
     if not canonical or not has_real_phone(canonical):
         raise PilotBlocked("invalid_phone")
@@ -308,7 +331,9 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
             raise PilotBlocked("ambiguous_lead_identity")
         if not is_hot_campaign_eligible(lead):
             raise PilotBlocked("lead_not_current_hot")
-    drop_at = _property_price(db, property_code, old_price_uf, new_price_uf)
+    drop_at = _property_price(
+        db, property_code, old_value, new_value, currency=currency,
+    )
     inquiry_evidence = None
     if not test_mode:
         inquiry_evidence = _inquiry_before(
@@ -336,7 +361,8 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         "lead_id": lid, "phone_normalized": canonical,
         "campaign_id": campaign_id, "property_code": property_code,
         "old_price_uf": old_price_uf, "new_price_uf": new_price_uf,
-        "price_drop_at": drop_at,
+        "old_price_clp": old_price_clp, "new_price_clp": new_price_clp,
+        "currency": currency, "price_drop_at": drop_at,
         "test_mode": bool(test_mode),
         "consent_reviewed": bool(consent_reviewed) if not test_mode else False,
         "consent_basis": str(consent_basis or "")[:180] if not test_mode else "test_only_not_real_consent",
@@ -355,6 +381,7 @@ def prepare_one(db, *, now=None, **data) -> dict:
     stamp = utc(now or datetime.now(timezone.utc))
     row = {k: p[k] for k in (
         "campaign_id", "property_code", "old_price_uf", "new_price_uf",
+        "old_price_clp", "new_price_clp", "currency",
         "price_drop_at", "test_mode", "consent_reviewed", "consent_basis",
         "simulated_prior_inquiry", "phone_normalized", "qa_session_started_at",
         "inquiry_evidence_at", "inquiry_message_id", "inquiry_reference")}
@@ -459,7 +486,10 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         return {"status": "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"}
     if normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")) != c.get("phone_normalized"):
         return {"status": "TEST_PHONE_NOT_ALLOWLISTED"}
-    _property_price(db, c["property_code"], c["old_price_uf"], c["new_price_uf"])
+    currency = c.get("currency") or "UF"
+    old = c.get("old_price_clp") if currency == "CLP" else c.get("old_price_uf")
+    new = c.get("new_price_clp") if currency == "CLP" else c.get("new_price_uf")
+    _property_price(db, c["property_code"], old, new, currency=currency)
     stamp = utc(now or datetime.now(timezone.utc))
     send_claim = {"_id": lead["_id"], ROOT: {"$elemMatch": {
         "campaign_id": campaign_id, "status": "APPROVED"}}}
@@ -568,16 +598,26 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
         own_url = f"https://www.procasa.cl/{code}"
         if own_url not in str(message or ""):
             return None
+    currency = campaign.get("currency") or "UF"
+    old = campaign.get("old_price_clp") if currency == "CLP" else campaign.get("old_price_uf")
+    new = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
     try:
-        _property_price(db, code, campaign["old_price_uf"], campaign["new_price_uf"])
+        _property_price(db, code, old, new, currency=currency)
     except PilotBlocked:
         return None
     return {
         "version": "price_drop_leads_v2",
         "campaign_id": campaign["campaign_id"],
         "property_code": code,
-        "old_price_uf": float(campaign["old_price_uf"]),
-        "new_price_uf": float(campaign["new_price_uf"]),
+        "old_price_uf": (float(campaign["old_price_uf"])
+                         if currency == "UF" else None),
+        "new_price_uf": (float(campaign["new_price_uf"])
+                         if currency == "UF" else None),
+        "old_price_clp": (int(campaign["old_price_clp"])
+                          if currency == "CLP" else None),
+        "new_price_clp": (int(campaign["new_price_clp"])
+                          if currency == "CLP" else None),
+        "currency": currency,
         "operation": "Venta",
         "outbound_message": campaign["outbound_message"],
         "test_mode": bool(campaign.get("test_mode")),
@@ -914,11 +954,11 @@ def send_real_admin_notice_once(db, *,
     phone = normalize_phone_strict(lead.get("contact_phone_normalized") or lead.get("phone") or "")
     if not phone or phone == admin or not _same_phone(lead, phone):
         return {"status": "BLOCKED_CONTACT_IDENTITY"}
-    old = campaign.get("old_price_uf")
-    new = campaign.get("new_price_uf")
+    currency = str(campaign.get("currency") or "UF")
+    old = campaign.get("old_price_clp") if currency == "CLP" else campaign.get("old_price_uf")
+    new = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
     if not isinstance(old, (int, float)) or not isinstance(new, (int, float)):
         return {"status": "BLOCKED_CAMPAIGN_PRICE"}
-    currency = str(campaign.get("currency") or "UF")
     if currency not in {"UF", "CLP"}:
         return {"status": "BLOCKED_CAMPAIGN_CURRENCY"}
     def price_text(value):

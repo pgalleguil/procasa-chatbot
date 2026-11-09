@@ -119,7 +119,7 @@ def _active_agent_record(name: str, db=None):
     """Only an explicitly active CRM agent can receive a new lead."""
     if not name or is_executive_temporarily_inactive(name):
         return None
-    store = db or get_db()
+    store = db if db is not None else get_db()
     return store["usuarios"].find_one({
         "nombre": name, "rol": "agente", "is_active": True,
     })

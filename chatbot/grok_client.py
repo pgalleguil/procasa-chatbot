@@ -144,6 +144,11 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
       - Deja detalles para cuando pregunten.
       - Cierra con una pregunta abierta suave.
 
+    - Cuando el cliente pide toda la información o varias características de una propiedad:
+      - Responde como una asesora por WhatsApp en 2-3 párrafos naturales, agrupando características relevantes.
+      - Incluye los datos verificables que el cliente pidió explícitamente; si alguno falta, indícalo con claridad.
+      - No pegues la ficha técnica literal ni enumeres campos internos o superficies redundantes.
+      - No interpretes "conocer la información", "conocer los detalles" o "me interesa" como solicitud de visita.
     - En respuestas siguientes:
       - Responde preguntas técnicas con precisión usando la ficha.
       - Si el dato está → respóndelo natural y positivo.

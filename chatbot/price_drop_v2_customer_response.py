@@ -56,10 +56,14 @@ def stabilize_v2_reply(message: str, response: str, *,
 
     # General interest is not a request to schedule an immediate visit.
     if _INTEREST_ONLY.fullmatch(text):
+        currency = str(context.get("currency") or "UF")
+        if currency == "CLP":
+            current_price = "$" + f"{int(context.get('new_price_clp') or 0):,}".replace(",", ".")
+        else:
+            current_price = "UF " + f"{int(context.get('new_price_uf') or 0):,}".replace(",", ".")
         return (
-            f"¡Qué bueno que te siga interesando el departamento {code}! 😊 "
-            "Con la rebaja ya está a UF "
-            f"{int(context.get('new_price_uf', 0)):,}".replace(",", ".")
-            + ". ¿Qué detalle de la propiedad te gustaría revisar?"
+            f"¡Qué bueno que te siga interesando la propiedad {code}! 😊 "
+            f"Con la rebaja ya está a {current_price}. "
+            "¿Qué detalle te gustaría revisar?"
         )
     return response

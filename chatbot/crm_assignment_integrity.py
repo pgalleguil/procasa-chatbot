@@ -167,7 +167,7 @@ def prepare_pending_assignment_notification(
 
     if state.get("status") == "unassigned":
         requested_user = db["usuarios"].find_one({
-            "nombre": requested_name, "is_active": {"$ne": False},
+            "nombre": requested_name, "is_active": True, "rol": "agente",
         }) if requested_name else None
         if not requested_user:
             record_assignment_integrity_alert(
@@ -203,13 +203,13 @@ def prepare_pending_assignment_notification(
 
     try:
         owner = db["usuarios"].find_one({
-            "_id": ObjectId(owner_id), "is_active": {"$ne": False},
+            "_id": ObjectId(owner_id), "is_active": True, "rol": "agente",
         })
     except Exception:
         owner = None
     if not owner:
         owner = db["usuarios"].find_one({
-            "nombre": owner_name, "is_active": {"$ne": False},
+            "nombre": owner_name, "is_active": True, "rol": "agente",
         })
     phone_number = (owner or {}).get("telefono") or (owner or {}).get("tel") or (owner or {}).get("movil")
     if not owner or not phone_number:

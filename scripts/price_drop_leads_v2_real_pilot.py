@@ -2,7 +2,7 @@
 
 Never runs as a web worker or on service startup. No changes outside
 URLS.leads, except the provider call explicitly requested by --mode send-one.
-The customer allowlist and consent evidence are NOT stored in source control.
+The customer allowlist and contact-basis evidence are NOT stored in source control.
 """
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ import re
 from typing import Callable
 
 from chatbot.price_drop_leads_v2 import (
-    REAL_PILOT_PRICE_WINDOWS, REAL_PILOT_RECIPIENTS_FLAG,
+    DIRECT_RESPONSE_BASIS_TYPE, REAL_PILOT_PRICE_WINDOWS,
+    REAL_PILOT_RECIPIENTS_FLAG,
     PilotBlocked, approve_one, prepare_one, preview_one, send_one,
 )
 from chatbot.price_drop_campaign_real import _lead_id
@@ -40,8 +41,9 @@ def _recipients() -> dict[str, str]:
 
 
 def run_action(db, *, mode: str, code: str, campaign_id: str,
-               operator: str = "", consent_reviewed: bool = False,
-               consent_basis: str = "", confirmed_live_link: bool = False,
+               operator: str = "", contact_basis_reviewed: bool = False,
+               contact_basis_type: str = "",
+               contact_basis: str = "", confirmed_live_link: bool = False,
                confirm_action: str = "",
                sender: Callable[[str, str], dict] | None = None) -> dict:
     """Explicit action with no implicit progression through campaign states."""
@@ -77,7 +79,7 @@ def run_action(db, *, mode: str, code: str, campaign_id: str,
             "provider_message_id": current.get("provider_message_id") if current else None,
             "provider_status": current.get("provider_status") if current else None,
             "reply_count": current.get("reply_count", 0) if current else 0,
-            "consent_reviewed": current.get("consent_reviewed", False) if current else False,
+            "contact_basis_reviewed": current.get("contact_basis_reviewed", False) if current else False,
             "writes": 0, "sends": 0,
         }
 
@@ -102,8 +104,9 @@ def run_action(db, *, mode: str, code: str, campaign_id: str,
         "old_price_clp": old if currency == "CLP" else None,
         "new_price_clp": new if currency == "CLP" else None,
         "currency": currency, "test_mode": False,
-        "consent_reviewed": consent_reviewed,
-        "consent_basis": consent_basis,
+        "contact_basis_reviewed": contact_basis_reviewed,
+        "contact_basis_type": contact_basis_type,
+        "contact_basis": contact_basis,
     }
     try:
         if mode == "preview":
@@ -115,8 +118,10 @@ def run_action(db, *, mode: str, code: str, campaign_id: str,
                 "message": preview["message"], "writes": 0, "sends": 0,
             }
         if mode == "prepare":
-            if not consent_reviewed or not str(consent_basis or "").strip():
-                return {"status": "BLOCKED", "reason": "documented_consent_required"}
+            if (not contact_basis_reviewed
+                    or contact_basis_type != DIRECT_RESPONSE_BASIS_TYPE
+                    or not str(contact_basis or "").strip()):
+                return {"status": "BLOCKED", "reason": "documented_contact_basis_required"}
             result = prepare_one(db, **data)
             return {**result, "recipient_last4": suffix, "sends": 0}
         if mode == "approve":
@@ -141,8 +146,10 @@ def main() -> int:
                         choices=tuple(REAL_PILOT_PRICE_WINDOWS))
     parser.add_argument("--campaign-id", required=True)
     parser.add_argument("--operator", default="")
-    parser.add_argument("--consent-reviewed", action="store_true")
-    parser.add_argument("--consent-basis", default="")
+    parser.add_argument("--contact-basis-reviewed", action="store_true")
+    parser.add_argument("--contact-basis-type", choices=(DIRECT_RESPONSE_BASIS_TYPE,),
+                        default="")
+    parser.add_argument("--contact-basis", default="")
     parser.add_argument("--confirmed-live-link", action="store_true")
     parser.add_argument("--confirm-action", default="")
     args = parser.parse_args()
@@ -150,12 +157,13 @@ def main() -> int:
     outcome = run_action(
         get_db(), mode=args.mode, code=args.property,
         campaign_id=args.campaign_id, operator=args.operator,
-        consent_reviewed=args.consent_reviewed,
-        consent_basis=args.consent_basis,
+        contact_basis_reviewed=args.contact_basis_reviewed,
+        contact_basis_type=args.contact_basis_type,
+        contact_basis=args.contact_basis,
         confirmed_live_link=args.confirmed_live_link,
         confirm_action=args.confirm_action,
     )
-    # No full recipient numbers, WhatsApp payloads or consent text in logs.
+    # No full recipient numbers, WhatsApp payloads or basis text in logs.
     print(json.dumps(outcome, ensure_ascii=False, default=str))
     return 0 if outcome.get("status") in {"FOUND", "READY", "PREPARED",
                                          "APPROVED", "SENT", "EXISTING"} else 1

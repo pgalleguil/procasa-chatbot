@@ -147,12 +147,13 @@ def test_test_campaign_lifecycle_only_mutates_existing_canonical_lead(db, monkey
     }
 
 
-def test_no_real_contact_without_unique_identity_consented_prior_inquiry(db):
-    with pytest.raises(v2.PilotBlocked, match="consent_review_required"):
+def test_no_real_contact_without_unique_identity_contact_basis_prior_inquiry(db):
+    with pytest.raises(v2.PilotBlocked, match="contact_basis_review_required"):
         v2.preview_one(db, **params(test_mode=False))
     with pytest.raises(v2.PilotBlocked, match="ambiguous_lead_identity"):
-        v2.preview_one(db, **params(test_mode=False, consent_reviewed=True,
-                                    consent_basis="Autorización revisada"))
+        v2.preview_one(db, **params(test_mode=False, contact_basis_reviewed=True,
+                                    contact_basis_type=v2.DIRECT_RESPONSE_BASIS_TYPE,
+                                    contact_basis="Consulta previa de la misma propiedad"))
 
 
 def test_live_price_change_blocks_test_send(db, monkeypatch):
@@ -331,8 +332,9 @@ def _approved_real_pilot_sample(db, monkeypatch):
     campaign_id = "pilot_three_rebajas_acceptance_20261109"
     p = params(
         lead_id=lead_id, phone=phone, campaign_id=campaign_id,
-        test_mode=False, consent_reviewed=True,
-        consent_basis="Consentimiento simulado solamente en base de pruebas",
+        test_mode=False, contact_basis_reviewed=True,
+        contact_basis_type=v2.DIRECT_RESPONSE_BASIS_TYPE,
+        contact_basis="Consulta previa de la misma propiedad (fixture de prueba)",
     )
     assert v2.prepare_one(db, now=NOW, **p)["status"] == "PREPARED"
     assert v2.approve_one(db, lead_id=lead_id, campaign_id=campaign_id,
@@ -363,12 +365,12 @@ def test_real_pilot_remains_locked_until_separate_runtime_activation(db, monkeyp
     assert provider_calls == []
 
 
-def test_real_pilot_rechecks_consent_and_allows_exactly_one_mock_send(db, monkeypatch):
+def test_real_pilot_rechecks_contact_basis_and_allows_exactly_one_mock_send(db, monkeypatch):
     lead_id, campaign_id, phone = _approved_real_pilot_sample(db, monkeypatch)
     monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
     db["leads"].update_one(
         {"_id": ObjectId(lead_id)},
-        {"$set": {"price_drop_v2.campaigns.0.consent_reviewed": False}},
+        {"$set": {"price_drop_v2.campaigns.0.contact_basis_reviewed": False}},
     )
     provider_calls = []
     def sender(actual_phone, message):
@@ -376,11 +378,23 @@ def test_real_pilot_rechecks_consent_and_allows_exactly_one_mock_send(db, monkey
         return {"success": True, "provider_message_id": "mock-real-gate-001",
                 "delivery_status": "accepted"}
     assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
-                       sender=sender, now=NOW)["status"] == "REAL_SEND_CONSENT_OR_APPROVAL_MISSING"
+                       sender=sender, now=NOW)["status"] == "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
     assert provider_calls == []
     db["leads"].update_one(
         {"_id": ObjectId(lead_id)},
-        {"$set": {"price_drop_v2.campaigns.0.consent_reviewed": True}},
+        {"$set": {"price_drop_v2.campaigns.0.contact_basis_reviewed": True}},
+    )
+    db["leads"].update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {"price_drop_v2.campaigns.0.contact_basis_type": "BLANKET_MARKETING"}},
+    )
+    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                       sender=sender, now=NOW)["status"] == "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
+    assert provider_calls == []
+    db["leads"].update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {"price_drop_v2.campaigns.0.contact_basis_type":
+                  v2.DIRECT_RESPONSE_BASIS_TYPE}},
     )
     outcome = v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
                           sender=sender, now=NOW)

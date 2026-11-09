@@ -32,12 +32,16 @@ REAL_PILOT_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_REAL_PILOT_ENABLED"
 REAL_PILOT_RECIPIENTS_FLAG = "PRICE_DROP_LEADS_V2_REAL_PILOT_RECIPIENTS"
 # Narrow price windows for the approved three-property proposal. These are
 # public property values, not customer identifiers. The three recipient IDs
-# must be configured separately, after documented human consent review.
+# must be configured separately, after a human reviews the contact basis.
 REAL_PILOT_PRICE_WINDOWS = {
     "6436": ("UF", 2790, 2690),
     "6377": ("UF", 5123, 5074),
     "16479": ("CLP", 160000000, 152000000),
 }
+
+# The real pilot is limited to a follow-up requested by the lead about the
+# same property. This is distinct from a blanket marketing opt-in.
+DIRECT_RESPONSE_BASIS_TYPE = "PRIOR_PROPERTY_INQUIRY"
 
 # Explicitly allowlist the one approved pilot administrator. This phone is
 # not a customer audience and must never be replaced by a property's owner.
@@ -132,11 +136,12 @@ def _real_pilot_send_blocker(db, lead: dict, campaign: dict) -> str | None:
     if actual_window != REAL_PILOT_PRICE_WINDOWS[code]:
         return "REAL_SEND_WRONG_PRICE_OR_PROPERTY"
 
-    if (campaign.get("consent_reviewed") is not True
-            or not str(campaign.get("consent_basis") or "").strip()
+    if (campaign.get("contact_basis_reviewed") is not True
+            or campaign.get("contact_basis_type") != DIRECT_RESPONSE_BASIS_TYPE
+            or not str(campaign.get("contact_basis") or "").strip()
             or not str(campaign.get("approved_by") or "").strip()
             or not isinstance(campaign.get("approved_at"), datetime)):
-        return "REAL_SEND_CONSENT_OR_APPROVAL_MISSING"
+        return "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
     if campaign.get("simulated_prior_inquiry") is not False:
         return "REAL_SEND_SIMULATED_INQUIRY"
 
@@ -392,8 +397,9 @@ def _clp_outreach_message(code: str, old: int, new: int) -> str:
 def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
                 property_code: str, old_price_uf: int | None,
                 new_price_uf: int | None,
-                test_mode: bool, consent_reviewed: bool = False,
-                consent_basis: str = "", currency: str = "UF",
+                test_mode: bool, contact_basis_reviewed: bool = False,
+                contact_basis_type: str = "",
+                contact_basis: str = "", currency: str = "UF",
                 old_price_clp: int | None = None,
                 new_price_clp: int | None = None) -> dict:
     """Read-only preflight. Tests use an explicit existing canonical lead."""
@@ -426,8 +432,10 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         if canonical != normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")):
             raise PilotBlocked("test_phone_not_allowlisted")
     else:
-        if not consent_reviewed or not str(consent_basis or "").strip():
-            raise PilotBlocked("consent_review_required")
+        if (not contact_basis_reviewed
+                or contact_basis_type != DIRECT_RESPONSE_BASIS_TYPE
+                or not str(contact_basis or "").strip()):
+            raise PilotBlocked("contact_basis_review_required")
         variants = phone_identity_variants(canonical)
         duplicates = list(db[LEADS].find({
             "$or": [
@@ -472,8 +480,9 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         "old_price_clp": old_price_clp, "new_price_clp": new_price_clp,
         "currency": currency, "price_drop_at": drop_at,
         "test_mode": bool(test_mode),
-        "consent_reviewed": bool(consent_reviewed) if not test_mode else False,
-        "consent_basis": str(consent_basis or "")[:180] if not test_mode else "test_only_not_real_consent",
+        "contact_basis_reviewed": bool(contact_basis_reviewed) if not test_mode else False,
+        "contact_basis_type": contact_basis_type if not test_mode else "TEST_ONLY",
+        "contact_basis": str(contact_basis or "")[:240] if not test_mode else "test_only_no_contact_basis",
         "simulated_prior_inquiry": bool(test_mode),
         "qa_session_started_at": cutoff,
         "inquiry_evidence_at": (inquiry_evidence or {}).get("inquiry_at"),
@@ -494,7 +503,8 @@ def prepare_one(db, *, now=None, **data) -> dict:
     row = {k: p[k] for k in (
         "campaign_id", "property_code", "old_price_uf", "new_price_uf",
         "old_price_clp", "new_price_clp", "currency",
-        "price_drop_at", "test_mode", "consent_reviewed", "consent_basis",
+        "price_drop_at", "test_mode", "contact_basis_reviewed",
+        "contact_basis_type", "contact_basis",
         "simulated_prior_inquiry", "phone_normalized", "qa_session_started_at",
         "inquiry_evidence_at", "inquiry_message_id", "inquiry_reference")}
     row.update({
@@ -588,8 +598,8 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     # Historical recovery is NOT HOT-only; closed opportunities remain blocked.
     if not c.get("test_mode") and not is_open_campaign_eligible(lead):
         return {"status": "BLOCKED_CLOSED_PIPELINE"}
-    # Real sending is opt-in and limited to the three explicitly listed
-    # lead/property pairs; test sending still uses its original phone allowlist.
+    # Real sending is explicitly limited to the three listed lead/property
+    # pairs; test sending still uses its original phone allowlist.
     if not c.get("test_mode"):
         blocker = _real_pilot_send_blocker(db, lead, c)
         if blocker:

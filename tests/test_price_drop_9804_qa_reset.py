@@ -153,15 +153,17 @@ def test_reset_does_not_bypass_unfinished_campaign(db):
 
 def test_non_test_real_client_still_blocked_by_old_property_campaign(db):
     v2.reset_test_qa_session(db, campaign_id=NEW_ID, operator="QA", phone=PHONE, now=NOW)
-    with pytest.raises(v2.PilotBlocked, match="consent_review_required"):
+    with pytest.raises(v2.PilotBlocked, match="contact_basis_review_required"):
         v2.preview_one(db, **request(test_mode=False))
-    # Even with consent, an old test campaign must not be overridden on a real send.
+    # Even with a reviewed basis, an old test campaign must not be overridden.
     d = db["leads"].find_one({"_id": LID})
     d["lead_temperature_effective"] = "HOT"
     db["leads"].replace_one({"_id": LID}, d)
     with pytest.raises(v2.PilotBlocked, match="active_campaign_for_property|pre_drop_inquiry_not_verified"):
         v2.preview_one(db, **request(test_mode=False,
-                                    consent_reviewed=True, consent_basis="documented"))
+                                    contact_basis_reviewed=True,
+                                    contact_basis_type=v2.DIRECT_RESPONSE_BASIS_TYPE,
+                                    contact_basis="Consulta previa de la misma propiedad"))
 
 
 

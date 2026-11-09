@@ -76,6 +76,7 @@ def _candidate(db, *, phone, temperature="NORMAL", content=None, timestamp=None,
         "_id": lead_id, "phone": phone,
         "contact_phone_normalized": phone,
         "lead_temperature_effective": temperature,
+        "created_at": NOW - timedelta(days=60),
         "pipeline_stage": "CONTACTED", "stage": "CONTACTED",
         "messages": [{
             "role": "user", "content": content or "Me interesa la propiedad código 6436",
@@ -133,7 +134,8 @@ def _dispatch_db(monkeypatch, count=3):
 
 def _run(db, *, campaign_id=CAMPAIGN, max_messages=20, daily_cap=50,
          confirm=None, sleep_fn=None, sender=None, now_fn=lambda: NOW,
-         link_verifier=lambda code, now: True, journal_path=None, rng=lambda lo, hi: 450):
+         link_verifier=lambda code, now: True, journal_path=None, progress_path=None,
+         progress_fn=None, rng=lambda lo, hi: 450):
     return cli.execute_campaign(
         db, campaign_id=campaign_id, max_messages=max_messages,
         min_delay_seconds=300, max_delay_seconds=600,
@@ -146,6 +148,7 @@ def _run(db, *, campaign_id=CAMPAIGN, max_messages=20, daily_cap=50,
         }), now_fn=now_fn, provider_ready=lambda: True,
         usage_reader=lambda stamp: 0,
         journal_path=journal_path, rng=rng, link_verifier=link_verifier,
+        progress_path=progress_path, progress_fn=progress_fn,
     )
 
 
@@ -282,9 +285,145 @@ def test_unknown_temperature_is_pending_review_but_does_not_discard_verified_inq
                          extra={"lead_temperature_effective": "SIN_CLASIFICAR"})
     row = find_candidates_for_event(db, event)[0]
     assert row["lead_id"] == str(lead_id)
-    assert row["eligible"] is True
+    assert row["eligible"] is False
     assert row["temperature"] == "REVISIÓN_PENDIENTE"
-    assert row["reason"] == "eligible_temperature_review_pending"
+    assert row["reason"] == "temperature_review_pending"
+
+
+@pytest.mark.parametrize("temperature,selected,eligible", [
+    ("HOT", "HOT", True), ("NORMAL", "HOT,NORMAL", True),
+    ("COLD", "HOT,NORMAL", False), ("COLD", "COLD", True),
+    ("SIN_CLASIFICAR", "ALL", False),
+])
+def test_temperature_filters_and_manual_unknown_review(temperature, selected, eligible):
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219801", temperature=temperature)
+    row = find_candidates_for_event(
+        db, event, temperature_filter=selected, lead_max_age_days=120, now=NOW,
+    )[0]
+    assert row["lead_id"] == str(lead_id)
+    assert row["eligible"] is eligible
+    if temperature == "SIN_CLASIFICAR":
+        reviewed = find_candidates_for_event(
+            db, event, temperature_filter="ALL", lead_max_age_days=120,
+            temperature_reviews={str(lead_id): {
+                "reviewed_temperature": "NORMAL", "evidence": "CRM revisión 2026-11",
+                "reviewed_by": "Operador QA",
+            }}, now=NOW,
+        )[0]
+        assert reviewed["eligible"] is True
+        assert reviewed["effective_temperature"] == "NORMAL"
+
+
+@pytest.mark.parametrize("days,created_type,expected", [
+    (30, "datetime", True), (90, "iso_offset", True),
+    (120, "iso_local", True), (180, "datetime", False),
+])
+def test_lead_age_filter_uses_created_at_and_chile_calendar(days, created_type, expected):
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    created = NOW - timedelta(days=days)
+    if created_type == "iso_offset":
+        created_value = created.isoformat()
+    elif created_type == "iso_local":
+        created_value = created.astimezone(cli.CHILE_TZ).replace(tzinfo=None).isoformat()
+    else:
+        created_value = created.replace(tzinfo=None)
+    lead_id = _candidate(db, phone="+56983219801", extra={"created_at": created_value})
+    row = find_candidates_for_event(
+        db, event, temperature_filter="HOT,NORMAL", lead_max_age_days=120, now=NOW,
+    )[0]
+    assert row["lead_id"] == str(lead_id)
+    assert row["eligible"] is expected
+    assert row["excluded_by_age"] is (not expected)
+
+
+@pytest.mark.parametrize("created_at,reason", [
+    (None, "created_at_missing_review_pending"),
+    ("not-a-date", "created_at_invalid_review_pending"),
+])
+def test_missing_or_invalid_created_at_is_review_pending(created_at, reason):
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219801", extra={"created_at": created_at})
+    row = find_candidates_for_event(db, event, now=NOW)[0]
+    assert row["lead_id"] == str(lead_id)
+    assert not row["eligible"]
+    assert row["reason"] == reason
+    assert row["age_review_required"] is True
+
+
+def test_message_personalization_and_deterministic_variants_include_verified_facts():
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219801", extra={
+        "prospecto": {"nombre": "Carolina Pérez"},
+    })
+    candidate = find_candidates_for_event(db, event, now=NOW)[0]
+    assert candidate["lead_id"] == str(lead_id)
+    assert candidate["first_name"] == "Carolina"
+    variant = cli.message_variant_id(str(lead_id), event.event_id)
+    message = cli.event_message(event, recipient_name=candidate["first_name"], variant_id=variant)
+    assert "Hola, Carolina." in message
+    assert "PROCASA" in message and "6436" in message
+    assert "UF 2.790" in message and "UF 2.690" in message
+    assert "UF 100" in message and event.listing_url in message
+    assert "no recibir más avisos" in message
+    assert variant == cli.message_variant_id(str(lead_id), event.event_id)
+    generic = cli.event_message(event, recipient_name=None, variant_id="rebaja_v2")
+    assert "Hola, ¿cómo estás?" in generic
+    assert "Hola, Ejecutivo." not in generic
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "prospecto.nombre": "Ejecutivo Comercial", "nombre": None,
+        "propietario.nombre": "Alberto Propietario",
+        "captador.nombre": "María Captadora",
+    }})
+    invalid_name_row = find_candidates_for_event(db, event, now=NOW)[0]
+    assert invalid_name_row["first_name"] is None
+
+
+def test_filters_are_rechecked_before_send_after_campaign_approval(monkeypatch):
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219801", temperature="HOT")
+    cli.prepare_selected(
+        db, event=event, lead_ids=[str(lead_id)], operator="QA",
+        contact_basis_reviewed=True, whatsapp_contact_reviewed=True,
+        whatsapp_contact_evidence="CRM opt-in reference 2026-11",
+        temperature_filter="HOT", lead_max_age_days=120, now=NOW,
+    )
+    v2.approve_one(db, lead_id=lead_id, campaign_id=event.event_id,
+                   operator="QA", now=NOW)
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, event.event_id)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setenv(v2.REAL_CAMPAIGNS_ENABLED_FLAG, "true")
+    monkeypatch.setenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, "true")
+    monkeypatch.setenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi")
+    calls = []
+    db["leads"].update_one({"_id": lead_id}, {"$set": {"lead_temperature_effective": "COLD"}})
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=event.event_id,
+        temperature_filter_override="HOT", lead_max_age_days_override=120,
+        enforce_campaign_filters=True,
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "BLOCKED_TEMPERATURE_FILTER_MISMATCH"
+    assert calls == []
+
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "lead_temperature_effective": "HOT",
+        "created_at": NOW - timedelta(days=180),
+    }})
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=event.event_id,
+        temperature_filter_override="HOT", lead_max_age_days_override=120,
+        enforce_campaign_filters=True,
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "BLOCKED_LEAD_AGE_EXCEEDED"
+    assert calls == []
 
 
 def test_candidate_selection_rejects_duplicate_identity_opt_out_and_completed_search():
@@ -449,6 +588,108 @@ def test_daily_cap_pause_interrupt_and_out_of_hours_are_safe(monkeypatch, tmp_pa
     late = datetime(2026, 11, 9, 23, 30, tzinfo=timezone.utc)
     stopped = _run(db, now_fn=lambda: late, journal_path=tmp_path / "late.json")
     assert stopped["status"] == "BLOCKED" and stopped["reason"] == "outside_business_hours"
+
+
+def test_progress_journal_survives_interrupt_and_resume_skips_accepted_lead(monkeypatch, tmp_path):
+    db, _, ids = _dispatch_db(monkeypatch, count=3)
+    progress = tmp_path / "progress.jsonl"
+    calls = []
+
+    def interrupt(_seconds):
+        raise KeyboardInterrupt
+
+    first = _run(
+        db, sleep_fn=interrupt, progress_path=progress,
+        sender=lambda phone, text: calls.append(phone) or {
+            "success": True, "provider_message_id": f"accepted-{phone[-4:]}",
+            "delivery_status": "accepted",
+        }, journal_path=tmp_path / "pause-reconcile.json",
+    )
+    assert first["status"] == "INTERRUPTED_DURING_PAUSE"
+    assert first["attempts"] == first["accepted"] == 1
+    rows = [__import__("json").loads(line) for line in progress.read_text(encoding="utf-8").splitlines()]
+    assert rows[-1]["attempts"] == 1
+    assert rows[-1]["provider_accepted"] == 1
+    assert rows[-1]["pending_total"] == 2
+
+    second = _run(
+        db, progress_path=progress,
+        sender=lambda phone, text: calls.append(phone) or {
+            "success": True, "provider_message_id": f"accepted-{phone[-4:]}",
+            "delivery_status": "accepted",
+        }, journal_path=tmp_path / "pause-reconcile.json",
+    )
+    assert second["status"] == "COMPLETED"
+    assert second["attempts"] == 2
+    assert len(calls) == 3
+    assert len(set(calls)) == 3
+    states = [db["leads"].find_one({"_id": ObjectId(value)})["price_drop_v2"]["campaigns"][0]["status"]
+              for value in ids]
+    assert states == ["SENT", "SENT", "SENT"]
+
+
+def test_newer_drop_supersedes_only_unsent_campaigns_and_keeps_sent_rows():
+    db = _event_db()
+    old = discover_price_drops(db, now=NOW)[0]
+    new_at = DROP + timedelta(days=5)
+    _history(db, "6436", new_at, 2690, 2590)
+    db["universo_cartera_prop360"].update_one({"codigo": "6436"}, {"$set": {
+        "tipo_operacion.precio_venta.precio_uf": 2590,
+        "tipo_operacion.precio_venta.precio_publicado": 2590,
+    }})
+    stale_id = _candidate(db, phone="+56983219801", extra={"price_drop_v2": {"campaigns": [{
+        "campaign_id": old.event_id, "event_id": old.event_id, "property_code": "6436",
+        "price_drop_at": old.dropped_at, "status": "APPROVED",
+    }]}})
+    sent_id = _candidate(db, phone="+56983219802", extra={"price_drop_v2": {"campaigns": [{
+        "campaign_id": old.event_id, "event_id": old.event_id, "property_code": "6436",
+        "price_drop_at": old.dropped_at, "status": "SENT",
+    }]}})
+    outcome = cli._supersede_stale_pending_campaigns(db, {"6436"}, now=NOW)
+    assert outcome["count"] == 1
+    stale = db["leads"].find_one({"_id": stale_id})["price_drop_v2"]["campaigns"][0]
+    sent = db["leads"].find_one({"_id": sent_id})["price_drop_v2"]["campaigns"][0]
+    assert stale["status"] == "SUPERSEDED"
+    assert stale["superseded_by_event_id"] != old.event_id
+    assert sent["status"] == "SENT"
+
+
+def test_summary_groups_by_property_and_is_read_only(capsys):
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219801", temperature="HOT")
+    db["leads"].update_one({"_id": lead_id}, {"$set": {"price_drop_v2": {
+        "campaigns": [{
+            "campaign_id": event.event_id, "event_id": event.event_id,
+            "property_code": "6436", "currency": "UF",
+            "old_price_uf": 2790, "new_price_uf": 2690,
+            "price_drop_at": event.dropped_at, "status": "RESPONDED",
+            "provider_message_id": "provider-accepted", "provider_status": "read",
+            "sent_at": NOW - timedelta(hours=1), "reply_count": 1,
+            "has_positive_response": True,
+            "last_classification": {"label": "PRIORIDAD_COMERCIAL", "visit_requested": True},
+        }],
+    }}})
+    before = db["leads"].find_one({"_id": lead_id})
+    result = cli._summary_report(
+        db, temperature_filter="HOT", lead_max_age_days=120, now=NOW,
+    )
+    after = db["leads"].find_one({"_id": lead_id})
+    output = capsys.readouterr().out
+    assert result["accepted"] == result["delivered"] == result["read"] == 1
+    assert result["responses"] == result["interested"] == result["visits"] == 1
+    assert "6436" in output and "UF 2.790 → UF 2.690" in output
+    assert before == after
+
+
+def test_summary_cli_is_read_only_and_period_does_not_hide_current_drop(monkeypatch, capsys):
+    db = _event_db()
+    before = list(db["leads"].find({}))
+    monkeypatch.setattr(cli, "_get_db", lambda: db)
+    assert cli.main(["--summary", "--period-days", "1", "--temperature", "HOT,NORMAL"]) == 0
+    output = capsys.readouterr().out
+    assert "6436" in output and "Rebaja vigente" in output
+    assert list(db["leads"].find({})) == before
 
 
 def test_limits_and_link_review_fail_closed(monkeypatch, tmp_path):
@@ -653,7 +894,7 @@ def test_interactive_menu_previews_then_prepares_approves_and_sends_mock_only(tm
     db = _event_db()
     lead_id = _candidate(db, phone="+56983219801", temperature="NORMAL")
     answers = iter([
-        "1", "1", "1", "300", "600", "QA operator",
+        "TODOS", "120", "1", "1", "1", "300", "600", "QA operator",
         "CRM opt-in reviewed ref 2026-11-01", "CONFIRMO 1", "PREPARAR 1",
         "APROBAR 1", "ENVIAR 1",
     ])
@@ -682,7 +923,7 @@ def test_interactive_cancel_before_prepare_keeps_mongo_read_only():
     db = _event_db()
     lead_id = _candidate(db, phone="+56983219801", temperature="HOT")
     answers = iter([
-        "1", "1", "1", "300", "600", "QA operator",
+        "TODOS", "120", "1", "1", "1", "300", "600", "QA operator",
         "CRM opt-in reviewed ref 2026-11-01", "CONFIRMO 1", "NO",
     ])
     check = PublicationCheck("price_verified", True, "6436", "https://www.procasa.cl/propiedad/6436",

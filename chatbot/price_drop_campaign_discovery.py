@@ -10,6 +10,11 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from . import price_drop_leads_v2 as v2
+from .price_drop_campaign_filters import (
+    KNOWN_TEMPERATURES, effective_temperature, lead_age_details,
+    normalize_lead_max_age_days, normalize_temperature_filter,
+    temperature_filter_matches,
+)
 from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_variants
 from .price_drop_campaign_classifier import lead_must_not_be_contacted
 
@@ -369,30 +374,99 @@ def _eligibility(db: Any, lead: dict[str, Any], event: PriceDropEvent,
     return True, "eligible", evidence
 
 
-def find_candidates_for_event(db: Any, event: PriceDropEvent) -> list[dict[str, Any]]:
+def _verified_first_name(lead: dict[str, Any]) -> str | None:
+    prospect = lead.get("prospecto") or {}
+    if not isinstance(prospect, dict):
+        prospect = {}
+    raw = prospect.get("nombre") or lead.get("nombre")
+    if not raw:
+        return None
+    try:
+        from .crm_message_context import _is_valid_client_name, title_case_name
+        if not _is_valid_client_name(str(raw)):
+            return None
+        normalized = title_case_name(str(raw)) or ""
+    except Exception:
+        return None
+    first = normalized.split()[0] if normalized.split() else ""
+    forbidden = {"ejecutivo", "ejecutiva", "captador", "captadora", "propietario",
+                 "propietaria", "asesor", "asesora", "corredor", "corredora",
+                 "vendedor", "vendedora", "sistema", "cliente", "desconocido"}
+    if (not first or first.casefold() in forbidden
+            or not any(char.isalpha() for char in first)
+            or any(not (char.isalpha() or char in "-'’") for char in first)):
+        return None
+    return first
+
+
+def find_candidates_for_event(
+    db: Any, event: PriceDropEvent, *, temperature_filter: str = "ALL",
+    lead_max_age_days: int | None = None,
+    temperature_reviews: dict[str, dict[str, Any]] | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    selected_temperatures = normalize_temperature_filter(temperature_filter)
+    age_limit = normalize_lead_max_age_days(lead_max_age_days)
+    stamp = now or datetime.now(timezone.utc)
+    reviews = temperature_reviews or {}
     listing_ids = v2._verified_listing_ids(db, event.property_code)
     leads = db[LEADS_COLLECTION].find(
         _candidate_query(event, listing_ids),
         {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
          "phone_is_synthetic": 1, "contact_identity_incomplete": 1,
          "messages": 1, "lead_temperature_effective": 1, "lead_temperature": 1,
+         "created_at": 1, "nombre": 1, "prospecto.nombre": 1,
          "pipeline_stage": 1, "stage": 1, "conversation_status": 1,
          "price_drop_v2": 1, "price_drop_campaign_v1": 1},
     )
     result = []
     for lead in leads:
-        eligible, reason, evidence = _eligibility(db, lead, event, listing_ids)
+        base_eligible, base_reason, evidence = _eligibility(db, lead, event, listing_ids)
+        raw_temperature = str(lead.get("lead_temperature_effective") or
+                              lead.get("lead_temperature") or "").strip().upper()
+        review = reviews.get(str(lead.get("_id") or ""))
+        effective_temp = effective_temperature(lead, review)
+        age = lead_age_details(lead, now=stamp, max_age_days=age_limit)
+        temp_matches = temperature_filter_matches(effective_temp, selected_temperatures)
+        review_required = effective_temp == "REVISIÓN_PENDIENTE"
+        age_review_required = age["lead_age_status"] != "valid"
+        too_old = age["excluded_by_age"]
+        eligible = bool(base_eligible and not age_review_required and not too_old
+                        and not review_required and temp_matches)
+        age_excluded_only = bool(base_eligible and too_old and temp_matches and not review_required)
+        if not base_eligible:
+            reason = base_reason
+        elif age_review_required:
+            reason = age["lead_age_status"]
+        elif too_old:
+            reason = "lead_age_exceeded"
+        elif review_required:
+            reason = "temperature_review_pending"
+        elif not temp_matches:
+            reason = "temperature_filter_mismatch"
+        elif raw_temperature not in KNOWN_TEMPERATURES:
+            reason = "eligible_after_manual_temperature_review"
+        else:
+            reason = "eligible"
         property_rows = _property_rows(lead, event.property_code)
         sent = [row for row in property_rows if row.get("status") in {"SENT", "RESPONDED"}
                 and isinstance(row.get("sent_at"), datetime)]
         last = max(sent, key=lambda row: row["sent_at"]) if sent else None
         phone = lead.get("contact_phone_normalized") or lead.get("phone") or ""
-        raw_temperature = str(lead.get("lead_temperature_effective") or
-                              lead.get("lead_temperature") or "").strip().upper()
         temperature = raw_temperature if raw_temperature in {"HOT", "NORMAL", "COLD"} else "REVISIÓN_PENDIENTE"
+        age_review = (age["lead_age_status"] if age_review_required else None)
         result.append({
             "lead_id": str(lead.get("_id") or ""), "phone_last4": str(phone)[-4:],
-            "temperature": temperature,
+            "temperature": temperature, "effective_temperature": effective_temp,
+            "first_name": _verified_first_name(lead),
+            "created_at": age["created_at"], "lead_age_days": age["lead_age_days"],
+            "lead_age_status": age["lead_age_status"],
+            "temperature_review_required": review_required,
+            "age_review_required": age_review_required,
+            "review_flags": [flag for flag in (age_review, "temperature_review_pending"
+                              if review_required else None) if flag],
+            "excluded_by_age": age_excluded_only,
+            "temperature_review": review,
             "inquiry_at": evidence.get("inquiry_at") if evidence else None,
             "inquiry_reference": evidence.get("reference") if evidence else None,
             "campaign_history": [{"campaign_id": r.get("campaign_id"),
@@ -401,11 +475,13 @@ def find_candidates_for_event(db: Any, event: PriceDropEvent) -> list[dict[str, 
             "last_notice": ({"campaign_id": last.get("campaign_id"), "sent_at": last.get("sent_at"),
                              "price": last.get("new_price_clp") if event.currency == "CLP"
                                       else last.get("new_price_uf")} if last else None),
-            "eligible": eligible, "reason": reason,
+            "eligible": eligible, "base_eligible": base_eligible,
+            "reason": reason, "temperature_filter": selected_temperatures,
+            "lead_max_age_days": age_limit,
         })
     return sorted(result, key=lambda row: (
         not row["eligible"],
-        {"HOT": 0, "NORMAL": 1, "COLD": 2}.get(row["temperature"], 3),
+        {"HOT": 0, "NORMAL": 1, "COLD": 2}.get(row["effective_temperature"], 3),
         row["inquiry_at"] or datetime.max.replace(tzinfo=timezone.utc), row["lead_id"],
     ))
 
@@ -416,8 +492,34 @@ def format_price(value: int | float, currency: str) -> str:
     return ("UF " + rendered) if currency == "UF" else (chr(36) + rendered)
 
 
+MESSAGE_VARIANTS = {
+    "rebaja_v1": {
+        "opening": "Te escribimos de PROCASA porque consultaste por la propiedad código {code}.",
+        "question": "¿Te gustaría conocer más sobre esta propiedad?",
+    },
+    "rebaja_v2": {
+        "opening": "En PROCASA retomamos tu consulta por la propiedad código {code} para compartirte su precio actualizado.",
+        "question": "¿Quieres que te contemos más sobre la propiedad?",
+    },
+    "rebaja_v3": {
+        "opening": "Vimos tu consulta anterior por la propiedad código {code}. Te contactamos desde PROCASA porque su precio cambió.",
+        "question": "¿Te interesa revisar esta alternativa?",
+    },
+}
+
+
+def message_variant_id(lead_id: str, event_id: str) -> str:
+    key = f"{str(lead_id)}|{str(event_id)}".encode("utf-8")
+    index = int(hashlib.sha256(key).hexdigest()[:8], 16) % len(MESSAGE_VARIANTS)
+    return tuple(MESSAGE_VARIANTS)[index]
+
+
 def event_message(event: PriceDropEvent, *, last_notice: dict[str, Any] | None = None,
-                  history: list[PriceDropEvent] | None = None) -> str:
+                  history: list[PriceDropEvent] | None = None,
+                  recipient_name: str | None = None,
+                  variant_id: str = "rebaja_v1") -> str:
+    if variant_id not in MESSAGE_VARIANTS:
+        raise DiscoveryError("message_variant_id_invalid")
     rows = sorted(history or [event], key=lambda row: row.dropped_at)
     rows = [row for row in rows if row.dropped_at <= event.dropped_at]
     changes = " y ".join(
@@ -426,15 +528,20 @@ def event_message(event: PriceDropEvent, *, last_notice: dict[str, Any] | None =
         for r in rows
     )
     prior = (last_notice or {}).get("price")
-    intro = "¡Hola! ¿Cómo estás? 😊\n\n"
-    if prior is None:
-        opening = f"Te escribimos de PROCASA porque consultaste por la propiedad código {event.property_code}. El historial registra estos cambios: "
+    first = str(recipient_name or "").strip()
+    greeting = f"Hola, {first}." if first else "Hola, ¿cómo estás?"
+    opening = MESSAGE_VARIANTS[variant_id]["opening"].format(code=event.property_code)
+    if prior is not None:
+        opening += f" Desde el aviso cuando estaba en {format_price(prior, event.currency)}, "
     else:
-        opening = f"Te escribimos de PROCASA por la propiedad código {event.property_code}. Desde el aviso cuando estaba en {format_price(prior, event.currency)}, hubo estos cambios: "
+        opening += " El historial registra estos cambios: "
+    reduction = f"{format_price(event.difference, event.currency)} menos"
     return (
-        intro + opening + changes + ". La última modificación fue de "
-        f"{format_price(event.old_price, event.currency)} a {format_price(event.new_price, event.currency)}. "
+        greeting + " 😊\n\n" + opening + changes + ". "
+        f"La última rebaja fue de {format_price(event.old_price, event.currency)} a "
+        f"{format_price(event.new_price, event.currency)}, es decir, {reduction}. "
         f"El precio publicado hoy es {format_price(event.current_price, event.currency)}.\n\n"
         f"Publicación: {event.listing_url}\n\n"
-        "¿Te gustaría saber más? Si prefieres no recibir más avisos, dínoslo."
+        f"{MESSAGE_VARIANTS[variant_id]['question']} "
+        "Si prefieres no recibir más avisos, dínoslo."
     )

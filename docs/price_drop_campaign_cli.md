@@ -110,3 +110,29 @@ Antes de enviar, el programa consulta las sesiones de la cuenta WaSender y pagin
 Si el resultado es `DELIVERY_UNKNOWN`, `SENDING` o `HISTORY_RECONCILIATION_REQUIRED`, la secuencia se detiene y no reenvía. `--resume` reconcilia primero el recibo local con el documento original y `leads.messages`; sin evidencia suficiente, mantiene el bloqueo para revisión manual. `accepted` confirma que el proveedor aceptó la solicitud, no que la entregó o leyó. El mensaje se conserva en el historial y el eco outbound del webhook se deduplica por ID del proveedor. El contexto V2 mantiene su ventana de atribución actual; una respuesta posterior no se atribuye automáticamente a una campaña antigua.
 
 Horario predeterminado: lunes a viernes, 09:00–19:00 `America/Santiago`, con cambios de horario de verano IANA. Una pausa que cruce el cierre detiene la secuencia y deja aprobados los destinatarios pendientes.
+
+## Filtros, resumen y progreso
+
+El menú pregunta por temperatura y antigüedad. Se aceptan `HOT`, `NORMAL`, `COLD`, `HOT,NORMAL` y `TODOS`. Un lead sin temperatura reconocida aparece en `REVISIÓN_PENDIENTE` y requiere clasificación manual con referencia de CRM para entrar en una campaña. Esa revisión queda dentro de la campaña; no modifica la temperatura del lead.
+
+La antigüedad usa solo `leads.created_at`. Los datetime BSON sin zona se interpretan como UTC; los strings ISO conservan su offset, y los ISO sin zona se interpretan en `America/Santiago`. Fechas ausentes, inválidas o futuras quedan pendientes de revisión. El menú propone 120 días por defecto; `0` selecciona expresamente antigüedad sin límite. El filtro se repite al descubrir, preparar y justo antes de cada intento. Al reanudar, no se puede ampliar la audiencia aprobada.
+
+```powershell
+python scripts/enviar_piloto_rebajas.py --dry-run --temperature HOT
+python scripts/enviar_piloto_rebajas.py --dry-run --temperature HOT,NORMAL --lead-max-age-days 120
+python scripts/enviar_piloto_rebajas.py --interactive --temperature HOT,NORMAL --lead-max-age-days 120
+python scripts/enviar_piloto_rebajas.py --summary
+python scripts/enviar_piloto_rebajas.py --summary --period-days 30 --temperature HOT,NORMAL
+```
+
+`--summary` es de solo lectura. Agrupa una fila por propiedad, muestra el evento vigente o el último evento registrado y evita contar dos veces a una misma persona dentro de un evento. Incluye elegibles, aceptaciones WaSender, entregas y lecturas verificadas, respuestas, interés, visitas, ofertas, llamadas, alternativas, bajas, búsquedas terminadas, fallos confirmados, entregas inciertas, campañas pendientes y la última actividad.
+
+Durante el envío aparece una barra con intentos, aceptaciones WaSender, fallos confirmados, entregas/lecturas verificadas, respuestas, entregas inciertas y pendientes en el lote y en las campañas seleccionadas. `SENT` significa aceptación del proveedor; no significa entrega. Cada resultado se agrega y sincroniza en `%LOCALAPPDATA%\PROCASA\price_drop_execution_progress.jsonl`, junto al diario local de reconciliación, para conservar los contadores tras Ctrl+C. `--resume` procesa solo filas aprobadas que sigan pendientes; estados inciertos se reconcilian antes.
+
+El nombre personalizado solo se toma de `prospecto.nombre` o `leads.nombre`, luego de pasar por el validador de nombres del CRM. No se usan nombres de propietarios, captadores o ejecutivos como comprador. Cada pareja cliente/evento obtiene una de tres variantes deterministas; todas conservan los mismos datos comerciales, enlace y mecanismo de baja. El texto final se persiste antes de aprobar y el mismo texto aceptado se registra en `URLS.leads.messages`.
+
+Una rebaja nueva para una propiedad se muestra como evento separado. Antes de ejecutar, las campañas `PREPARED` o `APPROVED` de una rebaja anterior se marcan `SUPERSEDED`; los registros `SENT` y `RESPONDED` se conservan. No se reenvía automáticamente un destinatario aceptado ni uno con entrega incierta.
+
+## Avisos administrativos V2
+
+Las respuestas positivas siguen usando `send_real_admin_notice_once()` bajo `PRICE_DROP_LEADS_V2_REAL_ADMIN_NOTICES_ENABLED` y el teléfono allowlisted. El aviso incluye código, precios, teléfono completo para el administrador, intención, respuesta relevante y enlace autenticado al CRM. Una baja o búsqueda terminada activa un aviso informativo separado en `notifications.administrator_info`; solo se dirige al administrador autorizado, se registra una vez y deja vigente la exclusión global del cliente. Ambos caminos están deshabilitados por defecto; las pruebas usan sender simulado.

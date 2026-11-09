@@ -16,6 +16,11 @@ from .phone_utils import normalize_phone_strict, phone_identity_variants, has_re
 from .price_drop_campaign_classifier import (
     classify_price_drop_reply, lead_must_not_be_contacted, ALTERNATIVES,
 )
+from .price_drop_campaign_filters import (
+    effective_temperature, lead_age_details, normalize_lead_max_age_days,
+    normalize_temperature_filter,
+    temperature_filter_matches, temperature_review_is_required,
+)
 from .price_drop_campaign_real import _lead_id, _message
 
 LEADS = "leads"
@@ -567,7 +572,13 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
                 history_event_ids: list[str] | None = None,
                 price_reference: int | float | None = None,
                 price_history_steps: list[dict] | None = None,
-                outbound_message_override: str | None = None) -> dict:
+                outbound_message_override: str | None = None,
+                campaign_filters_enabled: bool = False,
+                temperature_filter: str = "ALL",
+                temperature_review: dict[str, Any] | None = None,
+                lead_max_age_days: int | None = None,
+                lead_age_days_snapshot: int | None = None,
+                message_variant_id: str | None = None, now=None) -> dict:
     """Read-only preflight. Tests use an explicit existing canonical lead."""
     if not VALID_ID.fullmatch(campaign_id) or not VALID_CODE.fullmatch(property_code):
         raise PilotBlocked("invalid_id_or_property")
@@ -590,6 +601,32 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
     lead = db[LEADS].find_one({"_id": lid})
     if not lead or not _same_phone(lead, canonical):
         raise PilotBlocked("lead_phone_mismatch")
+    clean_temperature_filter = normalize_temperature_filter(temperature_filter)
+    if campaign_filters_enabled:
+        selected_temperature = effective_temperature(lead, temperature_review)
+        if selected_temperature == "REVISIÓN_PENDIENTE":
+            raise PilotBlocked("temperature_review_required")
+        if temperature_review_is_required(lead, temperature_review):
+            raise PilotBlocked("temperature_review_required")
+        if not temperature_filter_matches(selected_temperature, clean_temperature_filter):
+            raise PilotBlocked("temperature_filter_mismatch")
+        age = lead_age_details(
+            lead, now=utc(now or datetime.now(timezone.utc)),
+            max_age_days=lead_max_age_days,
+        )
+        if age["lead_age_status"] != "valid":
+            raise PilotBlocked(str(age["lead_age_status"]))
+        if age["excluded_by_age"]:
+            raise PilotBlocked("lead_age_exceeded")
+        if lead_age_days_snapshot is not None and age["lead_age_days"] != lead_age_days_snapshot:
+            # A stored age is a review aid; changing the lead's created_at is
+            # unusual and requires a fresh review before preparation.
+            raise PilotBlocked("lead_created_at_changed_after_candidate_review")
+        if temperature_review and (
+                str(lead.get("lead_temperature_effective") or
+                    lead.get("lead_temperature") or "").strip().upper()
+                in {"HOT", "NORMAL", "COLD"}):
+            raise PilotBlocked("temperature_changed_after_manual_review")
     if lead.get("phone_is_synthetic") or lead.get("contact_identity_incomplete"):
         raise PilotBlocked("incomplete_contact_identity")
     if lead_must_not_be_contacted(lead):
@@ -707,14 +744,21 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         )),
         "price_reference": price_reference,
         "price_history_steps": clean_history,
+        "campaign_filters_enabled": bool(campaign_filters_enabled),
+        "temperature_filter": clean_temperature_filter,
+        "temperature_at_prepare": effective_temperature(lead, temperature_review),
+        "temperature_review": (dict(temperature_review) if temperature_review else None),
+        "lead_max_age_days": lead_max_age_days,
+        "lead_age_days_snapshot": lead_age_days_snapshot,
+        "message_variant_id": str(message_variant_id or "")[:40] or None,
         "message": message,
     }
 
 
 def prepare_one(db, *, now=None, **data) -> dict:
     """Append exactly one PREPARED campaign to the selected lead."""
-    p = preview_one(db, **data)
     stamp = utc(now or datetime.now(timezone.utc))
+    p = preview_one(db, now=stamp, **data)
     row = {k: p[k] for k in (
         "campaign_id", "property_code", "old_price_uf", "new_price_uf",
         "old_price_clp", "new_price_clp", "currency",
@@ -728,6 +772,16 @@ def prepare_one(db, *, now=None, **data) -> dict:
         "price_reference": p["price_reference"],
         "price_history_steps": p["price_history_steps"],
     })
+    if p["campaign_filters_enabled"]:
+        row.update({
+            "campaign_filters_enabled": True,
+            "temperature_filter": p["temperature_filter"],
+            "temperature_at_prepare": p["temperature_at_prepare"],
+            "temperature_review": p["temperature_review"],
+            "lead_max_age_days": p["lead_max_age_days"],
+            "lead_age_days_snapshot": p["lead_age_days_snapshot"],
+            "message_variant_id": p["message_variant_id"],
+        })
     row.update({
         "status": "PREPARED", "prepared_at": stamp,
         "outbound_message": p["message"],
@@ -836,7 +890,10 @@ def review_whatsapp_contact(db, *, lead_id: str, campaign_id: str,
 
 def send_one(db, *, lead_id: str, campaign_id: str,
              sender: Callable[[str, str], dict] | None = None, now=None,
-             recovery_journal_path=None) -> dict:
+             recovery_journal_path=None,
+             temperature_filter_override: str | None = None,
+             lead_max_age_days_override: int | None = None,
+             enforce_campaign_filters: bool = False) -> dict:
     """One irreversible attempt; no sender invoked without separate gates."""
     if not (os.getenv(SEND_FLAG, "").lower() in {"true", "1", "yes"}
             and os.getenv(APPROVED_ID_FLAG) == campaign_id):
@@ -878,7 +935,54 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         window_blocker = _text_sender_window_blocker(lead, stamp)
         if window_blocker:
             return {"status": window_blocker}
-    elif normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")) != c.get("phone_normalized"):
+    filters_enabled = (not c.get("test_mode") and (
+        c.get("campaign_filters_enabled") is True or enforce_campaign_filters
+    ))
+    if filters_enabled:
+        review = c.get("temperature_review") or {}
+        temperature = effective_temperature(lead, review)
+        if temperature == "REVISIÓN_PENDIENTE":
+            return {"status": "BLOCKED_TEMPERATURE_REVIEW_REQUIRED"}
+        try:
+            selected_filter = normalize_temperature_filter(
+                temperature_filter_override if temperature_filter_override is not None
+                else c.get("temperature_filter", "ALL")
+            )
+            stored_filter = normalize_temperature_filter(c.get("temperature_filter", "ALL"))
+        except ValueError:
+            return {"status": "BLOCKED_TEMPERATURE_FILTER_INVALID"}
+        known_temperatures = {"HOT", "NORMAL", "COLD"}
+        selected_set = (known_temperatures if selected_filter == "ALL"
+                        else set(selected_filter.split(",")))
+        stored_set = (known_temperatures if stored_filter == "ALL"
+                      else set(stored_filter.split(",")))
+        if not selected_set <= stored_set:
+            return {"status": "BLOCKED_TEMPERATURE_FILTER_WIDENED"}
+        if not temperature_filter_matches(temperature, selected_filter):
+            return {"status": "BLOCKED_TEMPERATURE_FILTER_MISMATCH"}
+        if temperature_review_is_required(lead, review):
+            return {"status": "BLOCKED_TEMPERATURE_REVIEW_REQUIRED"}
+        current_temperature = str(lead.get("lead_temperature_effective") or
+                                  lead.get("lead_temperature") or "").strip().upper()
+        if review and current_temperature in {"HOT", "NORMAL", "COLD"}:
+            return {"status": "BLOCKED_TEMPERATURE_CHANGED_AFTER_REVIEW"}
+        selected_age_raw = (
+            lead_max_age_days_override
+            if enforce_campaign_filters and lead_max_age_days_override is not None
+            else c.get("lead_max_age_days", 120)
+        )
+        selected_age = normalize_lead_max_age_days(selected_age_raw)
+        stored_age = normalize_lead_max_age_days(c.get("lead_max_age_days"))
+        if (enforce_campaign_filters and stored_age is not None
+                and (selected_age is None or selected_age > stored_age)):
+            return {"status": "BLOCKED_LEAD_AGE_FILTER_WIDENED"}
+        age = lead_age_details(lead, now=stamp, max_age_days=selected_age)
+        if age["lead_age_status"] not in {"valid", "lead_age_exceeded"}:
+            return {"status": "BLOCKED_LEAD_AGE_REVIEW_REQUIRED",
+                    "reason": age["lead_age_status"]}
+        if age["excluded_by_age"]:
+            return {"status": "BLOCKED_LEAD_AGE_EXCEEDED"}
+    if c.get("test_mode") and normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")) != c.get("phone_normalized"):
         return {"status": "TEST_PHONE_NOT_ALLOWLISTED"}
     currency = c.get("currency") or "UF"
     old = c.get("old_price_clp") if currency == "CLP" else c.get("old_price_uf")
@@ -910,7 +1014,14 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         receipt = {"success": False, "provider_call_uncertain": True}
     accepted = bool(receipt.get("success") and receipt.get("provider_message_id")
                     and not receipt.get("provider_call_uncertain"))
-    status = "SENT" if accepted else "DELIVERY_UNKNOWN"
+    explicit_failure = bool(
+        not accepted and not receipt.get("provider_call_uncertain")
+        and (receipt.get("provider_called") is False
+             or (receipt.get("http_status") is not None
+                 and str(receipt.get("delivery_status") or "").lower()
+                 in {"failed", "provider_auth_error"}))
+    )
+    status = "SENT" if accepted else "FAILED" if explicit_failure else "DELIVERY_UNKNOWN"
     set_fields = {
         f"{ROOT}.$.status": status,
         f"{ROOT}.$.provider_message_id": receipt.get("provider_message_id"),
@@ -954,6 +1065,8 @@ def send_one(db, *, lead_id: str, campaign_id: str,
                 "history_event_ids": c.get("history_event_ids") or [],
                 "price_reference": c.get("price_reference"),
                 "price_history_steps": c.get("price_history_steps") or [],
+                **({"message_variant_id": c.get("message_variant_id")}
+                   if c.get("message_variant_id") else {}),
             },
         }
         try:
@@ -1000,7 +1113,10 @@ def send_one(db, *, lead_id: str, campaign_id: str,
                     "campaign_id": campaign_id,
                     "provider_message_id": receipt.get("provider_message_id")}
     return {"status": status, "campaign_id": campaign_id,
-            "provider_message_id": receipt.get("provider_message_id")}
+            "provider_message_id": receipt.get("provider_message_id"),
+            "provider_status": str(receipt.get("delivery_status") or "unknown")[:40],
+            "provider_attempted": receipt.get("provider_called") is not False,
+            "provider_call_uncertain": bool(receipt.get("provider_call_uncertain"))}
 
 
 def active_context(db, *, phone: str, message: str = "", now=None) -> dict | None:
@@ -1158,6 +1274,10 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
             "conversation_status_at": now.isoformat(),
             "conversation_status_version": "commercial_close_no_contact_v1",
             f"{field}.opted_out_at": now,
+            # A separate administrator-only information queue records the
+            # customer's global stop request without reopening contact.
+            f"{field}.notifications.administrator_info.status": "PENDING_INFO",
+            f"{field}.notifications.administrator_info.reason": label["reason"],
         })
     if positive:
         update["$set"][f"{field}.last_positive_reply_text"] = str(text)[:350]
@@ -1483,6 +1603,120 @@ def send_real_admin_notice_once(db, *,
     db[LEADS].update_one({
         "_id": lead["_id"], f"{field}.campaign_id": campaign_id,
         f"{field}.notifications.administrator.status": "CLAIMED",
+    }, {"$set": fields})
+    return {"status": status, "campaign_id": campaign_id,
+            "recipient_last4": admin[-4:],
+            "provider_message_id": receipt.get("provider_message_id")}
+
+
+def send_real_admin_info_notice_once(db, *,
+                                    sender: Callable[[str, str], dict] | None = None,
+                                    now=None) -> dict:
+    """Send one admin-only note for an opt-out or completed property search.
+
+    This channel is independent from positive commercial alerts. It never
+    addresses the customer and is gated by the same explicit admin allowlist.
+    A failed or uncertain provider call is not automatically retried.
+    """
+    if os.getenv(REAL_ADMIN_NOTICE_FLAG, "").lower() not in {"1", "true", "yes"}:
+        return {"status": "DISABLED"}
+    admin = normalize_phone_strict(os.getenv(ADMIN_PHONE_FLAG, ""))
+    if admin != APPROVED_ADMIN_PHONE:
+        return {"status": "ADMIN_PHONE_NOT_ALLOWLISTED"}
+    candidates = list(db[LEADS].find({
+        "price_drop_v2.campaigns": {"$elemMatch": {
+            "test_mode": False, "status": "OPTED_OUT",
+            "notifications.administrator_info.status": "PENDING_INFO",
+        }},
+    }, {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
+        "price_drop_v2": 1}).limit(20))
+    selected = []
+    for lead in candidates:
+        for index, campaign in enumerate((lead.get("price_drop_v2") or {}).get("campaigns") or []):
+            info = ((campaign.get("notifications") or {}).get("administrator_info") or {})
+            classification = (campaign.get("last_classification") or {})
+            reason = str(info.get("reason") or classification.get("reason") or "")
+            if (campaign.get("test_mode") is False
+                    and campaign.get("status") == "OPTED_OUT"
+                    and campaign.get("provider_message_id")
+                    and info.get("status") == "PENDING_INFO"
+                    and reason in {"explicit_opt_out", "already_found_property"}):
+                selected.append((lead, index, campaign, reason))
+    if not selected:
+        return {"status": "IDLE"}
+    selected.sort(key=lambda row: (str(row[2].get("campaign_id")), str(row[0]["_id"])))
+    lead, index, campaign, reason = selected[0]
+    stamp = utc(now or datetime.now(timezone.utc))
+    from .lead_router import build_secure_crm_url
+    try:
+        crm_link = build_secure_crm_url({"_id": lead["_id"]})
+    except Exception:
+        return {"status": "BLOCKED_CRM_URL"}
+    if not str(crm_link or "").startswith("https://"):
+        return {"status": "BLOCKED_CRM_URL"}
+    phone = normalize_phone_strict(
+        lead.get("contact_phone_normalized") or lead.get("phone") or ""
+    )
+    if not phone or phone == admin or not _same_phone(lead, phone):
+        return {"status": "BLOCKED_CONTACT_IDENTITY"}
+    currency = str(campaign.get("currency") or "UF").upper()
+    old = campaign.get("old_price_clp") if currency == "CLP" else campaign.get("old_price_uf")
+    new = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
+    if currency not in {"UF", "CLP"} or not isinstance(old, (int, float)) or not isinstance(new, (int, float)):
+        return {"status": "BLOCKED_CAMPAIGN_PRICE"}
+
+    def price_text(value):
+        return "$" + f"{int(value):,}".replace(",", ".") if currency == "CLP" else (
+            "UF " + f"{int(value):,}".replace(",", ".")
+        )
+
+    code = str(campaign.get("property_code") or "")
+    campaign_id = str(campaign.get("campaign_id") or "")
+    response = str(campaign.get("last_customer_text") or "")[:160]
+    label = "Búsqueda de propiedad terminada" if reason == "already_found_property" else "Solicita no recibir más mensajes"
+    text = (
+        "ℹ️ PROCASA — Aviso informativo de campaña de rebaja\n"
+        f"Propiedad: {code} | {price_text(old)} → {price_text(new)}\n"
+        f"Cliente: {phone}\nMotivo: {label} ({reason})\n"
+        f"Respuesta: {response or 'Solicitud registrada'}\nCRM: {crm_link}\n"
+        "Exclusión global aplicada. No contactar nuevamente al cliente."
+    )
+    field = f"{ROOT}.{index}"
+    claimed = db[LEADS].update_one({
+        "_id": lead["_id"],
+        f"{field}.campaign_id": campaign_id,
+        f"{field}.status": "OPTED_OUT",
+        f"{field}.test_mode": False,
+        f"{field}.notifications.administrator_info.status": "PENDING_INFO",
+    }, {"$set": {
+        f"{field}.notifications.administrator_info.status": "CLAIMED",
+        f"{field}.notifications.administrator_info.attempted_at": stamp,
+        f"{field}.notifications.administrator_info.message": text,
+        f"{field}.notifications.administrator_info.sent_to": admin,
+    }})
+    if claimed.modified_count != 1:
+        return {"status": "ALREADY_CLAIMED"}
+    if sender is None:
+        from .whatsapp_client import send_whatsapp_message_detailed_sync
+        sender = send_whatsapp_message_detailed_sync
+    try:
+        receipt = sender(admin, text)
+    except Exception:
+        receipt = {"success": False, "provider_call_uncertain": True}
+    accepted = bool(receipt.get("success") and receipt.get("provider_message_id")
+                    and not receipt.get("provider_call_uncertain"))
+    status = "SENT" if accepted else "DELIVERY_UNKNOWN"
+    fields = {
+        f"{field}.notifications.administrator_info.status": status,
+        f"{field}.notifications.administrator_info.provider_message_id": receipt.get("provider_message_id"),
+        f"{field}.notifications.administrator_info.provider_status": str(receipt.get("delivery_status") or "unknown")[:40],
+        f"{field}.notifications.administrator_info.completed_at": stamp,
+    }
+    if accepted:
+        fields[f"{field}.notifications.administrator_info.sent_at"] = stamp
+    db[LEADS].update_one({
+        "_id": lead["_id"], f"{field}.campaign_id": campaign_id,
+        f"{field}.notifications.administrator_info.status": "CLAIMED",
     }, {"$set": fields})
     return {"status": status, "campaign_id": campaign_id,
             "recipient_last4": admin[-4:],

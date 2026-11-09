@@ -68,6 +68,7 @@ jobs:
               tests/test_price_drop_9804_qa_reset.py
               tests/test_natural_6436_qa.py
               tests/test_commercial_voice_campaign_isolation.py
+              tests/test_price_drop_found_property_optout.py
           - suite: Owner campaign price revalidation
             tests: >-
               tests/test_owner_campaign_private_portal.py

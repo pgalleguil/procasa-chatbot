@@ -12,6 +12,12 @@ from chatbot.price_drop_campaign_classifier import classify_price_drop_reply
 from chatbot.price_drop_campaign_discovery import (
     discover_price_drops, find_candidates_for_event,
 )
+from chatbot.price_drop_publication_check import (
+    PublicationCheck, extract_public_prices, verify_current_listing,
+)
+from chatbot.wasender_usage import (
+    WaSenderUsageUnavailable, account_attempts_last_24h,
+)
 from chatbot.price_drop_reconciliation import (
     pending_receipts, record_accepted_receipt, reconcile_pending_receipts,
 )
@@ -138,6 +144,7 @@ def _run(db, *, campaign_id=CAMPAIGN, max_messages=20, daily_cap=50,
             "success": True, "provider_message_id": f"mock-{phone[-4:]}",
             "delivery_status": "accepted",
         }), now_fn=now_fn, provider_ready=lambda: True,
+        usage_reader=lambda stamp: 0,
         journal_path=journal_path, rng=rng, link_verifier=link_verifier,
     )
 
@@ -191,6 +198,31 @@ def test_discovery_keeps_clp_without_converting_and_stable_event_identity():
     assert event.event_id == discover_price_drops(db, now=NOW)[0].event_id
 
 
+def test_discovery_full_scan_finds_rebate_after_more_than_five_thousand_history_rows():
+    db = _event_db()
+    rows = [{
+        "_id": ObjectId(), "codigo": "6436", "campo": "precio_publicado",
+        "fecha": (NOW + timedelta(seconds=index + 1)).isoformat(),
+        "moneda_anterior": "UF", "moneda_nueva": "UF",
+        "monto_anterior": 2690, "monto_nuevo": 2700,
+    } for index in range(5001)]
+    db["universo_cartera_prop360_historial"].insert_many(rows)
+    assert discover_price_drops(db, now=NOW, limit=5000, batch_size=500) == []
+    full = discover_price_drops(db, now=NOW, limit=None, batch_size=500)
+    assert len(full) == 1 and full[0].new_price == 2690
+
+
+def test_discovery_filters_since_property_operation_and_currency():
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW, since=DROP - timedelta(hours=1),
+                                 property_code="6436", operation="Venta",
+                                 currency="UF", batch_size=1)
+    assert len(event) == 1
+    assert discover_price_drops(db, now=NOW, since=DROP + timedelta(days=1)) == []
+    assert discover_price_drops(db, now=NOW, property_code="9999") == []
+    assert discover_price_drops(db, now=NOW, currency="CLP") == []
+
+
 def test_lead_who_asked_between_drops_is_eligible_for_the_later_drop_only():
     db = _event_db()
     event1 = discover_price_drops(db, now=NOW)[0]
@@ -241,6 +273,18 @@ def test_candidate_selection_prioritizes_all_temperatures_and_verifies_alias_dat
     assert by_id[str(ids[2])]["eligible"] is True
     assert by_id[str(ids[3])]["reason"] == "no_dated_property_inquiry_before_drop"
     assert [row["temperature"] for row in rows[:3]] == ["HOT", "NORMAL", "COLD"]
+
+
+def test_unknown_temperature_is_pending_review_but_does_not_discard_verified_inquiry():
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219801", temperature="",
+                         extra={"lead_temperature_effective": "SIN_CLASIFICAR"})
+    row = find_candidates_for_event(db, event)[0]
+    assert row["lead_id"] == str(lead_id)
+    assert row["eligible"] is True
+    assert row["temperature"] == "REVISIÓN_PENDIENTE"
+    assert row["reason"] == "eligible_temperature_review_pending"
 
 
 def test_candidate_selection_rejects_duplicate_identity_opt_out_and_completed_search():
@@ -423,16 +467,30 @@ def test_limits_and_link_review_fail_closed(monkeypatch, tmp_path):
     assert result["attempts"] == 0 and result["pending"] == 2
 
 
-@pytest.mark.parametrize("channel", ["official", "wasenderapi"])
-def test_text_sender_requires_recent_customer_message_or_template(monkeypatch, tmp_path, channel):
+def test_wasender_allows_authorized_plain_text_outside_24_hours(monkeypatch, tmp_path):
     db, _, _ = _dispatch_db(monkeypatch, count=1)
-    monkeypatch.setenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", channel)
+    monkeypatch.setenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi")
     db["leads"].update_one({}, {"$set": {
         "messages.1.timestamp": (DROP - timedelta(days=10)).isoformat(),
     }})
+    entry = cli._entries(db, CAMPAIGN, ("APPROVED",))[0]
+    assert cli._message_window_blocker(entry, NOW) is None
+    result = _run(db, journal_path=tmp_path / "wasender-old-inbound.json")
+    assert result["status"] == "COMPLETED" and result["attempts"] == 1
+
+
+def test_official_channel_keeps_24_hour_rule_and_is_not_routed_to_wasender(monkeypatch, tmp_path):
+    db, _, _ = _dispatch_db(monkeypatch, count=1)
+    monkeypatch.setenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "official")
+    db["leads"].update_one({}, {"$set": {
+        "messages.1.timestamp": (DROP - timedelta(days=10)).isoformat(),
+    }})
+    entry = cli._entries(db, CAMPAIGN, ("APPROVED",))[0]
+    assert cli._message_window_blocker(entry, NOW) == \
+        "whatsapp_24_hour_window_expired_template_required"
     result = _run(db, journal_path=tmp_path / "official.json")
     assert result["status"] == "BLOCKED"
-    assert result["reason"] == "whatsapp_24_hour_window_expired_template_required"
+    assert result["reason"] == "official_channel_sender_not_implemented"
 
 
 def test_reconciliation_restores_accepted_message_without_duplicate_echo(monkeypatch, tmp_path):
@@ -492,3 +550,148 @@ def test_webhook_outbound_echo_is_ignored_by_existing_ingress_policy():
     assert is_outbound_message_event({"event": "message.sent"}) is True
     assert is_outbound_message_event({"data": {"event": "messages.sent"}}) is True
     assert is_outbound_message_event({"event": "message.received"}) is False
+
+
+class _HttpResponse:
+    def __init__(self, status_code=200, body=b"", payload=None, headers=None):
+        self.status_code = status_code
+        self.content = body
+        self._payload = payload
+        self.headers = headers or {}
+
+    def json(self):
+        return self._payload
+
+
+def _listing_check(db, html, *, status=200):
+    return verify_current_listing(
+        db, property_code="6436", currency="UF", expected_price=2690,
+        expected_url="https://www.procasa.cl/propiedad/6436", now=NOW,
+        http_get=lambda *_args, **_kwargs: _HttpResponse(status, html.encode("utf-8")),
+    )
+
+
+def test_public_listing_verification_distinguishes_verified_unknown_and_mismatch():
+    db = _event_db()
+    matching = ('<meta property="product:price:amount" content="2690">'
+                '<meta property="product:price:currency" content="UF">')
+    verified = _listing_check(db, matching)
+    assert verified.status == "price_verified" and verified.sendable is True
+    mismatch = matching.replace('content="2690"', 'content="2790"')
+    inconsistent = _listing_check(db, mismatch)
+    assert inconsistent.status == "inventory_public_inconsistent"
+    assert inconsistent.sendable is False
+    unknown = _listing_check(db, "<html><title>Departamento</title></html>")
+    assert unknown.status == "link_accessible_price_unverifiable"
+    assert unknown.sendable is False
+
+
+def test_public_listing_verification_distinguishes_removed_and_inaccessible():
+    db = _event_db()
+    removed = _listing_check(db, "", status=404)
+    assert removed.status == "property_removed"
+    assert removed.sendable is False
+    inaccessible = verify_current_listing(
+        db, property_code="6436", currency="UF", expected_price=2690,
+        http_get=lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError()),
+        now=NOW,
+    )
+    assert inaccessible.status == "link_inaccessible"
+    assert inaccessible.sendable is False
+
+
+def test_wasender_usage_counts_recent_api_logs_across_all_sessions():
+    recent = (NOW - timedelta(hours=2)).isoformat()
+    old = (NOW - timedelta(hours=30)).isoformat()
+    calls = []
+
+    def get(url, *, params=None, **_kwargs):
+        calls.append((url, params))
+        if url.endswith("/whatsapp-sessions"):
+            return _HttpResponse(payload={"success": True, "data": [
+                {"id": "session-1", "log_messages": True},
+                {"id": "session-2", "log_messages": True},
+            ]})
+        session = url.split("/whatsapp-sessions/")[1].split("/")[0]
+        page = params["page"]
+        if session == "session-1" and page == 1:
+            data = [{"id": "1", "created_at": recent, "status": "sent"},
+                    {"id": "2", "created_at": old, "status": "failed"}]
+            last_page = 2
+        elif session == "session-1":
+            data, last_page = [], 2
+        else:
+            data = [{"id": "3", "created_at": recent, "status": "in_progress"}]
+            last_page = 1
+        return _HttpResponse(payload={"success": True, "data": {
+            "current_page": page, "last_page": last_page, "data": data,
+        }})
+
+    result = account_attempts_last_24h(
+        now=NOW, base_url="https://wasenderapi.com/api", token="test-token", http_get=get,
+    )
+    assert result["attempts_last_24h"] == 2
+    assert result["sessions_scanned"] == 2
+    assert result["pages_scanned"] == 3
+    assert len(calls) == 4
+
+
+def test_wasender_usage_fails_closed_when_any_session_logs_are_disabled():
+    def get(url, **_kwargs):
+        return _HttpResponse(payload={"success": True, "data": [
+            {"id": "session-1", "log_messages": False},
+            {"id": "session-2", "log_messages": True},
+        ]})
+
+    with pytest.raises(WaSenderUsageUnavailable, match="logs_disabled"):
+        account_attempts_last_24h(
+            now=NOW, base_url="https://wasenderapi.com/api", token="test-token", http_get=get,
+        )
+
+
+def test_interactive_menu_previews_then_prepares_approves_and_sends_mock_only(tmp_path):
+    db = _event_db()
+    lead_id = _candidate(db, phone="+56983219801", temperature="NORMAL")
+    answers = iter([
+        "1", "1", "1", "300", "600", "QA operator",
+        "CRM opt-in reviewed ref 2026-11-01", "CONFIRMO 1", "PREPARAR 1",
+        "APROBAR 1", "ENVIAR 1",
+    ])
+    sent = []
+    check = PublicationCheck("price_verified", True, "6436", "https://www.procasa.cl/propiedad/6436",
+                             200, 2690, "UF", 2690, "UF")
+    result = cli.interactive_workflow(
+        db, input_fn=lambda _prompt: next(answers), output_fn=lambda _line: None,
+        sender=lambda phone, body: sent.append((phone, body)) or {
+            "success": True, "provider_message_id": "mock-menu-1", "delivery_status": "accepted",
+        },
+        usage_reader=lambda _now: 0, provider_ready=lambda: True,
+        publication_verifier=lambda *_args, **_kwargs: check,
+        backup_fn=lambda *_args: tmp_path / "backup.json",
+        now_fn=lambda: NOW, journal_path=tmp_path / "menu.json",
+    )
+    lead = db["leads"].find_one({"_id": lead_id})
+    campaign = lead["price_drop_v2"]["campaigns"][0]
+    assert result["status"] == "COMPLETED" and result["attempts"] == 1, result
+    assert campaign["status"] == "SENT"
+    assert len(sent) == 1 and sent[0][1] == campaign["outbound_message"]
+    assert lead["messages"][-1]["provider_message_id"] == "mock-menu-1"
+
+
+def test_interactive_cancel_before_prepare_keeps_mongo_read_only():
+    db = _event_db()
+    lead_id = _candidate(db, phone="+56983219801", temperature="HOT")
+    answers = iter([
+        "1", "1", "1", "300", "600", "QA operator",
+        "CRM opt-in reviewed ref 2026-11-01", "CONFIRMO 1", "NO",
+    ])
+    check = PublicationCheck("price_verified", True, "6436", "https://www.procasa.cl/propiedad/6436",
+                             200, 2690, "UF", 2690, "UF")
+    result = cli.interactive_workflow(
+        db, input_fn=lambda _prompt: next(answers), output_fn=lambda _line: None,
+        publication_verifier=lambda *_args, **_kwargs: check, now_fn=lambda: NOW,
+    )
+    lead = db["leads"].find_one({"_id": lead_id})
+    assert result["status"] == "CANCELLED"
+    assert not lead.get("price_drop_v2")
+    assert len(lead["messages"]) == 1

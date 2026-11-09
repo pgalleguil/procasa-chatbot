@@ -122,9 +122,18 @@ def _real_campaign_history_blocker(lead: dict, campaign: dict) -> str | None:
 
 
 def _text_sender_window_blocker(lead: dict, now: datetime) -> str | None:
-    """The configured senders only send plain text, so require an open window."""
-    if os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi").strip().lower() \
-            not in {"wasenderapi", "official"}:
+    """Apply the 24-hour rule only to the official Cloud API channel.
+
+    The current WaSender integration posts plain text to WaSender's active
+    WhatsApp session endpoint. It has no template endpoint or Cloud API
+    conversation-window field. Keep explicit contact authorization and opt-out
+    checks in the V2 send path; do not treat the Cloud API's technical template
+    gate as a WaSender endpoint restriction.
+    """
+    mode = os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi").strip().lower()
+    if mode == "wasenderapi":
+        return None
+    if mode != "official":
         return "whatsapp_channel_mode_invalid"
     inbound = []
     for message in lead.get("messages") or []:
@@ -839,6 +848,11 @@ def send_one(db, *, lead_id: str, campaign_id: str,
               if x.get("campaign_id") == campaign_id), None)
     if not c or c.get("status") != "APPROVED":
         return {"status": "NOT_APPROVED"}
+    channel = os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi").strip().lower()
+    if channel == "official":
+        return {"status": "OFFICIAL_CHANNEL_SENDER_NOT_IMPLEMENTED"}
+    if channel != "wasenderapi":
+        return {"status": "WHATSAPP_CHANNEL_MODE_INVALID"}
     stamp = utc(now or datetime.now(timezone.utc))
     if not c.get("test_mode") and (
             os.getenv("RENDER", "").strip().lower() == "true"

@@ -181,35 +181,90 @@ def normalize_price_event(history: dict[str, Any], prop: dict[str, Any],
 
 
 def discover_price_drops(db: Any, *, since: datetime | None = None,
-                         limit: int = 500, now: datetime | None = None) -> list[PriceDropEvent]:
-    if type(limit) is not int or not 1 <= limit <= 5000:
-        raise DiscoveryError("limit_must_be_between_1_and_5000")
+                         limit: int | None = None, now: datetime | None = None,
+                         property_code: str | None = None,
+                         operation: str | None = None,
+                         currency: str | None = None,
+                         batch_size: int = 500) -> list[PriceDropEvent]:
+    """Read price history in bounded batches; ``limit=None`` means full scan.
+
+    A complete scan must not stop at an arbitrary number of Mongo documents.
+    Only one history page and its current property documents are kept in memory
+    at a time; returned events are the validated, deduplicated result set.
+    """
+    if limit is not None and (type(limit) is not int or limit < 1):
+        raise DiscoveryError("limit_must_be_positive_or_unset")
+    if type(batch_size) is not int or not 1 <= batch_size <= 5000:
+        raise DiscoveryError("batch_size_must_be_between_1_and_5000")
     since_utc = parse_aware_datetime(since) if since is not None else None
+    query: dict[str, Any] = {"campo": "precio_publicado"}
+    if property_code:
+        query["codigo"] = str(property_code)
+    if since_utc:
+        # Prop360 history is normally BSON datetime; fixtures and older imports
+        # can contain ISO strings, so keep both representations in the query.
+        query["$or"] = [
+            {"fecha": {"$gte": since_utc}},
+            {"fecha": {"$gte": since_utc.isoformat()}},
+        ]
+    currency_filter = str(currency or "").strip().upper()
+    if currency_filter:
+        if currency_filter not in {"UF", "CLP"}:
+            raise DiscoveryError("currency_must_be_UF_or_CLP")
+        query["$and"] = [
+            {"$or": [{"moneda_anterior": currency_filter},
+                     {"valor_anterior.moneda": currency_filter}]},
+            {"$or": [{"moneda_nueva": currency_filter},
+                     {"valor_nuevo.moneda": currency_filter}]},
+        ]
     histories = db[HISTORY_COLLECTION].find(
-        {"campo": "precio_publicado"},
+        query,
         {"_id": 1, "codigo": 1, "campo": 1, "fecha": 1, "moneda_anterior": 1,
          "moneda_nueva": 1, "monto_anterior": 1, "monto_nuevo": 1,
          "valor_anterior": 1, "valor_nuevo": 1},
-    ).sort("fecha", -1).limit(limit)
-    properties, events, seen = {}, {}, set()
-    for history in histories:
-        code = str(history.get("codigo") or "")
-        if code not in properties:
-            properties[code] = db[PROPERTY_COLLECTION].find_one(
-                {"codigo": code},
-                {"_id": 0, "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
-                 "tipo_operacion": 1, "publicaciones": 1, "ubicacion.comuna": 1,
-                 "direccion.comuna": 1, "comuna": 1, "resumen.comuna": 1},
-            ) or {}
-        event = normalize_price_event(history, properties[code], now=now)
-        if event is None or (since_utc and event.dropped_at < since_utc):
-            continue
-        key = (event.property_code, event.dropped_at.isoformat(), event.currency,
-               str(event.old_price), str(event.new_price))
-        if key in seen:
-            continue
-        seen.add(key)
-        events[event.event_id] = event
+    ).sort([("fecha", -1), ("_id", -1)])
+    if limit is not None:
+        histories = histories.limit(limit)
+    if hasattr(histories, "batch_size"):
+        histories = histories.batch_size(batch_size)
+
+    property_projection = {
+        "_id": 0, "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
+        "tipo_operacion": 1, "publicaciones": 1, "ubicacion.comuna": 1,
+        "direccion.comuna": 1, "comuna": 1, "resumen.comuna": 1,
+    }
+    events, seen = {}, set()
+    history_iter = iter(histories)
+    while True:
+        batch = []
+        for _ in range(batch_size):
+            try:
+                batch.append(next(history_iter))
+            except StopIteration:
+                break
+        if not batch:
+            break
+        codes = {str(row.get("codigo") or "") for row in batch}
+        properties = {
+            code: db[PROPERTY_COLLECTION].find_one({"codigo": code}, property_projection) or {}
+            for code in codes if code
+        }
+        for history in batch:
+            code = str(history.get("codigo") or "")
+            prop = properties.get(code, {})
+            event = normalize_price_event(history, prop, now=now)
+            if event is None or (since_utc and event.dropped_at < since_utc):
+                continue
+            if operation and event.operation.casefold() != str(operation).strip().casefold():
+                continue
+            if currency_filter and event.currency != currency_filter:
+                continue
+            key = (event.property_code, event.dropped_at.isoformat(), event.currency,
+                   str(event.old_price), str(event.new_price))
+            if key in seen:
+                continue
+            seen.add(key)
+            events[event.event_id] = event
     return sorted(events.values(), key=lambda item: (item.dropped_at, item.property_code, item.event_id))
 
 
@@ -308,9 +363,9 @@ def _eligibility(db: Any, lead: dict[str, Any], event: PriceDropEvent,
     )
     if not evidence:
         return False, "no_dated_property_inquiry_before_drop", None
-    temp = str(lead.get("lead_temperature_effective") or lead.get("lead_temperature") or "").upper()
+    temp = str(lead.get("lead_temperature_effective") or lead.get("lead_temperature") or "").strip().upper()
     if temp not in {"HOT", "NORMAL", "COLD"}:
-        return False, "temperature_unknown", evidence
+        return True, "eligible_temperature_review_pending", evidence
     return True, "eligible", evidence
 
 
@@ -332,10 +387,12 @@ def find_candidates_for_event(db: Any, event: PriceDropEvent) -> list[dict[str, 
                 and isinstance(row.get("sent_at"), datetime)]
         last = max(sent, key=lambda row: row["sent_at"]) if sent else None
         phone = lead.get("contact_phone_normalized") or lead.get("phone") or ""
+        raw_temperature = str(lead.get("lead_temperature_effective") or
+                              lead.get("lead_temperature") or "").strip().upper()
+        temperature = raw_temperature if raw_temperature in {"HOT", "NORMAL", "COLD"} else "REVISIÓN_PENDIENTE"
         result.append({
             "lead_id": str(lead.get("_id") or ""), "phone_last4": str(phone)[-4:],
-            "temperature": str(lead.get("lead_temperature_effective") or
-                                lead.get("lead_temperature") or "N/A").upper(),
+            "temperature": temperature,
             "inquiry_at": evidence.get("inquiry_at") if evidence else None,
             "inquiry_reference": evidence.get("reference") if evidence else None,
             "campaign_history": [{"campaign_id": r.get("campaign_id"),

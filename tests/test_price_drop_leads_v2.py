@@ -448,7 +448,7 @@ def test_real_pilot_blocks_duplicate_or_lost_historic_inquiry(db, monkeypatch):
     assert calls == []
 
 
-def test_real_text_sender_blocks_a_closed_24_hour_window(db, monkeypatch):
+def test_real_wasender_sender_can_follow_up_outside_24_hours_with_reviewed_opt_in(db, monkeypatch):
     lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
     monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
     db["leads"].update_one(
@@ -458,9 +458,25 @@ def test_real_text_sender_blocks_a_closed_24_hour_window(db, monkeypatch):
     calls = []
     result = v2.send_one(
         db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args) or {
+            "success": True, "provider_message_id": "mock-wasender-id",
+            "delivery_status": "accepted",
+        }, now=NOW,
+    )
+    assert result["status"] == "SENT"
+    assert len(calls) == 1
+
+
+def test_official_channel_is_never_mislabeled_as_wasender_sender(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
+    monkeypatch.setenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "official")
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
         sender=lambda *args: calls.append(args), now=NOW,
     )
-    assert result["status"] == "whatsapp_24_hour_window_expired_template_required"
+    assert result["status"] == "OFFICIAL_CHANNEL_SENDER_NOT_IMPLEMENTED"
     assert calls == []
 
 

@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import random
+import re
 import sys
 import time
 from collections import Counter
@@ -37,6 +38,8 @@ from chatbot.price_drop_campaign_discovery import (
 from chatbot.price_drop_reconciliation import (
     default_journal_path, pending_receipts, reconcile_pending_receipts,
 )
+from chatbot.price_drop_publication_check import verify_current_listing
+from chatbot.wasender_usage import account_attempts_last_24h, WaSenderUsageUnavailable
 from chatbot.price_drop_campaign_real import _lead_id
 
 PILOT_CAMPAIGN_ID = "pilot_real_rebajas_20261109_v2"
@@ -109,31 +112,28 @@ def _within_hours(now: datetime, config: dict[str, Any]) -> bool:
             and config["start"] <= local.timetz().replace(tzinfo=None) < config["end"])
 
 
-def _day_start_utc(now: datetime, tz: ZoneInfo) -> datetime:
-    return _local_now(now, tz).replace(
-        hour=0, minute=0, second=0, microsecond=0,
-    ).astimezone(timezone.utc)
-
-
-def _provider_attempts_today(db: Any, *, now: datetime, tz: ZoneInfo) -> int:
-    start = _day_start_utc(now, tz)
+def _provider_attempts_last_24h(*, now: datetime) -> dict[str, Any]:
+    from config import Config
     try:
-        rows = list(db[LEADS_COLLECTION].aggregate([
-            {"$unwind": "$price_drop_v2.campaigns"},
-            {"$match": {"price_drop_v2.campaigns.attempted_at": {"$gte": start}}},
-            {"$count": "attempts"},
-        ]))
-        return int(rows[0]["attempts"]) if rows else 0
-    except Exception as exc:
-        raise CliError("provider_attempt_count_unavailable_fail_closed") from exc
+        return account_attempts_last_24h(
+            now=now, base_url=str(Config.WASENDER_BASE_URL or ""),
+            token=str(Config.WASENDER_TOKEN or ""),
+            naive_timezone_name=os.getenv("PRICE_DROP_WASENDER_LOG_TIMEZONE", "UTC"),
+        )
+    except WaSenderUsageUnavailable as exc:
+        raise CliError(str(exc)) from exc
 
 
 def _entries(db: Any, campaign_id: str,
-             statuses: tuple[str, ...] = ("APPROVED",)) -> list[dict[str, Any]]:
+             statuses: tuple[str, ...] = ("APPROVED",),
+             lead_allowlist: set[str] | None = None) -> list[dict[str, Any]]:
+    query: dict[str, Any] = {"price_drop_v2.campaigns": {"$elemMatch": {
+        "campaign_id": campaign_id, "status": {"$in": list(statuses)},
+    }}}
+    if lead_allowlist is not None:
+        query["_id"] = {"$in": [_lead_id(value) for value in lead_allowlist]}
     docs = db[LEADS_COLLECTION].find(
-        {"price_drop_v2.campaigns": {"$elemMatch": {
-            "campaign_id": campaign_id, "status": {"$in": list(statuses)},
-        }}},
+        query,
         {"_id": 1, "phone": 1, "contact_phone_normalized": 1, "messages": 1,
          "price_drop_v2.campaigns": 1, "price_drop_v2.opted_out": 1,
          "conversation_status": 1, "pipeline_stage": 1, "stage": 1},
@@ -187,9 +187,13 @@ def _status_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _events(db: Any, property_code: str | None = None) -> list[PriceDropEvent]:
-    rows = discover_price_drops(db)
-    return [row for row in rows if not property_code or row.property_code == property_code]
+def _events(db: Any, property_code: str | None = None, *, since=None,
+            currency: str | None = None, operation: str | None = None,
+            limit: int | None = None, batch_size: int = 500) -> list[PriceDropEvent]:
+    return discover_price_drops(
+        db, since=since, property_code=property_code, currency=currency,
+        operation=operation, limit=limit, batch_size=batch_size,
+    )
 
 
 def _history_steps(db: Any, event: PriceDropEvent,
@@ -270,18 +274,34 @@ def _backup_leads(db: Any, ids: list[Any]) -> Path:
     return path
 
 
-def _verify_current_links(db: Any, codes: set[str], now: datetime) -> bool:
-    from chatbot.price_drop_campaign_discovery import _published
-    for code in codes:
-        prop = db["universo_cartera_prop360"].find_one(
-            {"codigo": code}, {"codigo": 1, "disponible_prop360": 1,
-             "estado.oficina": 1, "tipo_operacion": 1, "publicaciones": 1},
-        ) or {}
-        if (prop.get("disponible_prop360") is not True
-                or (prop.get("estado") or {}).get("oficina") != "PROCASA SUCRE"
-                or not _published(prop, now)[0]):
-            return False
-    return True
+def _verify_current_links(db: Any, expected: dict[str, dict[str, Any]],
+                          now: datetime) -> dict[str, dict[str, Any]]:
+    checks = {}
+    for code, row in expected.items():
+        checks[code] = verify_current_listing(
+            db, property_code=code,
+            currency=str(row.get("currency") or ""),
+            expected_price=row.get("price"), expected_url=str(row.get("url") or ""),
+            now=now,
+        ).as_dict()
+    return checks
+
+
+def _expected_publication_from_campaign(campaign: dict[str, Any]) -> dict[str, Any]:
+    currency = str(campaign.get("currency") or "UF").upper()
+    price = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
+    match = re.search(r"(?im)^Publicaci[oó]n:\s*(https://\S+)",
+                      str(campaign.get("outbound_message") or ""))
+    url = match.group(1).rstrip(".,);]") if match else ""
+    return {"currency": currency, "price": price, "url": url}
+
+
+def _publication_result_dict(result: Any) -> dict[str, Any]:
+    if hasattr(result, "as_dict"):
+        return result.as_dict()
+    if isinstance(result, dict):
+        return result
+    raise CliError("publication_verifier_result_invalid")
 @contextlib.contextmanager
 def _execution_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -316,7 +336,12 @@ def _provider_ready() -> bool:
 
 def _message_window_blocker(entry: dict[str, Any], now: datetime) -> str | None:
     mode = os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi").strip().lower()
-    if mode not in {"wasenderapi", "official"}:
+    if mode == "wasenderapi":
+        # WaSender's configured session endpoint accepts plain text and the
+        # current integration has no official Cloud API template/window path.
+        # Contact authorization and unsubscribe checks remain separate gates.
+        return None
+    if mode != "official":
         return "whatsapp_channel_mode_invalid"
     inbound = []
     for message in entry["lead"].get("messages") or []:
@@ -348,10 +373,14 @@ def execute_campaign(
     sender: Callable[[str, str], dict] | None = None,
     now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     provider_ready: Callable[[], bool] = _provider_ready,
+    usage_reader: Callable[[datetime], dict[str, Any] | int] | None = None,
     journal_path: str | Path | None = None,
     rng: Callable[[float, float], float] = random.uniform,
     allowed_property_codes: set[str] | None = None,
     link_verifier: Callable[[str, datetime], bool] | None = None,
+    lead_allowlist: set[str] | None = None,
+    pause_after_last: bool = False,
+    expected_messages: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     validate_limits(max_messages, min_delay_seconds, max_delay_seconds,
                     provider_plan=provider_plan, daily_cap=daily_provider_cap)
@@ -360,8 +389,8 @@ def execute_campaign(
     tz = ZoneInfo(timezone_name)
     config = {"timezone": tz, "weekdays": _weekdays(allowed_weekdays),
               "start": start_time, "end": end_time}
-    if not live_links_verified:
-        return {"status": "BLOCKED", "reason": "current_published_link_not_verified", "attempts": 0}
+    if not live_links_verified or link_verifier is None:
+        return {"status": "BLOCKED", "reason": "current_publication_verifier_required", "attempts": 0}
     if os.getenv("RENDER", "").strip().lower() == "true" or os.getenv("RENDER_SERVICE_ID"):
         return {"status": "BLOCKED", "reason": "manual_cli_disabled_on_render", "attempts": 0}
     if not provider_ready():
@@ -380,6 +409,8 @@ def execute_campaign(
     channel = os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi").strip().lower()
     if channel not in {"wasenderapi", "official"}:
         return {"status": "BLOCKED", "reason": "whatsapp_channel_mode_invalid", "attempts": 0}
+    if channel == "official":
+        return {"status": "BLOCKED", "reason": "official_channel_sender_not_implemented", "attempts": 0}
     now = now_fn()
     if not _within_hours(now, config):
         return {"status": "BLOCKED", "reason": "outside_business_hours", "attempts": 0}
@@ -391,14 +422,20 @@ def execute_campaign(
                 "reconciliation": reconciliation, "attempts": 0}
     if pending_receipts(journal):
         return {"status": "BLOCKED", "reason": "reconciliation_journal_not_empty", "attempts": 0}
-    uncertain = _entries(db, campaign_id, ("SENDING", "DELIVERY_UNKNOWN"))
+    uncertain = _entries(db, campaign_id, ("SENDING", "DELIVERY_UNKNOWN"), lead_allowlist)
     if uncertain:
         return {"status": "BLOCKED", "reason": "uncertain_delivery_requires_reconciliation",
                 "uncertain_count": len(uncertain), "attempts": 0}
 
-    entries = _entries(db, campaign_id, ("APPROVED",))
+    entries = _entries(db, campaign_id, ("APPROVED",), lead_allowlist)
     if not entries:
         return {"status": "NO_APPROVED_RECIPIENTS", "attempts": 0, "pending": 0}
+    if expected_messages is not None:
+        current_snapshot = {str(row["lead"]["_id"]): row["campaign"].get("outbound_message")
+                            for row in entries}
+        if current_snapshot != expected_messages:
+            return {"status": "BLOCKED", "reason": "approved_messages_changed_after_final_preview",
+                    "attempts": 0, "pending": len(entries)}
     if any(not row["campaign"].get("outbound_message") for row in entries):
         return {"status": "BLOCKED", "reason": "approved_message_missing", "attempts": 0}
     if allowed_property_codes is not None and any(
@@ -430,9 +467,17 @@ def execute_campaign(
         return {"status": "BLOCKED", "reason": "outside_business_hours", "attempts": 0}
     journal_lock = journal.with_suffix(".lock")
     results, attempts, daily_before, run_limit = [], 0, 0, 0
+    read_usage = usage_reader or (lambda stamp: _provider_attempts_last_24h(now=stamp))
+
+    def usage_count(stamp: datetime) -> int:
+        result = read_usage(stamp)
+        if isinstance(result, dict):
+            return int(result.get("attempts_last_24h", result.get("attempts", -1)))
+        return int(result)
+
     with _execution_lock(journal_lock):
         # Re-read after the operator confirms and while holding the local lock.
-        current_entries = _entries(db, campaign_id, ("APPROVED",))
+        current_entries = _entries(db, campaign_id, ("APPROVED",), lead_allowlist)
         initial = {str(row["lead"]["_id"]): row["campaign"].get("outbound_message")
                    for row in entries}
         current = {str(row["lead"]["_id"]): row["campaign"].get("outbound_message")
@@ -440,7 +485,14 @@ def execute_campaign(
         if current != initial:
             return {"status": "BLOCKED", "reason": "campaign_changed_after_preview", "attempts": 0}
         entries = current_entries
-        daily_before = _provider_attempts_today(db, now=now_fn(), tz=tz)
+        try:
+            daily_before = usage_count(now_fn())
+        except Exception as exc:
+            return {"status": "BLOCKED", "reason": str(exc)[:120], "attempts": 0,
+                    "pending": len(entries)}
+        if daily_before < 0:
+            return {"status": "BLOCKED", "reason": "provider_usage_count_invalid",
+                    "attempts": 0, "pending": len(entries)}
         run_limit = min(max_messages, max(daily_provider_cap - daily_before, 0))
         if run_limit == 0:
             return {"status": "BLOCKED", "reason": "daily_provider_limit_reached",
@@ -449,14 +501,28 @@ def execute_campaign(
             if attempts >= max_messages:
                 break
             now = now_fn()
-            daily_current = _provider_attempts_today(db, now=now, tz=tz)
+            try:
+                daily_current = max(usage_count(now), daily_before + attempts)
+            except Exception as exc:
+                return {"status": "BLOCKED_PROVIDER_USAGE_UNAVAILABLE",
+                        "reason": str(exc)[:120], "attempts": attempts,
+                        "pending": max(len(entries)-len(results), 0), "results": results}
             if daily_current >= daily_provider_cap:
                 break
-            if link_verifier is not None and not link_verifier(
-                    str(entry["campaign"].get("property_code") or ""), now):
-                results.append({"status": "BLOCKED", "reason": "current_published_link_not_verified",
-                                "lead_last6": str(entry["lead"].get("_id"))[-6:]})
-                continue
+            if link_verifier is not None:
+                verification = link_verifier(
+                    str(entry["campaign"].get("property_code") or ""), now,
+                )
+                if isinstance(verification, dict):
+                    is_sendable = bool(verification.get("sendable"))
+                    verification_status = str(verification.get("status") or "unknown")
+                else:
+                    is_sendable = bool(verification)
+                    verification_status = "current_published_link_not_verified"
+                if not is_sendable:
+                    results.append({"status": "BLOCKED", "reason": verification_status,
+                                    "lead_last6": str(entry["lead"].get("_id"))[-6:]})
+                    continue
             reason = _message_window_blocker(entry, now)
             if reason:
                 results.append({"status": "BLOCKED", "reason": reason})
@@ -478,6 +544,8 @@ def execute_campaign(
                         "pending": max(len(entries)-len(results), 0), "results": results}
             if status == "SENT":
                 remaining = len(entries) - index - 1
+                if remaining == 0 and pause_after_last:
+                    remaining = 1
                 if remaining and attempts < run_limit:
                     pause = rng(min_delay_seconds, max_delay_seconds)
                     wake = now_fn() + timedelta(seconds=pause)
@@ -497,8 +565,11 @@ def execute_campaign(
                     except KeyboardInterrupt:
                         return {"status": "INTERRUPTED_DURING_PAUSE", "attempts": attempts,
                                 "pending": remaining, "results": results}
-        pending = len(_entries(db, campaign_id, ("APPROVED",)))
-        daily_after = _provider_attempts_today(db, now=now_fn(), tz=tz)
+        pending = len(_entries(db, campaign_id, ("APPROVED",), lead_allowlist))
+        try:
+            daily_after = max(usage_count(now_fn()), daily_before + attempts)
+        except Exception:
+            daily_after = daily_before + attempts
     final_status = "COMPLETED"
     if pending and (attempts >= max_messages or daily_after >= daily_provider_cap):
         final_status = "LIMIT_REACHED"
@@ -515,16 +586,26 @@ def execute_campaign(
 def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
                      operator: str, contact_basis_reviewed: bool,
                      whatsapp_contact_reviewed: bool,
-                     whatsapp_contact_evidence: str) -> dict[str, Any]:
+                     whatsapp_contact_evidence: str | dict[str, str]) -> dict[str, Any]:
     if not operator.strip():
         raise CliError("operator_required")
     if not contact_basis_reviewed:
         raise CliError("contact_basis_must_be_reviewed")
-    if not whatsapp_contact_reviewed or len(whatsapp_contact_evidence.strip()) < 8:
+    if not whatsapp_contact_reviewed:
         raise CliError("whatsapp_contact_authorization_review_required")
     if not lead_ids:
         raise CliError("at_least_one_lead_id_required")
     candidates = {row["lead_id"]: row for row in find_candidates_for_event(db, event)}
+    if isinstance(whatsapp_contact_evidence, dict):
+        evidence_by_lead = {str(key): str(value or "").strip()
+                            for key, value in whatsapp_contact_evidence.items()}
+        if any(len(evidence_by_lead.get(str(value), "")) < 8 for value in lead_ids):
+            raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
+    else:
+        evidence = str(whatsapp_contact_evidence or "").strip()
+        if len(evidence) < 8:
+            raise CliError("whatsapp_contact_authorization_review_required")
+        evidence_by_lead = {str(value): evidence for value in lead_ids}
     output = []
     for lead_id in dict.fromkeys(lead_ids):
         candidate = candidates.get(str(lead_id))
@@ -565,7 +646,7 @@ def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
         prepared = v2.prepare_one(db, **data)
         v2.review_whatsapp_contact(
             db, lead_id=str(lead_id), campaign_id=event.campaign_id,
-            operator=operator, evidence=whatsapp_contact_evidence,
+            operator=operator, evidence=evidence_by_lead[str(lead_id)],
         )
         output.append(prepared)
     return {"status": "PREPARED", "campaign_id": event.campaign_id,
@@ -599,7 +680,7 @@ def review_selected_whatsapp_contact(db: Any, *, campaign_id: str,
 
 
 def _resolve_event(db: Any, event_id: str, *, since=None, property_code=None) -> PriceDropEvent:
-    matches = [event for event in _events(db, property_code)
+    matches = [event for event in _events(db, property_code, since=since)
                if event.event_id == event_id and (since is None or event.dropped_at >= since)]
     if len(matches) != 1:
         raise CliError("current_price_drop_event_not_found_or_ambiguous")
@@ -607,10 +688,11 @@ def _resolve_event(db: Any, event_id: str, *, since=None, property_code=None) ->
 
 
 def _print_events(db: Any, *, detailed: bool, since=None,
-                  property_code: str | None = None) -> int:
-    events = _events(db, property_code)
-    if since:
-        events = [event for event in events if event.dropped_at >= since]
+                  property_code: str | None = None, currency: str | None = None,
+                  operation: str | None = None, limit: int | None = None,
+                  batch_size: int = 500) -> int:
+    events = _events(db, property_code, since=since, currency=currency,
+                     operation=operation, limit=limit, batch_size=batch_size)
     if not events:
         print("No hay rebajas vigentes que cumplan los filtros.")
         return 0
@@ -645,6 +727,277 @@ def _print_events(db: Any, *, detailed: bool, since=None,
     return 0
 
 
+def _menu_selection(raw: str, count: int) -> list[int]:
+    value = str(raw or "").strip().lower()
+    if value == "all":
+        return list(range(1, count + 1))
+    try:
+        selected = list(dict.fromkeys(int(token.strip()) for token in value.split(",")
+                                      if token.strip()))
+    except ValueError as exc:
+        raise CliError("menu_selection_must_be_comma_separated_numbers_or_all") from exc
+    if not selected or any(number < 1 or number > count for number in selected):
+        raise CliError(f"menu_selection_must_be_1_to_{count}")
+    return selected
+
+
+def _preview_message(db: Any, event: PriceDropEvent,
+                     candidate: dict[str, Any]) -> dict[str, Any]:
+    history = _history_steps(db, event, candidate["last_notice"].get("sent_at")
+                             if candidate["last_notice"] else None)
+    return {
+        "event": event,
+        "candidate": candidate,
+        "message": event_message(
+            event, last_notice=candidate["last_notice"], history=history,
+        ),
+    }
+
+
+@contextlib.contextmanager
+def _temporary_environment(values: dict[str, str]):
+    previous = {key: os.environ.get(key) for key in values}
+    try:
+        os.environ.update(values)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def interactive_workflow(
+    db: Any, *, input_fn: Callable[[str], str] = input,
+    output_fn: Callable[[str], None] = print,
+    sender: Callable[[str, str], dict] | None = None,
+    usage_reader: Callable[[datetime], dict[str, Any] | int] | None = None,
+    now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    since: datetime | None = None, property_code: str | None = None,
+    currency: str | None = None, operation: str | None = None,
+    publication_verifier: Callable[..., Any] = verify_current_listing,
+    provider_ready: Callable[[], bool] = _provider_ready,
+    backup_fn: Callable[[Any, list[Any]], Path] = _backup_leads,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    history_limit: int | None = None, batch_size: int = 500,
+    max_messages_default: int = 20, min_delay_default: float = 300,
+    max_delay_default: float = 600, provider_plan: str = "trial",
+    daily_provider_cap: int = 50, start_time: day_time = day_time(9),
+    end_time: day_time = day_time(19),
+    allowed_weekdays: str = "MON,TUE,WED,THU,FRI",
+    timezone_name: str = "America/Santiago",
+    journal_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Guide an operator through read-only selection, individual approval and send."""
+    events = _events(db, property_code, since=since, currency=currency,
+                     operation=operation, limit=history_limit, batch_size=batch_size)
+    if not events:
+        output_fn("No hay rebajas vigentes para los filtros seleccionados.")
+        return {"status": "NO_EVENTS", "prepared": 0, "attempts": 0}
+
+    output_fn("Rebajas vigentes y consultas históricas verificadas (barrido en lotes):")
+    for index, event in enumerate(events, 1):
+        rows = find_candidates_for_event(db, event)
+        eligible = sum(bool(row["eligible"]) for row in rows)
+        output_fn(f"  {index}. {_display(event, eligible)} | elegibles={eligible} | excluidos={len(rows)-eligible}")
+    chosen_events = [events[index - 1] for index in _menu_selection(
+        input_fn("Elige propiedades/eventos por número (ej. 1,3 o all): "), len(events),
+    )]
+
+    selected_by_event: dict[str, tuple[PriceDropEvent, list[dict[str, Any]]]] = {}
+    for event in chosen_events:
+        rows = find_candidates_for_event(db, event)
+        output_fn(f"\nPropiedad {event.property_code}: leads elegibles, excluidos y motivo")
+        for index, row in enumerate(rows, 1):
+            marker = "ELEGIBLE" if row["eligible"] else "EXCLUIDO"
+            inquiry = row["inquiry_at"].astimezone(CHILE_TZ).isoformat() if row["inquiry_at"] else "N/A"
+            output_fn(
+                f"  {index}. {marker} | teléfono ***{row['phone_last4']} | "
+                f"{row['temperature']} | consulta={inquiry} | "
+                f"evidencia={row['inquiry_reference'] or 'N/A'} | motivo={row['reason']}"
+            )
+        eligible_indexes = [index for index, row in enumerate(rows, 1) if row["eligible"]]
+        if not eligible_indexes:
+            output_fn("  No hay destinatarios elegibles para esta rebaja.")
+            continue
+        allowed = set(eligible_indexes)
+        raw = input_fn("Selecciona destinatarios elegibles por número (ej. 1,2): ")
+        selected_indexes = _menu_selection(raw, len(rows))
+        if any(index not in allowed for index in selected_indexes):
+            raise CliError("selected_candidate_is_excluded_review_reason")
+        selected = [rows[index - 1] for index in selected_indexes]
+        selected_by_event[event.event_id] = (event, selected)
+    if not selected_by_event:
+        return {"status": "NO_SELECTED_RECIPIENTS", "prepared": 0, "attempts": 0}
+
+    selected_count = sum(len(rows) for _, rows in selected_by_event.values())
+    try:
+        max_messages = int(input_fn(
+            f"Máximo de mensajes [predeterminado {max_messages_default}]: "
+        ).strip() or max_messages_default)
+        min_delay = float(input_fn(
+            f"Pausa mínima en segundos [predeterminado {min_delay_default:g}]: "
+        ).strip() or min_delay_default)
+        max_delay = float(input_fn(
+            f"Pausa máxima en segundos [predeterminado {max_delay_default:g}]: "
+        ).strip() or max_delay_default)
+    except ValueError as exc:
+        raise CliError("message_limit_and_delays_must_be_numbers") from exc
+    validate_limits(max_messages, min_delay, max_delay,
+                    provider_plan=provider_plan, daily_cap=daily_provider_cap)
+    if start_time >= end_time:
+        raise CliError("business_hours_start_must_precede_end")
+    _weekdays(allowed_weekdays)
+
+    previews = []
+    for event, rows in selected_by_event.values():
+        for candidate in rows:
+            previews.append(_preview_message(db, event, candidate))
+    output_fn(f"\nPrevisualización exacta de {len(previews)} mensajes seleccionados:")
+    for index, preview in enumerate(previews, 1):
+        candidate = preview["candidate"]
+        output_fn(
+            f"\n[{index}] propiedad {preview['event'].property_code} | "
+            f"teléfono ***{candidate['phone_last4']} | {candidate['temperature']} | "
+            f"consulta={candidate['inquiry_at']} | evidencia={candidate['inquiry_reference']}"
+        )
+        output_fn(preview["message"])
+
+    publication_checks = {}
+    for event, _ in selected_by_event.values():
+        publication_checks[event.event_id] = _publication_result_dict(publication_verifier(
+            db, property_code=event.property_code, currency=event.currency,
+            expected_price=event.current_price, expected_url=event.listing_url,
+            now=now_fn(),
+        ))
+    for event, _ in selected_by_event.values():
+        check = publication_checks[event.event_id]
+        output_fn(
+            f"Verificación pública propiedad {event.property_code}: {check['status']}"
+            + (f" ({check['reason']})" if check.get("reason") else "")
+        )
+    blocked = [row for row in publication_checks.values() if not row["sendable"]]
+    if blocked:
+        return {"status": "BLOCKED_PUBLICATION_REVIEW", "attempts": 0,
+                "publication_checks": publication_checks}
+
+    operator = input_fn("Operador responsable: ").strip()
+    if not operator:
+        raise CliError("operator_required")
+    evidence_by_lead = {}
+    for event, rows in selected_by_event.values():
+        for candidate in rows:
+            evidence_by_lead[candidate["lead_id"]] = input_fn(
+                f"Referencia CRM del opt-in WhatsApp para propiedad {event.property_code}, "
+                f"teléfono ***{candidate['phone_last4']}: "
+            ).strip()
+    if any(len(value) < 8 for value in evidence_by_lead.values()):
+        raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
+    if input_fn(
+        f"Confirma revisión de consulta previa y consentimiento para {selected_count} contactos "
+        f"(escribe CONFIRMO {selected_count}): "
+    ).strip() != f"CONFIRMO {selected_count}":
+        return {"status": "CANCELLED", "phase": "review", "prepared": 0, "attempts": 0}
+    if input_fn(f"Escribe PREPARAR {selected_count} para crear campañas PREPARED: ").strip() \
+            != f"PREPARAR {selected_count}":
+        return {"status": "CANCELLED", "phase": "prepare", "prepared": 0, "attempts": 0}
+
+    selected_lead_ids = [row["lead_id"] for _, rows in selected_by_event.values() for row in rows]
+    prepare_backup = backup_fn(db, [_lead_id(value) for value in selected_lead_ids])
+    lead_ids_by_event = {}
+    for event_id, (_, rows) in selected_by_event.items():
+        ids = [row["lead_id"] for row in rows]
+        lead_ids_by_event[event_id] = ids
+        event = next(event for event, _ in selected_by_event.values()
+                     if event.event_id == event_id)
+        prepare_selected(
+            db, event=event, lead_ids=ids, operator=operator,
+            contact_basis_reviewed=True, whatsapp_contact_reviewed=True,
+            whatsapp_contact_evidence=evidence_by_lead,
+        )
+    output_fn("Campañas PREPARED. Mensajes exactos leídos desde los registros preparados:")
+    approved_snapshots = {}
+    for event_id, ids in lead_ids_by_event.items():
+        rows = _entries(db, event_id, ("PREPARED",), set(ids))
+        if len(rows) != len(ids):
+            return {"status": "BLOCKED_PREPARE_READBACK_MISMATCH", "attempts": 0}
+        approved_snapshots[event_id] = {
+            str(row["lead"]["_id"]): row["campaign"]["outbound_message"] for row in rows
+        }
+        for row in rows:
+            output_fn(f"\n[{row['campaign'].get('property_code')}] {row['campaign']['outbound_message']}")
+    if input_fn(f"Escribe APROBAR {selected_count} para aprobar individualmente estas campañas: ").strip() \
+            != f"APROBAR {selected_count}":
+        return {"status": "PREPARED_PENDING_APPROVAL", "prepared": selected_count,
+                "attempts": 0, "campaign_ids": list(lead_ids_by_event),
+                "backup": str(prepare_backup)}
+
+    approval_backup = backup_fn(db, [_lead_id(value) for value in selected_lead_ids])
+    for event_id, ids in lead_ids_by_event.items():
+        approve_selected(db, campaign_id=event_id, lead_ids=ids, operator=operator)
+    if input_fn(f"Escribe ENVIAR {selected_count} para iniciar los intentos aprobados: ").strip() \
+            != f"ENVIAR {selected_count}":
+        return {"status": "APPROVED_PENDING_SEND", "prepared": selected_count,
+                "attempts": 0, "campaign_ids": list(lead_ids_by_event),
+                "backup": str(approval_backup)}
+
+    campaign_items = list(lead_ids_by_event.items())
+    total_attempts = 0
+    results = []
+    for campaign_index, (event_id, ids) in enumerate(campaign_items):
+        remaining_budget = max_messages - total_attempts
+        if remaining_budget <= 0:
+            break
+        event = next(event for event, _ in selected_by_event.values()
+                     if event.event_id == event_id)
+        env = {
+            v2.SEND_FLAG: "true", v2.APPROVED_ID_FLAG: event_id,
+            v2.CONTEXT_FLAG: "true", v2.REAL_CAMPAIGNS_ENABLED_FLAG: "true",
+            v2.WHATSAPP_CONTACT_REVIEWED_FLAG: "true",
+            "PRICE_DROP_WHATSAPP_CHANNEL_MODE": "wasenderapi",
+        }
+        with _temporary_environment(env):
+            outcome = execute_campaign(
+                db, campaign_id=event_id, max_messages=remaining_budget,
+                min_delay_seconds=min_delay, max_delay_seconds=max_delay,
+                confirm=lambda _prompt, cid=event_id: f"ENVIAR {cid}",
+                start_time=start_time, end_time=end_time,
+                allowed_weekdays=allowed_weekdays, timezone_name=timezone_name,
+                provider_plan=provider_plan, daily_provider_cap=daily_provider_cap,
+                provider_ready=provider_ready,
+                live_links_verified=True, sender=sender, usage_reader=usage_reader,
+                now_fn=now_fn,
+                sleep_fn=sleep_fn,
+                journal_path=journal_path,
+                allowed_property_codes=None,
+                link_verifier=lambda code, stamp, e=event: _publication_result_dict(publication_verifier(
+                    db, property_code=code, currency=e.currency,
+                    expected_price=e.current_price, expected_url=e.listing_url,
+                    now=stamp,
+                )),
+                lead_allowlist=set(ids),
+                pause_after_last=campaign_index < len(campaign_items) - 1,
+                expected_messages=approved_snapshots[event_id],
+            )
+        results.append({"campaign_id": event_id, **outcome})
+        total_attempts += int(outcome.get("attempts") or 0)
+        if outcome.get("status") not in {"COMPLETED", "NO_APPROVED_RECIPIENTS"}:
+            return {"status": outcome.get("status"), "prepared": selected_count,
+                    "attempts": total_attempts, "pending": sum(
+                        max(len(lead_ids_by_event[cid]) - sum(
+                            1 for row in _entries(db, cid, ("SENT", "RESPONDED"), set(lead_ids_by_event[cid]))
+                    ), 0) for cid in lead_ids_by_event
+                    ), "campaign_results": results,
+                    "backup": str(approval_backup)}
+    total_pending = sum(len(_entries(db, campaign_id, ("APPROVED",), set(ids)))
+                        for campaign_id, ids in lead_ids_by_event.items())
+    return {"status": "LIMIT_REACHED" if total_pending else "COMPLETED",
+            "prepared": selected_count, "attempts": total_attempts,
+            "pending": total_pending, "campaign_results": results,
+            "backup": str(approval_backup)}
+
+
 def _report(db: Any, campaign_id: str | None = None) -> int:
     groups = _campaigns_by_status(db, (
         "PREPARED", "APPROVED", "SENDING", "SENT", "DELIVERY_UNKNOWN",
@@ -664,7 +1017,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Descubre rebajas Prop360 y opera campañas V2 aprobadas de forma manual."
     )
     actions = parser.add_mutually_exclusive_group()
-    for flag in ("discover", "dry-run", "execute", "resume", "prepare", "approve",
+    for flag in ("discover", "dry-run", "interactive", "execute", "resume", "prepare", "approve",
                  "review-whatsapp-contact", "report"):
         actions.add_argument("--" + flag, dest="action", action="store_const", const=flag)
     parser.add_argument("--status", action="store_true", help="consulta estado sin escritura")
@@ -674,6 +1027,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--lead-id", action="append", default=[])
     parser.add_argument("--property", dest="property_code")
     parser.add_argument("--since", help="fecha ISO 8601 con zona horaria")
+    parser.add_argument("--currency", choices=("UF", "CLP"), help="filtra por moneda original")
+    parser.add_argument("--operation", choices=("venta",),
+                        help="filtro de operación; campañas de rebaja habilitadas para venta")
     parser.add_argument("--operator", default="")
     parser.add_argument("--contact-basis-reviewed", action="store_true")
     parser.add_argument("--whatsapp-contact-reviewed", action="store_true")
@@ -696,8 +1052,12 @@ def _parser() -> argparse.ArgumentParser:
                         default=os.getenv("PRICE_DROP_WASENDER_PLAN", "trial").strip().lower())
     parser.add_argument("--daily-provider-cap", type=int,
                         default=_env_int("PRICE_DROP_DAILY_PROVIDER_CAP", 50))
-    parser.add_argument("--limit", type=int, default=500,
-                        help="máximo de eventos históricos leídos (1 a 5000)")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="límite técnico opcional; sin límite se procesa el historial completo")
+    parser.add_argument("--batch-size", type=int, default=500,
+                        help="documentos procesados por lote durante el barrido completo")
+    parser.add_argument("--full-scan", action="store_true",
+                        help="lee todo el cursor histórico en lotes; prevalece sobre --limit")
     return parser
 
 
@@ -756,8 +1116,12 @@ def main(argv: list[str] | None = None) -> int:
             if args.start_time >= args.end_time:
                 raise CliError("business_hours_start_must_precede_end")
             _weekdays(args.allowed_weekdays)
-        if args.limit < 1 or args.limit > 5000:
-            raise CliError("limit_must_be_between_1_and_5000")
+        if args.full_scan:
+            args.limit = None
+        if args.limit is not None and args.limit < 1:
+            raise CliError("limit_must_be_positive_or_unset")
+        if not 1 <= args.batch_size <= 5000:
+            raise CliError("batch_size_must_be_between_1_and_5000")
         if args.pilot:
             args.campaign_id = PILOT_CAMPAIGN_ID
         db = _get_db()
@@ -773,10 +1137,34 @@ def main(argv: list[str] | None = None) -> int:
             return _report(db, args.campaign_id)
         if args.action == "discover":
             return _print_events(db, detailed=False, since=since,
-                                 property_code=args.property_code)
+                                 property_code=args.property_code,
+                                 currency=args.currency, operation=args.operation,
+                                 limit=args.limit, batch_size=args.batch_size)
         if args.action == "dry-run":
             return _print_events(db, detailed=True, since=since,
-                                 property_code=args.property_code)
+                                 property_code=args.property_code,
+                                 currency=args.currency, operation=args.operation,
+                                 limit=args.limit, batch_size=args.batch_size)
+        if args.action == "interactive":
+            result = interactive_workflow(
+                db, since=since, property_code=args.property_code,
+                currency=args.currency, operation=args.operation,
+                history_limit=args.limit, batch_size=args.batch_size,
+                max_messages_default=args.max_messages,
+                min_delay_default=args.min_delay_seconds,
+                max_delay_default=args.max_delay_seconds,
+                provider_plan=args.provider_plan,
+                daily_provider_cap=args.daily_provider_cap,
+                start_time=args.start_time, end_time=args.end_time,
+                allowed_weekdays=args.allowed_weekdays,
+                timezone_name=args.timezone,
+            )
+            print(json.dumps(result, ensure_ascii=False, default=str))
+            return 0 if result.get("status") in {
+                "COMPLETED", "LIMIT_REACHED", "CANCELLED", "NO_EVENTS",
+                "NO_SELECTED_RECIPIENTS", "PREPARED_PENDING_APPROVAL",
+                "APPROVED_PENDING_SEND",
+            } else 1
         if args.action == "prepare":
             expected = _confirm_token("PREPARAR", args.event_id)
             if args.confirm_action != expected:
@@ -842,8 +1230,19 @@ def main(argv: list[str] | None = None) -> int:
             if args.pilot and not codes <= PILOT_PROPERTY_CODES:
                 raise CliError("pilot_campaign_contains_unapproved_property")
             now = datetime.now(timezone.utc)
-            if not _verify_current_links(db, codes, now):
-                raise CliError("current_published_link_not_verified_for_every_recipient")
+            expected_by_code = {
+                str(item["campaign"].get("property_code") or ""):
+                _expected_publication_from_campaign(item["campaign"])
+                for item in active
+            }
+            publication_checks = _verify_current_links(db, expected_by_code, now)
+            print(json.dumps({"publication_checks": publication_checks},
+                             ensure_ascii=False, default=str))
+            blocked_check = next((check for check in publication_checks.values()
+                                  if not check.get("sendable")), None)
+            if blocked_check:
+                raise CliError("public_listing_verification_failed:" +
+                               str(blocked_check.get("status")))
             result = execute_campaign(
                 db, campaign_id=args.campaign_id,
                 max_messages=args.max_messages,
@@ -855,7 +1254,10 @@ def main(argv: list[str] | None = None) -> int:
                 daily_provider_cap=args.daily_provider_cap,
                 live_links_verified=True,
                 allowed_property_codes=PILOT_PROPERTY_CODES if args.pilot else None,
-                link_verifier=lambda code, stamp: _verify_current_links(db, {code}, stamp),
+                link_verifier=lambda code, stamp: _verify_current_links(
+                    db, {code: expected_by_code[code]}, stamp,
+                )[code],
+                lead_allowlist=set(args.lead_id) if args.lead_id else None,
             )
             print(json.dumps(result, ensure_ascii=False, default=str))
             return 0 if result.get("status") in {

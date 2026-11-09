@@ -1,131 +1,112 @@
 # Campañas manuales de rebaja de precio
 
-`scripts/enviar_piloto_rebajas.py` descubre rebajas vigentes en Prop360, muestra los leads con evidencia de consulta anterior y opera campañas V2 aprobadas. Se ejecuta desde PowerShell; no crea una app o proceso de fondo. Las escrituras de campaña quedan en `URLS.leads`; Prop360 y su historial son de solo lectura.
+`scripts/enviar_piloto_rebajas.py` consulta Prop360, identifica leads que preguntaron por la publicación antes de la rebaja y opera campañas V2 manuales desde PowerShell. La lectura usa `URLS.universo_cartera_prop360` y `URLS.universo_cartera_prop360_historial`; las escrituras de campaña quedan dentro de `URLS.leads`. No crea colecciones de campaña ni un proceso de fondo.
 
-El flujo no descubre personas y las envía automáticamente. Cada evento se prepara y aprueba por separado, los mensajes exactos se muestran antes de enviar, y la terminal exige escribir `ENVIAR {campaign_id}`. El envío se bloquea en Render, ante una entrega incierta, si falta evidencia de autorización de WhatsApp o si no se pueden verificar el precio y el enlace vigentes.
+El piloto histórico de tres destinatarios se mantiene separado. El modo interactivo opera eventos nuevos, aprueba cada lead individualmente y exige una confirmación final antes de llamar al proveedor.
 
 ## Configuración local
 
-Usa un checkout actualizado y las credenciales guardadas en tu `.env` privado. El repositorio no incluye secretos. El proceso admite apuntar al `.env` existente sin copiarlo al checkout:
+Usa un checkout actualizado y apunta el programa al `.env` privado existente. No copies ese archivo al checkout ni sobrescribas sus valores:
 
 ```powershell
 $env:PRICE_DROP_ENV_FILE = 'C:\ruta\privada\procasa\.env'
-```
-
-Integra las variables de `.env.example` en ese archivo privado o apunta `PRICE_DROP_ENV_FILE` a otro archivo privado que incluya tanto las credenciales de Mongo/WaSender como los ajustes operativos. No sobrescribas tu `.env` existente. Los parámetros de la línea de comandos tienen prioridad sobre esos ajustes.
-
-```powershell
 python scripts/enviar_piloto_rebajas.py --help
 ```
 
-Sin una acción, el modo predeterminado es `--dry-run` mientras `PRICE_DROP_DRY_RUN_DEFAULT=true`. `--dry-run`, `--discover`, `--status` y `--report` solo leen MongoDB y nunca llaman al proveedor de WhatsApp.
+Integra los valores operativos de `.env.example` en un archivo privado. La línea de comandos prevalece sobre esos valores. El modo por defecto sin acción es `--dry-run`.
 
-## Descubrir y revisar
+## Barrido y consultas de solo lectura
+
+Sin `--limit`, el descubrimiento procesa el cursor completo en lotes de 500 documentos. No carga todo el historial en memoria. `--limit` es un límite diagnóstico opcional; `--full-scan` lo elimina. `--since`, `--property`, `--operation venta` y `--currency UF|CLP` conservan sus filtros.
 
 ```powershell
-python scripts/enviar_piloto_rebajas.py --discover
-python scripts/enviar_piloto_rebajas.py --dry-run
-python scripts/enviar_piloto_rebajas.py --dry-run --property 16479
+python scripts/enviar_piloto_rebajas.py --discover --full-scan
+python scripts/enviar_piloto_rebajas.py --dry-run --full-scan --property 16479 --currency CLP
+python scripts/enviar_piloto_rebajas.py --dry-run --since 2026-10-01T00:00:00-03:00 --operation venta --currency UF
 python scripts/enviar_piloto_rebajas.py --pilot --status
 python scripts/enviar_piloto_rebajas.py --report
 ```
 
-El descubrimiento descarta aumentos, conversiones de moneda, fechas inválidas, propiedades retiradas/no disponibles, publicaciones sin URL activa y precios históricos distintos del precio vigente. Un evento conserva moneda original UF o CLP y tiene identificador determinista. Si hubo varias reducciones, el mensaje incluye los pasos relevantes posteriores al último aviso encontrado.
+`--discover`, `--dry-run`, `--status` y `--report` no escriben en MongoDB ni llaman al endpoint de envío. El menú calcula y descarta el conjunto de candidatos para cada evento, y solo vuelve a cargar los candidatos de las propiedades que el operador selecciona.
 
-Los candidatos se ordenan por elegibilidad y luego HOT, NORMAL y COLD. La temperatura prioriza la revisión; no sustituye la prueba de que el mensaje entrante refiere a esa publicación y precede a la rebaja. El programa enmascara teléfono e ID en las tablas.
+## Flujo interactivo
 
-## Preparar y aprobar una campaña futura
+Comando para abrir el menú completo y procesar todo el historial por lotes:
 
-Primero identifica el `event_id` y los leads elegibles en `--dry-run`. Preparar requiere marcar la revisión de la consulta previa y la revisión de autorización específica para WhatsApp; la segunda referencia debe apuntar al registro de consentimiento/opt-in que revisaste en el CRM. No escribas el contenido completo de un consentimiento o datos personales en el campo de evidencia.
+```powershell
+python scripts/enviar_piloto_rebajas.py --interactive --full-scan --max-messages 20 --min-delay-seconds 300 --max-delay-seconds 600
+```
+
+El menú muestra los eventos con el total de elegibles y excluidos. El operador selecciona eventos y destinatarios con números, revisa las consultas verificadas y los motivos de exclusión, configura el máximo y las pausas, y ve todos los mensajes exactos. No se escribe nada hasta confirmar `PREPARAR N`; después de revisar el contenido persistido, `APROBAR N` aprueba cada campaña por lead. El envío requiere una tercera confirmación exacta: `ENVIAR N`.
+
+Ejemplo: para elegir tres propiedades y hasta veinte destinatarios con pausas entre cinco y diez minutos, usa el mismo comando anterior, selecciona las propiedades y números de leads en pantalla, y deja los parámetros `20`, `300` y `600`. No se necesitan ObjectIds. El menú pide el nombre del operador y una referencia de consentimiento del CRM para cada teléfono seleccionado, mostrado con sus últimos cuatro dígitos. Los respaldos locales de los leads se crean antes de preparar y antes de aprobar.
+
+Las campañas `PREPARED` que no se aprueben quedan pendientes sin envío. Las campañas `APPROVED` que no se envíen permanecen aprobadas. Una cancelación en cualquiera de esas etapas no invoca WaSender.
+
+## Operación técnica separada
+
+Se conservan los comandos avanzados. Para preparar y aprobar un lead individual:
 
 ```powershell
 python scripts/enviar_piloto_rebajas.py `
-  --prepare `
-  --event-id <EVENT_ID> `
-  --lead-id <MONGO_LEAD_ID> `
-  --operator "Supervisor" `
-  --contact-basis-reviewed `
+  --prepare --event-id <EVENT_ID> --lead-id <MONGO_LEAD_ID> `
+  --operator "Supervisor" --contact-basis-reviewed `
   --whatsapp-contact-reviewed `
-  --whatsapp-contact-evidence "Referencia CRM <ID>, opt-in revisado <AAAA-MM-DD>" `
+  --whatsapp-contact-evidence "Referencia CRM opt-in <ID/fecha>" `
   --confirm-action PREPARAR_<EVENT_ID>
 
 python scripts/enviar_piloto_rebajas.py `
-  --approve `
-  --campaign-id <EVENT_ID> `
-  --lead-id <MONGO_LEAD_ID> `
-  --operator "Supervisor" `
-  --confirm-action APROBAR_<EVENT_ID>
+  --approve --campaign-id <EVENT_ID> --lead-id <MONGO_LEAD_ID> `
+  --operator "Supervisor" --confirm-action APROBAR_<EVENT_ID>
 ```
 
-El comando crea un respaldo local de los leads antes de escribir. Una campaña ya preparada, aprobada o enviada no se vuelve a preparar. Para actualizar la revisión humana de un registro aprobado que aún no fue enviado (por ejemplo, el piloto histórico), usa `--review-whatsapp-contact` con su lead ID, campaña y referencia de consentimiento; esto preserva la aprobación y no crea una fila nueva.
+El operador debe revisar la autorización de cada lead. La consulta histórica de una propiedad demuestra la relación comercial, pero no se interpreta como consentimiento genérico de marketing. No incluyas el texto del consentimiento ni información personal en el campo de evidencia; usa una referencia del CRM.
 
-## Ejecutar o reanudar
+Para ejecutar una campaña futura ya aprobada, el comando técnico sigue requiriendo los flags V2 locales habilitados para la campaña exacta. El menú interactivo los activa solo en el proceso local después de la confirmación final y los restaura al terminar. El envío se bloquea en Render en ambos casos.
 
-Los bloqueos de V2 y el canal deben habilitarse solo en el equipo local, para la campaña elegida y después de verificar permiso de contacto. Los flags del ejemplo `.env.example` quedan `false`; nunca habilites el envío desde Render.
+## Piloto de tres destinatarios
 
-Antes de una ejecución autorizada, habilita los flags solo en la sesión PowerShell local. El ID de campaña y la lista de leads del piloto se mantienen fuera del repositorio:
+El piloto ya existente no se reconstruye ni se incorpora al menú de campañas nuevas. Consulta primero su estado:
 
 ```powershell
-$env:PRICE_DROP_LEADS_V2_SEND_ENABLED = 'true'
-$env:PRICE_DROP_LEADS_V2_APPROVED_ID = 'pilot_real_rebajas_20261109_v2'
-$env:PRICE_DROP_LEADS_V2_CONTEXT_ENABLED = 'true'
-$env:PRICE_DROP_LEADS_V2_REAL_PILOT_ENABLED = 'true'
-$env:PRICE_DROP_LEADS_V2_REAL_PILOT_RECIPIENTS = '<LEAD_ID_1>:6436;<LEAD_ID_2>:6377;<LEAD_ID_3>:16479'
-$env:PRICE_DROP_LEADS_V2_WHATSAPP_CONTACT_REVIEWED = 'true'
+python scripts/enviar_piloto_rebajas.py --pilot --status
 ```
 
-Para campañas futuras, usa `PRICE_DROP_LEADS_V2_REAL_CAMPAIGNS_ENABLED=true` y el ID exacto en `PRICE_DROP_LEADS_V2_APPROVED_ID`. Estos permisos no anulan las demás validaciones. Si el último mensaje entrante del lead tiene más de 24 horas, la herramienta bloquea el texto libre aunque la campaña esté aprobada; el sender actual no soporta plantillas.
-
-El piloto histórico ya tiene tres filas aprobadas. No lo prepares de nuevo. Después de comprobar el registro de opt-in de cada lead, puedes guardar una referencia de revisión para los tres registros existentes con el siguiente comando. Esta acción modifica solo los tres documentos `leads`, hace respaldo local y no envía mensajes:
-
-```powershell
-python scripts/enviar_piloto_rebajas.py --pilot --review-whatsapp-contact `
-  --operator "Supervisor" `
-  --whatsapp-contact-evidence "Referencia CRM revisada para los tres leads; <ID/fecha>" `
-  --confirm-action REVISAR_WHATSAPP_pilot_real_rebajas_20261109_v2
-```
-
-Piloto existente, exactamente tres propiedades y máximo de tres intentos:
+Después de revisar el consentimiento individual en el CRM, se puede registrar una referencia en sus tres filas con `--pilot --review-whatsapp-contact`; el comando crea respaldo local y no envía. Para ejecutar posteriormente, conserva el control específico del piloto:
 
 ```powershell
 python scripts/enviar_piloto_rebajas.py --pilot --execute `
   --max-messages 3 --min-delay-seconds 300 --max-delay-seconds 600
 ```
 
-Al finalizar, desactiva `PRICE_DROP_LEADS_V2_SEND_ENABLED` y `PRICE_DROP_LEADS_V2_REAL_PILOT_ENABLED`; deja activo el contexto solo durante su ventana de respuesta. V2 vuelve a bloquear la salida en Render aunque esas variables quedaran definidas por error.
+El piloto sigue sujeto a autorización revisada, estado aprobado, disponibilidad y precio actual, límites de cuenta, horario, confirmación final y reconciliación. Ningún envío se realizó durante el desarrollo.
 
-Campaña futura previamente aprobada:
+## Revalidación de publicación y precio
 
-```powershell
-python scripts/enviar_piloto_rebajas.py --execute `
-  --campaign-id <CAMPAIGN_ID> `
-  --max-messages 20 --min-delay-seconds 300 --max-delay-seconds 600
-```
+Al preparar el menú y justo antes de cada intento, el programa vuelve a consultar disponibilidad, operación, precio y publicación activa en Prop360. Después solicita la URL pública por HTTPS y revisa sus metadatos estructurados de precio. Los resultados distinguen:
 
-Continuar la única campaña activa, o precisar el ID si hay más de una:
+- `price_verified`: inventario y publicación coinciden.
+- `link_accessible_price_unverifiable`: la página responde, pero no expone un precio estructurado verificable.
+- `link_inaccessible`: error HTTP, fallo de red o host fuera de la lista permitida.
+- `property_removed`: Prop360 ya no ofrece la propiedad en venta o la publicación devuelve 404/410.
+- `inventory_public_inconsistent`: precio, moneda, oficina, operación o enlace cambiaron, o el precio público no coincide.
 
-```powershell
-python scripts/enviar_piloto_rebajas.py --resume --max-messages 20
-python scripts/enviar_piloto_rebajas.py --resume --campaign-id <CAMPAIGN_ID> --max-messages 20
-```
+El envío se bloquea salvo `price_verified`. La lista inicial de hosts permitidos está en `.env.example`; se puede ampliar mediante `PRICE_DROP_PUBLIC_HOST_ALLOWLIST` para dominios inmobiliarios públicos aprobados. El verificador no sigue redirecciones fuera de esa lista.
 
-Para consultar resultados:
+## WaSender, consentimiento y ventana de mensajes
 
-```powershell
-python scripts/enviar_piloto_rebajas.py --status --campaign-id <CAMPAIGN_ID>
-python scripts/enviar_piloto_rebajas.py --report
-```
+El sender que realmente usa V2 hace `POST /api/send-message` con `to` y `text` contra una sesión activa de WaSender. La documentación de WaSender describe mensajes de texto libre y no documenta una restricción técnica de 24 horas para ese endpoint. Por eso el programa ya no bloquea el modo `wasenderapi` solo por antigüedad del último mensaje entrante.
 
-El default es 20 mensajes por ejecución, con máximo permitido de 50. El plan Trial de WaSender se limita además a 50 solicitudes por día y requiere al menos 60 segundos entre solicitudes. El valor configurado por defecto es 300–600 segundos. En plan pagado, configura `PRICE_DROP_WASENDER_PLAN=paid` solo si tu cuenta realmente lo permite; se conserva un mínimo operativo de 5 segundos y un tope diario local configurable. Ningún intervalo garantiza aceptación, entrega, lectura ni ausencia de restricciones del proveedor.
+Esto no elimina ni reemplaza la autorización para contactar, las bajas, las exclusiones comerciales, ni los controles del proveedor y de WhatsApp. La política de Meta exige consentimiento explícito para comunicaciones por WhatsApp. Su regla de plantillas fuera de 24 horas se aplica a la Plataforma oficial de WhatsApp Business. Este repositorio no tiene un sender oficial ni envío de plantillas: seleccionar `PRICE_DROP_WHATSAPP_CHANNEL_MODE=official` se bloquea para evitar que esa etiqueta termine usando por error el sender WaSender. La documentación técnica del endpoint de texto de WaSender no declara que exima de políticas aplicables; el endpoint o la aceptación del proveedor tampoco garantizan entrega ni ausencia de restricciones.
 
-Si el resultado es `DELIVERY_UNKNOWN`, `SENDING` o `HISTORY_RECONCILIATION_REQUIRED`, la secuencia se detiene y no reintenta. `--resume` primero reconcilia el recibo local de un mensaje aceptado con el documento original y `leads.messages`; si no hay evidencia suficiente, conserva el bloqueo para revisión manual. Un mensaje aceptado se registra como `assistant` con estado `accepted`; eso no significa que WaSender confirme que fue entregado o leído. El eco outbound del webhook se ignora y la reconciliación deduplica por ID del proveedor.
+Fuentes consultadas: [endpoint de texto de WaSender](https://api.wasenderapi.com/api-docs/messages/send-text-message), [política de mensajes de WhatsApp Business](https://business.whatsapp.com/policy/preview?lang=es_LA).
 
-El contexto de respuesta V2 conserva su ventana de atribución vigente. El mensaje completo permanece en `leads.messages` después de que la ventana expira; una respuesta tardía no se atribuye automáticamente a una campaña antigua.
+## Límites de WaSender y reconciliación
 
-## Ventana y política de WhatsApp
+El máximo predeterminado es 20 mensajes por ejecución. Las pausas predeterminadas son 300–600 segundos. En Trial, la validación local exige al menos 60 segundos y no acepta un máximo diario superior a 50; el cap operativo de CLI predeterminado es 50. En Paid, el intervalo mínimo local es cinco segundos. Estos intervalos distribuyen la cadencia y no garantizan aceptación, entrega, lectura ni ausencia de restricciones.
 
-Cada campaña necesita una revisión humana de la autorización para contactar por WhatsApp y una referencia de la evidencia almacenada en el CRM. Una consulta antigua de una propiedad no se trata como consentimiento general de marketing. El sender actual usa texto libre y no envía plantillas aprobadas, así que bloquea ambos modos (`official` y `wasenderapi`) si el último mensaje del cliente tiene más de 24 horas. La salida documentada de WaSender es un mensaje de texto plano. Consulta la [política de WhatsApp Business](https://business.whatsapp.com/policy/preview?lang=es_LA) y la [documentación de WaSender para mensajes de texto](https://www.wasenderapi.com/api-docs/) y [límites](https://www.wasenderapi.com/api-docs/rate-limits/understanding-rate-limits).
+Antes de enviar, el programa consulta las sesiones de la cuenta WaSender y pagina los registros de mensajes de todas ellas; cuenta registros de API del intervalo móvil de 24 horas para no limitar el cálculo a esta campaña. Esto requiere habilitar `log_messages` en cada sesión. Si alguna sesión no ofrece logs, faltan timestamps o la consulta no termina correctamente, el envío se bloquea. Los timestamps sin zona horaria se interpretan con `PRICE_DROP_WASENDER_LOG_TIMEZONE` (ejemplo `UTC`); confirma que coincide con la configuración que usa tu cuenta. WaSender documenta límites de Trial de 1 solicitud por minuto y 50 al día, límites de Paid por minuto, protección de cuenta de 1 solicitud cada cinco segundos y headers de límite; esos límites pueden cambiar. [Límites y headers de WaSender](https://www.wasenderapi.com/api-docs/rate-limits/understanding-rate-limits).
 
-`PRICE_DROP_LEADS_V2_CONTEXT_ENABLED=true` permite que el webhook relacione respuestas recientes con el mensaje V2; no habilita envíos. Mantén los flags de envío apagados en Render. Después de una ejecución manual, desactiva `PRICE_DROP_LEADS_V2_SEND_ENABLED` y el flag de campaña; puedes conservar el contexto activo durante su ventana de respuesta.
+Si el resultado es `DELIVERY_UNKNOWN`, `SENDING` o `HISTORY_RECONCILIATION_REQUIRED`, la secuencia se detiene y no reenvía. `--resume` reconcilia primero el recibo local con el documento original y `leads.messages`; sin evidencia suficiente, mantiene el bloqueo para revisión manual. `accepted` confirma que el proveedor aceptó la solicitud, no que la entregó o leyó. El mensaje se conserva en el historial y el eco outbound del webhook se deduplica por ID del proveedor. El contexto V2 mantiene su ventana de atribución actual; una respuesta posterior no se atribuye automáticamente a una campaña antigua.
 
-Horario predeterminado: lunes a viernes, 09:00–19:00 `America/Santiago`. La zona IANA aplica los cambios estacionales de Chile. Una pausa que cruce el cierre detiene el lote y deja aprobados los pendientes.
+Horario predeterminado: lunes a viernes, 09:00–19:00 `America/Santiago`, con cambios de horario de verano IANA. Una pausa que cruce el cierre detiene la secuencia y deja aprobados los destinatarios pendientes.

@@ -27,6 +27,7 @@ TEST_PHONE_FLAG = "PRICE_DROP_PILOT_TEST_PHONE"
 TEST_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_TEST_NOTICES_ENABLED"
 ADMIN_PHONE_FLAG = "PRICE_DROP_LEADS_V2_ADMIN_PHONE"
 EXEC_NOTICE_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_EXECUTIVE_NOTICE_ENABLED"
+REAL_ADMIN_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_REAL_ADMIN_NOTICES_ENABLED"
 # Explicitly allowlist the one approved pilot administrator. This phone is
 # not a customer audience and must never be replaced by a property's owner.
 APPROVED_ADMIN_PHONE = "+56983219804"
@@ -855,3 +856,128 @@ def send_test_notice_once(db, *, role: str,
     }})
     return {"status": status, "campaign_id": campaign["campaign_id"],
             "role": role, "recipient_last4": tester[-4:]}
+
+
+
+def send_real_admin_notice_once(db, *,
+                                sender: Callable[[str, str], dict] | None = None,
+                                now=None) -> dict:
+    """Single, separately authorized administrator alert for a real V2 response.
+
+    The WhatsApp recipient is the allowlisted administrator, never an executive.
+    The notice is stored on the canonical lead and is never retried after an
+    uncertain provider attempt. Disabled by default independently of campaigns.
+    """
+    if os.getenv(REAL_ADMIN_NOTICE_FLAG, "").lower() not in {"1", "true", "yes"}:
+        return {"status": "DISABLED"}
+    admin = normalize_phone_strict(os.getenv(ADMIN_PHONE_FLAG, ""))
+    if admin != APPROVED_ADMIN_PHONE:
+        return {"status": "ADMIN_PHONE_NOT_ALLOWLISTED"}
+    candidates = list(db[LEADS].find({
+        "price_drop_v2.campaigns": {"$elemMatch": {
+            "test_mode": False, "status": "RESPONDED",
+            "notifications.administrator.status": "PENDING_HUMAN_REVIEW",
+        }},
+    }, {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
+        "conversation_status": 1, "price_drop_v2": 1,
+        "price_drop_campaign_v1.opted_out": 1}).limit(20))
+    selected = []
+    for lead in candidates:
+        if lead_must_not_be_contacted(lead):
+            continue
+        for i, campaign in enumerate((lead.get("price_drop_v2") or {}).get("campaigns") or []):
+            if not isinstance(campaign, dict):
+                continue
+            notice = (campaign.get("notifications") or {}).get("administrator") or {}
+            if (campaign.get("test_mode") is False
+                    and campaign.get("status") == "RESPONDED"
+                    and campaign.get("provider_message_id")
+                    and campaign.get("has_positive_response") is True
+                    and notice.get("status") == "PENDING_HUMAN_REVIEW"):
+                selected.append((lead, i, campaign))
+    if not selected:
+        return {"status": "IDLE"}
+    selected.sort(key=lambda x: (str(x[2].get("campaign_id")), str(x[0]["_id"])))
+    lead, index, campaign = selected[0]
+    stamp = utc(now or datetime.now(timezone.utc))
+    last_reply = campaign.get("last_customer_reply_at")
+    if isinstance(last_reply, datetime) and stamp - utc(last_reply) < timedelta(seconds=120):
+        return {"status": "DEFERRED_CUSTOMER_ACTIVE"}
+
+    from .lead_router import build_secure_crm_url
+    try:
+        crm_link = build_secure_crm_url({"_id": lead["_id"]})
+    except Exception:
+        return {"status": "BLOCKED_CRM_URL"}
+    if not str(crm_link or "").startswith("https://"):
+        return {"status": "BLOCKED_CRM_URL"}
+    phone = normalize_phone_strict(lead.get("contact_phone_normalized") or lead.get("phone") or "")
+    if not phone or phone == admin or not _same_phone(lead, phone):
+        return {"status": "BLOCKED_CONTACT_IDENTITY"}
+    old = campaign.get("old_price_uf")
+    new = campaign.get("new_price_uf")
+    if not isinstance(old, (int, float)) or not isinstance(new, (int, float)):
+        return {"status": "BLOCKED_CAMPAIGN_PRICE"}
+    currency = str(campaign.get("currency") or "UF")
+    if currency not in {"UF", "CLP"}:
+        return {"status": "BLOCKED_CAMPAIGN_CURRENCY"}
+    def price_text(value):
+        if currency == "CLP":
+            return "$" + f"{int(value):,}".replace(",", ".")
+        return "UF " + f"{int(value):,}".replace(",", ".")
+
+    code = str(campaign.get("property_code") or "")
+    campaign_id = str(campaign.get("campaign_id") or "")
+    last_positive = str(campaign.get("last_positive_reply_text") or
+                        campaign.get("first_positive_reply_text") or "")[:160]
+    classification = campaign.get("last_classification") or {}
+    reason = str(classification.get("reason") or "interest_recorded")
+    notice_text = (
+        "🔔 PROCASA — Respuesta a campaña de rebaja\n"
+        f"Propiedad: {code} | {price_text(old)} → {price_text(new)}\n"
+        f"Cliente: {phone}\n"
+        f"Señal: {reason}\n"
+        f"Respuesta: {last_positive or 'Interés registrado'}\n"
+        f"CRM: {crm_link}\n"
+        "Revisar conversación antes de gestionar. No es un lead nuevo."
+    )
+    field = f"{ROOT}.{index}"
+    claimed = db[LEADS].update_one({
+        "_id": lead["_id"],
+        f"{field}.campaign_id": campaign_id,
+        f"{field}.status": "RESPONDED",
+        f"{field}.test_mode": False,
+        f"{field}.notifications.administrator.status": "PENDING_HUMAN_REVIEW",
+    }, {"$set": {
+        f"{field}.notifications.administrator.status": "CLAIMED",
+        f"{field}.notifications.administrator.attempted_at": stamp,
+        f"{field}.notifications.administrator.message": notice_text,
+        f"{field}.notifications.administrator.sent_to": admin,
+    }})
+    if claimed.modified_count != 1:
+        return {"status": "ALREADY_CLAIMED"}
+    if sender is None:
+        from .whatsapp_client import send_whatsapp_message_detailed_sync
+        sender = send_whatsapp_message_detailed_sync
+    try:
+        receipt = sender(admin, notice_text)
+    except Exception:
+        receipt = {"success": False, "provider_call_uncertain": True}
+    accepted = bool(receipt.get("success") and receipt.get("provider_message_id")
+                    and not receipt.get("provider_call_uncertain"))
+    status = "SENT" if accepted else "DELIVERY_UNKNOWN"
+    fields = {
+        f"{field}.notifications.administrator.status": status,
+        f"{field}.notifications.administrator.provider_message_id": receipt.get("provider_message_id"),
+        f"{field}.notifications.administrator.provider_status": str(receipt.get("delivery_status") or "unknown")[:40],
+        f"{field}.notifications.administrator.completed_at": stamp,
+    }
+    if accepted:
+        fields[f"{field}.notifications.administrator.sent_at"] = stamp
+    db[LEADS].update_one({
+        "_id": lead["_id"], f"{field}.campaign_id": campaign_id,
+        f"{field}.notifications.administrator.status": "CLAIMED",
+    }, {"$set": fields})
+    return {"status": status, "campaign_id": campaign_id,
+            "recipient_last4": admin[-4:],
+            "provider_message_id": receipt.get("provider_message_id")}

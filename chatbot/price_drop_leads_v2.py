@@ -514,7 +514,8 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
                  {"contact_phone_normalized": canonical}],
          ROOT: {"$elemMatch": {"status": {"$in": ["SENT", "RESPONDED"]},
                                "expires_at": {"$gt": now}}}},
-        {"_id": 1, "phone": 1, "contact_phone_normalized": 1, "price_drop_v2.campaigns": 1},
+        {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
+         "price_drop_v2.campaigns": 1, "price_drop_v2.qa_session": 1},
     ).limit(2))
     if len(docs) != 1:
         return None

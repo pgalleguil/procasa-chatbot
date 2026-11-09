@@ -496,7 +496,7 @@ def test_pending_notice_assigns_unowned_lead_before_it_can_be_sent(monkeypatch):
     db = mongomock.MongoClient().incident
     lead = _lead(db, ejecutivo_asignado="No Asignado",
                  prospecto={"codigo": "6732", "ejecutivo": "No Asignado"}, lifecycle={})
-    db["usuarios"].insert_one({"_id": "u1", "nombre": "Hernán Castro", "telefono": "+56911111111"})
+    db["usuarios"].insert_one({"_id": "u1", "nombre": "Hernán Castro", "telefono": "+56911111111", "rol": "agente", "is_active": True})
     monkeypatch.setattr("chatbot.crm_service.get_db", lambda: db)
     monkeypatch.setattr("chatbot.crm_service.log_event", lambda *args, **kwargs: None)
 

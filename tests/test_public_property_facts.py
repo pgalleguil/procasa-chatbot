@@ -44,7 +44,7 @@ def test_full_public_ficha_restored_for_both_customer_flows():
     core_source = (Path(__file__).resolve().parents[1] / "chatbot" / "core.py").read_text()
     assert "return public_property_summary(propiedad)" in core_source
     normal = public_property_summary(data)
-    rebaja = build_specific_property_response("Quiero toda la información y características", data)
+    rebaja = build_specific_property_response("Envíame la ficha técnica completa", data)
     assert normal == raw == rebaja
     for fact in ("6436", "San Miguel", "UF 2.690", "$85.000",
                  "Dormitorios: 2", "Baños: 2", "60 m²", "65 m²",

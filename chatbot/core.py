@@ -68,6 +68,7 @@ from .conversation_policy import (
     build_visit_progress_question,
     replace_repeated_visit_question,
     is_explicit_visit_intent,
+    is_visit_offer_question,
     is_visit_confirmation,
     is_explicit_property_search_request,
     is_specific_property_question,
@@ -1563,18 +1564,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         await _run_sync(get_pending_response, phone, "VISIT_CONFIRMATION")
     )
     if not has_pending_confirmation and property_code and intencion in ("consulta_general", "agendar_visita"):
-        resp_low = respuesta.lower()
-        if any(p in resp_low for p in ["gustaría", "quisieras", "quieres", "coordin", "agendar", "visita", "conocer", "conozcas"]):
-            prompt_suffixes = ["?", "!", ""]
-            if any(resp_low.strip().endswith(s) for s in prompt_suffixes):
-                try:
-                    await _run_sync(
-                        set_pending_response, phone, "VISIT_CONFIRMATION",
-                        property_code, conversation_id,
-                    )
-                    logger.info("[VISIT_CONFIRM] Estado de confirmacion guardado para propiedad %s", property_code)
-                except Exception as e:
-                    logger.warning("[VISIT_CONFIRM] Error guardando estado: %s", e)
+        if is_visit_offer_question(respuesta):
+            try:
+                await _run_sync(
+                    set_pending_response, phone, "VISIT_CONFIRMATION",
+                    property_code, conversation_id,
+                )
+                logger.info("[VISIT_CONFIRM] Pregunta explicita de visita guardada para propiedad %s", property_code)
+            except Exception as e:
+                logger.warning("[VISIT_CONFIRM] Error guardando estado: %s", e)
 
     # ── VISIT CONFIRMATION STATE (INTERPRET) ──
     # If there's a pending VISIT_CONFIRMATION response, interpret short

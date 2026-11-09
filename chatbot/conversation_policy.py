@@ -14,7 +14,7 @@ _PHONE_REQUEST = re.compile(
 )
 
 _VISIT_INTENT_PATTERNS = (
-    r"\b(?:quiero|quisiera|me\s+gustar[ií]a|me\s+encantar[ií]a)\s+(?:ver(?:la|lo|la\s+propiedad|el\s+inmueble)?|visitar(?:la|lo)?|conocer(?:la|lo)?)\b",
+    r"\b(?:quiero|quisiera|me\s+gustar[ií]a|me\s+encantar[ií]a)\s+(?:ver(?:la|lo|\s+la\s+(?:propiedad|casa)|\s+el\s+(?:inmueble|departamento|depto))|visitar(?:la|lo)?|conocer(?:la|lo))\b",
     r"\b(?:quiero|quisiera|me\s+gustar[ií]a|me\s+encantar[ií]a|me\s+interesa|necesito)\s+ir\s+(?:a\s+)?(?:verla|verlo|conocerla|conocerlo)\b",
     r"\b(?:me\s+interesa|quiero|quisiera|me\s+gustar[ií]a)\s+pasar\s+a\s+(?:verla|verlo|conocerla|conocerlo)\b",
     r"\b(?:se\s+puede|es\s+posible)\s+(?:visitar|ver(?:la|lo)?)\b",
@@ -31,7 +31,7 @@ _VISIT_INTENT_PATTERNS = (
     r"\b(?:podemos|podr[ií]amos|me\s+gustar[ií]a)\s+coordinar\b",
     r"\b(?:mejor|prefiero)\s+(?:el\s+)?(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|"
     r"ma[nñ]ana|pasado\s+ma[nñ]ana)\b",
-    r"\b(?:quiero|me\s+gustar[ií]a)\s+conocer\s+(?:la|el)\b",
+    r"\b(?:quiero|me\s+gustar[ií]a)\s+conocer\s+(?:la\s+(?:propiedad|casa)|el\s+(?:departamento|depto|inmueble))\b",
     r"\b(?:puedo|podr[ií]a|me\s+gustar[ií]a|quisiera)\s+pasar\s+a\s+conocer(?:la|lo|el|la)?\b",
     r"\b(?:puedo|podr[ií]a|quiero|me\s+gustar[ií]a|quisiera)\s+pasar\s+a\s+ver(?:la|lo|el|la)?\b",
     # Some real WhatsApp turns use the noun first and add urgency afterwards
@@ -336,6 +336,24 @@ def is_explicit_visit_intent(message: str) -> bool:
     ):
         return False
     return bool(any(pattern.search(normalized) for pattern in _VISIT_INTENT_RE))
+
+
+
+def is_visit_offer_question(response: str) -> bool:
+    """Only an actual question proposing a visit may open a visit-confirmation turn.
+
+    A property sheet can say 'baño de visitas' without inviting the lead to
+    schedule anything; keyword matching against the entire answer is unsafe.
+    """
+    text = _normalize_text(response)
+    for question in re.findall(r"[^?¿]*\?", text):
+        if re.search(r"\b(?:te\s+gustaria|quieres|quisieras|te\s+interesaria|"
+                     r"te\s+acomodaria|que\s+dia|cuando|a\s+que\s+hora)\b", question):
+            if re.search(r"\b(?:visitar(?:la|lo)?|agendar|coordinar|"
+                         r"ir\s+a\s+ver(?:la|lo)?|pasar\s+a\s+ver(?:la|lo)?|"
+                         r"conocer(?:la|lo)?\s+en\s+persona)\b", question):
+                return True
+    return False
 
 
 def is_visit_confirmation(message: str) -> bool:

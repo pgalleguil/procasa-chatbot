@@ -170,6 +170,27 @@ def requested_public_fact_keys(message):
     return found
 
 
+def prefers_natural_property_overview(message):
+    """Broad commercial questions belong to the conversational LLM, not the raw ficha.
+
+    The public fact sheet remains a system-only grounding source and can still
+    be requested explicitly as a technical sheet.
+    """
+    text = _normalized(message)
+    if re.search(
+        r"\b(?:ficha\s+(?:tecnica|completa)|(?:en|como)\s+(?:formato\s+)?(?:lista|tabla))\b",
+        text,
+    ):
+        return False
+    return bool(re.search(
+        r"\b(?:toda\s+(?:la\s+)?informacion|informacion\s+completa|"
+        r"(?:me\s+)?(?:puedes?|podrias?)\s+contar(?:me)?\s+(?:los\s+)?detalles|"
+        r"cuentame\s+(?:los\s+)?(?:detalles|todo)|"
+        r"me\s+gustaria\s+conocer\s+(?:toda?\s+)?(?:la\s+)?informacion)\b",
+        text,
+    ))
+
+
 def answer_public_property_question(message, property_doc, *, campaign_context=None):
     if not property_doc:
         return None
@@ -195,6 +216,11 @@ def answer_public_property_question(message, property_doc, *, campaign_context=N
     full = bool(_FULL.search(normalized)) and (
         explicitly_full or (not keys and not private)
     )
+    # For a broad request, the verified facts already sit in the system prompt.
+    # Do not overwrite a natural, grounded model answer with raw field labels.
+    # Keep deterministic replies for specific facts, privacy and price-drop math.
+    if prefers_natural_property_overview(message) and not (private or asks_drop or asks_negotiation):
+        return None
     if not (keys or full or private or asks_drop or asks_negotiation):
         return None
     facts = public_property_facts(property_doc)

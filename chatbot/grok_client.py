@@ -144,11 +144,16 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
       - Deja detalles para cuando pregunten.
       - Cierra con una pregunta abierta suave.
 
+    - Cuando el cliente pide toda la información o varias características de una propiedad:
+      - Responde como una asesora por WhatsApp en 2-3 párrafos naturales, agrupando características relevantes.
+      - Incluye los datos verificables que el cliente pidió explícitamente; si alguno falta, indícalo con claridad.
+      - No pegues la ficha técnica literal ni enumeres campos internos o superficies redundantes.
+      - No interpretes "conocer la información", "conocer los detalles" o "me interesa" como solicitud de visita.
     - En respuestas siguientes:
       - Responde preguntas técnicas con precisión usando la ficha.
       - Si el dato está → respóndelo natural y positivo.
       - Si no está → sé honesto.
-      - Siempre impulsa suavemente hacia la visita.
+      - Prioriza responder lo que preguntó el cliente. No propongas una visita automáticamente tras una consulta técnica; ofrécela solo cuando exista una señal real de querer ir a conocer la propiedad.
       - Si hay PROPIEDADES ENCONTRADAS por búsqueda (RAG), ofrécelas amablemente.
 
     REGLA SUPREMA - USA LA FICHA COMO VERDAD ABSOLUTA:
@@ -177,7 +182,18 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         prospecto_actual.get("phone") or "",
         "VISIT_CONFIRMATION",
     ) if prospecto_actual.get("phone") else None
-    inject_visit_prompt = bool(property_code and not has_pending)
+    from .conversation_policy import is_explicit_visit_intent
+    latest_customer_turn = next(
+        (str(item.get("content") or "") for item in reversed(messages)
+         if item.get("role") == "user"),
+        "",
+    )
+    # The previous unconditional prompt forced visit invitations even when
+    # the customer only requested price or property details.
+    inject_visit_prompt = bool(
+        property_code and not has_pending
+        and is_explicit_visit_intent(latest_customer_turn)
+    )
 
     system_prompt_extraction = f"""
     [INSTRUCCIONES DE EXTRACCIÓN Y SALIDA - FORMATO JSON]
@@ -191,8 +207,8 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
     OPERACIÓN CONTEXTUAL: {prospecto_actual.get("operacion") or "no informada"}
 
     CATEGORÍAS DE INTENCIÓN (elige UNA):
-    - agendar_visita: El usuario quiere visitar, ver o conocer la propiedad.
-      Incluye respuestas afirmativas a invitaciones de visita como "sí, me encantaría".
+    - agendar_visita: El usuario pide visitar la propiedad físicamente o acepta una invitación explícita a visitarla.
+      Preguntar por precio, gastos comunes, detalles, información o decir "me interesa" NO es una solicitud de visita.
     - contacto_directo: El usuario pide hablar con un ejecutivo o asesor humano.
     - escalado_urgente: Reclamo, queja, urgencia, problema grave.
     - consulta_general: Cualquier otra consulta, saludos, preguntas iniciales o técnicas.

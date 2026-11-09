@@ -281,6 +281,20 @@ def reset_test_qa_session(db, *, campaign_id: str, operator: str,
             "historical_messages_preserved": reset_record["preserved_message_count"]}
 
 
+def _clp_outreach_message(code: str, old: int, new: int) -> str:
+    format_clp = lambda v: "$" + f"{v:,}".replace(",", ".")
+    return (
+        "¡Hola! ¿Cómo estás? 😊\n\n"
+        "Te escribimos de PROCASA porque hace un tiempo consultaste por "
+        f"la propiedad {code}, cuando costaba {format_clp(old)}.\n\n"
+        f"Te quería contar que bajó {format_clp(old-new)} y ahora está a "
+        f"{format_clp(new)}.\n\n"
+        f"Te dejo la publicación actualizada: https://www.procasa.cl/{code}\n\n"
+        "Con este nuevo precio, ¿te sigue interesando? "
+        "Si prefieres no recibir más avisos, solo dínoslo."
+    )
+
+
 def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
                 property_code: str, old_price_uf: int | None,
                 new_price_uf: int | None,
@@ -371,7 +385,11 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         "inquiry_evidence_at": (inquiry_evidence or {}).get("inquiry_at"),
         "inquiry_message_id": (inquiry_evidence or {}).get("message_id"),
         "inquiry_reference": (inquiry_evidence or {}).get("reference"),
-        "message": _message(property_code, old_price_uf, new_price_uf),
+        "message": (
+            _message(property_code, old_value, new_value)
+            if currency == "UF" else _clp_outreach_message(
+                property_code, old_value, new_value)
+        ),
     }
 
 

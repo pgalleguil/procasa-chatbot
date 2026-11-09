@@ -76,8 +76,9 @@ def _request(cid, test_mode):
     return dict(
         lead_id=str(LEAD), phone=PHONE, campaign_id=cid,
         property_code="6436", old_price_uf=2790, new_price_uf=2690,
-        test_mode=test_mode, consent_reviewed=not test_mode,
-        consent_basis="Documented explicit commercial contact authorization"
+        test_mode=test_mode, contact_basis_reviewed=not test_mode,
+        contact_basis_type=(v2.DIRECT_RESPONSE_BASIS_TYPE if not test_mode else ""),
+        contact_basis="Prior inquiry for the same property"
         if not test_mode else "",
     )
 
@@ -95,7 +96,7 @@ def test_new_lead_silence_audited_drop_hot_only_real_dispatch_locked(db, monkeyp
     with pytest.raises(v2.PilotBlocked, match="property_price_or_availability_changed"):
         v2.preview_one(db, **_request(REAL_CAMPAIGN, False))
     _drop_price(db)
-    # Audited lower price; prior inquiry, consent evidence and current HOT pass.
+    # Audited lower price; prior inquiry and its direct-response basis pass.
     preview = v2.preview_one(db, **_request(REAL_CAMPAIGN, False))
     assert preview["simulated_prior_inquiry"] is False
     assert "UF 2.790" in preview["message"]

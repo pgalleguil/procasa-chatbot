@@ -55,8 +55,9 @@ def args():
         "lead_id": LID, "phone": PHONE, "campaign_id": CID,
         "property_code": "6436", "old_price_uf": 2790,
         "new_price_uf": 2690, "test_mode": False,
-        "consent_reviewed": True,
-        "consent_basis": "Autorización documentada en revisión del lead",
+        "contact_basis_reviewed": True,
+        "contact_basis_type": v2.DIRECT_RESPONSE_BASIS_TYPE,
+        "contact_basis": "Consulta previa verificada sobre la misma propiedad",
     }
 
 

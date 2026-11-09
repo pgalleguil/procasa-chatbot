@@ -61,8 +61,9 @@ def params(**change):
         lead_id=str(LEAD_ID), phone=PHONE, campaign_id=CID,
         property_code="16479", old_price_uf=None, new_price_uf=None,
         old_price_clp=160000000, new_price_clp=152000000, currency="CLP",
-        test_mode=False, consent_reviewed=True,
-        consent_basis="Consentimiento verificado en auditoría comercial",
+        test_mode=False, contact_basis_reviewed=True,
+        contact_basis_type=v2.DIRECT_RESPONSE_BASIS_TYPE,
+        contact_basis="Consulta previa verificada sobre la misma propiedad",
     )
     values.update(change)
     return values
@@ -99,8 +100,11 @@ def test_clp_preview_and_audited_lead_record_are_durable_but_no_send(db, monkeyp
     assert stored["phone_normalized"] == PHONE
     assert stored["inquiry_message_id"] == "original-customer-123"
     assert stored["prepared_at"].replace(tzinfo=timezone.utc) == NOW
-    assert stored["consent_reviewed"] is True
-    assert stored["consent_basis"]
+    assert stored["contact_basis_reviewed"] is True
+    assert stored["contact_basis_type"] == v2.DIRECT_RESPONSE_BASIS_TYPE
+    assert stored["contact_basis"]
+    assert "consent_reviewed" not in stored
+    assert "consent_basis" not in stored
     assert v2.approve_one(db, lead_id=str(LEAD_ID), campaign_id=CID,
                           operator="Supervisor de prueba", now=NOW)["status"] == "APPROVED"
     stored = db["leads"].find_one({"_id": LEAD_ID})["price_drop_v2"]["campaigns"][0]
@@ -118,7 +122,8 @@ def test_clp_preview_and_audited_lead_record_are_durable_but_no_send(db, monkeyp
 
 def test_clp_qa_context_and_conversational_reply_keep_clp(db, monkeypatch):
     monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
-    request = params(test_mode=True, consent_reviewed=False, consent_basis="")
+    request = params(test_mode=True, contact_basis_reviewed=False,
+                     contact_basis_type="", contact_basis="")
     v2.prepare_one(db, now=NOW, **request)
     v2.approve_one(db, lead_id=str(LEAD_ID), campaign_id=CID,
                    operator="QA", now=NOW)

@@ -511,7 +511,10 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     currency = c.get("currency") or "UF"
     old = c.get("old_price_clp") if currency == "CLP" else c.get("old_price_uf")
     new = c.get("new_price_clp") if currency == "CLP" else c.get("new_price_uf")
-    _property_price(db, c["property_code"], old, new, currency=currency)
+    if currency == "CLP":
+        _property_price(db, c["property_code"], old, new, currency="CLP")
+    else:
+        _property_price(db, c["property_code"], old, new)
     stamp = utc(now or datetime.now(timezone.utc))
     send_claim = {"_id": lead["_id"], ROOT: {"$elemMatch": {
         "campaign_id": campaign_id, "status": "APPROVED"}}}
@@ -623,7 +626,10 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
     old = campaign.get("old_price_clp") if currency == "CLP" else campaign.get("old_price_uf")
     new = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
     try:
-        _property_price(db, code, old, new, currency=currency)
+        if currency == "CLP":
+            _property_price(db, code, old, new, currency="CLP")
+        else:
+            _property_price(db, code, old, new)
     except PilotBlocked:
         return None
     return {

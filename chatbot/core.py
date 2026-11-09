@@ -7,6 +7,7 @@ from datetime import datetime
 
 from config import Config
 from .price_drop_pilot import load_active_context, context_instruction
+from .price_drop_campaign_classifier import lead_must_not_be_contacted
 from .storage import (
     guardar_mensaje, 
     obtener_conversacion, 
@@ -279,8 +280,8 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # NOTA: stage es un campo de nivel superior, no está dentro de 'prospecto'
     db = await _run_sync(get_db)
     lead_doc_full = await _run_sync(lambda: db["leads"].find_one({"phone": phone}) or {})
-    if lead_doc_full.get("conversation_status") == "BLOCKED_EXTERNAL_BROKER":
-        logger.info("[CORREDOR] Conversación bloqueada; inbound persistido sin respuesta automática.")
+    if lead_must_not_be_contacted(lead_doc_full):
+        logger.info("[DO_NOT_CONTACT] Cliente desistió o solicitó baja; inbound persistido sin respuesta automática.")
         return ""
     if any(phrase in msg_lower for phrase in ("no me escriban", "dejen de escribir", "no quiero mensajes", "stop")):
         await _run_sync(db["leads"].update_one, {"phone": phone}, {"$set": {

@@ -124,11 +124,11 @@ def _sla_score_row(user_id, name, *, speed, sla, backlog=3):
     }
 
 
-def _seed_sla_snapshot(db, rows):
+def _seed_sla_snapshot(db, rows, *, assigned_at=None):
     from datetime import datetime, timezone
     db.crm_assignment_cycles.insert_one({
         "assigned_by": "sla_reassignment",
-        "assigned_at": datetime.now(timezone.utc),
+        "assigned_at": assigned_at or datetime.now(timezone.utc),
         "cycle_status": "closed",
         "unassigned_at": datetime.now(timezone.utc),
         "candidate_scores_snapshot": rows,
@@ -194,3 +194,39 @@ def test_routing_excludes_active_administrator_mislabelled_agent(routing_db):
         _sla_score_row(hernan, "Hernán Castro", speed=80, sla=0.31, backlog=20),
     ])
     assert lead_router.find_responsible_executive(property_code="6436")[0] == "Hernán Castro"
+
+
+def test_mariela_is_considered_when_last_sla_snapshot_is_three_days_old(routing_db):
+    """Regression: 48-hour scoring horizon had wrongly omitted active Mariela."""
+    from datetime import datetime, timedelta, timezone
+
+    _agent(routing_db, "Rocío Aliaga", active=False)
+    mariela = _agent(routing_db, "Mariela Arriagada", active=True, communes=("Providencia",))
+    erika = _agent(routing_db, "Erika Garrido", active=True, communes=("La Florida",))
+    _seed_sla_snapshot(
+        routing_db,
+        [_sla_score_row(mariela, "Mariela Arriagada", speed=9, sla=0.91, backlog=3)],
+        assigned_at=datetime.now(timezone.utc) - timedelta(days=3),
+    )
+    _seed_sla_snapshot(routing_db, [
+        _sla_score_row(erika, "Erika Garrido", speed=90, sla=0.30, backlog=80)
+    ])
+    name, phone, kind = lead_router.find_responsible_executive(property_code="6436")
+    assert (name, phone, kind) == ("Mariela Arriagada", "+56911111111", "PROPERTY")
+
+
+def test_scores_older_than_seven_days_do_not_override_fresh_candidate(routing_db):
+    from datetime import datetime, timedelta, timezone
+
+    _agent(routing_db, "Rocío Aliaga", active=False)
+    mariela = _agent(routing_db, "Mariela Arriagada", active=True, communes=("Providencia",))
+    erika = _agent(routing_db, "Erika Garrido", active=True, communes=("La Florida",))
+    _seed_sla_snapshot(
+        routing_db,
+        [_sla_score_row(mariela, "Mariela Arriagada", speed=5, sla=1.0, backlog=1)],
+        assigned_at=datetime.now(timezone.utc) - timedelta(days=8),
+    )
+    _seed_sla_snapshot(routing_db, [
+        _sla_score_row(erika, "Erika Garrido", speed=80, sla=0.45, backlog=60),
+    ])
+    assert lead_router.find_responsible_executive(property_code="6436")[0] == "Erika Garrido"

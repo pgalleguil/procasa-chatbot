@@ -139,7 +139,12 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
         return CampaignClassification(
             UNSUBSCRIBED, None, "UNSUBSCRIBE", "explicit_opt_out", False, False,
         )
-    if _ALREADY_FOUND.search(message):
+    # Conditional hypotheticals are not a declaration of a completed purchase.
+    hypothetical_found = ("?" in str(text or "") and bool(re.search(
+        r"\\b(?:si|cuando)\\s+ya\\s+(?:encontre|compre|consegui|arrende)\\b",
+        message,
+    )))
+    if _ALREADY_FOUND.search(message) and not hypothetical_found:
         return CampaignClassification(
             UNSUBSCRIBED, None, "UNSUBSCRIBE", "already_found_property", False, False,
         )

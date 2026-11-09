@@ -12,6 +12,7 @@ from chatbot.phone_utils import normalize_phone_strict
 from chatbot.price_drop_leads_v2 import (
     APPROVED_ID_FLAG, CONTEXT_FLAG, SEND_FLAG, TEST_PHONE_FLAG,
     PilotBlocked, approve_one, prepare_one, preview_one, send_one,
+    reset_test_qa_session,
 )
 
 BOOT_MODE = "PRICE_DROP_LEADS_V2_TEST_BOOTSTRAP_MODE"
@@ -30,7 +31,7 @@ def _enabled(name: str) -> bool:
 def run_bootstrap(db, *, sender: Callable[[str, str], dict] | None = None) -> dict:
     """Preflight or atomically claim one dispatch; no repeat on restart."""
     mode = os.getenv(BOOT_MODE, "off").strip().lower()
-    if mode not in {"preview", "send"}:
+    if mode not in {"reset", "preview", "send"}:
         return {"status": "DISABLED"}
 
     campaign_id = os.getenv(BOOT_ID, "").strip()
@@ -40,6 +41,14 @@ def run_bootstrap(db, *, sender: Callable[[str, str], dict] | None = None) -> di
     phone = normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, ""))
     if not phone or phone[-4:] != TESTER_LAST4:
         return {"status": "BLOCKED", "reason": "test_recipient_not_allowlisted"}
+
+    if mode == "reset":
+        # Explicit, idempotent start of a clean QA session. It archives old
+        # prospect state but never deletes messages or recorded campaigns.
+        return reset_test_qa_session(
+            db, campaign_id=campaign_id, operator=os.getenv(BOOT_OPERATOR, ""),
+            phone=phone,
+        )
 
     # Select exactly one canonical existing lead; do not merge or upsert.
     rows = list(db["leads"].find(

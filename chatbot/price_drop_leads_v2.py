@@ -178,6 +178,89 @@ def _inquiry_before(lead: dict, code: str, drop_at: datetime,
             return True
     return False
 
+def _old_completed_test(campaign: dict, code: str, cutoff: datetime | None) -> bool:
+    """Only earlier, finished test sends may be superseded in one-phone QA."""
+    return bool(
+        cutoff is not None
+        and campaign.get("property_code") == code
+        and campaign.get("test_mode") is True
+        and campaign.get("status") in {"SENT", "RESPONDED"}
+        and isinstance(campaign.get("sent_at"), datetime)
+        and utc(campaign["sent_at"]) < cutoff
+    )
+
+
+def reset_test_qa_session(db, *, campaign_id: str, operator: str,
+                          phone: str, now=None) -> dict:
+    """One-time clean context for the allowlisted 9804, preserving all evidence.
+
+    Archives prior conversational fields under the SAME lead. Never deletes
+    customer messages, campaign records, or processed inbound IDs.
+    """
+    tester = normalize_phone_strict(phone)
+    if (tester != APPROVED_ADMIN_PHONE
+            or tester != normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, ""))
+            or not VALID_ID.fullmatch(campaign_id)
+            or not campaign_id.startswith("test_leads_6436_")
+            or not str(operator or "").strip()):
+        return {"status": "BLOCKED", "reason": "qa_reset_not_authorized"}
+    rows = list(db[LEADS].find({"phone": tester}).limit(2))
+    if len(rows) != 1:
+        return {"status": "BLOCKED", "reason": "qa_test_lead_ambiguous"}
+    lead = rows[0]
+    if (lead.get("conversation_status") in {"STOPPED_BY_CLIENT", "STOPPED", "BLOCKED"}
+            or (lead.get("price_drop_v2") or {}).get("opted_out")):
+        return {"status": "BLOCKED", "reason": "qa_test_lead_opted_out"}
+    prior = (lead.get("price_drop_v2") or {}).get("qa_session") or {}
+    if prior.get("campaign_id") == campaign_id:
+        return {"status": "ALREADY_RESET", "campaign_id": campaign_id}
+    campaigns = (lead.get("price_drop_v2") or {}).get("campaigns") or []
+    if any(c.get("status") not in {"SENT", "RESPONDED"}
+           or c.get("test_mode") is not True for c in campaigns):
+        return {"status": "BLOCKED", "reason": "qa_prior_campaign_not_completed"}
+    stamp = utc(now or datetime.now(timezone.utc))
+    from uuid import uuid4
+    reset_record = {
+        "campaign_id": campaign_id,
+        "started_at": stamp,
+        "operator": str(operator)[:80],
+        "prior_conversation_id": lead.get("conversation_id"),
+        "prior_prospecto": lead.get("prospecto") or {},
+        "prior_pending_response": lead.get("pending_response") or {},
+        "prior_campaign_ids": [c.get("campaign_id") for c in campaigns],
+        "preserved_message_count": len(lead.get("messages") or []),
+    }
+    # A prior reset has its own snapshot. Preserve it too, rather than
+    # replacing an already archived context.
+    filter_ = {
+        "_id": lead["_id"],
+        "phone": tester,
+        "price_drop_v2.qa_session.campaign_id": {"$ne": campaign_id},
+        "price_drop_v2.campaigns": lead.get("price_drop_v2", {}).get("campaigns") or [],
+    }
+    update = {
+        "$set": {
+            "price_drop_v2.qa_session": reset_record,
+            "prospecto": {},
+            "conversation_id": str(uuid4()),
+        },
+        "$unset": {
+            "pending_response": "",
+            "last_intent": "",
+            "last_intent_actor": "",
+            "last_intent_at": "",
+        },
+    }
+    if prior:
+        update["$push"] = {"price_drop_v2.qa_session_archive": prior}
+    result = db[LEADS].update_one(filter_, update)
+    if result.modified_count != 1:
+        return {"status": "BLOCKED", "reason": "qa_concurrent_change"}
+    return {"status": "RESET", "campaign_id": campaign_id,
+            "recipient_last4": tester[-4:],
+            "historical_messages_preserved": reset_record["preserved_message_count"]}
+
+
 def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
                 property_code: str, old_price_uf: int, new_price_uf: int,
                 test_mode: bool, consent_reviewed: bool = False,
@@ -222,11 +305,19 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         lead, property_code, drop_at, _verified_listing_ids(db, property_code)
     ):
         raise PilotBlocked("pre_drop_inquiry_not_verified")
+    qa = (lead.get("price_drop_v2") or {}).get("qa_session") or {}
+    cutoff = utc(qa["started_at"]) if (
+        test_mode and qa.get("campaign_id") == campaign_id
+        and isinstance(qa.get("started_at"), datetime)
+    ) else None
+    if test_mode and qa and qa.get("campaign_id") != campaign_id:
+        raise PilotBlocked("qa_session_campaign_mismatch")
     if any(c.get("campaign_id") == campaign_id for c in
            (lead.get("price_drop_v2") or {}).get("campaigns") or []):
         raise PilotBlocked("campaign_already_recorded")
     if any(c.get("property_code") == property_code
            and c.get("status") in ("PREPARED", "APPROVED", *ACTIVE_STATES)
+           and not (test_mode and _old_completed_test(c, property_code, cutoff))
            for c in (lead.get("price_drop_v2") or {}).get("campaigns") or []):
         raise PilotBlocked("active_campaign_for_property")
     return {
@@ -238,6 +329,7 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         "consent_reviewed": bool(consent_reviewed) if not test_mode else False,
         "consent_basis": str(consent_basis or "")[:180] if not test_mode else "test_only_not_real_consent",
         "simulated_prior_inquiry": bool(test_mode),
+        "qa_session_started_at": cutoff,
         "message": _message(property_code, old_price_uf, new_price_uf),
     }
 
@@ -249,7 +341,7 @@ def prepare_one(db, *, now=None, **data) -> dict:
     row = {k: p[k] for k in (
         "campaign_id", "property_code", "old_price_uf", "new_price_uf",
         "price_drop_at", "test_mode", "consent_reviewed", "consent_basis",
-        "simulated_prior_inquiry", "phone_normalized")}
+        "simulated_prior_inquiry", "phone_normalized", "qa_session_started_at")}
     row.update({
         "status": "PREPARED", "prepared_at": stamp,
         "outbound_message": p["message"], "inbound_provider_ids": [],
@@ -268,6 +360,16 @@ def prepare_one(db, *, now=None, **data) -> dict:
             "status": {"$in": ["PREPARED", "APPROVED", *ACTIVE_STATES]},
         }}},
     }
+    if p["test_mode"] and p["qa_session_started_at"] is not None:
+        claim_filter[ROOT] = {"$not": {"$elemMatch": {
+            "property_code": p["property_code"],
+            "$or": [
+                {"test_mode": {"$ne": True}},
+                {"status": {"$nin": ["SENT", "RESPONDED"]}},
+                {"sent_at": {"$gte": p["qa_session_started_at"]}},
+            ],
+        }}}
+        claim_filter["price_drop_v2.qa_session.campaign_id"] = p["campaign_id"]
     if not p["test_mode"]:
         claim_filter.update({
             "lead_temperature_effective": "HOT",
@@ -412,14 +514,27 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
                  {"contact_phone_normalized": canonical}],
          ROOT: {"$elemMatch": {"status": {"$in": ["SENT", "RESPONDED"]},
                                "expires_at": {"$gt": now}}}},
-        {"_id": 1, "phone": 1, "contact_phone_normalized": 1, "price_drop_v2.campaigns": 1},
+        {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
+         "price_drop_v2.campaigns": 1, "price_drop_v2.qa_session": 1},
     ).limit(2))
     if len(docs) != 1:
         return None
     lead = docs[0]
-    campaign = next((x for x in (lead.get("price_drop_v2") or {}).get("campaigns") or []
-                     if x.get("status") in ("SENT", "RESPONDED")
-                     and utc(x.get("sent_at")) <= now < utc(x.get("expires_at"))), None)
+    qa = (lead.get("price_drop_v2") or {}).get("qa_session") or {}
+    cutoff = utc(qa["started_at"]) if (
+        canonical == APPROVED_ADMIN_PHONE
+        and isinstance(qa.get("started_at"), datetime)
+    ) else None
+    candidates = [
+        x for x in (lead.get("price_drop_v2") or {}).get("campaigns") or []
+        if x.get("status") in ("SENT", "RESPONDED")
+        and isinstance(x.get("sent_at"), datetime)
+        and isinstance(x.get("expires_at"), datetime)
+        and utc(x["sent_at"]) <= now < utc(x["expires_at"])
+        and (cutoff is None or not x.get("test_mode")
+             or utc(x["sent_at"]) >= cutoff)
+    ]
+    campaign = max(candidates, key=lambda x: utc(x["sent_at"])) if candidates else None
     if not campaign or not _same_phone(lead, canonical):
         return None
     code = campaign["property_code"]

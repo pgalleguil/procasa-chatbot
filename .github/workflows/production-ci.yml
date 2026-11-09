@@ -65,6 +65,7 @@ jobs:
               tests/test_price_drop_v2_customer_response.py
               tests/test_public_property_facts.py
               tests/test_price_drop_full_lifecycle_e2e.py
+              tests/test_price_drop_9804_qa_reset.py
           - suite: Owner campaign price revalidation
             tests: >-
               tests/test_owner_campaign_private_portal.py

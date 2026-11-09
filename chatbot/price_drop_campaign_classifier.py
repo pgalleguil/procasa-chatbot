@@ -20,6 +20,7 @@ INFO = "CONSULTA_INFORMATIVA"
 NO_SIGNAL = "SIN_SENAL"
 DECLINED = "RECHAZADO"
 UNSUBSCRIBED = "BAJA"
+ALTERNATIVES = "BUSCA_ALTERNATIVAS"
 
 
 def _plain(text: str) -> str:
@@ -44,6 +45,15 @@ _ALREADY_FOUND = re.compile(
     r"(?:casa|propiedad|departamento|depto|vivienda)\b"
     r"|\b(?:ya|finalmente)\s+tengo\s+(?:mi|una|un)\s+"
     r"(?:casa|propiedad|departamento|vivienda)\b",
+)
+
+_ALTERNATIVES = re.compile(
+    r"\b(?:busco|estoy buscando|quisiera|quiero|me interesan|tienen|hay|"
+    r"recomiendame|pueden mostrarme|podrias mostrarme)\b.{0,48}"
+    r"\b(?:otra[s]? (?:propiedades|casas|departamentos|deptos|alternativas|opciones)|"
+    r"mas (?:propiedades|casas|departamentos|deptos|alternativas|opciones)|"
+    r"otras en (?:la|el) [a-z]+)\b"
+    r"|\b(?:alternativas|otras opciones|otros departamentos|otras propiedades)\b",
 )
 
 _DECLINE = re.compile(
@@ -113,6 +123,7 @@ class CampaignClassification:
     explicit_visit: bool = False
     explicit_contact: bool = False
     explicit_offer: bool = False
+    alternatives_requested: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -125,6 +136,7 @@ class CampaignClassification:
             "visit_requested": self.explicit_visit,
             "human_requested": self.explicit_contact,
             "offer_intent": self.explicit_offer,
+            "alternatives_requested": self.alternatives_requested,
             "classifier_version": CLASSIFIER_VERSION,
         }
 
@@ -147,6 +159,11 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
     if _ALREADY_FOUND.search(message) and not hypothetical_found:
         return CampaignClassification(
             UNSUBSCRIBED, None, "UNSUBSCRIBE", "already_found_property", False, False,
+        )
+    if _ALTERNATIVES.search(message):
+        return CampaignClassification(
+            ALTERNATIVES, "MEDIA", "ASK_ALTERNATIVES",
+            "other_property_search", True, True, alternatives_requested=True,
         )
     if _DECLINE.search(message):
         return CampaignClassification(

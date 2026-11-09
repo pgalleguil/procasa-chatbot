@@ -19,10 +19,12 @@ from .crm_sla_policy_freeze import RM_ADMIN_EXCLUDED_USER_IDS, _rm_selection, _s
 
 logger = logging.getLogger(__name__)
 
-# A recent committed decision already contains the exact historical SLA
-# performance inputs used by the production reassignment worker.
-MAX_SCORE_AGE = timedelta(hours=48)
-MAX_SNAPSHOTS = 40
+# A recent committed decision already contains historical SLA performance
+# inputs used by the production reassignment worker. Not every agent appears
+# in every reassignment snapshot: allow a seven-day coverage window, with live
+# active-agent revalidation, rather than dropping an agent after 48 hours.
+MAX_SCORE_AGE = timedelta(days=7)
+MAX_SNAPSHOTS = 100
 
 
 def _num(value: Any) -> float:
@@ -91,7 +93,8 @@ def select_active_sla_rescuer(
     """Select globally using the frozen SLA policy when an owner is unavailable.
 
     Active/role/phone checks are live; prior performance scores are bounded to
-    48 hours. When no scored option exists, capacity determines a staffed
+    seven days so active agents with no very recent SLA reassignment remain
+    eligible. A candidate's age never overrides today's active-user check. When no scored option exists, capacity determines a staffed
     fallback so a lead is not abandoned solely because territory is uncovered.
     """
     as_of = now or datetime.now(timezone.utc)

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from .lead_temperature import HOT_INTENTS
 
-CLASSIFIER_VERSION = "price_drop_response_rules_v2"
+CLASSIFIER_VERSION = "price_drop_response_rules_v3"
 # Never reuse the CRM's HOT/COLD/NORMAL labels for a campaign.
 PRIORITY = "PRIORIDAD_COMERCIAL"
 INTEREST = "INTERES_DECLARADO"
@@ -35,6 +35,17 @@ _STOP = re.compile(
     r"no me (?:escriban|contacten|manden (?:mas )?mensajes)|"
     r"no quiero (?:mas )?mensajes|dejen de escribir(?:me)?)\b",
 )
+# A client who already solved their housing search is not a dormant lead.
+# Treat this as a marketing-suppression signal, even without the word STOP.
+_ALREADY_FOUND = re.compile(
+    r"\\b(?:ya|finalmente|al final)\\s+"
+    r"(?:encontre|compre|consegui|arrende)\\s+"
+    r"(?:(?:un|una|otro|otra|mi|la|el)\\s+)?"
+    r"(?:casa|propiedad|departamento|depto|vivienda)\\b"
+    r"|\\b(?:ya|finalmente)\\s+tengo\\s+(?:mi|una|un)\\s+"
+    r"(?:casa|propiedad|departamento|vivienda)\\b",
+)
+
 _DECLINE = re.compile(
     r"\b(?:no me interesa|no estoy interesado|no estoy interesada|"
     r"ya no me interesa|no gracias|no me conviene|"
@@ -128,6 +139,10 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
         return CampaignClassification(
             UNSUBSCRIBED, None, "UNSUBSCRIBE", "explicit_opt_out", False, False,
         )
+    if _ALREADY_FOUND.search(message):
+        return CampaignClassification(
+            UNSUBSCRIBED, None, "UNSUBSCRIBE", "already_found_property", False, False,
+        )
     if _DECLINE.search(message):
         return CampaignClassification(
             DECLINED, None, "OTHER", "explicit_rejection", False, False,
@@ -180,3 +195,34 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
     if result.label == PRIORITY and result.intent not in HOT_INTENTS:
         raise RuntimeError("campaign_high_intent_not_canonical")
     return result
+
+
+def lead_must_not_be_contacted(lead: dict | None) -> bool:
+    """Read-only fail-closed guard for recorded opt-outs and prior completed searches.
+
+    Covers historic test leads whose inbound was previously misclassified as
+    SIN_SENAL. Existing evidence prevents future sends without a DB migration.
+    Explicit administrator-controlled re-opt-in must clear the suppression.
+    """
+    if not isinstance(lead, dict):
+        return False
+    if lead.get("conversation_status") in {
+        "STOPPED_BY_CLIENT", "STOPPED", "BLOCKED", "BLOCKED_EXTERNAL_BROKER",
+    }:
+        return True
+    for key in ("price_drop_v2", "price_drop_campaign_v1"):
+        if (lead.get(key) or {}).get("opted_out") is True:
+            return True
+    for campaign in ((lead.get("price_drop_v2") or {}).get("campaigns") or []):
+        if not isinstance(campaign, dict):
+            continue
+        if campaign.get("status") == "OPTED_OUT":
+            return True
+        if classify_price_drop_reply(campaign.get("last_customer_text") or "").label == UNSUBSCRIBED:
+            return True
+    # Never infer refusal from model-generated texts or property descriptions.
+    for msg in lead.get("messages") or []:
+        if isinstance(msg, dict) and msg.get("role") in ("user", "customer"):
+            if classify_price_drop_reply(msg.get("content") or "").label == UNSUBSCRIBED:
+                return True
+    return False

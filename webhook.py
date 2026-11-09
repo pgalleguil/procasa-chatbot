@@ -1489,13 +1489,13 @@ async def lifespan(app: FastAPI):
     )
     
     # The V2 6436 tester runs only when explicitly armed for this one phone.
-    # PREVIEW only reads, SEND writes only the canonical lead; the provider
-    # attempt is guarded by atomic status and never repeats on startup.
+    # RESET archives the 9804 test context without deleting old messages.
+    # PREVIEW only reads. SEND is atomically idempotent and limited to tester.
     v2_price_drop_test_task = None
     v2_price_drop_mode = str(os.getenv(
         "PRICE_DROP_LEADS_V2_TEST_BOOTSTRAP_MODE", "off"
     )).strip().lower()
-    if v2_price_drop_mode in {"preview", "send"}:
+    if v2_price_drop_mode in {"reset", "preview", "send"}:
         async def _run_v2_one_phone_price_drop():
             try:
                 from scripts.price_drop_leads_v2_bootstrap import run_bootstrap

@@ -204,12 +204,17 @@ def _format_uf(value: float) -> str:
 
 def context_instruction(context: dict) -> str:
     code = context["property_code"]
-    old_price = _format_uf(context["old_price_uf"])
-    new_price = _format_uf(context["new_price_uf"])
+    currency = str(context.get("currency") or "UF")
+    if currency == "CLP":
+        old_price = "$" + f"{int(context['old_price_clp']):,}".replace(",", ".")
+        new_price = "$" + f"{int(context['new_price_clp']):,}".replace(",", ".")
+    else:
+        old_price = "UF " + _format_uf(context["old_price_uf"])
+        new_price = "UF " + _format_uf(context["new_price_uf"])
     return (
         "[PILOTO DE REACTIVACIÓN POR REBAJA - CONTEXTO VERIFICADO]\n"
         f"El cliente recibió un WhatsApp informativo sobre la propiedad en VENTA código {code}, "
-        f"rebajada de UF {old_price} a UF {new_price}. El precio actual fue cotejado con Prop360. "
+        f"rebajada de {old_price} a {new_price}. El precio actual fue cotejado con Prop360. "
         "Su mensaje actual puede ser respuesta a esa comunicación aunque sea 'sí', 'me interesa' o 'cuéntame'. "
         "No lo trates como un lead nuevo ni solicites de nuevo su teléfono. "
         "Un 'sí' ambiguo expresa interés informativo, NO confirma una visita, oferta ni reserva. "

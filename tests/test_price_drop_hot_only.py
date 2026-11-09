@@ -1,4 +1,4 @@
-"""Fail-closed HOT-only eligibility regression tests for V2 customer campaigns.
+"""Fail-closed historical inquiry eligibility regression for V2 campaigns.
 
 No network, no real phone contact, no production DB writes. A synthetic contact
 and mongomock documents exercise the exact client path; internal tests are separate.
@@ -61,14 +61,15 @@ def args():
 
 
 @pytest.mark.parametrize("temperature", [None, "", "COLD", "NORMAL"])
-def test_real_campaign_does_not_select_any_nonhot(db, temperature):
+def test_real_campaign_can_recover_nonhot_historic_inquiry(db, temperature):
     db["leads"].update_one({"_id": ObjectId(LID)}, {
         "$set": {"lead_temperature_effective": temperature,
                  "lead_temperature": "HOT", "lifecycle.hot_since": "2026-07-16T14:25:56-04:00",
                  "last_intent": "ASK_VISIT"},
     })
-    with pytest.raises(v2.PilotBlocked, match="lead_not_current_hot"):
-        v2.preview_one(db, **args())
+    preview = v2.preview_one(db, **args())
+    assert preview["property_code"] == "6436"
+    assert preview["inquiry_evidence_at"] < preview["price_drop_at"]
     assert not db["leads"].find_one({"_id": ObjectId(LID)}).get("price_drop_v2")
 
 
@@ -78,7 +79,7 @@ def test_closed_hot_lead_is_not_contacted(db, stage_field, closed_stage):
     db["leads"].update_one({"_id": ObjectId(LID)}, {
         "$set": {stage_field: closed_stage},
     })
-    with pytest.raises(v2.PilotBlocked, match="lead_not_current_hot"):
+    with pytest.raises(v2.PilotBlocked, match="lead_closed_pipeline_stage"):
         v2.preview_one(db, **args())
 
 
@@ -90,7 +91,7 @@ def test_open_hot_with_verified_prior_inquiry_passes_preview_without_write(db):
     assert db["leads"].find_one({"_id": ObjectId(LID)}).get("price_drop_v2") is None
 
 
-def test_hot_to_cold_before_prepare_cannot_persist(db, monkeypatch):
+def test_hot_to_cold_before_prepare_can_still_prepare_historical_recovery(db, monkeypatch):
     original = v2.preview_one
     def goes_cold_after_preview(*a, **kw):
         result = original(*a, **kw)
@@ -98,22 +99,20 @@ def test_hot_to_cold_before_prepare_cannot_persist(db, monkeypatch):
                                {"$set": {"lead_temperature_effective": "COLD"}})
         return result
     monkeypatch.setattr(v2, "preview_one", goes_cold_after_preview)
-    with pytest.raises(v2.PilotBlocked, match="concurrent_campaign_or_lead_change"):
-        v2.prepare_one(db, now=NOW, **args())
-    assert db["leads"].find_one({"_id": ObjectId(LID)}).get("price_drop_v2") is None
+    assert v2.prepare_one(db, now=NOW, **args())["status"] == "PREPARED"
+    assert db["leads"].find_one({"_id": ObjectId(LID)})["price_drop_v2"]["campaigns"][0]["status"] == "PREPARED"
 
 
-def test_hot_to_cold_before_approval_prevents_approval(db):
+def test_hot_to_cold_before_approval_still_allows_approval(db):
     assert v2.prepare_one(db, now=NOW, **args())["status"] == "PREPARED"
     db["leads"].update_one({"_id": ObjectId(LID)},
                            {"$set": {"lead_temperature_effective": "COLD"}})
-    with pytest.raises(v2.PilotBlocked, match="lead_not_current_hot"):
-        v2.approve_one(db, lead_id=LID, campaign_id=CID,
-                       operator="Supervisor", now=NOW)
-    assert db["leads"].find_one()["price_drop_v2"]["campaigns"][0]["status"] == "PREPARED"
+    assert v2.approve_one(db, lead_id=LID, campaign_id=CID,
+                          operator="Supervisor", now=NOW)["status"] == "APPROVED"
+    assert db["leads"].find_one()["price_drop_v2"]["campaigns"][0]["status"] == "APPROVED"
 
 
-def test_real_send_blocked_when_cold_even_with_approved_campaign(db, monkeypatch):
+def test_cold_real_send_remains_locked_until_separate_pilot_approval(db, monkeypatch):
     v2.prepare_one(db, now=NOW, **args())
     v2.approve_one(db, lead_id=LID, campaign_id=CID,
                    operator="Supervisor", now=NOW)
@@ -125,7 +124,7 @@ def test_real_send_blocked_when_cold_even_with_approved_campaign(db, monkeypatch
     calls = []
     outcome = v2.send_one(db, lead_id=LID, campaign_id=CID,
                           sender=lambda *a: calls.append(a), now=NOW)
-    assert outcome["status"] == "BLOCKED_NOT_CURRENT_HOT"
+    assert outcome["status"] == "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
     assert calls == []
     assert db["leads"].find_one()["price_drop_v2"]["campaigns"][0]["status"] == "APPROVED"
 

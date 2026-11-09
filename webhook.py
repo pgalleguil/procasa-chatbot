@@ -7002,6 +7002,24 @@ async def process_pending_leads_loop():
             else:
                 sla_notification_status.update({"status": "disabled", "health": "DISABLED"})
 
+            # Real V2 administrator alert: distinct opt-in gate; no executive
+            # numbers, no new campaign collections, no automatic retries.
+            if os.getenv("PRICE_DROP_LEADS_V2_REAL_ADMIN_NOTICES_ENABLED", "").lower() in {"1", "true", "yes"}:
+                try:
+                    from chatbot.price_drop_leads_v2 import send_real_admin_notice_once
+                    from chatbot.storage import get_db as _get_v2_admin_db
+                    admin_notice = await asyncio.get_running_loop().run_in_executor(
+                        _WORKER_THREAD_POOL,
+                        lambda: send_real_admin_notice_once(_get_v2_admin_db()),
+                    )
+                    if admin_notice.get("status") not in {"IDLE", "DISABLED"}:
+                        logger.info(
+                            "[PRICE_DROP_V2_REAL_ADMIN_NOTICE] status=%s campaign_id=%s",
+                            admin_notice.get("status"), admin_notice.get("campaign_id"),
+                        )
+                except Exception:
+                    logger.exception("[PRICE_DROP_V2_REAL_ADMIN_NOTICE] failed; no automatic retry")
+
             # Only the allowlisted tester may receive V2 simulated admin
             # and property-executive notices. All status/receipts live in
             # leads; no notification-specific collection is created.

@@ -1,5 +1,5 @@
 """Sequential price-drop lifecycle: initial inquiry -> silence -> audited change
--> HOT-only eligibility -> simulated provider -> conversation. No real sends.
+-> historical lead eligibility -> simulated provider -> conversation. No real sends.
 """
 from datetime import datetime, timedelta, timezone
 
@@ -183,7 +183,7 @@ def test_new_lead_silence_drop_qa_dispatch_delivered_and_conversation(db, monkey
 
 
 @pytest.mark.parametrize("bad_state", ["cold", "stop", "closed"])
-def test_disinterest_cold_optout_closed_do_not_receive_real_campaign(db, bad_state):
+def test_only_optouts_or_closed_are_excluded_from_historical_campaign(db, bad_state):
     _drop_price(db)
     change = {}
     if bad_state == "cold":
@@ -193,6 +193,9 @@ def test_disinterest_cold_optout_closed_do_not_receive_real_campaign(db, bad_sta
     else:
         change["pipeline_stage"] = "CLOSED_LOST"
     db["leads"].update_one({"_id": LEAD}, {"$set": change})
-    with pytest.raises(v2.PilotBlocked, match="lead_not_current_hot|lead_opted_out"):
-        v2.preview_one(db, **_request(REAL_CAMPAIGN, False))
+    if bad_state == "cold":
+        assert v2.preview_one(db, **_request(REAL_CAMPAIGN, False))["test_mode"] is False
+    else:
+        with pytest.raises(v2.PilotBlocked, match="lead_closed_pipeline_stage|lead_opted_out"):
+            v2.preview_one(db, **_request(REAL_CAMPAIGN, False))
     assert "price_drop_v2" not in db["leads"].find_one({"_id": LEAD})

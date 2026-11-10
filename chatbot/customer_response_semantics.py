@@ -56,6 +56,11 @@ def use_natural_verified_property_reply(message: str, model_reply: str,
     answer = normal(model_reply)
     if not property_doc or not answer or prefers_natural_property_overview(message):
         return False
+    # A commune/price mentioned in an alternatives request is a search filter,
+    # not a question about the listing attached to the campaign.
+    from .conversation_policy import alternative_requested
+    if alternative_requested(message):
+        return False
     # These cases need the deterministic public-fact/privacy/commercial guard.
     if re.search(
         r"\b(?:ficha\s+(?:tecnica|completa)|(?:en|como)\s+(?:formato\s+)?"
@@ -127,9 +132,138 @@ def use_natural_verified_property_reply(message: str, model_reply: str,
     return True
 
 
-def rag_customer_response(properties: list[dict] | None) -> str:
+def use_natural_verified_alternative_reply(
+    message: str,
+    model_reply: str,
+    *,
+    requested_communes: list[str] | tuple[str, ...] = (),
+    original_property_code: str | None = None,
+    verified_result_codes: list[str] | tuple[str, ...] = (),
+    campaign_context: dict | None = None,
+    property_doc: dict | None = None,
+) -> bool:
+    """Keep a conversational no-results reply only when it answers the search.
+
+    This is intentionally limited to verified empty RAG searches. Positive
+    search results continue through the deterministic listing renderer so a
+    model cannot invent a property, price, or link.
+    """
+    import unicodedata
+    from .conversation_policy import alternative_requested
+
+    if not alternative_requested(message):
+        return False
+    answer = unicodedata.normalize("NFKD", str(model_reply or "").casefold())
+    answer = "".join(char for char in answer if not unicodedata.combining(char))
+    if not answer.strip() or len(answer.split()) < 5:
+        return False
+    if re.fullmatch(r"\s*(?:precio|comuna|disponibilidad)\s*:\s*[^\n]+\s*", answer):
+        return False
+    if not re.search(
+        r"\b(?:busqu\w*|busc\w*|revis\w*|opciones?|alternativas?|"
+        r"coincidencias?|resultados?|encontr\w*|ampli\w*)\b",
+        answer,
+    ):
+        return False
+    if re.search(
+        r"\b(?:direcci[oó]n\s+exacta|calle\s+[a-z0-9]+|n[uú]mero\s+del\s+departamento|"
+        r"rut\s+del\s+(?:propietario|due[nñ]o)|tel[eé]fono\s+del\s+(?:propietario|due[nñ]o)|"
+        r"nombre\s+del\s+(?:propietario|due[nñ]o))\b",
+        answer,
+    ):
+        return False
+
+    for commune in requested_communes:
+        normalized_commune = unicodedata.normalize("NFKD", str(commune or "").casefold())
+        normalized_commune = "".join(
+            char for char in normalized_commune if not unicodedata.combining(char)
+        )
+        if normalized_commune and normalized_commune not in answer:
+            return False
+
+    # An empty RAG result cannot support claims that a new listing was found.
+    has_no_match = bool(re.search(
+        r"\b(?:no\s+(?:me\s+)?(?:aparec\w*|encontr\w*|hay|teng\w*|exist\w*)|"
+        r"sin\s+coincidencias?|ningun\w*\s+(?:opcion|propiedad|resultado))\b",
+        answer,
+    ))
+    claims_match = bool(re.search(
+        r"\b(?:encontr[eé]\s+(?:estas?\s+)?(?:opciones?|propiedades?)|"
+        r"hay\s+(?:opciones?|propiedades?)|tengo\s+(?:opciones?|propiedades?)\s+disponibles?)\b",
+        answer,
+    ))
+    if claims_match and not has_no_match and not verified_result_codes:
+        return False
+    if not has_no_match and not verified_result_codes:
+        return False
+
+    allowed_codes = {
+        str(code).strip() for code in (*verified_result_codes, original_property_code)
+        if code not in (None, "")
+    }
+    mentioned_codes = set(re.findall(
+        r"\b(?:c[oó]digo|propiedad)\s*(?:n[uú]mero\s*)?[:#]?\s*(\d{4,6})\b",
+        answer,
+        re.IGNORECASE,
+    ))
+    if not mentioned_codes.issubset(allowed_codes):
+        return False
+    if not verified_result_codes and re.search(r"https?://|www\.", answer):
+        return False
+
+    # Monetary claims about the campaign property still have to match its
+    # recorded price event. Search relevance does not relax price safeguards.
+    context = campaign_context or {}
+    currency = str(context.get("currency") or "").upper()
+    if currency in {"UF", "CLP"}:
+        if currency == "UF":
+            old, new = context.get("old_price_uf"), context.get("new_price_uf")
+            pattern = r"\bUF\s*([0-9][0-9.,]*)"
+        else:
+            old, new = context.get("old_price_clp"), context.get("new_price_clp")
+            pattern = r"\$\s*([0-9][0-9.,]*)|\b([0-9][0-9.,]*)\s*(?:pesos?|CLP)\b"
+        monetary_values = []
+        for match in re.finditer(pattern, answer, re.IGNORECASE):
+            token = next((group for group in match.groups() if group), "")
+            token = token.replace(" ", "")
+            if token.count(",") == 1 and len(token.rsplit(",", 1)[1]) in (1, 2):
+                integer, decimal = token.rsplit(",", 1)
+                integer = integer.replace(".", "")
+                try:
+                    monetary_values.append(float(f"{integer}.{decimal}"))
+                except ValueError:
+                    return False
+            else:
+                try:
+                    monetary_values.append(float(token.replace(".", "").replace(",", "")))
+                except ValueError:
+                    return False
+        if monetary_values:
+            try:
+                allowed_prices = {float(old), float(new), float(old) - float(new)}
+            except (TypeError, ValueError):
+                return False
+            if any(value not in allowed_prices for value in monetary_values):
+                return False
+
+    return True
+
+
+def rag_customer_response(properties: list[dict] | None, *, criteria: dict | None = None) -> str:
     properties = list(properties or [])[:2]
     if not properties:
+        criteria = criteria or {}
+        communes = criteria.get("comunas") or criteria.get("comuna") or []
+        if isinstance(communes, str):
+            communes = [part.strip() for part in re.split(r"[,;/]", communes) if part.strip()]
+        communes = list(dict.fromkeys(str(value).strip() for value in communes if str(value).strip()))
+        if communes:
+            place = ", ".join(communes)
+            return (
+                f"Busqué propiedades en {place} con esos criterios y no encontré "
+                "coincidencias disponibles por ahora. Si quieres, puedo ampliar "
+                "la búsqueda o ajustar algún criterio."
+            )
         return "No encontré coincidencias exactas con esos criterios. Si quieres, podemos ampliar un poco la búsqueda."
     lines = ["Encontré estas opciones que coinciden con lo que buscas:"]
     for prop in properties:
@@ -213,4 +347,156 @@ def evaluate_customer_response(customer_message: str, response: str, *,
     if resolved_property and re.search(r"https?://|www\.", message):
         checks["NO_TEMPLATE_CONTAMINATION"] = not new_link_template_contaminated(text)
         checks["ANSWER_RELEVANCE"] = checks["ANSWER_RELEVANCE"] and checks["NO_TEMPLATE_CONTAMINATION"]
+    return {**checks, "PASS": all(checks.values())}
+
+
+def evaluate_price_drop_final_response(
+    customer_message: str,
+    response: str,
+    classification: dict | None = None,
+    *,
+    original_commune: str | None = None,
+    requested_communes: list[str] | tuple[str, ...] = (),
+    property_doc: dict | None = None,
+) -> dict:
+    """Check campaign semantics on the text actually delivered to the client."""
+    import unicodedata
+    from .public_property_facts import public_property_facts, requested_public_fact_keys
+
+    def normalized(value):
+        folded = unicodedata.normalize("NFKD", str(value or "").casefold())
+        return "".join(char for char in folded if not unicodedata.combining(char))
+
+    message = normalized(customer_message)
+    final = str(response or "").strip()
+    answer = normalized(final)
+    classification = classification or {}
+    is_opt_out = classification.get("label") == "BAJA"
+    checks = {
+        "FINAL_RESPONSE_PRESENT": not final if is_opt_out else bool(final),
+        "ALTERNATIVE_REQUEST_ANSWERED": True,
+        "ALTERNATIVE_TARGETS_ADDRESSED": True,
+        "NO_ORIGINAL_COMMUNE_SUBSTITUTION": True,
+        "OFFER_HANDLER_ANSWERED": True,
+        "NO_CALL_PREFERENCE_RESPECTED": True,
+        "VISIT_NOT_FALSELY_CONFIRMED": True,
+        "REQUESTED_FACT_ANSWERED": True,
+        "MISSING_FACT_ACKNOWLEDGED": True,
+        "GLOBAL_OPT_OUT_SUPPRESSED": True,
+    }
+
+    if classification.get("alternatives_requested"):
+        relevant = bool(re.search(
+            r"\b(?:busqu\w*|busc\w*|revis\w*|opciones?|alternativas?|"
+            r"coincidencias?|resultados?|encontr\w*|ampli\w*)\b",
+            answer,
+        ))
+        checks["ALTERNATIVE_REQUEST_ANSWERED"] = relevant
+        normalized_targets = [normalized(value) for value in requested_communes if value]
+        checks["ALTERNATIVE_TARGETS_ADDRESSED"] = all(
+            target in answer for target in normalized_targets
+        )
+        original = normalized(original_commune)
+        requested_elsewhere = any(target != original for target in normalized_targets)
+        direct_original_field = bool(original and re.search(
+            rf"\bcomuna\s*:\s*{re.escape(original)}\b", answer,
+        ))
+        checks["NO_ORIGINAL_COMMUNE_SUBSTITUTION"] = not (
+            requested_elsewhere and direct_original_field
+        )
+
+    if classification.get("offer_intent") or classification.get("intent") == "GIVE_OFFER":
+        identifies_handler = bool(re.search(
+            r"\b(?:administraci[oó]n|propietari[oa]|equipo\s+comercial)\b", answer,
+        ))
+        reviews_offer = bool(re.search(
+            r"\b(?:administraci[oó]n|propietari[oa]|equipo\s+comercial)\b.{0,55}\b"
+            r"(?:revis\w*|eval[uú]\w*|gestion\w*)\b.{0,35}\bofert\w*\b|"
+            r"\bofert\w*\b.{0,45}\b(?:revis\w*|eval[uú]\w*|gestion\w*)\b.{0,35}\b"
+            r"(?:administraci[oó]n|propietari[oa]|equipo\s+comercial)\b",
+            answer,
+        ))
+        customer_submission_route = bool(re.search(
+            r"\b(?:puedes|podr[ií]as|comparte|env[ií]a|presenta|deja)\b.{0,50}\b"
+            r"(?:por\s+este\s+chat|monto|condiciones|oferta|solicitud)\b|"
+            r"\bpor\s+este\s+chat\b.{0,55}\b(?:monto|condiciones|oferta|solicitud)\b",
+            answer,
+        ))
+        unauthorized_executive_promise = bool(re.search(
+            r"\b(?:ejecutiv[oa]|asesor[oa])\b.{0,90}\b"
+            r"(?:te\s+contact\w*|te\s+llam\w*|desde\s+su\s+n[uú]mero\s+directo)\b",
+            answer,
+        ))
+        checks["OFFER_HANDLER_ANSWERED"] = (
+            identifies_handler and reviews_offer and customer_submission_route
+            and not unauthorized_executive_promise
+        )
+
+    if classification.get("do_not_call"):
+        clauses = re.split(r"\b(?:pero|aunque|sin embargo)\b|[.!?;,\n]+", answer)
+        solicits_call = any(
+            re.search(
+                r"\b(?:te\s+(?:pued\w*|van\s+a|vamos\s+a|llamar\w*|contact\w*\s+por\s+tel[eé]fono)|"
+                r"(?:quieres?|prefieres?)\s+que\s+(?:.{0,35}\s+)?te\s+llam\w*|"
+                r"coordinar\s+(?:una\s+)?llamada)\b",
+                clause,
+            )
+            and not re.search(r"\b(?:no|nunca|jam[aá]s)\b.{0,30}\b(?:llam\w*|contact\w*)\b", clause)
+            for clause in clauses
+        )
+        checks["NO_CALL_PREFERENCE_RESPECTED"] = not solicits_call
+
+    if classification.get("visit_requested"):
+        confirmed_claim = bool(re.search(
+            r"\b(?:visita|horario)\b.{0,50}\b(?:confirmad[ao]|agendad[ao]|reservad[ao])\b|"
+            r"\b(?:te\s+esperamos|ya\s+qued[oó]\s+reservad[ao])\b",
+            answer,
+        ))
+        negated_confirmation = bool(re.search(
+            r"\b(?:no\s+(?:est[aá]\s+)?(?:confirmad[ao]|agendad[ao]|reservad[ao])|"
+            r"todav[ií]a\s+no\s+est[aá]\s+confirmad[ao])\b",
+            answer,
+        ))
+        checks["VISIT_NOT_FALSELY_CONFIRMED"] = not (confirmed_claim and not negated_confirmation)
+
+    if is_opt_out:
+        checks["GLOBAL_OPT_OUT_SUPPRESSED"] = not final
+
+    if property_doc:
+        from .public_property_facts import public_property_facts
+        facts = public_property_facts(property_doc)
+        keys = requested_public_fact_keys(customer_message)
+        field_terms = {
+            "precio": r"precio|valor|uf|\$",
+            "gastos": r"gastos\s+comunes|ggcc",
+            "dormitorios": r"dormitorios?|habitaciones?|piezas?",
+            "banos": r"ba[nñ]os?",
+            "util": r"superficie\s+util|metros?\s+utiles?|m2\s+utiles?",
+            "total": r"superficie\s+total|metros?\s+totales?|metraje",
+            "comuna": r"comuna|ubicaci[oó]n",
+            "disponible": r"disponib|activ|confirmar",
+            "orientacion": r"orientaci[oó]n|norte|sur|oriente|poniente",
+            "estacionamientos": r"estacionamiento|parking",
+            "bodegas": r"bodega",
+            "fotos": r"foto|procasa\.cl",
+            "mascotas": r"mascota|perro|gato",
+        }
+        unknown_requested = [
+            key for key in keys
+            if facts.get(key) in (None, "", "No informado")
+        ]
+        checks["REQUESTED_FACT_ANSWERED"] = all(
+            bool(re.search(field_terms.get(key, re.escape(key)), answer))
+            for key in keys if key not in unknown_requested
+        )
+        checks["MISSING_FACT_ACKNOWLEDGED"] = (
+            not unknown_requested
+            or bool(re.search(
+                r"\b(?:no\s+(?:se\s+)?(?:informa|indica|especifica|aparece)|"
+                r"no\s+(?:est[aá]\s+)?informad\w*|por\s+confirmar|"
+                r"hay\s+que\s+confirmar|debo\s+confirmar)\b",
+                answer,
+            ))
+        )
+
     return {**checks, "PASS": all(checks.values())}

@@ -57,6 +57,66 @@ def params(**overrides):
     return p
 
 
+def test_admin_qa_reset_archives_context_without_deleting_campaign_or_message_history(monkeypatch):
+    monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
+    qa_id = "test_leads_6436_20261110_qacheck1"
+    prior_qa = {"campaign_id": "test_leads_6436_20261109_previous", "started_at": NOW}
+    campaign = {
+        "campaign_id": prior_qa["campaign_id"], "status": "RESPONDED",
+        "test_mode": True, "provider_message_id": "mock-prior-send",
+        "reply_count": 1,
+    }
+    messages = [
+        {"role": "assistant", "content": "mensaje de prueba anterior", "message_id": "out-1"},
+        {"role": "user", "content": "respuesta de prueba anterior", "message_id": "in-1"},
+    ]
+    reply_events = [{"campaign_id": campaign["campaign_id"], "provider_message_id": "in-1"}]
+    processed_ids = ["in-1"]
+    db = mongomock.MongoClient(tz_aware=True)["URLS"]
+    db["leads"].insert_one({
+        "_id": ObjectId("690000000000000000000790"),
+        "phone": PHONE, "conversation_id": "prior-conversation",
+        "prospecto": {"codigo": "6436", "comuna": "Macul"},
+        "messages": messages,
+        "pending_response": {"type": "VISIT_CONFIRMATION"},
+        "last_intent": "agendar_visita",
+        "price_drop_v2": {
+            "campaigns": [campaign], "qa_session": prior_qa,
+            "reply_events": reply_events,
+            "processed_inbound_provider_ids": processed_ids,
+        },
+    })
+
+    result = v2.reset_test_qa_session(
+        db, campaign_id=qa_id, operator="Operador de QA",
+        phone=PHONE, now=NOW + timedelta(minutes=1),
+    )
+    lead = db["leads"].find_one({"phone": PHONE})
+    assert result["status"] == "RESET"
+    assert result["historical_messages_preserved"] == len(messages)
+    assert lead["messages"] == messages
+    assert lead["price_drop_v2"]["campaigns"] == [campaign]
+    assert lead["price_drop_v2"]["reply_events"] == reply_events
+    assert lead["price_drop_v2"]["processed_inbound_provider_ids"] == processed_ids
+    assert lead["price_drop_v2"]["qa_session_archive"] == [prior_qa]
+    assert lead["price_drop_v2"]["qa_session"]["campaign_id"] == qa_id
+    assert lead["prospecto"] == {}
+    assert lead["conversation_id"] != "prior-conversation"
+    assert "pending_response" not in lead and "last_intent" not in lead
+
+
+def test_admin_qa_reset_fails_closed_for_phone_outside_allowlist(monkeypatch):
+    monkeypatch.setenv(v2.TEST_PHONE_FLAG, "+56911112222")
+    db = mongomock.MongoClient()["URLS"]
+    db["leads"].insert_one({"phone": "+56911112222", "messages": []})
+    result = v2.reset_test_qa_session(
+        db, campaign_id="test_leads_6436_20261110_qacheck2",
+        operator="Operador de QA", phone="+56911112222", now=NOW,
+    )
+    assert result == {"status": "BLOCKED", "reason": "qa_reset_not_authorized"}
+    assert db["leads"].find_one({"phone": "+56911112222"}).get("price_drop_v2") is None
+
+
 def test_preview_verifies_historical_drop_without_any_write(db):
     r = v2.preview_one(db, **params())
     assert r["property_code"] == "6436"

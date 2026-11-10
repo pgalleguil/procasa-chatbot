@@ -280,6 +280,32 @@ def _contains_visit_invitation(text: str) -> bool:
     ))
 
 
+def _requested_communes(message: str) -> list[str]:
+    import unicodedata
+    normalized = unicodedata.normalize("NFKD", str(message or "").casefold())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    result = []
+    for commune in COMMUNES:
+        folded = unicodedata.normalize("NFKD", commune.casefold())
+        folded = "".join(char for char in folded if not unicodedata.combining(char))
+        if folded and re.search(rf"(?<![a-z]){re.escape(folded)}(?![a-z])", normalized):
+            result.append(commune)
+    return result
+
+
+def _campaign_final_response_checks(message: str, response: str,
+                                    classification: dict, *,
+                                    original_commune: str | None = None,
+                                    property_doc: dict | None = None) -> dict:
+    from chatbot.customer_response_semantics import evaluate_price_drop_final_response
+    return evaluate_price_drop_final_response(
+        message, response, classification,
+        original_commune=original_commune,
+        requested_communes=_requested_communes(message),
+        property_doc=property_doc,
+    )
+
+
 def _reevaluate_saved_matrix(report: dict) -> dict:
     """Reapply the current deterministic acceptance checks to stored turns."""
     previous_turn_issues = {
@@ -292,8 +318,19 @@ def _reevaluate_saved_matrix(report: dict) -> dict:
             issues = [
                 issue for issue in turn.get("issues") or []
                 if issue != "visit_proposed_without_customer_request"
+                and not issue.startswith("final_response_semantics:")
             ]
             classification = turn.get("classification_details") or {}
+            semantic_checks = _campaign_final_response_checks(
+                turn.get("input") or "",
+                turn.get("customer_visible_reply") or "",
+                classification,
+                original_commune=conversation.get("commune"),
+            )
+            turn["final_response_semantics"] = semantic_checks
+            for check, passed in semantic_checks.items():
+                if check != "PASS" and not passed:
+                    issues.append(f"final_response_semantics:{check}")
             requested = bool(classification.get("visit_requested"))
             unsolicited = not requested and _contains_visit_invitation(
                 turn.get("customer_visible_reply") or ""
@@ -317,8 +354,24 @@ def _reevaluate_saved_matrix(report: dict) -> dict:
     summary["visit_offer_guard_passes"] = sum(
         not turn.get("visit_offer_without_request") for turn in all_turns
     )
+    summary["final_response_relevance_passes"] = sum(
+        (turn.get("final_response_semantics") or {}).get("PASS") is True
+        for turn in all_turns
+    )
+    summary["alternative_responses_passes"] = sum(
+        all((turn.get("final_response_semantics") or {}).get(key) is True for key in (
+            "ALTERNATIVE_REQUEST_ANSWERED",
+            "ALTERNATIVE_TARGETS_ADDRESSED",
+            "NO_ORIGINAL_COMMUNE_SUBSTITUTION",
+        ))
+        for turn in all_turns
+    )
+    summary["offer_routing_passes"] = sum(
+        (turn.get("final_response_semantics") or {}).get("OFFER_HANDLER_ANSWERED") is True
+        for turn in all_turns
+    )
     report["evaluation_replay"] = {
-        "evaluator_version": "price_drop_acceptance_rules_v2",
+        "evaluator_version": "price_drop_acceptance_rules_v3",
         "replayed_turns": len(all_turns),
         "regenerated_model_replies": 0,
         "note": (
@@ -330,6 +383,8 @@ def _reevaluate_saved_matrix(report: dict) -> dict:
         report["status"] = "FAIL"
     elif report.get("generation_mode") == "simulated_mock":
         report["status"] = "SIMULATED"
+    elif report.get("targeted_run") and report.get("conversation_count", 0) > 0:
+        report["status"] = "TARGETED_PASS"
     elif report.get("conversation_count", 0) >= 40:
         report["status"] = "PASS"
     else:
@@ -604,7 +659,7 @@ async def _synthetic_test_run(args) -> dict:
     now = dt.datetime.now(dt.timezone.utc)
     fixtures = []
     temperature_names = ["HOT", "NORMAL", "COLD"]
-    for index in range(args.conversations):
+    for index in args.scenario_indices:
         profile, variant = index % 10, (index // 10) % 4
         code = str(12000 + index)
         commune = COMMUNES[(index * 3) % len(COMMUNES)]
@@ -637,10 +692,11 @@ async def _synthetic_test_run(args) -> dict:
             "moneda_anterior": currency, "moneda_nueva": currency,
             "monto_anterior": latest_old, "monto_nuevo": latest_new,
         })
-        db["universo_cartera_prop360"].insert_one(_property_document(
+        property_doc = _property_document(
             code, currency=currency, current_price=current_price,
             commune=commune, variation=index,
-        ))
+        )
+        db["universo_cartera_prop360"].insert_one(property_doc)
         db["universo_cartera_prop360_historial"].insert_many(history)
         inquiry_at = drop_at - dt.timedelta(days=2)
         messages = [{
@@ -695,6 +751,7 @@ async def _synthetic_test_run(args) -> dict:
             "currency": currency,
             "old_price": latest_old,
             "new_price": current_price,
+            "property_doc": property_doc,
             "successive_reductions": successive,
             "scenario": _scenario(
                 profile, variant, code=code, commune=commune,
@@ -777,8 +834,13 @@ async def _synthetic_test_run(args) -> dict:
             delivery = (batch.get("delivery_attempts") or [])[-1:] or [{}]
             provider_trace = (traces.get(str(batch.get("_id"))) or [{}])[-1]
             lead_after = db["leads"].find_one({"_id": fixture["lead_id"]})
+            stored_messages = list(lead_after.get("messages") or [])
+            inbound_message_logged = any(
+                item.get("role") == "user" and item.get("content") == message
+                for item in stored_messages
+            )
             assistant_messages = [
-                m for m in (lead_after.get("messages") or [])
+                m for m in stored_messages
                 if m.get("role") == "assistant"
                 and m.get("batch_id") == batch.get("_id")
                 and m.get("delivery_status") in {"accepted", "delivered", "read"}
@@ -800,7 +862,7 @@ async def _synthetic_test_run(args) -> dict:
                 not visit_requested
                 and _contains_visit_invitation(latest_reply)
             )
-            price_question = bool(re.search(
+            price_question = not direct_classification.get("alternatives_requested") and bool(re.search(
                 r"\b(precio|valor|rebaj|cu[aá]nto\s+(?:baj[oó]|cuesta|vale))\b",
                 message, re.I,
             ))
@@ -862,12 +924,23 @@ async def _synthetic_test_run(args) -> dict:
                 core_visit_intent_ok = core_intent == "agendar_visita"
             if direct_classification.get("human_requested") and not direct_classification.get("do_not_call") and customer_response_expected:
                 core_contact_intent_ok = core_intent == "contacto_directo"
+            final_response_semantics = _campaign_final_response_checks(
+                message, latest_reply, direct_classification,
+                original_commune=fixture["commune"],
+                property_doc=fixture["property_doc"],
+            )
             queue_ok = batch.get("state") == queue.ST_RESPONDED
             duplicate_ok = (
                 duplicate_inbound.get("status") == "DUPLICATE_IGNORED"
                 and duplicate_job_id == job_id
             )
             campaign_after = (lead_after.get("price_drop_v2") or {}).get("campaigns") or []
+            reply_events = (lead_after.get("price_drop_v2") or {}).get("reply_events") or []
+            campaign_reply_event_logged = any(
+                item.get("campaign_id") == f"syn_new_{fixture['index']:03d}"
+                and item.get("provider_message_id") == provider_id
+                for item in reply_events
+            )
             temperature_snapshot = next(
                 (c.get("temperature_at_prepare") for c in campaign_after
                  if c.get("campaign_id") == "syn_new_%03d" % fixture["index"]),
@@ -898,6 +971,13 @@ async def _synthetic_test_run(args) -> dict:
             if not core_visit_intent_ok: issues.append("core_visit_intent_false_positive_or_missed_request")
             if not core_contact_intent_ok: issues.append("core_contact_intent_false_positive_or_missed_request")
             if not temperature_preserved: issues.append("campaign_temperature_snapshot_changed")
+            if customer_response_expected and not inbound_message_logged:
+                issues.append("customer_inbound_message_not_logged")
+            if inbound_result.get("status") == "ATTRIBUTED" and not campaign_reply_event_logged:
+                issues.append("price_drop_v2_reply_event_not_logged")
+            for check, passed in final_response_semantics.items():
+                if check != "PASS" and not passed:
+                    issues.append(f"final_response_semantics:{check}")
             turn_results.append({
                 "turn": turn_index + 1,
                 "input": message,
@@ -913,6 +993,11 @@ async def _synthetic_test_run(args) -> dict:
                 "queue_job_idempotent": duplicate_ok,
                 "real_deepseek_candidate": candidate_text,
                 "customer_visible_reply": latest_reply,
+                "customer_inbound_message_logged": inbound_message_logged,
+                "price_drop_v2_reply_event_logged": campaign_reply_event_logged,
+                "outbound_message_logged": bool(latest_reply and assistant_messages),
+                "final_response_semantics": final_response_semantics,
+                "requested_communes": _requested_communes(message),
                 "deepseek_model": provider_trace.get("model"),
                 "deepseek_provider_calls_reported": provider_trace.get("provider_calls_reported"),
                 "deepseek_provider_api_calls_observed": provider_trace.get("provider_api_calls_observed", 0),
@@ -1023,11 +1108,16 @@ async def _synthetic_test_run(args) -> dict:
     event_counts["INTENT_DETECTED_before"] = core_intent_events_before
     db_collections = sorted(db.list_collection_names())
     issues = [issue for turn in all_turns for issue in turn["issues"]]
-    if actual_responses < (args.conversations * 2 - 2 * (args.conversations // 10)):
+    expected_response_turns = sum(bool(turn.get("reply_expected")) for turn in all_turns)
+    if actual_responses < expected_response_turns:
         issues.append("real_deepseek_response_count_below_expected_floor")
     if positive_notice_count == 0:
         issues.append("positive_admin_notice_mock_not_exercised")
-    if info_notice_count == 0:
+    informational_notice_scenario_requested = (
+        not args.scenario_ids
+        or any(index % 10 in {8, 9} for index in args.scenario_indices)
+    )
+    if info_notice_count == 0 and informational_notice_scenario_requested:
         issues.append("admin_info_notice_mock_not_exercised")
     if not notice_content_ok:
         issues.append("admin_notice_content_or_crm_link_invalid")
@@ -1059,6 +1149,9 @@ async def _synthetic_test_run(args) -> dict:
         "provider_model": "synthetic-response-stub" if mock_deepseek else config.Config.DEEPSEEK_MODEL_REASONER,
         "actual_deepseek_http_calls": provider_calls,
         "conversation_count": len(fixtures),
+        "targeted_run": bool(args.scenario_ids),
+        "targeted_scenario_ids": [f"synthetic-{index:03d}" for index in args.scenario_indices]
+        if args.scenario_ids else [],
         "inbound_turn_count": len(all_turns),
         "conversations_with_multiple_inbound_turns": sum(len(x["turn_results"]) >= 2 for x in fixtures),
         "real_deepseek_customer_replies": 0 if mock_deepseek else actual_responses,
@@ -1105,7 +1198,9 @@ async def _synthetic_test_run(args) -> dict:
         } for fixture in fixtures],
         "issues": sorted(set(issues)),
         "status": (
+            "TARGETED_SIMULATED" if not issues and mock_deepseek and args.scenario_ids else
             "SIMULATED" if not issues and mock_deepseek else
+            "TARGETED_PASS" if not issues and args.scenario_ids else
             "PASS" if not issues and len(fixtures) >= 40 else "FAIL"
         ),
     }
@@ -1114,12 +1209,35 @@ async def _synthetic_test_run(args) -> dict:
         "property_numeric_facts_passes": sum(not t["property_fact_mismatches"] for t in all_turns),
         "price_accuracy_passes": sum(t["price_claims_verified"] and t["exact_current_price_in_reply"] for t in all_turns),
         "naturalness_heuristic_passes": sum(t["naturalness_heuristic"] == "PASS" for t in all_turns),
+        "final_response_relevance_passes": sum(
+            (t.get("final_response_semantics") or {}).get("PASS") is True for t in all_turns
+        ),
+        "alternative_responses_passes": sum(
+            (t.get("final_response_semantics") or {}).get("ALTERNATIVE_REQUEST_ANSWERED") is True
+            and (t.get("final_response_semantics") or {}).get("ALTERNATIVE_TARGETS_ADDRESSED") is True
+            and (t.get("final_response_semantics") or {}).get("NO_ORIGINAL_COMMUNE_SUBSTITUTION") is True
+            for t in all_turns
+        ),
+        "offer_routing_passes": sum(
+            (t.get("final_response_semantics") or {}).get("OFFER_HANDLER_ANSWERED") is True
+            for t in all_turns
+        ),
         "continuity_passes": sum(t["continuity_check"] == "PASS" for t in all_turns),
         "classification_passes": sum(t["expected_classification"] == t["obtained_classification"] for t in all_turns),
         "visit_offer_guard_passes": sum(not t["visit_offer_without_request"] for t in all_turns),
         "record_inbound_idempotency_passes": sum(t["duplicate_inbound_status"] == "DUPLICATE_IGNORED" for t in all_turns),
         "queue_idempotency_passes": sum(t["queue_job_idempotent"] for t in all_turns),
         "queue_logging_passes": event_counts["RESPONSE_SENT"] == len(mock_customer_sends),
+        "customer_inbound_message_log_passes": sum(
+            t.get("customer_inbound_message_logged") is True for t in all_turns
+        ),
+        "price_drop_v2_reply_event_log_passes": sum(
+            t.get("price_drop_v2_reply_event_logged") is True
+            for t in all_turns if t.get("record_inbound_status") == "ATTRIBUTED"
+        ),
+        "outbound_message_log_passes": sum(
+            t.get("outbound_message_logged") is True for t in all_turns
+        ),
         "temperature_snapshots_passes": sum(t["temperature_snapshot_preserved"] for t in all_turns),
         "structured_json_responses": sum(t["structured_generation_status"] == "STRUCTURED_JSON" for t in all_turns),
         "model_fallback_responses_after_structured_error": sum(
@@ -1138,6 +1256,8 @@ def main() -> int:
     parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV,
                         help="private .env source; only DeepSeek key/endpoint are read")
     parser.add_argument("--conversations", type=int, default=40)
+    parser.add_argument("--scenario-ids", nargs="+", metavar="synthetic-NNN",
+                        help="run selected synthetic conversations for focused regression checks")
     parser.add_argument("--output", type=Path,
                         default=ROOT / "reports" / "price_drop_deepseek_acceptance_latest.json")
     parser.add_argument("--markdown-output", type=Path,
@@ -1150,8 +1270,20 @@ def main() -> int:
                         help="use local deterministic replies; never counts as DeepSeek acceptance")
     args = parser.parse_args()
     minimum_conversations = 10 if args.mock_deepseek else 40
-    if args.conversations < minimum_conversations:
-        parser.error(f"--conversations must be at least {minimum_conversations}")
+    if args.scenario_ids:
+        indices = []
+        for scenario_id in args.scenario_ids:
+            match = re.fullmatch(r"synthetic-(\d{3})", scenario_id)
+            if not match or not 0 <= int(match.group(1)) < 40:
+                parser.error(f"invalid --scenario-ids value: {scenario_id}")
+            indices.append(int(match.group(1)))
+        if len(set(indices)) != len(indices):
+            parser.error("--scenario-ids must be unique")
+        args.scenario_indices = indices
+    else:
+        if args.conversations < minimum_conversations:
+            parser.error(f"--conversations must be at least {minimum_conversations}")
+        args.scenario_indices = list(range(args.conversations))
     if args.calls_limit < 1:
         parser.error("--calls-limit must be positive")
     if args.recheck_existing:
@@ -1177,7 +1309,9 @@ def main() -> int:
             "regenerated_model_replies": 0,
             "issues": report["issues"],
         }, ensure_ascii=False, indent=2))
-        return 0 if report["status"] in {"PASS", "SIMULATED"} else 1
+        return 0 if report["status"] in {
+            "PASS", "SIMULATED", "TARGETED_PASS", "TARGETED_SIMULATED",
+        } else 1
     if not args.mock_deepseek and not args.env_file.is_file():
         parser.error("private DeepSeek env file is unavailable")
     # The SDK call wrapper enforces an upper request limit without disclosing
@@ -1206,7 +1340,9 @@ def main() -> int:
         "deepseek_http_calls": report["actual_deepseek_http_calls"],
         "issues": report["issues"],
     }, ensure_ascii=False, indent=2))
-    return 0 if report["status"] in {"PASS", "SIMULATED"} else 1
+    return 0 if report["status"] in {
+        "PASS", "SIMULATED", "TARGETED_PASS", "TARGETED_SIMULATED",
+    } else 1
 
 
 def _render_markdown(report: dict) -> str:
@@ -1217,6 +1353,7 @@ def _render_markdown(report: dict) -> str:
         f"- Mode: `{report.get('generation_mode')}` ({report.get('provider')})",
         f"- Commit: `{report.get('local_head')}`",
         f"- Conversations / inbound turns: {report.get('conversation_count')} / {report.get('inbound_turn_count')}",
+        f"- Targeted scenarios: {', '.join(report.get('targeted_scenario_ids') or []) or 'none'}",
         f"- Real DeepSeek replies: {report.get('real_deepseek_customer_replies')}",
         f"- Mock customer/admin deliveries: {report.get('mocked_customer_provider_sends')} / {report.get('mocked_admin_notice_sends')}",
         f"- Safety: Mongo URI loaded `{report.get('safety', {}).get('production_mongo_uri_loaded')}`, real WhatsApp calls `{report.get('safety', {}).get('real_whatsapp_calls')}`, merged `{report.get('safety', {}).get('pull_request_merged')}`",
@@ -1231,12 +1368,18 @@ def _render_markdown(report: dict) -> str:
         "property_numeric_facts_passes": "Numeric property facts",
         "price_accuracy_passes": "Price claims (exact currency/current price on price questions)",
         "naturalness_heuristic_passes": "Naturalness heuristic (format/length only)",
+        "final_response_relevance_passes": "Final response semantic relevance",
+        "alternative_responses_passes": "Alternative request and commune relevance",
+        "offer_routing_passes": "Offer routing answered",
         "continuity_passes": "V2 context and multi-turn continuity",
         "classification_passes": "Campaign classification",
         "visit_offer_guard_passes": "No unsolicited visit offer",
         "record_inbound_idempotency_passes": "Inbound idempotency",
         "queue_idempotency_passes": "Queue idempotency",
         "temperature_snapshots_passes": "Prepared temperature snapshot",
+        "customer_inbound_message_log_passes": "Customer inbound message log",
+        "price_drop_v2_reply_event_log_passes": "V2 campaign reply event audit log",
+        "outbound_message_log_passes": "Customer-facing outbound message log",
         "structured_json_responses": "Structured model responses",
         "model_fallback_responses_after_structured_error": "Model fallback after structured error",
     }

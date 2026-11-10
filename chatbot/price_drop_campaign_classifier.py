@@ -148,7 +148,7 @@ _NEGATED_CALL = re.compile(
 )
 _NEGATED_VISIT = re.compile(
     r"\b(?:(?:no\s+(?:(?:me\s+)?(?:interesa|interesar[ií]a|gusta|gustar[ií]a|"
-    r"quiero|quisiera|deseo|necesito|puedo|podr[ií]a|pienso|planeo)))|"
+    r"quiero|quisiera|deseo|necesito|pienso|planeo)))|"
     r"(?:no\s+estoy\s+interesad[oa])|"
     r"(?:nunca\s+(?:quiero|quisiera|pienso|planeo))|"
     r"(?:jam[aá]s\s+(?:quiero|quisiera))|(?:prefiero\s+no)|(?:mejor\s+no))\b.{0,48}"
@@ -159,6 +159,18 @@ _NEGATED_VISIT = re.compile(
     r"conocer(?:la|lo)|conocer\s+(?:la|el|esta|esa)\s+"
     r"(?:propiedad|casa|vivienda|departamento|depto))\b|"
     r"\bno\s+(?:quiero|deseo|necesito)\s+(?:una\s+)?visita\b",
+    re.IGNORECASE,
+)
+_TEMPORARY_VISIT_INABILITY = re.compile(
+    r"\bno\s+(?:puedo|podr[ií]a)\s+(?:ir\s+a\s+)?"
+    r"(?:visitar\w*|ver\s+(?:la|el|esta|esa)\s+"
+    r"(?:propiedad|casa|vivienda|departamento|depto)|"
+    r"conocer\w*|agendar\w*|coordinar\w*)\b",
+    re.IGNORECASE,
+)
+_TEMPORARY_VISIT_TIMING = re.compile(
+    r"\b(?:ahora|por\s+ahora|todav[ií]a|a[uú]n|por\s+el\s+momento|"
+    r"hoy|ma[nñ]ana|esta\s+semana|esta\s+tarde|esta\s+noche)\b",
     re.IGNORECASE,
 )
 _NEGATED_INTEREST = re.compile(
@@ -229,12 +241,14 @@ _OFFER = re.compile(
 )
 _VISIT = re.compile(
     r"\b(?:quiero|quisiera|prefiero|me\s+gustar[ií]a|me\s+encantar[ií]a|me\s+interesa|"
+    r"estoy\s+interesad[oa]|podemos|podr[ií]amos|"
     r"necesito|puedo|podr[ií]a|me\s+acomoda)\s+(?:ir\s+a\s+)?"
     r"(?:visitar\w*|ver(?:la|lo)|ver\s+(?:la|el|esta|esa)\s+"
     r"(?:propiedad|casa|vivienda|departamento|depto)|"
     r"conocer(?:la|lo)|conocer\s+(?:la|el|esta|esa)\s+"
     r"(?:propiedad|casa|vivienda|departamento|depto))\b|"
-    r"\b(?:quiero|quisiera|me\s+gustar[ií]a|necesito|podemos|podr[ií]amos)\s+"
+    r"\b(?:quiero|quisiera|me\s+gustar[ií]a|necesito|podemos|podr[ií]amos|"
+    r"estoy\s+interesad[oa])\s+(?:en\s+)?"
     r"(?:agendar|coordinar|programar)\s+(?:una\s+)?visita\b|"
     r"\b(?:agendemos|coordinemos|programemos)\b.{0,35}\bvisita\b|"
     r"\b(?:se\s+puede|es\s+posible|hay\s+disponibilidad\s+para)\s+"
@@ -262,7 +276,7 @@ _CONTACT = re.compile(
     r"(?:una\s+)?llamada|contacto\s+telef[oó]nico)\b|"
     r"\b(?:ll[aá]mame|ll[aá]menme|contactenme|me\s+pueden\s+llamar|"
     r"me\s+puedes\s+llamar|me\s+podr[ií]as\s+llamar|puedes\s+llamarme|"
-    r"me\s+llamas|me\s+podr[ií]an\s+llamar|pueden\s+llamarme|"
+    r"me\s+puede\s+llamar|me\s+llamas|me\s+podr[ií]an\s+llamar|pueden\s+llamarme|"
     r"que\s+me\s+contacte\s+(?:un\s+|una\s+)?"
     r"(?:ejecutiv\w*|asesor\w*|corredor\w*))\b",
     re.IGNORECASE,
@@ -274,7 +288,8 @@ _INTEREST = re.compile(
 )
 _INFORMATION = re.compile(
     r"\b(?:cu[aá]nto\s+(?:cuesta|vale|son|baj[oó])|gastos?\s+comunes|"
-    r"(?:los\s+)?gc\b|qu[eé]\s+(?:gastos|caracter[ií]sticas|incluye|orientaci[oó]n|"
+    r"(?:los\s+)?gc\b|cu[eé]ntame|dime|expl[ií]came|detalles?|"
+    r"qu[eé]\s+(?:gastos|caracter[ií]sticas|incluye|orientaci[oó]n|"
     r"superficie|comuna|documentos)|cu[aá]les\s+(?:son|tiene)|tiene\s+"
     r"(?:bodega|estacionamiento|ascensor|terraza)|es\s+(?:disponible|negociable)|"
     r"hay\s+(?:estacionamiento|gastos\s+comunes)|informaci[oó]n|detalle|"
@@ -391,8 +406,11 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
         _OFFER.search(clause) and not _NEGATED_OFFER.search(clause)
         for clause in clauses
     )
-    explicit_visit = not visit_declined and any(
-        _VISIT.search(clause) for clause in clauses
+    explicit_visit = any(
+        _VISIT.search(clause)
+        and not _NEGATED_VISIT.search(clause)
+        and not _TEMPORARY_VISIT_INABILITY.search(clause)
+        for clause in clauses
     )
     explicit_contact = not do_not_call and any(
         _CONTACT.search(clause) and not _NEGATED_CALL.search(clause)
@@ -435,6 +453,23 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
             INTEREST, "MEDIA", "ASK_INFO", "explicit_general_interest", True, True,
             do_not_call=do_not_call, visit_declined=visit_declined,
         )
+    # A direct refusal can close follow-up for this campaign. A visit-only
+    # refusal does so only when it stands alone; factual questions or other
+    # affirmative requests keep the conversation open. Temporary inability
+    # ("no puedo visitar mañana") is not a durable preference or a decline.
+    elif rejection or (
+        visit_declined
+        and not information
+        and not any(
+            _NEGATED_VISIT.search(clause) and _TEMPORARY_VISIT_TIMING.search(clause)
+            for clause in clauses
+        )
+    ):
+        result = CampaignClassification(
+            DECLINED, None, "OTHER", "explicit_rejection" if rejection else "campaign_visit_decline",
+            False, False, do_not_call=do_not_call,
+            visit_declined=visit_declined,
+        )
     elif information or visit_declined or do_not_call:
         reason = (
             "visit_preference_and_information" if visit_declined and information else
@@ -444,11 +479,6 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
         )
         result = CampaignClassification(
             INFO, "INFORMATIVA", "ASK_INFO", reason, False, False,
-            do_not_call=do_not_call, visit_declined=visit_declined,
-        )
-    elif rejection:
-        result = CampaignClassification(
-            DECLINED, None, "OTHER", "explicit_rejection", False, False,
             do_not_call=do_not_call, visit_declined=visit_declined,
         )
     else:

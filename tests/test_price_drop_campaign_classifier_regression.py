@@ -105,6 +105,36 @@ def test_independent_audit_message_matrix(message, expected):
     assert classify_price_drop_reply(message).label == expected
 
 
+@pytest.mark.parametrize("message,expected_label,expected_intent", [
+    ("Me puede llamar una asesora", PRIORITY, "ASK_CONTACT"),
+    ("Estoy interesado en coordinar una visita", PRIORITY, "ASK_VISIT"),
+    ("¿Podemos ver el departamento?", PRIORITY, "ASK_VISIT"),
+    ("No me interesa, no quiero visita", DECLINED, "OTHER"),
+    ("No me interesa una visita", DECLINED, "OTHER"),
+    ("No quiero agendar, gracias", DECLINED, "OTHER"),
+    ("No quiero coordinar una visita", DECLINED, "OTHER"),
+    ("No quiero coordinar visita ahora", INFO, "ASK_INFO"),
+    ("No puedo visitar mañana", "SIN_SENAL", "OTHER"),
+])
+def test_campaign_classifier_ci_regressions(message, expected_label, expected_intent):
+    result = classify_price_drop_reply(message)
+    assert result.label == expected_label
+    assert result.intent == expected_intent
+    if expected_intent == "ASK_VISIT":
+        assert result.explicit_visit is True
+    if message == "No puedo visitar mañana":
+        assert result.visit_declined is False
+
+
+def test_standalone_visit_refusal_does_not_reject_property_or_mixed_conversation():
+    assert not property_rejected("No me interesa una visita")
+    mixed = "No me interesa visitar, pero quiero saber los gastos comunes"
+    result = classify_price_drop_reply(mixed)
+    assert result.label == INFO
+    assert result.visit_declined is True
+    assert not property_rejected(mixed)
+
+
 def _db_with_sent_campaign():
     db = mongomock.MongoClient()["URLS"]
     db["universo_cartera_prop360"].insert_one({

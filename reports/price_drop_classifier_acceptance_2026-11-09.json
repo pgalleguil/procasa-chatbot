@@ -1,6 +1,6 @@
 {
   "title": "Aceptación aislada del clasificador de campañas de rebajas",
-  "created_at_utc": "2026-11-09T23:51:30.084917+00:00",
+  "created_at_utc": "2026-11-10T00:00:16.476388+00:00",
   "reference_commit": "e46c1d7db9b3051d9ae0e833e482b7d5cb726337",
   "execution": {
     "conversation_count": 40,
@@ -81,7 +81,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-1-1",
-            "job_id": "e91279ce-5d76-4635-8462-105714ae985c",
+            "job_id": "3f6fd3c0-404a-4f5c-819c-a772cd4d1fef",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -123,7 +123,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-1-2",
-            "job_id": "a003d36c-a00d-462b-8aa2-e15dac569fb8",
+            "job_id": "13046e3f-4077-4d14-bcb6-ac0939c4aa76",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -166,7 +166,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-1-3",
-            "job_id": "5ab49b07-f040-4c40-b46a-cc2da9d4d40a",
+            "job_id": "11f18a4a-2925-4d0a-a38a-a5bf5838231c",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -209,7 +209,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-1-4",
-            "job_id": "7d620781-15bb-4b79-b872-a0f4d7fcb312",
+            "job_id": "a5f9aab6-b266-4351-a2c8-9fa8f1601cfa",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -266,7 +266,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-2-1",
-            "job_id": "d1006b4f-6b69-4754-bf82-4c7cf83d6366",
+            "job_id": "90073a2a-1537-435e-90ea-c8dad46cd772",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -308,7 +308,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-2-2",
-            "job_id": "b4aa32dc-0667-4df4-8476-d8e2f285814d",
+            "job_id": "df68b849-6842-4be7-b326-8d407dbd5c79",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -351,7 +351,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-2-3",
-            "job_id": "48576ea7-0127-4e5d-a332-03d9c3302182",
+            "job_id": "785b19de-1d90-4ad2-82b0-01d3b37f79ee",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -393,7 +393,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-2-4",
-            "job_id": "90a63e90-3991-49c2-94df-2197bd5f0259",
+            "job_id": "f6e42d93-76fd-4838-b680-798d3998783a",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -450,7 +450,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-3-1",
-            "job_id": "85d36bdf-5fdb-4d20-89cc-ff3345445fa3",
+            "job_id": "1f5cdfa1-3a87-46f0-b571-262d799085e2",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -492,7 +492,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-3-2",
-            "job_id": "b90459d4-a6a9-4b9b-912c-b3dc332ce760",
+            "job_id": "55f91858-bc79-4d0e-9a92-6a3aa42354f4",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -535,7 +535,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-3-3",
-            "job_id": "c34691fb-d0aa-4ed7-8173-812b9b8f8650",
+            "job_id": "fa62602e-b5bb-4b1b-9bd9-4598c583c1d3",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -578,7 +578,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-3-4",
-            "job_id": "70756703-b3a2-47bb-a576-32a8cfaba1c1",
+            "job_id": "33e22b7c-bafc-477a-a81e-0033c8cc8399",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -636,7 +636,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-4-1",
-            "job_id": "7f80fd82-c815-4638-bbae-725ac455791c",
+            "job_id": "dd0a05aa-9295-4748-9baf-0fb548911a8e",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -678,7 +678,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-4-2",
-            "job_id": "8180a4ab-1f30-48a9-ad5e-1da9b0220dba",
+            "job_id": "8989ecf4-e620-44fe-b332-34c61606e0e4",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -720,7 +720,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-4-3",
-            "job_id": "7fa4d312-2230-4cab-baa5-26282d6f056a",
+            "job_id": "36c9007d-cd28-43f6-aade-b7ea6600e8b7",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -762,7 +762,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-4-4",
-            "job_id": "99267838-a052-4969-8d3f-5361cee1e263",
+            "job_id": "fbd0b665-ccec-467f-a3d9-6c425df00bcc",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -819,7 +819,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-5-1",
-            "job_id": "74d8d36b-e6f1-4ef0-8095-7840b5dc2ffd",
+            "job_id": "f289a4a4-c638-4af6-9f46-56890ad660af",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -862,7 +862,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-5-2",
-            "job_id": "fc216b0a-129b-4ef5-943c-8dbd392f18b2",
+            "job_id": "27c7f32e-7ea3-42c1-9fbd-2c31f82d046c",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -905,7 +905,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-5-3",
-            "job_id": "ccdc28db-c11b-44c7-8fc8-1cbc94825947",
+            "job_id": "d1c45f28-e98f-4149-b3cc-7d236bde7c4e",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -948,7 +948,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-5-4",
-            "job_id": "6b023a99-cac7-4ac2-be26-6ca7d080c710",
+            "job_id": "123e85e7-7202-4d44-b311-d7bec8d8315c",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1005,7 +1005,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-6-1",
-            "job_id": "a2a5a307-e7c2-4e90-875e-bd3383736c93",
+            "job_id": "2c273f13-f6fa-4d96-9c4c-b51ae35ba331",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1048,7 +1048,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-6-2",
-            "job_id": "a2cbc7c1-881f-4022-bc22-2f268964b0a5",
+            "job_id": "8f9852e5-cd69-4d98-a249-3a6e9464404c",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1091,7 +1091,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-6-3",
-            "job_id": "718f4c09-c73f-489c-9d6f-5159cb31521b",
+            "job_id": "2a4760b8-b23e-4642-aa55-e87161ab58e1",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1132,7 +1132,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-6-4",
-            "job_id": "a70a1c48-2617-4bc5-8ee8-da1f01b1001c",
+            "job_id": "ca15ad35-71f8-4f07-b7bf-a81d24f7e6b5",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,
@@ -1188,7 +1188,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-7-1",
-            "job_id": "020d32fd-cc23-4efb-abd5-be853c145bbd",
+            "job_id": "e3fd263a-7ccc-4cb6-aa66-1e2ef63d9fec",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1231,7 +1231,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-7-2",
-            "job_id": "b06bea0b-45ae-403a-85e5-563b7b86bd4d",
+            "job_id": "1aababed-45ec-496a-bab9-240be756e0f2",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1274,7 +1274,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-7-3",
-            "job_id": "ff296b42-7f41-4880-a630-454573eb8413",
+            "job_id": "46c6a4ed-d40d-4c70-905a-2204a3d03271",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1316,7 +1316,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-7-4",
-            "job_id": "c2934d13-ef42-4597-9e7f-042f3bf7aab4",
+            "job_id": "38ecd6f9-b422-4d09-8437-bb896cf69a44",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1373,7 +1373,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-8-1",
-            "job_id": "b5c180f9-b933-47cf-a038-6ac924178f1e",
+            "job_id": "be37758b-7b3b-402d-9588-ddbb9cd2555c",
             "reply_event_campaign_id": "sim_6436_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1415,7 +1415,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-8-2",
-            "job_id": "4717cdb4-f4a6-4f3f-a779-19c3d547be44",
+            "job_id": "cdf55e7b-bf3a-48f3-9415-c025bcb34282",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1458,7 +1458,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-8-3",
-            "job_id": "37191726-7c4d-41e4-beba-9d5d9a102828",
+            "job_id": "a4a73749-7b12-495d-8350-22effaa951ac",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1499,7 +1499,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-8-4",
-            "job_id": "d2a36757-642b-471e-bc71-368314af6aef",
+            "job_id": "409f1035-dd99-41b5-a22b-90e1cd3c84c3",
             "reply_event_campaign_id": "sim_6436_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,
@@ -1556,7 +1556,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-9-1",
-            "job_id": "b765e732-49a1-4c7e-b6e7-a5dfd7b50edc",
+            "job_id": "d4a5b115-60ec-43db-bd0a-9299da44f0a7",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1598,7 +1598,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-9-2",
-            "job_id": "bb560a3a-96c7-48c5-9556-ae4bb6b15715",
+            "job_id": "2648ac1e-bba9-4a7d-9db6-eb1378b6fdb6",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1641,7 +1641,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-9-3",
-            "job_id": "3f3396d6-3a45-4b81-bcee-2948d1c33d9c",
+            "job_id": "ffcd9825-526e-4e53-92ff-435d78f68902",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1684,7 +1684,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-9-4",
-            "job_id": "867addd2-a628-4efb-98ab-92e230de71e1",
+            "job_id": "e4c1fb57-c37e-46d9-abc5-7a796ffa7b62",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1741,7 +1741,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-10-1",
-            "job_id": "3aad807e-e0c2-4df8-a6ad-cca233c91a75",
+            "job_id": "9b44f14f-7052-42ee-b9b3-1e5c46744fe1",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1783,7 +1783,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-10-2",
-            "job_id": "4ba733b5-cabe-42ab-9107-58d3d0c75309",
+            "job_id": "59bc5abf-829f-4062-83b8-b0573b2e281d",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1826,7 +1826,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-10-3",
-            "job_id": "d3f5484b-8d1f-4897-bbda-52f70f5893f3",
+            "job_id": "2d72ae75-2f28-494e-9fe4-f35454809edf",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1868,7 +1868,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-10-4",
-            "job_id": "5432d6cb-862e-4949-bdad-250067914f5b",
+            "job_id": "0a9b2df6-d8de-4f28-98b7-46475e586c3e",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1925,7 +1925,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-11-1",
-            "job_id": "56bd0cec-7675-4f12-8394-c0803f879a66",
+            "job_id": "ff7c34b0-1e8e-4215-92a3-4611f97c180b",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -1967,7 +1967,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-11-2",
-            "job_id": "5f86e9ee-bc8b-4045-9237-45539efb286d",
+            "job_id": "3c2f9dc1-2ded-4f33-9169-b00150359d93",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2010,7 +2010,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-11-3",
-            "job_id": "c8e5e771-8c33-4109-9ddb-658854aad4fa",
+            "job_id": "5b242fed-ded3-46e1-adbb-b8016cc11a29",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2053,7 +2053,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-11-4",
-            "job_id": "f0ea46c8-eede-46f7-99c2-0cac9088c8a2",
+            "job_id": "80f4d0b7-0316-4ac9-9078-80a1ff298fbb",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2111,7 +2111,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-12-1",
-            "job_id": "6a61c3d4-756c-4961-99c9-48f2b34e887d",
+            "job_id": "5447b089-333f-41fb-af23-e7ac45c5672b",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2153,7 +2153,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-12-2",
-            "job_id": "219112bf-32e4-4ab2-a287-7e06dbab6d15",
+            "job_id": "827540a2-3652-4778-9878-583708f1c335",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2195,7 +2195,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-12-3",
-            "job_id": "247d3020-69ad-4083-9cc1-8e96bc4f1377",
+            "job_id": "0f4b6eac-7c83-4893-a47e-21beb571af64",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2237,7 +2237,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-12-4",
-            "job_id": "3bb175ea-7973-469d-8948-6ed9ed492cf0",
+            "job_id": "971f4ad1-5f6a-47a7-8827-100095738fe7",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2294,7 +2294,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-13-1",
-            "job_id": "9aea0dbf-0d18-46c8-8d71-c8b2420cd6da",
+            "job_id": "329fed71-4a9a-4881-9ff0-0cc80150b42e",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2337,7 +2337,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-13-2",
-            "job_id": "11450ea9-c1a7-460e-b5c5-47d802a9fd74",
+            "job_id": "3876a30e-a0c6-44e5-8879-74294e0423ea",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2380,7 +2380,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-13-3",
-            "job_id": "628f0ffc-60fe-4cac-ad7d-db3c63f68ee7",
+            "job_id": "09092589-c0b5-41c1-9855-a6d25def3ec0",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2423,7 +2423,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-13-4",
-            "job_id": "351c2d21-99d6-4ba8-a85f-04f175460f14",
+            "job_id": "fc87d465-1247-4f10-9ccf-5b284f7d9682",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2480,7 +2480,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-14-1",
-            "job_id": "6ed210e0-bc0d-48ae-b23e-6ec8495cf744",
+            "job_id": "5282546d-1da4-4032-aa59-108f728571de",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2523,7 +2523,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-14-2",
-            "job_id": "12f54471-09fd-4134-9b49-3432ce458a54",
+            "job_id": "feeb9eac-7620-4529-b96f-4ce0e713c388",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2566,7 +2566,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-14-3",
-            "job_id": "d2c43f6d-5dbe-48aa-98ff-1581cdc8042d",
+            "job_id": "2c221308-2e42-4dce-9f6f-6f38581ca739",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2607,7 +2607,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-14-4",
-            "job_id": "b4584fc4-4739-4a5c-861e-e6278fed6f16",
+            "job_id": "aba9aeb7-3e9e-4a38-91fe-20241ba6d9c3",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,
@@ -2663,7 +2663,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-15-1",
-            "job_id": "33d85c4e-66a4-418f-8560-155d6d860cd9",
+            "job_id": "44aa45aa-98ec-4645-8df7-1da34af062fd",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2706,7 +2706,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-15-2",
-            "job_id": "c3aa5f8b-8e59-4fc8-8580-6f2513d04d68",
+            "job_id": "59ee9285-9bda-4406-8bac-2e1d6a86d51a",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2749,7 +2749,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-15-3",
-            "job_id": "d949548b-9638-48fd-a04b-7ff826ad84c9",
+            "job_id": "31025637-4ea9-4bf2-8a03-f0941f158118",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2791,7 +2791,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-15-4",
-            "job_id": "4c8965f4-acaf-4e5e-a331-cc36c8135fdb",
+            "job_id": "7e3fc85f-b7a5-43c2-a708-6855d6b5c02a",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2848,7 +2848,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-16-1",
-            "job_id": "6297f859-266e-4904-9a6f-3baa47eed5de",
+            "job_id": "035d0070-bf6a-41c1-935c-3188570e2539",
             "reply_event_campaign_id": "sim_6377_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2890,7 +2890,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-16-2",
-            "job_id": "dd76461c-bb1f-4bd5-979b-89cae9c06eb2",
+            "job_id": "3ffbd15f-0c67-45fb-a248-8987a3b668fa",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2933,7 +2933,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-16-3",
-            "job_id": "1b2eadea-8c2c-4b27-9ced-683dc37adace",
+            "job_id": "72ae2739-3367-41ef-bd2d-425ec56feb7d",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -2974,7 +2974,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-16-4",
-            "job_id": "64acf5c9-59b8-4af6-8833-fcb9eda0d1f9",
+            "job_id": "b5651008-24de-42a9-aacd-886554271995",
             "reply_event_campaign_id": "sim_6377_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,
@@ -3031,7 +3031,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-17-1",
-            "job_id": "5cb7b044-9eee-46f8-ad0c-f11c4f779f8c",
+            "job_id": "0ed401e5-540e-4786-b293-8a711e91d8f4",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3073,7 +3073,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-17-2",
-            "job_id": "fa2125ef-efc5-42f9-b0d2-05442c6f35c6",
+            "job_id": "83441066-195b-408c-91ad-d380350dec07",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3116,7 +3116,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-17-3",
-            "job_id": "e9413d58-a6e5-4850-a15a-b0eb3c6420ba",
+            "job_id": "9dc7e752-2362-4dc7-adf7-435ac62c8ddf",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3159,7 +3159,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-17-4",
-            "job_id": "be5a1847-3a9e-4ba2-826d-603a802a730e",
+            "job_id": "835772ca-2391-49e1-a414-e0876ef97466",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3216,7 +3216,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-18-1",
-            "job_id": "2ef28599-1f8e-42e3-819d-2fecd6248412",
+            "job_id": "fce6ee82-e792-4512-bdb5-689735e1b116",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3258,7 +3258,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-18-2",
-            "job_id": "815db16b-8e3f-4ba9-bc85-197f8619eb17",
+            "job_id": "306187be-4fd5-4ef5-b5f4-788ae22110d4",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3301,7 +3301,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-18-3",
-            "job_id": "f22e4e4d-ab8a-4a41-bd95-0d6c4dea53ea",
+            "job_id": "013a3027-65f6-4657-a358-02ff01fcc9b9",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3343,7 +3343,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-18-4",
-            "job_id": "28415fe7-1533-4a72-8a44-55b91f96956f",
+            "job_id": "7f283ae2-4c10-4502-b218-b54f8ad60a82",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3400,7 +3400,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-19-1",
-            "job_id": "9692dbd7-9397-4c91-a3bb-6c75ea0cd734",
+            "job_id": "1bb280e0-507f-4bda-8a2f-205aef1c8e35",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3442,7 +3442,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-19-2",
-            "job_id": "8fdaa392-6baa-455e-98d2-da9450eac5ad",
+            "job_id": "24a1bdef-e817-4c13-9922-40e4cb240941",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3485,7 +3485,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-19-3",
-            "job_id": "6f39b205-e83e-43bc-8c55-bb713cfe96e0",
+            "job_id": "f2b79209-3469-4fb9-afac-01a272e648ae",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3528,7 +3528,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-19-4",
-            "job_id": "401a6735-22b4-4979-b029-c84314530732",
+            "job_id": "d3ee9ca3-c08a-4ad4-9c00-651d83ca0fad",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3586,7 +3586,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-20-1",
-            "job_id": "47723f08-8a94-4a7e-92e8-ec56ab647a5a",
+            "job_id": "0eab5b08-0eb8-44c0-80c0-61724bff238d",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3628,7 +3628,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-20-2",
-            "job_id": "bd70b141-85e0-470a-8ca7-723abd48b787",
+            "job_id": "df4f4e2b-6cf7-48f2-b0d6-d20382d258bb",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3670,7 +3670,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-20-3",
-            "job_id": "050c05af-60f6-4fa0-be08-e35dc1db986c",
+            "job_id": "8b3edc24-5bd2-496c-8291-a7a4ea31e7ae",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3712,7 +3712,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-20-4",
-            "job_id": "08032d42-0c50-48e0-b132-c4b832c9ddc2",
+            "job_id": "192ed11a-3460-48ce-b1fb-75c8956b4c5c",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3769,7 +3769,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-21-1",
-            "job_id": "055c31a6-7ac4-4355-9a22-ed68d63f7960",
+            "job_id": "cb4ce39f-d7a5-418b-b862-a37957bc542c",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3812,7 +3812,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-21-2",
-            "job_id": "330aa495-dbcb-47aa-8292-d05a208d9bca",
+            "job_id": "28350b2c-aa95-4ba2-b152-2fa7d9282197",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3855,7 +3855,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-21-3",
-            "job_id": "0a72d009-f80a-4e26-bd20-fb69cade455f",
+            "job_id": "53d6dd43-a9a2-4f4e-b5a5-eb3f8d35f9b2",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3898,7 +3898,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-21-4",
-            "job_id": "006df72a-1a24-4c6e-9f6a-62c7a3ef5fb3",
+            "job_id": "972c4e1f-3f1a-46fc-b725-16e842abffb3",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3955,7 +3955,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-22-1",
-            "job_id": "71e5f773-813d-409d-9875-8783a7194882",
+            "job_id": "a869ab56-99c2-4e76-b0a0-17991e19edb9",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -3998,7 +3998,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-22-2",
-            "job_id": "4a8957b2-fca3-43bb-8f6b-d41d8fb9916a",
+            "job_id": "da0cb409-2f5e-4b89-b648-679e8c80c570",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4041,7 +4041,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-22-3",
-            "job_id": "7cd0832c-a193-43f0-bb56-fa0f3105d93e",
+            "job_id": "91247b10-06a4-40ad-ab65-d2b2a1d510e7",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4082,7 +4082,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-22-4",
-            "job_id": "f14a8182-64cb-4c4a-9035-9625d4a29c25",
+            "job_id": "27e36456-64d7-4af9-83c5-0b7b5644264c",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,
@@ -4138,7 +4138,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-23-1",
-            "job_id": "322f6bbb-ebdb-48e6-a2e5-eb85e7f566a6",
+            "job_id": "f9b29c62-dde8-4772-b4f6-4a9b1ab60e15",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4181,7 +4181,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-23-2",
-            "job_id": "cfc598cc-921a-427b-9fec-baedbb69636a",
+            "job_id": "5466631a-6fab-46dd-a000-7889c52aa51c",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4224,7 +4224,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-23-3",
-            "job_id": "62510d66-de39-4c39-ac61-bb5d74ba7166",
+            "job_id": "3539dd8c-d72d-4426-a4ae-010079985fb8",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4266,7 +4266,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-23-4",
-            "job_id": "96e53c79-3ff8-4b54-91b6-91e000e1e1f5",
+            "job_id": "75c297e0-1d1e-486b-a28c-510ed2fc448d",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4323,7 +4323,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-24-1",
-            "job_id": "1c45d918-625f-449f-9c0a-a8f1ee796f0c",
+            "job_id": "c17bd6d3-d7ac-4f22-863f-8c2bb1620acc",
             "reply_event_campaign_id": "sim_16479_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4365,7 +4365,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-24-2",
-            "job_id": "5fefe1fe-71e9-4d40-9088-76bc04439400",
+            "job_id": "4373f2a0-819d-4731-8b15-57e3dfa7f46a",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4408,7 +4408,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-24-3",
-            "job_id": "9529db32-6784-4693-a282-7ce1b30472b1",
+            "job_id": "8caaf233-b0be-4878-81dc-7652ba0377ba",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4449,7 +4449,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-24-4",
-            "job_id": "dfd7ab34-56fb-489f-8e0d-20941ece3074",
+            "job_id": "31bc8a26-c4a5-46aa-a321-2a6516bee196",
             "reply_event_campaign_id": "sim_16479_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,
@@ -4506,7 +4506,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-25-1",
-            "job_id": "2eae2516-68e1-4415-8df8-476bba9209a0",
+            "job_id": "db7e6c6a-d798-40bc-804f-51cc7671a5ed",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4548,7 +4548,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-25-2",
-            "job_id": "3917a2d3-3ad8-4f9a-b1f7-7d70d9269650",
+            "job_id": "ee1452c7-7d1c-45f6-9cbc-bd964a93d3ab",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4591,7 +4591,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-25-3",
-            "job_id": "97a1f9cf-4728-4149-8511-24f5a9a758ba",
+            "job_id": "ac3dabf0-9992-494d-b93c-18f34cc27ade",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4634,7 +4634,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-25-4",
-            "job_id": "278488c7-5f63-4b39-b4e9-6bef8a3f5092",
+            "job_id": "97c2c174-7e67-49f8-b9dc-4eb900c303d8",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4691,7 +4691,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-26-1",
-            "job_id": "7113c7fc-ebe5-4ac4-9d79-a508837586f1",
+            "job_id": "c7e097ae-22d9-47e6-87ce-a027b610c1f8",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4733,7 +4733,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-26-2",
-            "job_id": "2dcde759-5ffd-4082-bbd5-6cc556d77ca8",
+            "job_id": "91a85ca9-9f16-4078-8da5-cf6459402adb",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4776,7 +4776,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-26-3",
-            "job_id": "3a12bfcc-5bb3-467f-b27f-b56d8a9aca88",
+            "job_id": "373fb729-27a8-44ec-a010-bcc8d9285881",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4818,7 +4818,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-26-4",
-            "job_id": "e34abd17-ff10-4020-935f-c02bb6efdd81",
+            "job_id": "d1a590af-365b-48dc-a314-3631dbe0b099",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4875,7 +4875,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-27-1",
-            "job_id": "0ec1fef4-d7d5-48e0-88f2-03cc350e7ba8",
+            "job_id": "8a3f4920-4d11-48f5-ae1e-064ea5cfbcb1",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4917,7 +4917,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-27-2",
-            "job_id": "da174d76-5037-4f5e-b44a-bd992e7bde57",
+            "job_id": "50f80079-0789-492b-b09b-d64997577310",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -4960,7 +4960,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-27-3",
-            "job_id": "f7c3ba13-31fc-43fb-b8df-d49b47dd2fca",
+            "job_id": "6370f51b-2498-4ae0-977a-abfff38ff621",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5003,7 +5003,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-27-4",
-            "job_id": "1d74fc3b-f7a7-4fd3-91bb-b548b984c8bd",
+            "job_id": "dab3aa82-1767-4bd7-80b0-ca3b261dc4ba",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5061,7 +5061,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-28-1",
-            "job_id": "1270b58f-5d74-4a1c-af05-c78fb588d19b",
+            "job_id": "39a649f5-20b7-4308-916a-b03d43ef9a72",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5103,7 +5103,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-28-2",
-            "job_id": "5e019132-2f4d-4732-a67f-c6b4e3922dc1",
+            "job_id": "fb27c6c9-6f5f-4f6e-b37d-2284a5bec15a",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5145,7 +5145,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-28-3",
-            "job_id": "85098ecf-bc95-4f00-8d8f-c85aeb268088",
+            "job_id": "a99d3514-bc0d-4854-a867-1913955554fd",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5187,7 +5187,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-28-4",
-            "job_id": "0743a6bc-8571-484d-9abe-443bbb4b597b",
+            "job_id": "47e38c46-aed3-4c85-97c7-4f1a442b4789",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5244,7 +5244,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-29-1",
-            "job_id": "6c989241-aadb-4bab-827c-96f61a9311ef",
+            "job_id": "9c174f9f-e01a-4d32-86e8-2ff9648d51fb",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5287,7 +5287,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-29-2",
-            "job_id": "d7b54044-755c-43a2-8b82-2779ad3caef4",
+            "job_id": "c3cfcc7e-2d38-44b2-a9a5-37c97e25f67f",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5330,7 +5330,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-29-3",
-            "job_id": "614e11a8-815f-4592-bb66-bf88cd961479",
+            "job_id": "691f2887-0c7d-447b-930c-504d74e8dc60",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5373,7 +5373,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-29-4",
-            "job_id": "6a77b259-6b8a-4a47-9925-710873df5a93",
+            "job_id": "0ea29ff5-d22a-4d3f-ab53-d1dc912c468f",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5430,7 +5430,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-30-1",
-            "job_id": "a67f6183-0c71-4dc9-9b86-c2e8e1e026e6",
+            "job_id": "5ad47f36-eb2b-453b-a137-cb66d9896865",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5473,7 +5473,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-30-2",
-            "job_id": "8450a092-9001-4588-9063-724ae8a05fbe",
+            "job_id": "c8449f70-0f2a-49be-8ef6-70b747c60886",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5516,7 +5516,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-30-3",
-            "job_id": "6564dbad-3275-488d-a67a-f3d7435bc082",
+            "job_id": "87990676-24b3-410e-b3ea-759bb0d4d98c",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5557,7 +5557,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-30-4",
-            "job_id": "6f73995d-c768-4697-89ef-f7fe8006e580",
+            "job_id": "bbe8eb7c-bb49-4c5c-b5c2-f1eb26582ec8",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,
@@ -5613,7 +5613,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-31-1",
-            "job_id": "a9fbff38-4fd5-4dd1-9ee8-6f07363c3f37",
+            "job_id": "c595f331-42fe-4c11-a390-bf24fe3a1d0d",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5656,7 +5656,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-31-2",
-            "job_id": "11fa0639-4dd8-47bb-ab6f-6983e0ef6e1b",
+            "job_id": "d7bf53f2-e3db-43fa-a697-53452f68edc7",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5699,7 +5699,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-31-3",
-            "job_id": "862bcde9-9ba3-469b-a2ae-fa044648f01d",
+            "job_id": "c07434b9-b26f-4652-8f38-9d5e917de535",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5741,7 +5741,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-31-4",
-            "job_id": "e88fdfad-3907-44bc-9ca9-cf572421eef2",
+            "job_id": "a3e70be8-db68-4933-b5ec-95d2bcde1ba6",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5798,7 +5798,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-32-1",
-            "job_id": "680f43e0-b12c-4867-9faa-13fd62f8a2de",
+            "job_id": "78ff2a4c-9ad1-425f-9415-949c4b275f58",
             "reply_event_campaign_id": "sim_90001_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5840,7 +5840,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-32-2",
-            "job_id": "34670a6d-539b-4750-a426-6655776ac6a8",
+            "job_id": "acfb12bf-8056-4494-9140-5a5fcc6e126e",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5883,7 +5883,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-32-3",
-            "job_id": "0bbb8d24-5ac9-4807-a8ad-c73c4310e0e8",
+            "job_id": "8826db2f-8559-4258-889e-5fe358186683",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -5924,7 +5924,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-32-4",
-            "job_id": "d7fd3cb3-bc45-48fb-a57b-23b4dfebbdd3",
+            "job_id": "b3d7104d-00cc-4ee6-947b-fb7f30f2cdea",
             "reply_event_campaign_id": "sim_90001_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,
@@ -5981,7 +5981,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-33-1",
-            "job_id": "7c4deafc-41ba-427b-a798-c2e22b6fa46d",
+            "job_id": "9a863257-d3d5-466f-a639-514900d85c3f",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6023,7 +6023,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-33-2",
-            "job_id": "53b1e016-0afc-4707-be2a-f6656fda69af",
+            "job_id": "b903b544-95e5-4765-b599-d4511de2caa9",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6066,7 +6066,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-33-3",
-            "job_id": "f2186a67-c3d2-4a13-a3bb-c7b2aebd5a0a",
+            "job_id": "2c9d1f3f-d9c6-49c2-8c9c-3e6511459402",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6109,7 +6109,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-33-4",
-            "job_id": "7d197366-16a2-40e3-915b-619421770bba",
+            "job_id": "0cde33d6-138b-41be-a288-1df986a5c90e",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6166,7 +6166,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-34-1",
-            "job_id": "afba51cc-6877-414e-9291-57c4223b7cc3",
+            "job_id": "89a9d955-282b-4062-adda-05e7ec2ee103",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6208,7 +6208,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-34-2",
-            "job_id": "b8fe31a0-617a-4e3a-9110-00b9f6549b4c",
+            "job_id": "9c49aea1-324d-4810-b8a0-c2e0396e8037",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6251,7 +6251,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-34-3",
-            "job_id": "2bec97fd-a8d1-46c9-9f46-7b453daac6b5",
+            "job_id": "b5fc85af-b18e-4883-a6ca-e6802ebbd597",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6293,7 +6293,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-34-4",
-            "job_id": "0a5fc780-c9a3-4fde-af1c-ccfff91eb7d9",
+            "job_id": "e88dc950-4d93-484b-bc3b-e5d7838c91ed",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6350,7 +6350,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-35-1",
-            "job_id": "941e2d19-3e38-4004-b896-1400f2853087",
+            "job_id": "64d41935-12fb-441a-abfe-1d9c7737d4c6",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6392,7 +6392,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-35-2",
-            "job_id": "fffc47aa-14e7-4386-8e48-371b529b87f5",
+            "job_id": "ececc1d0-778a-4768-b69d-dac203d96ccc",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6435,7 +6435,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-35-3",
-            "job_id": "01c5a66d-18c7-44b5-ae99-5fd5366ddfa8",
+            "job_id": "a5cc3c26-42e5-40bb-b8c0-5dffae553200",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6478,7 +6478,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-35-4",
-            "job_id": "059fd00b-da08-4e59-b94d-52e4c810bc6d",
+            "job_id": "b16ed0eb-343a-4c5f-be0e-0baa478d7ce8",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6536,7 +6536,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-36-1",
-            "job_id": "ff8d9549-5691-4193-ad44-7b2d64208cfe",
+            "job_id": "2a60b2f2-2ef4-40dd-875d-e7dc830a521f",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6578,7 +6578,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-36-2",
-            "job_id": "2fa52a22-de6e-4439-a314-7f9f12360384",
+            "job_id": "0273c26b-d2f1-43a9-9fc8-259c1078fd2d",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6620,7 +6620,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-36-3",
-            "job_id": "2283aada-c5f3-4c57-b265-5574f4dad9a1",
+            "job_id": "28bdbbc3-4f32-40a6-97d4-1be5f5142486",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6662,7 +6662,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-36-4",
-            "job_id": "24587ddb-4fc6-4c0f-9340-25c6f86a9f9b",
+            "job_id": "278b281c-b4c5-4e63-83ae-665994d4e470",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6719,7 +6719,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-37-1",
-            "job_id": "1a05f642-547a-45aa-a9ee-b48d2bf9a4ff",
+            "job_id": "81bb95a0-4c00-4153-84be-6dbd495eb136",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6762,7 +6762,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-37-2",
-            "job_id": "eb5be841-aacc-454b-a19d-fa6e0021f7c2",
+            "job_id": "a45b5757-0caa-4852-b865-889757025b7a",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6805,7 +6805,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-37-3",
-            "job_id": "71ab5e92-6a38-4351-b092-abe5610b7c98",
+            "job_id": "661bd6c9-0294-4cf0-a980-a5fab8d8ba8d",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6848,7 +6848,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-37-4",
-            "job_id": "cc814003-845b-4b4b-a148-704f4df4d629",
+            "job_id": "a00ae5d9-9f79-4815-9c36-44cd202f55f5",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6905,7 +6905,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-38-1",
-            "job_id": "2c098b36-70ae-4eb1-978b-3857c1743475",
+            "job_id": "7a347141-08b9-4a65-bf18-1024f35f3eff",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6948,7 +6948,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-38-2",
-            "job_id": "799b5af6-75d9-4494-bcc3-9cee886d3551",
+            "job_id": "fac800a8-b7dd-4082-b34d-8e4b241ddec7",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -6991,7 +6991,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-38-3",
-            "job_id": "d7b10309-e58f-4b22-a83a-d1437131468f",
+            "job_id": "25ff0799-823e-4855-aa42-4b34608852e1",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -7032,7 +7032,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-38-4",
-            "job_id": "53de3ca5-9ff0-4d15-8ccc-1b95f7f0ae22",
+            "job_id": "cf2bd67b-e749-400a-b33b-27f0b8ace785",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,
@@ -7088,7 +7088,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-39-1",
-            "job_id": "f42e2e85-dcec-4123-82ef-33e66b605b15",
+            "job_id": "ac4aae2a-4168-4fa7-a3cd-43c896f67094",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -7131,7 +7131,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-39-2",
-            "job_id": "97b8555a-4aed-4545-a5ba-06d531637439",
+            "job_id": "08aef4c2-f256-4eef-b797-d3d6b86b0873",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -7174,7 +7174,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-39-3",
-            "job_id": "9dee46f5-3a28-4402-b053-78a761aad0b4",
+            "job_id": "0e85cbac-f219-43b4-8515-b7450cafd5a0",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -7216,7 +7216,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-39-4",
-            "job_id": "c525438b-6a81-4869-8393-6e0e69018cab",
+            "job_id": "54dd2bed-72cf-44cc-af34-41349dfe8406",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -7273,7 +7273,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-40-1",
-            "job_id": "f976eba5-84a8-4950-8526-a2b6e0f476ad",
+            "job_id": "6eae3bc0-cd8e-43e5-9d4e-59078bce70cd",
             "reply_event_campaign_id": "sim_90002_drop_1",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -7315,7 +7315,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-40-2",
-            "job_id": "aad7a310-c222-439d-a9c2-bc67f17f9d64",
+            "job_id": "ef9d9ad0-a166-4f60-9eee-a506b44b1369",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -7358,7 +7358,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-40-3",
-            "job_id": "02beedfc-ebf0-4ef0-8a08-e8d07b48a84b",
+            "job_id": "854ccbc3-0c51-482d-8047-7a989037ca4e",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 1,
@@ -7399,7 +7399,7 @@
           "passed": true,
           "evidence": {
             "provider_inbound_id": "mock-wa-in-40-4",
-            "job_id": "8a1d72bf-9dcc-430f-917d-a0af5fd6809f",
+            "job_id": "d892d16b-8f7e-4ed6-9d68-de7b979c04c2",
             "reply_event_campaign_id": "sim_90002_drop_2",
             "campaign_message_matches_event": true,
             "assistant_message_count_for_batch": 0,

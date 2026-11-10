@@ -5,9 +5,9 @@ isolated regression/acceptance run, not a production-readiness certification.
 
 ## Results
 
-- 66 phrase-level regression cases cover opt-outs, spelling errors, call and
-  visit preferences, mixed requests, completed searches, offers, alternatives,
-  commune references, and negative examples.
+- 66 phrase-level cases plus 10 targeted CI regressions cover opt-outs, spelling
+  errors, call and visit preferences, mixed requests, completed searches,
+  offers, alternatives, commune references, and negative examples.
 - 40 synthetic conversations passed, with 4 turns each (160 turn records).
 - 20 conversations introduced a second price-drop event after the first reply;
   subsequent replies were attributed to the newer event.
@@ -23,14 +23,14 @@ isolated regression/acceptance run, not a production-readiness certification.
 - Provider receipts in the simulation mean **accepted by the mock only**;
   no delivery or read status is inferred.
 
-The focused classifier and 40-conversation regression run completed with
-**73 passed**. The broader related local run completed with **164 passed and 6 deselected**.
-The six deselected tests in `test_chatbot_durable_queue.py` expect unrelated
-queue fields/signatures that are absent from the PR base (`ingress_timings`,
-`pipeline_version`, and a non-sliding batch deadline). The separate legacy
-`test_chatbot_phase1.py` module cannot be collected on this base because it
-imports three missing visit-helper functions. None of those expectations are
-changed by the classifier or attribution edits in this update.
+After fixing the nine failures reported by the isolated CI pilot suite, the
+focused run of `test_price_drop_real_pilot.py`, classifier regressions, and the
+40-conversation simulation completed with **143 passed**. The related local
+price-drop suite across 14 modules completed with **583 passed**. On Windows,
+the broader command needs `PYTHONUTF8=1` because two existing isolation tests
+read UTF-8 source files using the system default encoding. A separate legacy
+`test_chatbot_phase1.py` collection remains outside this run because it imports
+three visit-helper functions absent from the PR base.
 
 ## Isolation and limits
 
@@ -54,8 +54,12 @@ these mocked generation results.
 
 ```powershell
 python -m pytest tests/test_price_drop_campaign_classifier_regression.py tests/test_price_drop_campaign_acceptance_simulation.py -q
+python -m pytest tests/test_price_drop_real_pilot.py tests/test_price_drop_campaign_classifier_regression.py tests/test_price_drop_campaign_acceptance_simulation.py -q
 python scripts/run_price_drop_classifier_acceptance.py
 ```
+
+For the broader Windows price-drop suite, set `$env:PYTHONUTF8 = '1'` before
+running the 14 related test modules.
 
 The generated turn-by-turn matrix is
 [`reports/price_drop_classifier_acceptance_2026-11-09.json`](../reports/price_drop_classifier_acceptance_2026-11-09.json).

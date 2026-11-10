@@ -1,7 +1,7 @@
 # Acceptance run: TARGETED_SIMULATED
 
 - Mode: `simulated_mock` (Synthetic response stub)
-- Commit: `acc8f84e`
+- Commit: `35f6450e97d005f57041363349a8c88e9acdeacb`
 - Conversations / inbound turns: 5 / 10
 - Targeted scenarios: synthetic-006, synthetic-025, synthetic-026, synthetic-027, synthetic-036
 - Real DeepSeek replies: 0
@@ -48,7 +48,7 @@ None.
 
 | Turn | Input | Expected / obtained | Core intent | Reply | Checks |
 |---:|---|---|---|---|---|
-| 1 | Me interesa hacer una oferta por esta vivienda, ¿con quién la reviso? | PRIORIDAD_COMERCIAL / PRIORIDAD_COMERCIAL | consulta_general | La administración revisa las ofertas junto con el propietario. Si quieres presentar una, puedes compartir por este chat el monto y las condiciones para que la solicitud quede registrada y la evalúen; esto no confirma su aceptación ni un descuento adicional. | PASS |
+| 1 | Me interesa hacer una oferta por esta vivienda, ¿con quién la reviso? | PRIORIDAD_COMERCIAL / PRIORIDAD_COMERCIAL | consulta_general | La oferta debe evaluarla administración con el propietario; no puedo confirmar descuentos adicionales. Si quieres avanzar, comparte por este chat el monto y las condiciones para registrar la solicitud; eso no supone que sea aceptada. | PASS |
 | 2 | ¿Qué antecedentes necesito revisar sobre el financiamiento? | CONSULTA_INFORMATIVA / CONSULTA_INFORMATIVA | consulta_general | El precio vigente de la propiedad 12025 es $161.000.000.. La ficha conserva los datos verificados y puedo aclarar cualquier detalle. | PASS |
 
 ### synthetic-026 — COLD, UF 2650, property 12026

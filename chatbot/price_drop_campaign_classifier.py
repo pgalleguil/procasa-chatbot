@@ -146,6 +146,12 @@ _NEGATED_CALL = re.compile(
     r"(?:llamada|llamadas|contacto\s+telef[oó]nico)\b",
     re.IGNORECASE,
 )
+_CALL_CHANNEL_ONLY = re.compile(
+    r"\b(?:por|v[ií]a|mediante)\s+(?:el\s+)?"
+    r"(?:tel[eé]fono|llamad\w*|contacto\s+telef[oó]nico)\b|"
+    r"\btelef[oó]nic\w*\b",
+    re.IGNORECASE,
+)
 _NEGATED_VISIT = re.compile(
     r"\b(?:(?:no\s+(?:(?:me\s+)?(?:interesa|interesar[ií]a|gusta|gustar[ií]a|"
     r"quiero|quisiera|deseo|necesito|pienso|planeo)))|"
@@ -190,6 +196,7 @@ _NEGATED_ALTERNATIVE = re.compile(
     r"quisiera|deseo|prefiero\s+buscar)|prefiero\s+no\s+buscar)\b.{0,65}\b"
     r"(?:otra\s+propiedad|otro\s+departamento|otras?\s+(?:casas|propiedades|"
     r"opciones|alternativas|comunas)|otra\s+comuna|comunas\s+distintas|"
+    r"(?:opciones|alternativas|propiedades?)\s+(?:en|por)\s+[a-z]{3,}(?:\s+[a-z]{2,}){0,2}|"
     r"(?:buscar\s+)?(?:en|por)\s+[a-z]{3,}|algo\s+(?:en|por)\s+[a-z]{3,}|"
     r"m[aá]s\s+(?:propiedades|opciones|alternativas))\b",
     re.IGNORECASE,
@@ -197,16 +204,25 @@ _NEGATED_ALTERNATIVE = re.compile(
 
 _ALTERNATIVES = re.compile(
     r"\b(?:busco|buscando|quiero|quisiera|necesito|me\s+gustar[ií]a|"
-    r"me\s+interesa|tienen|hay|m[uú]estrame|mu[eé]strame|ens[eé]name|"
-    r"recomi[eé]ndame|podr[ií]an|me\s+pueden|dame|prefiero|"
+    r"me\s+interesa|me\s+sirv\w*|tienen|hay|m[uú]estrame|mu[eé]strame|ens[eé]name|"
+    r"recomi[eé]ndame|recomendarme|podr[ií]an|podr[ií]as|puedes|puede|"
+    r"me\s+pueden|me\s+podr[ií]an|dame|prefiero|"
     r"qu[eé]\s+m[aá]s\s+tienen)\b.{0,75}\b(?:otra\s+propiedad|otro\s+departamento|"
     r"otros?\s+(?:departamentos|deptos|inmuebles)|otras?\s+(?:propiedades|casas|"
     r"opciones|alternativas|comunas)|m[aá]s\s+(?:propiedades|casas|departamentos|"
     r"opciones|alternativas)|otra\s+comuna|comunas\s+distintas)\b|"
     r"\b(?:busco|estoy\s+buscando|quiero\s+buscar|quisiera\s+buscar|"
     r"me\s+gustar[ií]a\s+(?:buscar|ver|algo)|necesito\s+buscar|"
-    r"tienen|hay|me\s+pueden\s+mostrar|podr[ií]an\s+mostrarme)\b.{0,55}\b"
+    r"tienen|hay|puedes|puede|pueden|me\s+pueden|me\s+podr[ií]an|"
+    r"podr[ií]as|podr[ií]an\s+mostrarme)\b.{0,55}\b"
     r"(?:en|por)\s+(?:otra|otras|distinta|diferentes?)\s+comunas?\b|"
+    r"\b(?:busc\w*|mostr\w*|muestr\w*|enseñ\w*|ensen\w*|recomend\w*|"
+    r"encuentr\w*|envi\w*|ver)\b.{0,35}\b(?:opciones?|alternativas?|"
+    r"propiedades?|departamentos?|casas?)\b.{0,35}\b(?:en|por)\s+"
+    r"(?:la\s+|las\s+|los\s+)?[a-z]{3,}(?:\s+[a-z]{2,}){0,2}\b|"
+    r"\b(?:recomiend\w*|recomend\w*|mu[eé]str\w*|muestr\w*|"
+    r"podr[ií]an|podr[ií]as|pueden|puedes)\b.{0,40}\botra\b.{0,25}\b"
+    r"(?:en|por)\s+(?:la\s+|las\s+|los\s+)?[a-z]{3,}(?:\s+[a-z]{2,}){0,2}\b|"
     r"\b(?:busco|estoy\s+buscando|quiero\s+buscar|quisiera\s+algo|"
     r"me\s+gustar[ií]a\s+algo|tienen|hay|me\s+pueden\s+mostrar|"
     r"podr[ií]an\s+mostrarme)\b.{0,55}\b(?:algo\s+)?(?:en|por)\s+[a-z]{3,}\b|"
@@ -232,9 +248,9 @@ _OFFER = re.compile(
     r"proponer|oferta\s+por|ofrezco\s+\d|ofertar\s+\d)\b|"
     r"\b(?:ofrezco|puedo\s+ofrecer|podr[ií]a\s+ofrecer|propongo\s+pagar|"
     r"pagar[ií]a|mi\s+oferta\s+(?:es|ser[ií]a))\b.{0,35}\b"
-    r"\d(?:[ .]\d{3})+(?:[,.]\d+)?|\d{3,}(?:[,.]\d+)?\b|"
+    r"(?:\d(?:[ .]\d{3})+(?:[,.]\d+)?|\d{3,}(?:[,.]\d+)?)\b|"
     r"\b(?:te\s+)?(?:ofrezco|oferto)\b.{0,30}\b"
-    r"\d(?:[ .]\d{3})+(?:[,.]\d+)?|\d{3,}(?:[,.]\d+)?\b|"
+    r"(?:\d(?:[ .]\d{3})+(?:[,.]\d+)?|\d{3,}(?:[,.]\d+)?)\b|"
     r"\b(?:quiero|quisiera|me\s+gustar[ií]a)\s+(?:hacer|presentar|enviar)\s+"
     r"(?:una\s+)?oferta\b|\bhagamos\s+una\s+oferta\b",
     re.IGNORECASE,
@@ -249,7 +265,7 @@ _VISIT = re.compile(
     r"(?:propiedad|casa|vivienda|departamento|depto))\b|"
     r"\b(?:quiero|quisiera|me\s+gustar[ií]a|necesito|podemos|podr[ií]amos|"
     r"estoy\s+interesad[oa])\s+(?:en\s+)?"
-    r"(?:agendar|coordinar|programar)\s+(?:una\s+)?visita\b|"
+    r"(?:agendar|coordinar|programar)\s+(?:(?:una|la|esta|esa)\s+)?visita\b|"
     r"\b(?:agendemos|coordinemos|programemos)\b.{0,35}\bvisita\b|"
     r"\b(?:se\s+puede|es\s+posible|hay\s+disponibilidad\s+para)\s+"
     r"(?:visitar|ver(?:la|lo)|ver\s+(?:la|el|esta|esa)\s+"
@@ -269,20 +285,29 @@ _VISIT = re.compile(
     re.IGNORECASE,
 )
 _CONTACT = re.compile(
-    r"\b(?:quiero|quisiera|necesito|me\s+gustar[ií]a|solicito|podr[ií]a|"
+    r"\b(?:quiero|quisiera|necesito|me\s+gustar[ií]a|solicito|podr[ií]a|podr[ií]an|"
     r"pueden|puede|me\s+pueden|me\s+podr[ií]an|por\s+favor)\b.{0,45}\b"
     r"(?:que\s+me\s+llam\w*|que\s+me\s+contact\w*|que\s+me\s+escrib\w*|"
-    r"hablar\s+con\s+(?:un\s+|una\s+)?(?:ejecutiv\w*|asesor\w*|corredor\w*)|"
+    r"escribirme|contactarme|"
+    r"(?:hablar|conversar)\s+con\s+(?:un\s+|una\s+)?"
+    r"(?:ejecutiv\w*|asesor\w*|corredor\w*|persona|alguien|equipo)|"
+    r"(?:contactarme|llamarme|me\s+contact\w*|me\s+llam\w*)\s*"
+    r"(?:un\s+|una\s+)?(?:ejecutiv\w*|asesor\w*|corredor\w*)?|"
     r"(?:una\s+)?llamada|contacto\s+telef[oó]nico)\b|"
     r"\b(?:ll[aá]mame|ll[aá]menme|contactenme|me\s+pueden\s+llamar|"
     r"me\s+puedes\s+llamar|me\s+podr[ií]as\s+llamar|puedes\s+llamarme|"
     r"me\s+puede\s+llamar|me\s+llamas|me\s+podr[ií]an\s+llamar|pueden\s+llamarme|"
+    r"me\s+pueden\s+contactar|me\s+puedes\s+contactar|"
+    r"me\s+podr[ií]an\s+contactar|puede\s+contactarme|"
+    r"pueden\s+contactarme|podr[ií]as\s+contactarme|"
+    r"me\s+pueden\s+escribir|"
     r"que\s+me\s+contacte\s+(?:un\s+|una\s+)?"
     r"(?:ejecutiv\w*|asesor\w*|corredor\w*))\b",
     re.IGNORECASE,
 )
 _INTEREST = re.compile(
-    r"\b(?:me\s+interesa|estoy\s+interesad[oa]|s[ií]\s+me\s+interesa|"
+    r"\b(?:me\s+interesa|estoy\s+interesad[oa]|sigo\s+interesad[oa]|"
+    r"s[ií]\s+me\s+interesa|"
     r"lo\s+quiero\s+considerar|me\s+parece\s+interesante)\b",
     re.IGNORECASE,
 )
@@ -355,9 +380,22 @@ def _is_global_opt_out(raw: str) -> bool:
     message = _plain(raw)
     if _OPT_OUT_ONLY.fullmatch(message):
         return True
-    # Evaluate each clause independently so "no quiero llamadas, pero sí
-    # mensajes" cannot be mistaken for a global opt-out.
-    return any(_STOP.search(clause) for clause in _clauses(raw))
+    # A phone-only preference is not a global WhatsApp unsubscribe. Still
+    # honor an explicit request to stop messages/information in the same
+    # clause (for example, "no messages or calls").
+    for clause in _clauses(raw):
+        if not _STOP.search(clause):
+            continue
+        broader_stop = re.search(
+            r"\b(?:mensajes?|informaci[oó]n|novedades?|actualizaciones?|"
+            r"comunicaciones?|promociones?|publicidad|ofertas?|escrib\w*|"
+            r"envi\w*|mand\w*)\b",
+            clause,
+        )
+        if _NEGATED_CALL.search(clause) and _CALL_CHANNEL_ONLY.search(clause) and not broader_stop:
+            continue
+        return True
+    return False
 
 
 def _is_completed_search(message: str, raw: str) -> bool:
@@ -490,6 +528,21 @@ def classify_price_drop_reply(text: str) -> CampaignClassification:
     if result.label == PRIORITY and result.intent not in HOT_INTENTS:
         raise RuntimeError("campaign_high_intent_not_canonical")
     return result
+
+
+def campaign_operational_core_intent(text: str) -> str | None:
+    """Return only explicit visit/contact handoffs for an active campaign.
+
+    This guard keeps CRM handoff intent aligned with the campaign classifier
+    when the language model's structured intent is missing or disagrees with
+    the customer's message. A call preference suppresses the contact result.
+    """
+    classification = classify_price_drop_reply(text)
+    if classification.explicit_visit:
+        return "agendar_visita"
+    if classification.explicit_contact and not classification.do_not_call:
+        return "contacto_directo"
+    return None
 
 
 def lead_must_not_be_contacted(lead: dict | None) -> bool:

@@ -1645,6 +1645,10 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     from .price_drop_campaign_classifier import has_do_not_call_preference
     from .conversation_policy import suppress_negated_call_intent
     no_call_preference = has_do_not_call_preference(original_message)
+    campaign_operational_intent = None
+    if pilot_context and pilot_context.get("version") == "price_drop_leads_v2":
+        from .price_drop_campaign_classifier import campaign_operational_core_intent
+        campaign_operational_intent = campaign_operational_core_intent(original_message)
     intencion = suppress_negated_call_intent(intencion, original_message)
 
     if intencion == "consulta_general":
@@ -1673,6 +1677,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         intencion = "consulta_general"
     elif visit_intent_clear:
         intencion = "agendar_visita"
+
+    # For the V2 price-drop campaign, explicit operational customer language
+    # is authoritative if the model returns a generic or malformed intent.
+    # The campaign classifier already excludes declined visits, temporary
+    # inability, and contact requests negated by a no-call preference.
+    if campaign_operational_intent == "agendar_visita":
+        intencion = "agendar_visita"
+        visit_intent_clear = True
+    elif campaign_operational_intent == "contacto_directo" and not no_call_preference:
+        intencion = "contacto_directo"
 
     # --- NUEVA LÓGICA DE INTENCIÓN (ENTERPRISE) ---
     intent_map = {

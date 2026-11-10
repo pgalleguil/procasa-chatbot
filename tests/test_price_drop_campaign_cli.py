@@ -786,6 +786,176 @@ def test_context_and_reply_classification_use_existing_v2_policy(monkeypatch, tm
     assert classify_price_drop_reply("no me escriban más").label == "BAJA"
 
 
+@pytest.mark.parametrize("message", [
+    "¿Me puedes mostrar otras propiedades en Ñuñoa?",
+    "¿Podrías buscar opciones en La Reina?",
+    "¿Pueden buscar propiedades en otra comuna?",
+    "No me interesa esta propiedad, ¿pueden buscar opciones en La Reina?",
+    "Estoy buscando algo por Macul en vez de esta comuna.",
+])
+def test_alternative_search_requests_are_not_misclassified_as_information_or_rejection(message):
+    result = classify_price_drop_reply(message)
+    assert result.label == "BUSCA_ALTERNATIVAS"
+    assert result.alternatives_requested is True
+
+
+@pytest.mark.parametrize("message", [
+    "No busco otras propiedades, solo quiero saber el precio de esta.",
+    "No me interesa otra comuna; ¿cuánto cuestan los gastos comunes de esta?",
+    "Vivo en Ñuñoa y quisiera saber el precio de esta propiedad.",
+])
+def test_mentions_of_other_properties_or_communes_need_affirmative_search_intent(message):
+    result = classify_price_drop_reply(message)
+    assert result.label != "BUSCA_ALTERNATIVAS"
+    assert result.alternatives_requested is False
+
+
+@pytest.mark.parametrize("message", [
+    "¿Cómo queda el precio del código 12000 después de la rebaja?",
+    "¿Cuál es el valor vigente de la propiedad 12001 ahora?",
+    "Vi que rebajó el código 54321; ¿qué precio tiene actualmente?",
+])
+def test_property_codes_and_price_questions_are_not_false_offer_intents(message):
+    result = classify_price_drop_reply(message)
+    assert result.explicit_offer is False
+    assert result.intent == "ASK_INFO"
+
+
+def test_call_preference_is_not_global_opt_out_or_call_request():
+    result = classify_price_drop_reply(
+        "Sí me interesa, pero prefiero que no me contacten por teléfono."
+    )
+    assert result.label == "INTERES_DECLARADO"
+    assert result.do_not_call is True
+    assert result.explicit_contact is False
+
+
+@pytest.mark.parametrize("message", [
+    "¿Puede contactarme un asesor para revisar esta propiedad?",
+    "¿Podrían escribirme primero por este chat?",
+    "Necesito conversar con una persona del equipo.",
+])
+def test_explicit_human_contact_requests_are_recognized(message):
+    result = classify_price_drop_reply(message)
+    assert result.label == "PRIORIDAD_COMERCIAL"
+    assert result.intent == "ASK_CONTACT"
+    assert result.explicit_contact is True
+
+
+def test_offer_amount_requires_an_offer_verb_and_stays_a_priority_intent():
+    positive = classify_price_drop_reply("¿Puedo hacer una oferta condicionada a financiamiento?")
+    negative = classify_price_drop_reply("¿Cuánto cuesta la propiedad código 12000?")
+    assert positive.intent == "GIVE_OFFER"
+    assert positive.explicit_offer is True
+    assert negative.explicit_offer is False
+
+
+def test_rejecting_a_property_while_requesting_another_is_not_stored_as_rejection():
+    result = classify_price_drop_reply(
+        "No quiero esta propiedad. ¿Podrían recomendarme otra en La Reina?"
+    )
+    assert result.label == "BUSCA_ALTERNATIVAS"
+    assert result.alternatives_requested is True
+
+
+@pytest.mark.parametrize(("message", "expected"), [
+    ("¿Puedo visitar esta propiedad este fin de semana?", "agendar_visita"),
+    ("¿Qué día podría ir a verla?", "agendar_visita"),
+    ("¿Podrían escribirme primero por este chat?", "contacto_directo"),
+    ("También necesito conversar con una persona del equipo.", "contacto_directo"),
+    ("Sí me interesa, pero no quiero que me llamen.", None),
+    ("No me contacten por teléfono, por favor.", None),
+    ("No me interesa visitar por ahora; ¿cuáles son los gastos comunes?", None),
+])
+def test_campaign_operational_intent_requires_explicit_non_negated_request(message, expected):
+    from chatbot.price_drop_campaign_classifier import campaign_operational_core_intent
+    assert campaign_operational_core_intent(message) == expected
+
+
+def test_acceptance_price_evaluator_distinguishes_price_change_from_expenses():
+    from scripts.run_price_drop_deepseek_acceptance import _verify_listing_price_claims
+
+    verified = _verify_listing_price_claims(
+        "La rebaja fue de $8.000.000: pasó de $136.000.000 a $128.000.000; "
+        "los gastos comunes son $75.000.",
+        currency="CLP", old_price=136_000_000, new_price=128_000_000,
+    )
+    assert all(claim["verified"] for claim in verified)
+    assert [claim["kind"] for claim in verified].count("listing_price") == 3
+    assert [claim["kind"] for claim in verified].count("non_listing_amount") == 1
+
+    incorrect = _verify_listing_price_claims(
+        "El precio actual es $127.000.000.",
+        currency="CLP", old_price=136_000_000, new_price=128_000_000,
+    )
+    assert incorrect[0]["verified"] is False
+
+
+def test_acceptance_property_fact_evaluator_uses_listing_variation():
+    from scripts.run_price_drop_deepseek_acceptance import _property_numeric_fact_mismatches
+
+    correct = (
+        "El departamento tiene 3 dormitorios y 2 baños, con 55 m² útiles "
+        "y 60 m² totales, orientación oriente, y 0 estacionamientos."
+    )
+    incorrect = correct.replace("3 dormitorios", "4 dormitorios")
+    assert _property_numeric_fact_mismatches(correct, variation=10) == []
+    assert _property_numeric_fact_mismatches(incorrect, variation=10) == [
+        "bedrooms_claim_mismatch"
+    ]
+
+
+def test_v2_price_drop_prompt_requests_json_and_retries_a_non_json_reply(monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from config import Config
+    monkeypatch.setattr(Config, "DEEPSEEK_API_KEY", "unit-test-key-not-used")
+    from chatbot import grok_client
+
+    calls = []
+    outputs = [
+        "La propiedad está en Ñuñoa y bajó de precio.",
+        json.dumps({
+            "intencion": "consulta_general",
+            "datos_extraidos": {},
+            "respuesta_bot": "El precio publicado es UF 2.800.",
+        }),
+    ]
+
+    def fake_create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content=outputs.pop(0)),
+                finish_reason="stop",
+            )],
+            usage=None,
+        )
+
+    monkeypatch.setattr(grok_client.client.chat.completions, "create", fake_create)
+    monkeypatch.setattr(grok_client, "_record_llm_telemetry", lambda **_kwargs: None)
+    monkeypatch.setattr(grok_client.Config, "DEEPSEEK_RESPONSE_FORMAT", "text")
+    diagnostics = {}
+    result = grok_client.generar_respuesta_estructurada(
+        [
+            {"role": "system", "content": (
+                "[PILOTO DE REACTIVACIÓN POR REBAJA - CONTEXTO VERIFICADO]"
+            )},
+            {"role": "user", "content": "¿Cuál es el precio actual?"},
+        ],
+        {},
+        write_telemetry=True,
+        diagnostics=diagnostics,
+    )
+
+    assert calls[0]["response_format"] == {"type": "json_object"}
+    assert len(calls) == 2
+    assert calls[1]["response_format"] == {"type": "json_object"}
+    assert result["respuesta_bot"] == "El precio publicado es UF 2.800."
+    assert diagnostics["format_retries"] == 1
+    assert "error" not in diagnostics
+
+
 def test_webhook_outbound_echo_is_ignored_by_existing_ingress_policy():
     from chatbot.webhook_event_policy import is_outbound_message_event
     assert is_outbound_message_event({"event": "message.sent"}) is True

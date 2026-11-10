@@ -117,7 +117,7 @@ for the saved-text evaluation; it made no provider or database calls.
 
 After fixing the override path, the five affected synthetic conversations were
 rerun with the real DeepSeek generator: **5 conversations, 10 inbound turns,
-10 final replies, 13 DeepSeek API requests** (including structured-output
+10 final replies, 16 DeepSeek API requests** (including structured-output
 retries). The status is `TARGETED_PASS`.
 
 The corrected final replies retain the natural DeepSeek response when an empty
@@ -152,7 +152,7 @@ This remains a synthetic acceptance result. It does not certify live account
 behavior, send to the administrator's phone, or authorize sending the three
 approved customer messages.
 
-The focused local regression command passed **167 tests**:
+The focused local regression command passed **168 tests**:
 
 ```powershell
 python -X utf8 -m pytest -q `

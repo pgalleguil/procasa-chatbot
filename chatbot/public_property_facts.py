@@ -261,12 +261,13 @@ def answer_public_property_question(message, property_doc, *, campaign_context=N
             drop_text = "No tengo una rebaja confirmada para informar; precio actual: " + facts["precio"] + "."
         response = (response + "\n" if response else "") + drop_text
     if asks_negotiation:
-        response = (
-            "La administración revisa las ofertas junto con el propietario. Si quieres "
-            "presentar una, puedes compartir por este chat el monto y las condiciones "
-            "para que la solicitud quede registrada y la evalúen; esto no confirma su "
-            "aceptación ni un descuento adicional."
+        negotiation = (
+            "La oferta debe evaluarla administración con el propietario; no puedo "
+            "confirmar descuentos adicionales. Si quieres avanzar, comparte por este "
+            "chat el monto y las condiciones para registrar la solicitud; eso no supone "
+            "que sea aceptada."
         )
+        response = (response + "\n\n" if response else "") + negotiation
     if private:
         response += ("\n" if response else "") + (
             "Por privacidad no compartimos la dirección exacta ni los datos "

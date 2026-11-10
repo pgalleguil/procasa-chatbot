@@ -110,6 +110,22 @@ def test_offer_routing_answers_who_and_how_without_promising_executive_contact()
     assert answer_public_property_question(next_step, _property()) == response
 
 
+def test_mixed_price_and_offer_question_preserves_property_facts_and_offer_route():
+    message = "Me interesa; dime el precio actual, cuánto bajó y si se puede negociar"
+    context = {
+        "version": "price_drop_leads_v2", "currency": "UF",
+        "old_price_uf": 3260, "new_price_uf": 3160,
+    }
+    response = answer_public_property_question(
+        message, _property(), campaign_context=context,
+    )
+    assert "UF 3.160" in response
+    assert "bajó 100 UF" in response
+    assert "debe evaluarla administración" in response
+    assert "por este chat" in response
+    assert "sea aceptada" in response
+
+
 def test_alternative_reply_still_rejects_unverified_campaign_price_or_private_data():
     message = "¿Me puedes mostrar otras propiedades en La Florida con un precio parecido?"
     context = {

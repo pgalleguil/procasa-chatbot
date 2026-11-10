@@ -94,6 +94,8 @@ def _db_with_campaign():
 def test_found_property_reply_persists_baja_and_prevents_future_context(monkeypatch):
     db, lead_id = _db_with_campaign()
     monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
+    monkeypatch.setenv(v2.TEST_LEAD_ID_FLAG, str(lead_id))
     monkeypatch.setattr(v2, "_property_price", lambda *args: NOW - timedelta(days=1))
     before = v2.active_context(db, phone=PHONE, message=FOUND, now=NOW)
     assert before["campaign_id"] == CAMPAIGN_ID
@@ -124,6 +126,7 @@ def test_existing_9804_reply_blocks_new_campaign_before_send(monkeypatch):
     monkeypatch.setenv(v2.SEND_FLAG, "true")
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN_ID)
     monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
+    monkeypatch.setenv(v2.TEST_LEAD_ID_FLAG, str(lead_id))
     sends = []
     result = v2.send_one(
         db, lead_id=str(lead_id), campaign_id=CAMPAIGN_ID,

@@ -1134,11 +1134,14 @@ def send_one(db, *, lead_id: str, campaign_id: str,
             or os.getenv("RENDER_SERVICE_ID")):
         return {"status": "MANUAL_CAMPAIGNS_DISABLED_ON_RENDER"}
     qa_reauthorization = None
-    if c.get("test_mode") and (
-            str(lead.get("_id")) != str(os.getenv(TEST_LEAD_ID_FLAG, "")).strip()
-            or _test_qa_webhook_canonical_lead(
-                db, lead_id=lead["_id"], phone=c.get("phone_normalized", "")) is None):
-        return {"status": "TEST_LEAD_IDENTITY_NOT_PINNED"}
+    if c.get("test_mode"):
+        test_phone = normalize_phone_strict(c.get("phone_normalized", ""))
+        if (_test_qa_webhook_canonical_lead(
+                db, lead_id=lead["_id"], phone=test_phone) is None
+                or (test_phone == APPROVED_ADMIN_PHONE
+                    and str(lead.get("_id"))
+                    != str(os.getenv(TEST_LEAD_ID_FLAG, "")).strip())):
+            return {"status": "TEST_LEAD_IDENTITY_NOT_PINNED"}
     if c.get("test_mode") and c.get("qa_reauthorization_id"):
         qa_reauthorization = _test_qa_reauthorization(
             lead, campaign_id=campaign_id,
@@ -1502,13 +1505,20 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
     label = classification.as_dict()
     cid = ctx["campaign_id"]
     if ctx.get("test_mode"):
-        pinned_lead_id = os.getenv(TEST_LEAD_ID_FLAG, "").strip()
-        lead = (_test_qa_webhook_canonical_lead(
-            db, lead_id=pinned_lead_id, phone=phone) if pinned_lead_id else None)
-        if lead and not any(
-                row.get("campaign_id") == cid and row.get("status") in {"SENT", "RESPONDED"}
-                for row in ((lead.get("price_drop_v2") or {}).get("campaigns") or [])):
-            lead = None
+        canonical = normalize_phone_strict(phone)
+        routed = list(db[LEADS].find(
+            {"$or": [{"phone": canonical}, {"contact_phone_normalized": canonical}],
+             ROOT: {"$elemMatch": {"campaign_id": cid,
+                                   "status": {"$in": ["SENT", "RESPONDED"]}}}},
+            {"_id": 1},
+        ).limit(2))
+        lead = None
+        if len(routed) == 1:
+            routed_id = routed[0]["_id"]
+            if (canonical != APPROVED_ADMIN_PHONE
+                    or str(routed_id) == str(os.getenv(TEST_LEAD_ID_FLAG, "")).strip()):
+                lead = _test_qa_webhook_canonical_lead(
+                    db, lead_id=routed_id, phone=canonical)
     else:
         lead = db[LEADS].find_one(
             {"$or": [{"phone": normalize_phone_strict(phone)},

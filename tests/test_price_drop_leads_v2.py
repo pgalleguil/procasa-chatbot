@@ -649,3 +649,190 @@ def test_real_pilot_cli_requires_explicit_confirmation_and_link_check(db, monkey
                         sender=lambda *args: calls.append(args))
     assert result["status"] == "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
     assert calls == []
+
+
+@pytest.mark.parametrize("reply, expected_label, expected_status", [
+    ("No me interesa ese departamento", "RECHAZADO", "DECLINED"),
+    ("Ya compré una propiedad", "BAJA", "OPTED_OUT"),
+    ("BAJA, no quiero más mensajes", "BAJA", "OPTED_OUT"),
+])
+def test_pilot_closeout_rejections_do_not_create_leads(
+        db, monkeypatch, reply, expected_label, expected_status):
+    """Real campaign logic on a QA lead with mocked WaSender, no extra collections."""
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setenv(v2.TEST_NOTICE_FLAG, "true")
+    monkeypatch.setenv(v2.EXEC_NOTICE_ENABLED_FLAG, "true")
+    original_count = db["leads"].count_documents({})
+    v2.prepare_one(db, now=NOW, **params())
+    v2.approve_one(db, lead_id=params()["lead_id"],
+                   campaign_id=CAMPAIGN, operator="QA", now=NOW)
+    result = v2.send_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+        sender=lambda p, m: {"success": True, "provider_message_id": "mock-rejection-send"},
+        now=NOW)
+    assert result["status"] == "SENT"
+    attributed = v2.record_inbound(
+        db, phone=PHONE, provider_message_id="mock-rejection-inbound",
+        text=reply, now=NOW + timedelta(minutes=1))
+    assert attributed["status"] == "ATTRIBUTED"
+    assert attributed["classification"] == expected_label
+    lead = db["leads"].find_one({"phone": PHONE})
+    campaign = lead["price_drop_v2"]["campaigns"][-1]
+    assert campaign["status"] == expected_status
+    assert campaign["has_positive_response"] is not True
+    assert campaign["notifications"]["administrator"]["status"] == "CANCELED"
+    assert campaign["notifications"]["property_executive"]["status"] == "FROZEN_ADMIN_ONLY"
+    assert db["leads"].count_documents({}) == original_count
+    assert len(lead["price_drop_v2"]["reply_events"]) == 1
+    assert lead["price_drop_v2"]["reply_events"][0]["campaign_id"] == CAMPAIGN
+    if expected_status == "OPTED_OUT":
+        assert lead["price_drop_v2"]["opted_out"] is True
+        assert lead["conversation_status"] == "STOPPED_BY_CLIENT"
+        assert campaign["notifications"]["administrator_info"]["status"] == "PENDING_INFO"
+        assert v2.active_context(db, phone=PHONE, message="hola",
+                                 now=NOW + timedelta(minutes=3)) is None
+    else:
+        assert lead["price_drop_v2"].get("opted_out") is not True
+        assert lead.get("conversation_status") != "STOPPED_BY_CLIENT"
+    recipients = []
+    assert v2.send_test_notice_once(
+        db, role="administrator", sender=lambda *x: recipients.append(x),
+        now=NOW + timedelta(minutes=5))["status"] == "IDLE"
+    assert recipients == []
+
+
+def test_closeout_simulated_executive_notice_only_to_9804(db, monkeypatch):
+    """Send-role QA mock, never an actual employee or a new lead."""
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setenv(v2.EXEC_NOTICE_ENABLED_FLAG, "true")
+    monkeypatch.setenv(v2.TEST_NOTICE_FLAG, "true")
+    monkeypatch.setenv(v2.ADMIN_PHONE_FLAG, PHONE)
+    v2.prepare_one(db, now=NOW, **params())
+    v2.approve_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+                   operator="QA", now=NOW)
+    assert v2.send_one(
+        db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+        sender=lambda *_: {"success": True, "provider_message_id": "out-interest"},
+        now=NOW)["status"] == "SENT"
+    assert v2.record_inbound(
+        db, phone=PHONE, provider_message_id="in-interest",
+        text="Sí, me interesa", now=NOW + timedelta(minutes=1))["classification"] == "INTERES_DECLARADO"
+    sent = []
+    def fake_sender(phone, message):
+        sent.append((phone, message))
+        return {"success": True, "provider_message_id": "qa-notice-" + str(len(sent))}
+    first = v2.send_test_notice_once(
+        db, role="property_executive", sender=fake_sender,
+        now=NOW + timedelta(minutes=4))
+    assert first["status"] == "SENT"
+    assert len(sent) == 1 and sent[0][0] == PHONE
+    assert "PRUEBA INTERNA" in sent[0][1]
+    assert "EJECUTIVO DE LA PROPIEDAD" in sent[0][1]
+    assert v2.send_test_notice_once(
+        db, role="property_executive", sender=fake_sender,
+        now=NOW + timedelta(minutes=6))["status"] == "IDLE"
+    assert len(sent) == 1
+    assert db["leads"].count_documents({}) == 2
+
+
+def test_real_executive_notice_requires_two_explicit_gates_and_active_cycle(monkeypatch):
+    from bson import ObjectId
+    import mongomock
+    d = mongomock.MongoClient()["URLS"]
+    lid = ObjectId("690000000000000000000667")
+    uid = ObjectId("690000000000000000000668")
+    client_phone = "+56930001111"
+    exec_phone = "+56932223333"
+    cycle_id = "active-price-drop-cycle"
+    d["leads"].insert_one({
+        "_id": lid, "phone": client_phone,
+        "ejecutivo_asignado": "Ejecutiva QA",
+        "prospecto": {"ejecutivo": "Ejecutiva QA", "codigo": "6436"},
+        "lifecycle": {"current_assignment_cycle_id": cycle_id,
+                      "assignment_cycle_id": cycle_id,
+                      "assigned_to_user_id": str(uid)},
+        "price_drop_v2": {"campaigns": [{
+            "campaign_id": "real-exec-test", "test_mode": False,
+            "status": "RESPONDED", "has_positive_response": True,
+            "property_code": "6436", "currency": "UF",
+            "old_price_uf": 2790, "new_price_uf": 2690,
+            "provider_message_id": "mock-real-outbound",
+            "last_customer_reply_at": NOW - timedelta(minutes=5),
+            "last_positive_reply_text": "Sí, me interesa",
+            "last_positive_classification": {"label": "INTERES_DECLARADO"},
+            "notifications": {
+                "administrator": {"status": "PENDING_HUMAN_REVIEW"},
+                "property_executive": {"status": "PENDING_HUMAN_REVIEW"},
+            },
+        }]},
+    })
+    d["crm_assignment_cycles"].insert_one({
+        "_id": "fake-cycle-doc", "lead_id": lid,
+        "assignment_cycle_id": cycle_id,
+        "assigned_to_user_id": str(uid),
+        "assigned_to_display_name": "Ejecutiva QA",
+        "cycle_status": "active", "unassigned_at": None,
+        "property_code": "6436",
+    })
+    d["usuarios"].insert_one({
+        "_id": uid, "nombre": "Ejecutiva QA",
+        "rol": "agente", "is_active": True, "telefono": exec_phone,
+    })
+    calls = []
+    fake = lambda phone, message: (calls.append((phone, message)) or
+              {"success": True, "provider_message_id": "mock-exec-success"})
+    monkeypatch.delenv(v2.EXEC_NOTICE_ENABLED_FLAG, raising=False)
+    monkeypatch.setenv(v2.REAL_EXEC_NOTICE_FLAG, "true")
+    assert v2.send_real_exec_notice_once(d, sender=fake, now=NOW)["status"] == "DISABLED"
+    monkeypatch.setenv(v2.EXEC_NOTICE_ENABLED_FLAG, "true")
+    monkeypatch.delenv(v2.REAL_EXEC_NOTICE_FLAG, raising=False)
+    assert v2.send_real_exec_notice_once(d, sender=fake, now=NOW)["status"] == "DISABLED"
+    monkeypatch.setenv(v2.REAL_EXEC_NOTICE_FLAG, "true")
+    result = v2.send_real_exec_notice_once(d, sender=fake, now=NOW)
+    assert result["status"] == "SENT"
+    assert result["recipient_last4"] == "3333"
+    assert len(calls) == 1 and calls[0][0] == exec_phone
+    assert "Lead recuperado" in calls[0][1]
+    assert "No reasignar ni reiniciar SLA" in calls[0][1]
+    assert v2.send_real_exec_notice_once(d, sender=fake, now=NOW)["status"] == "IDLE"
+    assert len(calls) == 1
+    persisted = d["leads"].find_one({"_id": lid})
+    assert persisted["price_drop_v2"]["campaigns"][0]["notifications"]["property_executive"]["status"] == "SENT"
+    assert persisted["price_drop_v2"]["campaigns"][0]["notifications"]["administrator"]["status"] == "PENDING_HUMAN_REVIEW"
+    assert persisted["lifecycle"]["current_assignment_cycle_id"] == cycle_id
+    assert d["leads"].count_documents({}) == 1
+
+
+def test_real_exec_notice_blocks_inconsistent_or_inactive_owner(monkeypatch):
+    from bson import ObjectId
+    import mongomock
+    d = mongomock.MongoClient()["URLS"]
+    lid = ObjectId("690000000000000000000669")
+    d["leads"].insert_one({
+        "_id": lid, "phone": "+56930001112",
+        "ejecutivo_asignado": "Antiguo Ejecutivo",
+        "prospecto": {"ejecutivo": "Antiguo Ejecutivo", "codigo": "6436"},
+        "price_drop_v2": {"campaigns": [{
+            "campaign_id": "real-exec-no-cycle", "test_mode": False,
+            "status": "RESPONDED", "has_positive_response": True,
+            "provider_message_id": "mock-out", "property_code": "6436",
+            "last_customer_reply_at": NOW - timedelta(minutes=5),
+            "notifications": {
+                "administrator": {"status": "PENDING_HUMAN_REVIEW"},
+                "property_executive": {"status": "PENDING_HUMAN_REVIEW"},
+            },
+        }]},
+    })
+    monkeypatch.setenv(v2.EXEC_NOTICE_ENABLED_FLAG, "true")
+    monkeypatch.setenv(v2.REAL_EXEC_NOTICE_FLAG, "true")
+    calls = []
+    status = v2.send_real_exec_notice_once(
+        d, sender=lambda *a: calls.append(a), now=NOW)
+    assert status["status"] == "BLOCKED_ASSIGNMENT"
+    assert calls == []
+    campaign = d["leads"].find_one({"_id": lid})["price_drop_v2"]["campaigns"][0]
+    assert campaign["notifications"]["administrator"]["status"] == "PENDING_HUMAN_REVIEW"
+    assert campaign["notifications"]["property_executive"]["status"] == "BLOCKED_ASSIGNMENT"

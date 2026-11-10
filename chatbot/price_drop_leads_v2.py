@@ -216,6 +216,33 @@ def _test_qa_reauthorization(lead: dict, *, campaign_id: str, phone: str,
     return authorization
 
 
+
+def qa_completed_search_response_allowed(lead: dict | None, context: dict | None) -> bool:
+    """Allow inbound replies only for the explicitly reauthorized 9804 QA.
+
+    The caller must pass the verified active_context() output. This exception
+    never applies to customers or to explicit opt-outs/STOP; it only permits
+    replying to the administrator's earlier completed-search suppression.
+    """
+    if not isinstance(lead, dict) or not isinstance(context, dict):
+        return False
+    if (context.get("version") != "price_drop_leads_v2"
+            or context.get("test_mode") is not True
+            or context.get("property_code") != "6436"):
+        return False
+    cid = str(context.get("campaign_id") or "")
+    qa = (lead.get("price_drop_v2") or {}).get("qa_session") or {}
+    pinned = str(os.getenv(TEST_LEAD_ID_FLAG) or "").strip()
+    if (not cid.startswith("test_leads_6436_")
+            or qa.get("campaign_id") != cid
+            or not pinned or str(lead.get("_id")) != pinned
+            or normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")) != APPROVED_ADMIN_PHONE
+            or normalize_phone_strict(os.getenv(ADMIN_PHONE_FLAG, "")) != APPROVED_ADMIN_PHONE
+            or not _same_phone(lead, APPROVED_ADMIN_PHONE)):
+        return False
+    return _contact_suppression_reasons(lead) == {"completed_search"}
+
+
 def authorize_test_qa_reauthorization(db, *, lead_id: str, campaign_id: str,
                                       phone: str, operator: str,
                                       evidence_reference: str, now=None) -> dict:

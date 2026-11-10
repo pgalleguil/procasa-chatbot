@@ -230,6 +230,27 @@ def test_completed_search_reauthorization_preserves_history_and_attributes_reply
     assert len(calls) == 1 and calls[0][0] == PHONE
     current = db["leads"].find_one({"_id": LID})
     assert current["price_drop_v2"]["qa_reauthorizations"][0]["status"] == "CONSUMED"
+
+    # Live regression: consented admin QA send must not leave the chatbot
+    # silent merely because an earlier QA turn ended the search.
+    ctx = v2.active_context(
+        db, phone=PHONE, message="¿Cuánto paga de gastos comunes?",
+        now=NOW + timedelta(minutes=2, seconds=30),
+    )
+    assert ctx is not None and ctx["test_mode"] is True
+    assert v2.qa_completed_search_response_allowed(current, ctx) is True
+    assert v2.qa_completed_search_response_allowed(
+        current, {**ctx, "test_mode": False},
+    ) is False
+    explicitly_stopped = {**current, "messages": [
+        *current["messages"],
+        {"role": "user", "content": "BAJA, no quiero recibir más mensajes"},
+    ]}
+    assert v2.qa_completed_search_response_allowed(explicitly_stopped, ctx) is False
+    assert v2.qa_completed_search_response_allowed(
+        {**current, "_id": ObjectId("690000000000000000000891")}, ctx,
+    ) is False
+
     assert current["price_drop_v2"]["reply_events"] == snapshot["price_drop_v2"]["reply_events"]
     assert v2.record_inbound(
         db, phone=PHONE, provider_message_id="mock-9804-inbound",
@@ -284,3 +305,16 @@ def test_bootstrap_reauthorize_mode_only_records_scoped_approval(db, monkeypatch
     assert calls == []
     assert db["leads"].find_one({"_id": LID}).get("messages")[-1]["content"] == "Ya encontré otra propiedad, gracias"
     assert db["leads"].find_one({"_id": LID})["price_drop_v2"]["campaigns"][0]["status"] == "RESPONDED"
+
+def test_core_qa_campaign_context_checked_before_suppression():
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] / "chatbot" / "core.py").read_text(
+        encoding="utf-8",
+    )
+    routine = src.split("async def process_user_message(", 1)[1].split(
+        "def process_user_message_sync(", 1,
+    )[0]
+    assert routine.index("pilot_context = await _run_sync(load_active_context") < (
+        routine.index("if lead_must_not_be_contacted(lead_doc_full):")
+    )
+    assert "qa_completed_search_response_allowed(lead_doc_full, pilot_context)" in routine

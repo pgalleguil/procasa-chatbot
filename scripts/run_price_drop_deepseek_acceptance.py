@@ -273,9 +273,68 @@ def _contains_visit_invitation(text: str) -> bool:
         return False
     return not bool(re.search(
         r"\b(?:no\s+(?:te\s+)?(?:invito|propongo|ofrezco)|"
-        r"no\s+(?:quiero|deseo|necesito)\s+(?:coordinar|agendar)|"
+        r"no\s+(?:quiero|quieres|quieras|deseo|deseas|desees|"
+        r"necesito|necesitas)\b.{0,40}\b"
+        r"(?:coordinar|agendar|programar|visita|visitar|conocer)|"
         r"sin\s+proponer)\b", value,
     ))
+
+
+def _reevaluate_saved_matrix(report: dict) -> dict:
+    """Reapply the current deterministic acceptance checks to stored turns."""
+    previous_turn_issues = {
+        issue for conversation in report.get("conversation_matrix") or []
+        for turn in conversation.get("turns") or []
+        for issue in turn.get("issues") or []
+    }
+    for conversation in report.get("conversation_matrix") or []:
+        for turn in conversation.get("turns") or []:
+            issues = [
+                issue for issue in turn.get("issues") or []
+                if issue != "visit_proposed_without_customer_request"
+            ]
+            classification = turn.get("classification_details") or {}
+            requested = bool(classification.get("visit_requested"))
+            unsolicited = not requested and _contains_visit_invitation(
+                turn.get("customer_visible_reply") or ""
+            )
+            turn["visit_offer_without_request"] = unsolicited
+            if unsolicited:
+                issues.append("visit_proposed_without_customer_request")
+            turn["issues"] = sorted(set(issues))
+    remaining_turn_issues = {
+        issue for conversation in report.get("conversation_matrix") or []
+        for turn in conversation.get("turns") or []
+        for issue in turn.get("issues") or []
+    }
+    global_only = set(report.get("issues") or []) - previous_turn_issues
+    report["issues"] = sorted(global_only | remaining_turn_issues)
+    summary = report.setdefault("summary", {})
+    all_turns = [
+        turn for conversation in report.get("conversation_matrix") or []
+        for turn in conversation.get("turns") or []
+    ]
+    summary["visit_offer_guard_passes"] = sum(
+        not turn.get("visit_offer_without_request") for turn in all_turns
+    )
+    report["evaluation_replay"] = {
+        "evaluator_version": "price_drop_acceptance_rules_v2",
+        "replayed_turns": len(all_turns),
+        "regenerated_model_replies": 0,
+        "note": (
+            "Rechecked the saved real-provider conversation matrix; no model, "
+            "WhatsApp, database, or administrative delivery calls were made."
+        ),
+    }
+    if report["issues"]:
+        report["status"] = "FAIL"
+    elif report.get("generation_mode") == "simulated_mock":
+        report["status"] = "SIMULATED"
+    elif report.get("conversation_count", 0) >= 40:
+        report["status"] = "PASS"
+    else:
+        report["status"] = "FAIL"
+    return report
 
 
 def _price_token_present(text: str, *, currency: str, amount: int) -> bool:
@@ -1083,6 +1142,8 @@ def main() -> int:
                         default=ROOT / "reports" / "price_drop_deepseek_acceptance_latest.json")
     parser.add_argument("--markdown-output", type=Path,
                         help="optional Markdown summary and full per-turn matrix")
+    parser.add_argument("--recheck-existing", type=Path,
+                        help="re-evaluate a saved JSON matrix without calling DeepSeek or app services")
     parser.add_argument("--calls-limit", type=int, default=220,
                         help="hard stop before a DeepSeek request beyond this count")
     parser.add_argument("--mock-deepseek", action="store_true",
@@ -1093,6 +1154,30 @@ def main() -> int:
         parser.error(f"--conversations must be at least {minimum_conversations}")
     if args.calls_limit < 1:
         parser.error("--calls-limit must be positive")
+    if args.recheck_existing:
+        if not args.recheck_existing.is_file():
+            parser.error("saved matrix to recheck does not exist")
+        try:
+            report = _reevaluate_saved_matrix(json.loads(
+                args.recheck_existing.read_text(encoding="utf-8")
+            ))
+        except Exception as exc:
+            print(f"Matrix recheck failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 2
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        markdown_output = args.markdown_output or args.output.with_suffix(".md")
+        markdown_output.parent.mkdir(parents=True, exist_ok=True)
+        markdown_output.write_text(_render_markdown(report), encoding="utf-8")
+        print(json.dumps({
+            "status": report["status"],
+            "report": str(args.output.resolve()),
+            "markdown_report": str(markdown_output.resolve()),
+            "replayed_turns": report["evaluation_replay"]["replayed_turns"],
+            "regenerated_model_replies": 0,
+            "issues": report["issues"],
+        }, ensure_ascii=False, indent=2))
+        return 0 if report["status"] in {"PASS", "SIMULATED"} else 1
     if not args.mock_deepseek and not args.env_file.is_file():
         parser.error("private DeepSeek env file is unavailable")
     # The SDK call wrapper enforces an upper request limit without disclosing

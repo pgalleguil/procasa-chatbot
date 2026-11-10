@@ -156,6 +156,90 @@ def test_no_real_contact_without_unique_identity_contact_basis_prior_inquiry(db)
                                     contact_basis="Consulta previa de la misma propiedad"))
 
 
+def test_v2_global_opt_out_persists_and_blocks_future_contact(db, monkeypatch):
+    v2.prepare_one(db, now=NOW, **params())
+    v2.approve_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+                   operator="Supervisor PROCASA", now=NOW)
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    sent = v2.send_one(
+        db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+        sender=lambda *_: {"success": True, "provider_message_id": "out-optout"},
+        now=NOW,
+    )
+    assert sent["status"] == "SENT"
+
+    result = v2.record_inbound(
+        db, phone=PHONE, provider_message_id="in-optout",
+        text="No quiero recibir más información, por favor.",
+        now=NOW + timedelta(minutes=2),
+    )
+    assert result["classification"] == "BAJA"
+    lead = db["leads"].find_one({"phone": PHONE})
+    campaign = lead["price_drop_v2"]["campaigns"][0]
+    assert campaign["status"] == "OPTED_OUT"
+    assert lead["price_drop_v2"]["opted_out"] is True
+    assert lead["price_drop_campaign_v1"]["opted_out"] is True
+    assert lead["conversation_status"] == "STOPPED_BY_CLIENT"
+    assert campaign["notifications"]["administrator_info"]["status"] == "PENDING_INFO"
+    assert v2.active_context(db, phone=PHONE, message="¿sigue disponible?",
+                             now=NOW + timedelta(minutes=3)) is None
+    with pytest.raises(v2.PilotBlocked, match="lead_opted_out"):
+        v2.preview_one(db, **params(campaign_id="new-event-after-optout"))
+
+
+def test_v2_call_and_visit_preferences_stay_scoped(db, monkeypatch):
+    v2.prepare_one(db, now=NOW, **params())
+    v2.approve_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+                   operator="Supervisor PROCASA", now=NOW)
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    v2.send_one(
+        db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+        sender=lambda *_: {"success": True, "provider_message_id": "out-preference"},
+        now=NOW,
+    )
+    call_preference = v2.record_inbound(
+        db, phone=PHONE, provider_message_id="in-no-call",
+        text="Sí me interesa, pero no quiero que me llamen.",
+        now=NOW + timedelta(minutes=2),
+    )
+    assert call_preference["classification"] == "INTERES_DECLARADO"
+    lead = db["leads"].find_one({"phone": PHONE})
+    assert (lead["price_drop_v2"] or {}).get("opted_out") is not True
+    assert lead["price_drop_v2"]["contact_preferences"]["do_not_call"] is True
+    assert lead["price_drop_v2"]["campaigns"][0]["status"] == "RESPONDED"
+    assert v2.active_context(db, phone=PHONE, message="por este chat",
+                             now=NOW + timedelta(minutes=3))["customer_preferences"]["do_not_call"] is True
+
+    visit_decline = v2.record_inbound(
+        db, phone=PHONE, provider_message_id="in-no-visit-info",
+        text="No me interesa visitar por ahora, pero dime los gastos comunes.",
+        now=NOW + timedelta(minutes=4),
+    )
+    assert visit_decline["classification"] == "CONSULTA_INFORMATIVA"
+    lead = db["leads"].find_one({"phone": PHONE})
+    assert (lead["price_drop_v2"] or {}).get("opted_out") is not True
+    assert lead["price_drop_v2"]["contact_preferences"]["do_not_call"] is True
+    assert lead["price_drop_v2"]["contact_preferences"]["visit_declined"] is True
+    assert lead["price_drop_v2"]["campaigns"][0]["status"] == "RESPONDED"
+
+
+def test_v2_context_instruction_disallows_unverified_property_inferences():
+    from chatbot.price_drop_pilot import context_instruction
+
+    instruction = context_instruction({
+        "property_code": "6436", "currency": "UF",
+        "old_price_uf": 2790, "new_price_uf": 2690,
+        "operation": "Venta",
+    })
+    assert "No infieras luminosidad, sol, calor" in instruction
+    assert "sin deducir sus efectos" in instruction
+    assert "Responde primero a lo que preguntó" in instruction
+
+
 def test_live_price_change_blocks_test_send(db, monkeypatch):
     v2.prepare_one(db, now=NOW, **params())
     v2.approve_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,

@@ -64,9 +64,35 @@ customer-visible generated answer to support manual review.
 
 ## Results
 
+The completed run used the real DeepSeek generator with **40 synthetic
+conversations / 80 inbound turns**. It produced **72 structured model replies**;
+the eight explicit global opt-outs or completed searches were correctly
+suppressed. The generator made **96 API requests**, including structured-format
+retries. All 40 campaign contexts were verified; UF and CLP properties,
+successive reductions, and HOT/NORMAL/COLD lead snapshots were covered.
+
+The saved matrix passes 80/80 checks for property identity, numeric listing
+facts, price claims, reply presence/suppression, campaign classification,
+continuity, message/queue idempotency, logged response delivery, and prepared
+temperature snapshots. The explicit-visit/contact core-intent guard passed all
+80 turns. All 72 model replies were parsed as structured JSON after enabling
+the V2 campaign marker; no unstructured fallback was needed. Mock WaSender
+recorded 72 customer deliveries, and mock administrator delivery recorded 24
+positive plus 8 informational notices. Executive notices remained frozen.
+
+One initial run flagged an acknowledgment that said the customer did **not**
+want to coordinate a visit. I corrected the visit-invitation evaluator to
+respect that negation and rechecked all 80 saved real-provider turns. The
+conversation output was not regenerated during that recheck; the JSON records
+`evaluation_replay.replayed_turns: 80` and
+`regenerated_model_replies: 0`. The final report status is `PASS`.
+
+The naturalness result is a scripted format/length check, not a human quality
+rating. This synthetic acceptance result does not certify the chatbot as ready
+for live operation. Production WhatsApp delivery, provider behavior under a
+live account, and human review of language quality remain outside this run.
+
 The generated result is stored in
 [`reports/price_drop_deepseek_acceptance_latest.json`](../reports/price_drop_deepseek_acceptance_latest.json)
 with its readable per-turn companion at
 [`reports/price_drop_deepseek_acceptance_latest.md`](../reports/price_drop_deepseek_acceptance_latest.md).
-This section should be updated with the completed run status, pass counts, any
-remaining critical defects, and the CI results before the PR is updated.

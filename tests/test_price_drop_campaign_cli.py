@@ -905,6 +905,17 @@ def test_acceptance_property_fact_evaluator_uses_listing_variation():
     ]
 
 
+def test_acceptance_visit_guard_does_not_mistake_negative_acknowledgment_for_offer():
+    from scripts.run_price_drop_deepseek_acceptance import _contains_visit_invitation
+
+    assert not _contains_visit_invitation(
+        "Entiendo que por ahora no quieres coordinar una visita; quedo atenta."
+    )
+    assert _contains_visit_invitation(
+        "Si quieres, podemos coordinar una visita cuando estés disponible."
+    )
+
+
 def test_v2_price_drop_prompt_requests_json_and_retries_a_non_json_reply(monkeypatch):
     import json
     from types import SimpleNamespace

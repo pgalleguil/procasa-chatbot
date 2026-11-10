@@ -7031,6 +7031,25 @@ async def process_pending_leads_loop():
                 except Exception:
                     logger.exception("[PRICE_DROP_V2_REAL_ADMIN_NOTICE] failed; no automatic retry")
 
+            # Separately authorized real V2 executive notice. Never routed
+            # from a QA/test campaign; the function verifies the current CRM
+            # assignment immediately before sending, and writes only to leads.
+            if os.getenv("PRICE_DROP_LEADS_V2_REAL_EXECUTIVE_NOTICES_ENABLED", "").lower() in {"1", "true", "yes"}:
+                try:
+                    from chatbot.price_drop_leads_v2 import send_real_exec_notice_once
+                    from chatbot.storage import get_db as _get_v2_exec_db
+                    exec_notice = await asyncio.get_running_loop().run_in_executor(
+                        _WORKER_THREAD_POOL,
+                        lambda: send_real_exec_notice_once(_get_v2_exec_db()),
+                    )
+                    if exec_notice.get("status") not in {"IDLE", "DISABLED"}:
+                        logger.info(
+                            "[PRICE_DROP_V2_REAL_EXEC_NOTICE] status=%s campaign_id=%s",
+                            exec_notice.get("status"), exec_notice.get("campaign_id"),
+                        )
+                except Exception:
+                    logger.exception("[PRICE_DROP_V2_REAL_EXEC_NOTICE] failed; no automatic retry")
+
             # Only the allowlisted tester may receive V2 simulated admin
             # and property-executive notices. All status/receipts live in
             # leads; no notification-specific collection is created.

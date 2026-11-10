@@ -1027,15 +1027,20 @@ def test_wasender_usage_counts_recent_api_logs_across_all_sessions():
     old = (NOW - timedelta(hours=30)).isoformat()
     calls = []
 
-    def get(url, *, params=None, **_kwargs):
-        calls.append((url, params))
+    def get(url, *, params=None, headers=None, **_kwargs):
+        calls.append((url, params, headers))
         if url.endswith("/whatsapp-sessions"):
             return _HttpResponse(payload={"success": True, "data": [
                 {"id": "session-1", "log_messages": True},
                 {"id": "session-2", "log_messages": True},
             ]})
         session = url.split("/whatsapp-sessions/")[1].split("/")[0]
+        if not url.endswith("/message-logs"):
+            return _HttpResponse(payload={"success": True, "data": {
+                "id": session, "api_key": f"{session}-key", "log_messages": True,
+            }})
         page = params["page"]
+        assert headers["Authorization"] == f"Bearer {session}-key"
         if session == "session-1" and page == 1:
             data = [{"id": "1", "created_at": recent, "status": "sent"},
                     {"id": "2", "created_at": old, "status": "failed"}]
@@ -1050,12 +1055,21 @@ def test_wasender_usage_counts_recent_api_logs_across_all_sessions():
         }})
 
     result = account_attempts_last_24h(
-        now=NOW, base_url="https://wasenderapi.com/api", token="test-token", http_get=get,
+        now=NOW, base_url="https://wasenderapi.com/api",
+        personal_access_token="account-pat", http_get=get,
     )
     assert result["attempts_last_24h"] == 2
     assert result["sessions_scanned"] == 2
     assert result["pages_scanned"] == 3
-    assert len(calls) == 4
+    assert len(calls) == 6
+    assert calls[0][2]["Authorization"] == "Bearer account-pat"
+    assert all(
+        call[2]["Authorization"] == (
+            "Bearer account-pat" if not call[0].endswith("/message-logs")
+            else "Bearer " + call[0].split("/whatsapp-sessions/")[1].split("/")[0] + "-key"
+        )
+        for call in calls
+    )
 
 
 def test_wasender_usage_fails_closed_when_any_session_logs_are_disabled():
@@ -1067,7 +1081,8 @@ def test_wasender_usage_fails_closed_when_any_session_logs_are_disabled():
 
     with pytest.raises(WaSenderUsageUnavailable, match="logs_disabled"):
         account_attempts_last_24h(
-            now=NOW, base_url="https://wasenderapi.com/api", token="test-token", http_get=get,
+            now=NOW, base_url="https://wasenderapi.com/api",
+            personal_access_token="account-pat", http_get=get,
         )
 
 
@@ -1085,8 +1100,8 @@ def test_account_usage_uses_personal_access_token_not_session_key(monkeypatch):
 
     monkeypatch.setattr(cli, "account_attempts_last_24h", usage_reader)
     assert cli._provider_attempts_last_24h(now=NOW) == {"attempts_last_24h": 0}
-    assert captured["token"] == "account-pat"
-    assert captured["token"] != Config.WASENDER_TOKEN
+    assert captured["personal_access_token"] == "account-pat"
+    assert captured["personal_access_token"] != Config.WASENDER_TOKEN
 
 
 def test_account_usage_does_not_fall_back_to_session_key_when_pat_missing(monkeypatch):

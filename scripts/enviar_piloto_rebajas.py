@@ -153,7 +153,7 @@ def _provider_attempts_last_24h(*, now: datetime) -> dict[str, Any]:
     try:
         return account_attempts_last_24h(
             now=now, base_url=str(Config.WASENDER_BASE_URL or ""),
-            token=personal_access_token,
+            personal_access_token=personal_access_token,
             naive_timezone_name=os.getenv("PRICE_DROP_WASENDER_LOG_TIMEZONE", "UTC"),
         )
     except WaSenderUsageUnavailable as exc:

@@ -46,24 +46,26 @@ def _timestamp(value: Any, *, naive_timezone: ZoneInfo) -> datetime:
     return stamp.astimezone(timezone.utc)
 
 
-def account_attempts_last_24h(*, now: datetime, base_url: str, token: str,
+def account_attempts_last_24h(*, now: datetime, base_url: str, personal_access_token: str,
                               http_get: Callable[..., Any] = requests.get,
                               naive_timezone_name: str = "UTC",
                               page_size: int = 100) -> dict[str, Any]:
     """Scan all enabled session logs without retaining old records in memory."""
     if now.tzinfo is None or now.utcoffset() is None:
         raise WaSenderUsageUnavailable("wasender_usage_now_requires_timezone")
-    if not token or not base_url.startswith("https://"):
+    if not personal_access_token or not base_url.startswith("https://"):
         raise WaSenderUsageUnavailable("wasender_usage_provider_not_configured")
     try:
         naive_timezone = ZoneInfo(naive_timezone_name)
     except (ZoneInfoNotFoundError, ValueError) as exc:
         raise WaSenderUsageUnavailable("wasender_log_timezone_invalid") from exc
     root = base_url.rstrip("/")
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    account_headers = {
+        "Authorization": f"Bearer {personal_access_token}", "Accept": "application/json",
+    }
     try:
         sessions_payload = _body(http_get(
-            f"{root}/whatsapp-sessions", headers=headers, timeout=(3, 12),
+            f"{root}/whatsapp-sessions", headers=account_headers, timeout=(3, 12),
         ))
     except WaSenderUsageUnavailable:
         raise
@@ -85,6 +87,24 @@ def account_attempts_last_24h(*, now: datetime, base_url: str, token: str,
         if session.get("log_messages") is not True:
             raise WaSenderUsageUnavailable("wasender_session_message_logs_disabled")
         session_id = quote(str(session["id"]), safe="")
+        try:
+            detail_payload = _body(http_get(
+                f"{root}/whatsapp-sessions/{session_id}",
+                headers=account_headers, timeout=(3, 12),
+            ))
+        except WaSenderUsageUnavailable:
+            raise
+        except Exception as exc:
+            raise WaSenderUsageUnavailable("wasender_session_details_request_failed") from exc
+        detail = detail_payload.get("data")
+        if not isinstance(detail, dict) or detail.get("log_messages") is not True:
+            raise WaSenderUsageUnavailable("wasender_session_details_incomplete")
+        session_api_key = str(detail.get("api_key") or "").strip()
+        if not session_api_key:
+            raise WaSenderUsageUnavailable("wasender_session_api_key_unavailable")
+        session_headers = {
+            "Authorization": f"Bearer {session_api_key}", "Accept": "application/json",
+        }
         page = 1
         last_page = None
         while last_page is None or page <= last_page:
@@ -93,7 +113,7 @@ def account_attempts_last_24h(*, now: datetime, base_url: str, token: str,
             try:
                 payload = _body(http_get(
                     f"{root}/whatsapp-sessions/{session_id}/message-logs",
-                    headers=headers, params={"page": page, "per_page": page_size},
+                    headers=session_headers, params={"page": page, "per_page": page_size},
                     timeout=(3, 12),
                 ))
             except WaSenderUsageUnavailable:

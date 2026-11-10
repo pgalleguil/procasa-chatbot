@@ -267,10 +267,14 @@ def generar_respuesta_estructurada(messages: list, prospecto_actual: dict = None
         )
 
         kwargs = {}
-        is_price_drop_pilot = (not write_telemetry and any(
-            "[CONTEXTO COMERCIAL DEL MENSAJE SALIENTE - PRIORIDAD]" in str(m.get("content", ""))
+        is_price_drop_pilot = any(
+            marker in str(m.get("content", ""))
             for m in messages if m.get("role") == "system"
-        ))
+            for marker in (
+                "[CONTEXTO COMERCIAL DEL MENSAJE SALIENTE - PRIORIDAD]",
+                "[PILOTO DE REACTIVACIÓN POR REBAJA - CONTEXTO VERIFICADO]",
+            )
+        )
         if force_json_output or is_price_drop_pilot or Config.DEEPSEEK_RESPONSE_FORMAT == "json_object":
             kwargs["response_format"] = {"type": "json_object"}
 

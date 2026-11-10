@@ -276,3 +276,59 @@ def test_no_admin_notification_after_decline(db, monkeypatch):
         db, sender=lambda *x: calls.append(x),
         now=NOW+timedelta(minutes=5))["status"] == "IDLE"
     assert calls == []
+
+
+def test_optout_and_completed_search_send_one_admin_info_notice_only(db, monkeypatch):
+    from chatbot import lead_router
+
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setattr(lead_router, "build_secure_crm_url",
+                        lambda lead: "https://example.invalid/secure-lead")
+    db["leads"].update_one({"_id": LEAD_ID}, {"$set": {"price_drop_v2": {
+        "campaigns": [{
+            "campaign_id": CID, "event_id": CID, "property_code": "16479",
+            "currency": "CLP", "old_price_clp": 160000000,
+            "new_price_clp": 152000000, "test_mode": False,
+            "status": "SENT", "provider_message_id": "accepted-customer",
+            "price_drop_at": datetime.fromisoformat(DROP),
+            "sent_at": NOW, "expires_at": NOW + timedelta(days=7),
+            "phone_normalized": PHONE,
+            "outbound_message": "Aviso anterior de rebaja para la propiedad 16479",
+            "notifications": {
+                "administrator": {"status": "NOT_TRIGGERED"},
+                "property_executive": {"status": "FROZEN_ADMIN_ONLY"},
+            },
+        }],
+    }}})
+    reply = v2.record_inbound(
+        db, phone=PHONE, provider_message_id="reply-stop-1",
+        text="No me envien mas mensajes", now=NOW + timedelta(minutes=2),
+    )
+    assert reply["classification"] == "BAJA"
+    lead = db["leads"].find_one({"_id": LEAD_ID})
+    campaign = lead["price_drop_v2"]["campaigns"][0]
+    assert campaign["status"] == "OPTED_OUT"
+    assert lead["price_drop_v2"]["opted_out"] is True
+    assert lead["price_drop_campaign_v1"]["opted_out"] is True
+    assert campaign["notifications"]["administrator_info"]["status"] == "PENDING_INFO"
+
+    monkeypatch.setenv(v2.REAL_ADMIN_NOTICE_FLAG, "true")
+    monkeypatch.setenv(v2.ADMIN_PHONE_FLAG, v2.APPROVED_ADMIN_PHONE)
+    calls = []
+    sender = lambda phone, message: calls.append((phone, message)) or {
+        "success": True, "provider_message_id": "admin-info-1", "delivery_status": "accepted",
+    }
+    notice = v2.send_real_admin_info_notice_once(
+        db, sender=sender, now=NOW + timedelta(minutes=5),
+    )
+    assert notice["status"] == "SENT"
+    assert len(calls) == 1
+    assert calls[0][0] == v2.APPROVED_ADMIN_PHONE
+    assert PHONE in calls[0][1] and "16479" in calls[0][1]
+    assert "Solicita no recibir más mensajes" in calls[0][1]
+    assert "No me envien mas mensajes" in calls[0][1]
+    assert "Exclusión global aplicada" in calls[0][1]
+    assert "https://example.invalid/secure-lead" in calls[0][1]
+    assert v2.send_real_admin_notice_once(db, sender=sender, now=NOW)["status"] == "IDLE"
+    assert v2.send_real_admin_info_notice_once(db, sender=sender, now=NOW)["status"] == "IDLE"
+    assert len(calls) == 1

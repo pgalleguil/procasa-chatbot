@@ -161,6 +161,11 @@ def public_property_summary(property_doc):
 
 
 def requested_public_fact_keys(message):
+    # In an alternatives search, a requested city or "precio parecido" is a
+    # filter for other listings, not a fact question about the campaign listing.
+    from .conversation_policy import alternative_requested
+    if alternative_requested(message):
+        return []
     text = _normalized(message)
     found = [key for key, regex in _FIELDS.items() if re.search(regex, text)]
     if re.search(r"\b(superficie|metros?|m2)\b", text) and not any(
@@ -194,6 +199,9 @@ def prefers_natural_property_overview(message):
 def answer_public_property_question(message, property_doc, *, campaign_context=None):
     if not property_doc:
         return None
+    from .conversation_policy import alternative_requested
+    if alternative_requested(message):
+        return None
     normalized = _normalized(message)
     keys = requested_public_fact_keys(message)
     private = bool(_PRIVATE.search(normalized))
@@ -202,7 +210,8 @@ def answer_public_property_question(message, property_doc, *, campaign_context=N
         r"cuantas?\s+uf\s+(bajo|bajaron)|bajo\s+de\s+precio)\b", normalized
     ))
     asks_negotiation = bool(re.search(
-        r"\b(negociar|negociable|negociacion|contraoferta|hacer\s+una\s+oferta)\b",
+        r"\b(negociar|negociable|negociacion|contraoferta|hacer\s+una\s+oferta|"
+        r"presentar\s+(?:una\s+)?oferta|ofertar|ofrecer)\b",
         normalized
     ))
     explicitly_full = bool(re.search(
@@ -252,9 +261,13 @@ def answer_public_property_question(message, property_doc, *, campaign_context=N
             drop_text = "No tengo una rebaja confirmada para informar; precio actual: " + facts["precio"] + "."
         response = (response + "\n" if response else "") + drop_text
     if asks_negotiation:
-        negotiation = ("Una posible negociación debe evaluarla administración con "
-                       "el propietario; no puedo confirmar descuentos adicionales.")
-        response = (response + "\n" if response else "") + negotiation
+        negotiation = (
+            "La oferta debe evaluarla administración con el propietario; no puedo "
+            "confirmar descuentos adicionales. Si quieres avanzar, comparte por este "
+            "chat el monto y las condiciones para registrar la solicitud; eso no supone "
+            "que sea aceptada."
+        )
+        response = (response + "\n\n" if response else "") + negotiation
     if private:
         response += ("\n" if response else "") + (
             "Por privacidad no compartimos la dirección exacta ni los datos "

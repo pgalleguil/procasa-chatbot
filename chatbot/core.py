@@ -94,6 +94,7 @@ logger = logging.getLogger(__name__)
 from .customer_response_semantics import (  # noqa: E402
     build_specific_property_response,
     use_natural_verified_property_reply,
+    use_natural_verified_alternative_reply,
     rag_customer_response as _rag_customer_response,
     new_link_context_response as _new_link_context_response,
     new_link_template_contaminated as _new_link_template_contaminated,
@@ -1529,20 +1530,41 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # from a meta acknowledgement such as "encontré una alternativa" and
     # guarantees that a positive search includes the actual listing options.
     if rag_results_for_response is not None:
-        respuesta = _rag_customer_response(rag_results_for_response)
+        natural_alternative_reply = (
+            not rag_results_for_response
+            and alternatives_requested_now
+            and use_natural_verified_alternative_reply(
+                original_message,
+                respuesta,
+                requested_communes=extracted_rag_filters.get("comunas") or (),
+                original_property_code=(propiedad or {}).get("codigo"),
+                campaign_context=pilot_context,
+                property_doc=propiedad,
+            )
+        )
+        if not natural_alternative_reply:
+            respuesta = _rag_customer_response(
+                rag_results_for_response, criteria=criterios_rag,
+            )
 
     # =======================================================
     # 7. EXCEPCIÓN: FORZAR FICHA (RESPALDO ORIGINAL)
     # =======================================================
-    specific_property_response = build_specific_property_response(
-        original_message, propiedad, price_drop_context=pilot_context,
+    # Do not reinterpret a requested search city or "similar price" as a
+    # question about the campaign property's own commune or price.
+    specific_property_response = (
+        None if alternatives_requested_now else build_specific_property_response(
+            original_message, propiedad, price_drop_context=pilot_context,
+        )
     )
     if specific_property_response:
         if not use_natural_verified_property_reply(
             original_message, respuesta, propiedad, campaign_context=pilot_context,
         ):
             respuesta = specific_property_response
-    elif propiedad and "ficha" in original_message.lower() and not is_specific_property_question(original_message):
+    elif (propiedad and not alternatives_requested_now
+          and "ficha" in original_message.lower()
+          and not is_specific_property_question(original_message)):
         ficha_completa = formatear_ficha_tecnica(propiedad, lead_executive=effective_exec)
         respuesta = f"Aquí tienes el resumen técnico completo:\n\n{ficha_completa}"
 
@@ -1642,6 +1664,14 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         "llamar", "llamen", "llamada", "contactar", "contacto", "ejecutivo",
         "asesor", "humano", "supervisor", "gerente"
     ]
+    from .price_drop_campaign_classifier import has_do_not_call_preference
+    from .conversation_policy import suppress_negated_call_intent
+    no_call_preference = has_do_not_call_preference(original_message)
+    campaign_operational_intent = None
+    if pilot_context and pilot_context.get("version") == "price_drop_leads_v2":
+        from .price_drop_campaign_classifier import campaign_operational_core_intent
+        campaign_operational_intent = campaign_operational_core_intent(original_message)
+    intencion = suppress_negated_call_intent(intencion, original_message)
 
     if intencion == "consulta_general":
         if should_offer_visit_data(
@@ -1654,7 +1684,7 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             visit_data_state={},
         ):
             intencion = "agendar_visita"
-        elif any(t in msg_l for t in contact_terms):
+        elif any(t in msg_l for t in contact_terms) and not no_call_preference:
             intencion = "contacto_directo"
 
     # A broad model label is not sufficient to request personal data or trigger
@@ -1669,6 +1699,16 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         intencion = "consulta_general"
     elif visit_intent_clear:
         intencion = "agendar_visita"
+
+    # For the V2 price-drop campaign, explicit operational customer language
+    # is authoritative if the model returns a generic or malformed intent.
+    # The campaign classifier already excludes declined visits, temporary
+    # inability, and contact requests negated by a no-call preference.
+    if campaign_operational_intent == "agendar_visita":
+        intencion = "agendar_visita"
+        visit_intent_clear = True
+    elif campaign_operational_intent == "contacto_directo" and not no_call_preference:
+        intencion = "contacto_directo"
 
     # --- NUEVA LÓGICA DE INTENCIÓN (ENTERPRISE) ---
     intent_map = {
@@ -1872,7 +1912,9 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
             "conversation_id": conversation_id,
             "lead_id": str(lead_doc.get("_id")) if lead_doc.get("_id") else None,
         })
-        if not is_actionable_customer_message(original_message):
+        if (not is_actionable_customer_message(original_message)
+                and not alternatives_requested_now
+                and not is_explicit_property_search_request(original_message)):
             respuesta = duplicate_response_fallback(respuesta)
         else:
             logger.info(

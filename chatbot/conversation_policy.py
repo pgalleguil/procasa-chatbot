@@ -103,6 +103,13 @@ _EXPLICIT_SEARCH_REQUEST_RE = re.compile(
     r"(?:casa|casas|departamento|departamentos|depto|oficina|local|parcela|terreno)\b",
     re.IGNORECASE,
 )
+_NEGATED_SEARCH_REQUEST_RE = re.compile(
+    r"\b(?:no|nunca|jam[aá]s)\s+(?:quiero|quisiera|necesito|busco|deseo|"
+    r"prefiero|pienso|pretendo)\b.{0,75}\b(?:buscar|buscando|mostrar|"
+    r"ver\s+opciones|encontrar|otra\s+propiedad|otras?\s+opciones|"
+    r"alternativas?|otra\s+comuna|otras\s+comunas)\b",
+    re.IGNORECASE,
+)
 
 _UNCONFIRMED_VISIT_RE = re.compile(
     r"(?:\b(?:tu\s+)?visita\s+(?:qued[oó]|est[aá])\s+(?:agendada|confirmada|reservada)\b|"
@@ -220,6 +227,9 @@ def extract_visit_preference(message: str, *, visit_context: bool = False) -> st
     normalized = _normalize_text(message)
     if not normalized:
         return None
+    from .price_drop_campaign_classifier import has_declined_visit_preference
+    if has_declined_visit_preference(message):
+        return None
     # Historical references are not current scheduling preferences.  Resume
     # extraction only when the same turn also contains a new scheduling cue.
     historical_visit = re.search(
@@ -312,6 +322,9 @@ def is_explicit_visit_intent(message: str) -> bool:
     """Detect operational visit intent without treating generic interest as a visit."""
     normalized = _normalize_text(message)
     if not normalized:
+        return False
+    from .price_drop_campaign_classifier import has_declined_visit_preference
+    if has_declined_visit_preference(message):
         return False
     # Restrict fuzzy tolerance to a few high-value operational typos.  This
     # does not turn general matching into an unrestricted spell corrector.
@@ -450,12 +463,35 @@ def visit_data_declined_response() -> str:
 
 
 def alternative_requested(message: str) -> bool:
-    return bool(_ALTERNATIVE_REQUEST_RE.search(_normalize_text(message)))
+    from .price_drop_campaign_classifier import has_alternative_request
+    return has_alternative_request(message)
+
+
+def suppress_negated_call_intent(intent: str, message: str) -> str:
+    """A model label cannot turn a negative call preference into a call request."""
+    if intent != "contacto_directo":
+        return intent
+    from .price_drop_campaign_classifier import has_do_not_call_preference
+    return "consulta_general" if has_do_not_call_preference(message) else intent
 
 
 def property_rejected(message: str) -> bool:
     normalized = _normalize_text(message)
     if _OTHER_PROPERTY_REFERENCE_RE.search(normalized):
+        return False
+    from .price_drop_campaign_classifier import has_declined_visit_preference
+    if has_declined_visit_preference(message) or alternative_requested(message):
+        return False
+    # A scoped refusal of a visit or the property followed by a factual
+    # question remains an active conversation and should not launch an
+    # unsolicited alternative-property search.
+    if _SPECIFIC_PROPERTY_FIELD_RE.search(normalized):
+        return False
+    if "?" in str(message or "") and re.search(
+        r"\b(?:cu[aá]nto|cu[aá]l|c[oó]mo|qu[eé]|gastos?|precio|disponible|"
+        r"caracter[ií]sticas|bodega|estacionamiento|negociable|superficie)\b",
+        normalized,
+    ):
         return False
     return bool(_PROPERTY_REJECTION_RE.search(normalized))
 
@@ -482,7 +518,14 @@ def is_explicit_property_search_request(message: str) -> bool:
         normalized,
     ):
         return False
-    return bool(_EXPLICIT_SEARCH_REQUEST_RE.search(normalized))
+    if alternative_requested(message):
+        return True
+    clauses = re.split(r"\b(?:pero|sin embargo|no obstante|aunque|sino)\b|[,;.!?]+", normalized)
+    return any(
+        _EXPLICIT_SEARCH_REQUEST_RE.search(clause)
+        and not _NEGATED_SEARCH_REQUEST_RE.search(clause)
+        for clause in clauses
+    )
 
 
 def is_actionable_customer_message(message: str) -> bool:

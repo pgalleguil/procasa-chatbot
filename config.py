@@ -35,7 +35,12 @@ class Config:
     PROXIES = os.getenv("PROXIES", "")  # Lista de proxies separados por coma
     PROXY_USER = os.getenv("PROXY_USER", "")
     PROXY_PASS = os.getenv("PROXY_PASS", "")
+    # Session API key used by the connected WhatsApp session for message sends.
     WASENDER_TOKEN = os.getenv("WASENDER_TOKEN")
+    # Account-level Personal Access Token required by GET /whatsapp-sessions
+    # and the campaign's read-only account-wide usage guard. Never reuse the
+    # session API key for account-level endpoints.
+    WASENDER_PERSONAL_ACCESS_TOKEN = os.getenv("WASENDER_PERSONAL_ACCESS_TOKEN")
     WASENDER_WEBHOOK_SECRET = os.getenv("WASENDER_WEBHOOK_SECRET")
     WASENDER_BASE_URL = os.getenv("WASENDER_BASE_URL", "https://wasenderapi.com/api")
     OWNER_CAMPAIGN_ADMIN_WHATSAPP = os.getenv("OWNER_CAMPAIGN_ADMIN_WHATSAPP", "").strip()

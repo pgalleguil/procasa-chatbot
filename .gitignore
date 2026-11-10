@@ -59,6 +59,8 @@ scripts/
 scripts/*
 !scripts/run_crm_sla_alert_persist_canary.py
 !scripts/run_crm_sla_alert_send_canary.py
+!scripts/enviar_piloto_rebajas.py
+!scripts/price_drop_leads_v2_real_pilot.py
 !scripts/seed_market_context_snapshots.py
 !scripts/report_crm_sla_alerts.py
 !scripts/report_leads_por_canal.py
@@ -81,6 +83,8 @@ tests/*
 !tests/test_properties_inventory_p0_contract.py
 !tests/test_captacion_followup_v2.py
 !tests/test_internal_campaign_drive_check.py
+!tests/test_price_drop_leads_v2.py
+!tests/test_price_drop_campaign_cli.py
 !tests/test_owner_campaign_admin_panel.py
 !tests/test_owner_campaign_private_portal.py
 !tests/pricing_intelligence/

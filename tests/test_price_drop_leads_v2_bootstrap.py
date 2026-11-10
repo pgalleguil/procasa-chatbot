@@ -19,6 +19,7 @@ def db(monkeypatch):
     monkeypatch.setenv(boot.BOOT_MODE, "preview")
     monkeypatch.setenv(boot.BOOT_ID, CID)
     monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
+    monkeypatch.setenv(v2.TEST_LEAD_ID_FLAG, "690000000000000000000777")
     database = mongomock.MongoClient()["URLS"]
     database["leads"].insert_one({"_id": ObjectId("690000000000000000000777"),
                                   "phone": PHONE, "messages": []})

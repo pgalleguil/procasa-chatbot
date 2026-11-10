@@ -18,6 +18,7 @@ CAMPAIGN = "test_leads_6436_20261105"
 def db(monkeypatch):
     monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
     monkeypatch.setenv(v2.ADMIN_PHONE_FLAG, PHONE)
+    monkeypatch.setenv(v2.TEST_LEAD_ID_FLAG, "690000000000000000000777")
     monkeypatch.delenv(v2.EXEC_NOTICE_ENABLED_FLAG, raising=False)
     testdb = mongomock.MongoClient()["URLS"]
     testdb["universo_cartera_prop360"].insert_one({
@@ -55,6 +56,66 @@ def params(**overrides):
     )
     p.update(overrides)
     return p
+
+
+def test_admin_qa_reset_archives_context_without_deleting_campaign_or_message_history(monkeypatch):
+    monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
+    qa_id = "test_leads_6436_20261110_qacheck1"
+    prior_qa = {"campaign_id": "test_leads_6436_20261109_previous", "started_at": NOW}
+    campaign = {
+        "campaign_id": prior_qa["campaign_id"], "status": "RESPONDED",
+        "test_mode": True, "provider_message_id": "mock-prior-send",
+        "reply_count": 1,
+    }
+    messages = [
+        {"role": "assistant", "content": "mensaje de prueba anterior", "message_id": "out-1"},
+        {"role": "user", "content": "respuesta de prueba anterior", "message_id": "in-1"},
+    ]
+    reply_events = [{"campaign_id": campaign["campaign_id"], "provider_message_id": "in-1"}]
+    processed_ids = ["in-1"]
+    db = mongomock.MongoClient(tz_aware=True)["URLS"]
+    db["leads"].insert_one({
+        "_id": ObjectId("690000000000000000000790"),
+        "phone": PHONE, "conversation_id": "prior-conversation",
+        "prospecto": {"codigo": "6436", "comuna": "Macul"},
+        "messages": messages,
+        "pending_response": {"type": "VISIT_CONFIRMATION"},
+        "last_intent": "agendar_visita",
+        "price_drop_v2": {
+            "campaigns": [campaign], "qa_session": prior_qa,
+            "reply_events": reply_events,
+            "processed_inbound_provider_ids": processed_ids,
+        },
+    })
+
+    result = v2.reset_test_qa_session(
+        db, campaign_id=qa_id, operator="Operador de QA",
+        phone=PHONE, now=NOW + timedelta(minutes=1),
+    )
+    lead = db["leads"].find_one({"phone": PHONE})
+    assert result["status"] == "RESET"
+    assert result["historical_messages_preserved"] == len(messages)
+    assert lead["messages"] == messages
+    assert lead["price_drop_v2"]["campaigns"] == [campaign]
+    assert lead["price_drop_v2"]["reply_events"] == reply_events
+    assert lead["price_drop_v2"]["processed_inbound_provider_ids"] == processed_ids
+    assert lead["price_drop_v2"]["qa_session_archive"] == [prior_qa]
+    assert lead["price_drop_v2"]["qa_session"]["campaign_id"] == qa_id
+    assert lead["prospecto"] == {}
+    assert lead["conversation_id"] != "prior-conversation"
+    assert "pending_response" not in lead and "last_intent" not in lead
+
+
+def test_admin_qa_reset_fails_closed_for_phone_outside_allowlist(monkeypatch):
+    monkeypatch.setenv(v2.TEST_PHONE_FLAG, "+56911112222")
+    db = mongomock.MongoClient()["URLS"]
+    db["leads"].insert_one({"phone": "+56911112222", "messages": []})
+    result = v2.reset_test_qa_session(
+        db, campaign_id="test_leads_6436_20261110_qacheck2",
+        operator="Operador de QA", phone="+56911112222", now=NOW,
+    )
+    assert result == {"status": "BLOCKED", "reason": "qa_reset_not_authorized"}
+    assert db["leads"].find_one({"phone": "+56911112222"}).get("price_drop_v2") is None
 
 
 def test_preview_verifies_historical_drop_without_any_write(db):
@@ -154,6 +215,90 @@ def test_no_real_contact_without_unique_identity_contact_basis_prior_inquiry(db)
         v2.preview_one(db, **params(test_mode=False, contact_basis_reviewed=True,
                                     contact_basis_type=v2.DIRECT_RESPONSE_BASIS_TYPE,
                                     contact_basis="Consulta previa de la misma propiedad"))
+
+
+def test_v2_global_opt_out_persists_and_blocks_future_contact(db, monkeypatch):
+    v2.prepare_one(db, now=NOW, **params())
+    v2.approve_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+                   operator="Supervisor PROCASA", now=NOW)
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    sent = v2.send_one(
+        db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+        sender=lambda *_: {"success": True, "provider_message_id": "out-optout"},
+        now=NOW,
+    )
+    assert sent["status"] == "SENT"
+
+    result = v2.record_inbound(
+        db, phone=PHONE, provider_message_id="in-optout",
+        text="No quiero recibir más información, por favor.",
+        now=NOW + timedelta(minutes=2),
+    )
+    assert result["classification"] == "BAJA"
+    lead = db["leads"].find_one({"phone": PHONE})
+    campaign = lead["price_drop_v2"]["campaigns"][0]
+    assert campaign["status"] == "OPTED_OUT"
+    assert lead["price_drop_v2"]["opted_out"] is True
+    assert lead["price_drop_campaign_v1"]["opted_out"] is True
+    assert lead["conversation_status"] == "STOPPED_BY_CLIENT"
+    assert campaign["notifications"]["administrator_info"]["status"] == "PENDING_INFO"
+    assert v2.active_context(db, phone=PHONE, message="¿sigue disponible?",
+                             now=NOW + timedelta(minutes=3)) is None
+    with pytest.raises(v2.PilotBlocked, match="lead_opted_out"):
+        v2.preview_one(db, **params(campaign_id="new-event-after-optout"))
+
+
+def test_v2_call_and_visit_preferences_stay_scoped(db, monkeypatch):
+    v2.prepare_one(db, now=NOW, **params())
+    v2.approve_one(db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+                   operator="Supervisor PROCASA", now=NOW)
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    v2.send_one(
+        db, lead_id=params()["lead_id"], campaign_id=CAMPAIGN,
+        sender=lambda *_: {"success": True, "provider_message_id": "out-preference"},
+        now=NOW,
+    )
+    call_preference = v2.record_inbound(
+        db, phone=PHONE, provider_message_id="in-no-call",
+        text="Sí me interesa, pero no quiero que me llamen.",
+        now=NOW + timedelta(minutes=2),
+    )
+    assert call_preference["classification"] == "INTERES_DECLARADO"
+    lead = db["leads"].find_one({"phone": PHONE})
+    assert (lead["price_drop_v2"] or {}).get("opted_out") is not True
+    assert lead["price_drop_v2"]["contact_preferences"]["do_not_call"] is True
+    assert lead["price_drop_v2"]["campaigns"][0]["status"] == "RESPONDED"
+    assert v2.active_context(db, phone=PHONE, message="por este chat",
+                             now=NOW + timedelta(minutes=3))["customer_preferences"]["do_not_call"] is True
+
+    visit_decline = v2.record_inbound(
+        db, phone=PHONE, provider_message_id="in-no-visit-info",
+        text="No me interesa visitar por ahora, pero dime los gastos comunes.",
+        now=NOW + timedelta(minutes=4),
+    )
+    assert visit_decline["classification"] == "CONSULTA_INFORMATIVA"
+    lead = db["leads"].find_one({"phone": PHONE})
+    assert (lead["price_drop_v2"] or {}).get("opted_out") is not True
+    assert lead["price_drop_v2"]["contact_preferences"]["do_not_call"] is True
+    assert lead["price_drop_v2"]["contact_preferences"]["visit_declined"] is True
+    assert lead["price_drop_v2"]["campaigns"][0]["status"] == "RESPONDED"
+
+
+def test_v2_context_instruction_disallows_unverified_property_inferences():
+    from chatbot.price_drop_pilot import context_instruction
+
+    instruction = context_instruction({
+        "property_code": "6436", "currency": "UF",
+        "old_price_uf": 2790, "new_price_uf": 2690,
+        "operation": "Venta",
+    })
+    assert "No infieras luminosidad, sol, calor" in instruction
+    assert "sin deducir sus efectos" in instruction
+    assert "Responde primero a lo que preguntó" in instruction
 
 
 def test_live_price_change_blocks_test_send(db, monkeypatch):
@@ -327,9 +472,13 @@ def _approved_real_pilot_sample(db, monkeypatch):
             "role": "user",
             "content": "Estoy interesado en la propiedad código 6436",
             "timestamp": "2026-10-01T10:00:00-03:00",
+        }, {
+            "role": "user",
+            "content": "Sigo interesado en la propiedad código 6436",
+            "timestamp": (NOW - timedelta(hours=1)).isoformat(),
         }],
     })
-    campaign_id = "pilot_three_rebajas_acceptance_20261109"
+    campaign_id = v2.REAL_PILOT_CAMPAIGN_ID
     p = params(
         lead_id=lead_id, phone=phone, campaign_id=campaign_id,
         test_mode=False, contact_basis_reviewed=True,
@@ -337,11 +486,18 @@ def _approved_real_pilot_sample(db, monkeypatch):
         contact_basis="Consulta previa de la misma propiedad (fixture de prueba)",
     )
     assert v2.prepare_one(db, now=NOW, **p)["status"] == "PREPARED"
+    assert v2.review_whatsapp_contact(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        operator="Operador de pruebas",
+        evidence="Consentimiento explícito fixture CRM 2026-10-01",
+        now=NOW,
+    )["status"] == "WHATSAPP_CONTACT_REVIEWED"
     assert v2.approve_one(db, lead_id=lead_id, campaign_id=campaign_id,
                           operator="Operador de pruebas", now=NOW)["status"] == "APPROVED"
     monkeypatch.setenv(v2.SEND_FLAG, "true")
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, campaign_id)
     monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, "true")
     monkeypatch.setenv(v2.REAL_PILOT_RECIPIENTS_FLAG, (
         f"{lead_id}:6436;"
         "690000000000000000000798:6377;"
@@ -356,6 +512,10 @@ def test_real_pilot_remains_locked_until_separate_runtime_activation(db, monkeyp
     def sender(*args):
         provider_calls.append(args)
         return {"success": True, "provider_message_id": "should-not-send"}
+    monkeypatch.setenv("RENDER", "true")
+    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                       sender=sender, now=NOW)["status"] == "MANUAL_CAMPAIGNS_DISABLED_ON_RENDER"
+    monkeypatch.delenv("RENDER")
     assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
                        sender=sender, now=NOW)["status"] == "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
     monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
@@ -430,6 +590,38 @@ def test_real_pilot_blocks_duplicate_or_lost_historic_inquiry(db, monkeypatch):
     )
     assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
                        sender=sender, now=NOW)["status"] == "REAL_SEND_INQUIRY_NOT_VERIFIED"
+    assert calls == []
+
+
+def test_real_wasender_sender_can_follow_up_outside_24_hours_with_reviewed_opt_in(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
+    db["leads"].update_one(
+        {"_id": ObjectId(lead_id)},
+        {"$set": {"messages.1.timestamp": "2026-10-14T11:52:43-03:00"}},
+    )
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args) or {
+            "success": True, "provider_message_id": "mock-wasender-id",
+            "delivery_status": "accepted",
+        }, now=NOW,
+    )
+    assert result["status"] == "SENT"
+    assert len(calls) == 1
+
+
+def test_official_channel_is_never_mislabeled_as_wasender_sender(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
+    monkeypatch.setenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "official")
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "OFFICIAL_CHANNEL_SENDER_NOT_IMPLEMENTED"
     assert calls == []
 
 

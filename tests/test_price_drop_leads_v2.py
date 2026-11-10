@@ -680,7 +680,7 @@ def test_pilot_closeout_rejections_do_not_create_leads(
     lead = db["leads"].find_one({"phone": PHONE})
     campaign = lead["price_drop_v2"]["campaigns"][-1]
     assert campaign["status"] == expected_status
-    assert campaign["has_positive_response"] is not True
+    assert campaign.get("has_positive_response") is not True
     assert campaign["notifications"]["administrator"]["status"] == "CANCELED"
     assert campaign["notifications"]["property_executive"]["status"] == "FROZEN_ADMIN_ONLY"
     assert db["leads"].count_documents({}) == original_count

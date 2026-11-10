@@ -1876,9 +1876,29 @@ def _resolve_v2_current_executive(db, lead: dict) -> dict:
     from .lead_router import build_secure_crm_url
 
     state = assignment_context(db, lead)
-    if state.get("status") != "consistent":
-        return {"status": "assignment_" + str(state.get("status") or "missing")}
-    cycle = state["cycle"]
+    if state.get("status") == "consistent":
+        cycle = state["cycle"]
+    else:
+        # Historical leads may have a UNIQUE, still-active assignment cycle
+        # and two matching executive mirrors but no lifecycle cycle pointer.
+        # This read-only compatibility exception applies only to the executive
+        # recovery notice, never to CRM assignment or SLA decisions.
+        lifecycle = lead.get("lifecycle") or {}
+        active = state.get("active_cycles") or []
+        mirrors = (str(lead.get("ejecutivo_asignado") or "").strip(),
+                   str((lead.get("prospecto") or {}).get("ejecutivo") or "").strip())
+        missing_pointers = not any(lifecycle.get(k) for k in (
+            "current_assignment_cycle_id", "assignment_cycle_id",
+        ))
+        if (state.get("status") != "conflict"
+                or set(state.get("issues") or []) != {"cycle_pointer_mismatch"}
+                or not missing_pointers or len(active) != 1
+                or not all(mirrors)
+                or mirrors[0] != mirrors[1]
+                or mirrors[0] != str(active[0].get("assigned_to_display_name") or "")
+                or not str(active[0].get("assigned_to_user_id") or "").strip()):
+            return {"status": "assignment_" + str(state.get("status") or "missing")}
+        cycle = active[0]
     uid = str(cycle.get("assigned_to_user_id") or "")
     name = str(cycle.get("assigned_to_display_name") or "")
     cycle_id = str(cycle.get("assignment_cycle_id") or "")

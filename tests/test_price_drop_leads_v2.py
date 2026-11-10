@@ -738,7 +738,8 @@ def test_closeout_simulated_executive_notice_only_to_9804(db, monkeypatch):
     assert db["leads"].count_documents({}) == 2
 
 
-def test_real_executive_notice_requires_two_explicit_gates_and_active_cycle(monkeypatch):
+@pytest.mark.parametrize("legacy_missing_pointer", [False, True])
+def test_real_executive_notice_requires_two_explicit_gates_and_active_cycle(monkeypatch, legacy_missing_pointer):
     from bson import ObjectId
     import mongomock
     d = mongomock.MongoClient()["URLS"]
@@ -751,9 +752,11 @@ def test_real_executive_notice_requires_two_explicit_gates_and_active_cycle(monk
         "_id": lid, "phone": client_phone,
         "ejecutivo_asignado": "Ejecutiva QA",
         "prospecto": {"ejecutivo": "Ejecutiva QA", "codigo": "6436"},
-        "lifecycle": {"current_assignment_cycle_id": cycle_id,
-                      "assignment_cycle_id": cycle_id,
-                      "assigned_to_user_id": str(uid)},
+        "lifecycle": ({"assigned_to_user_id": str(uid)}
+                      if legacy_missing_pointer else
+                      {"current_assignment_cycle_id": cycle_id,
+                       "assignment_cycle_id": cycle_id,
+                       "assigned_to_user_id": str(uid)}),
         "price_drop_v2": {"campaigns": [{
             "campaign_id": "real-exec-test", "test_mode": False,
             "status": "RESPONDED", "has_positive_response": True,
@@ -802,7 +805,9 @@ def test_real_executive_notice_requires_two_explicit_gates_and_active_cycle(monk
     persisted = d["leads"].find_one({"_id": lid})
     assert persisted["price_drop_v2"]["campaigns"][0]["notifications"]["property_executive"]["status"] == "SENT"
     assert persisted["price_drop_v2"]["campaigns"][0]["notifications"]["administrator"]["status"] == "PENDING_HUMAN_REVIEW"
-    assert persisted["lifecycle"]["current_assignment_cycle_id"] == cycle_id
+    assert persisted["lifecycle"].get("current_assignment_cycle_id") == (
+        None if legacy_missing_pointer else cycle_id
+    )
     assert d["leads"].count_documents({}) == 1
 
 

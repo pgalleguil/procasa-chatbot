@@ -18,6 +18,7 @@ NOW = datetime(2026, 11, 9, 15, 0, tzinfo=timezone.utc)
 def db(monkeypatch):
     monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
     monkeypatch.setenv(v2.ADMIN_PHONE_FLAG, PHONE)
+    monkeypatch.setenv(v2.TEST_LEAD_ID_FLAG, str(LID))
     monkeypatch.delenv(v2.SEND_FLAG, raising=False)
     monkeypatch.delenv(v2.CONTEXT_FLAG, raising=False)
     monkeypatch.delenv(v2.APPROVED_ID_FLAG, raising=False)
@@ -60,6 +61,10 @@ def db(monkeypatch):
                 },
             }],
         },
+    })
+    d["leads"].insert_one({
+        "_id": ObjectId("690000000000000000000891"),
+        "phone": "56983219804", "messages": [],
     })
     return d
 
@@ -159,7 +164,7 @@ def test_non_test_real_client_still_blocked_by_old_property_campaign(db):
     d = db["leads"].find_one({"_id": LID})
     d["lead_temperature_effective"] = "HOT"
     db["leads"].replace_one({"_id": LID}, d)
-    with pytest.raises(v2.PilotBlocked, match="active_campaign_for_property|pre_drop_inquiry_not_verified"):
+    with pytest.raises(v2.PilotBlocked, match="active_campaign_for_property|pre_drop_inquiry_not_verified|ambiguous_lead_identity"):
         v2.preview_one(db, **request(test_mode=False,
                                     contact_basis_reviewed=True,
                                     contact_basis_type=v2.DIRECT_RESPONSE_BASIS_TYPE,
@@ -169,6 +174,113 @@ def test_non_test_real_client_still_blocked_by_old_property_campaign(db):
 
 def test_webhook_startup_invokes_explicit_reset_mode():
     from pathlib import Path
-    webhook = (Path(__file__).resolve().parents[1] / "webhook.py").read_text()
-    assert 'if v2_price_drop_mode in {"reset", "preview", "send"}:' in webhook
+    webhook = (Path(__file__).resolve().parents[1] / "webhook.py").read_text(encoding="utf-8")
+    assert 'if v2_price_drop_mode in {"reset", "reauthorize", "preview", "send"}:' in webhook
     assert "from scripts.price_drop_leads_v2_bootstrap import run_bootstrap" in webhook
+
+
+def test_completed_search_reauthorization_preserves_history_and_attributes_reply(db, monkeypatch):
+    lead_before = db["leads"].find_one({"_id": LID})
+    lead_before["conversation_id"] = "historic-conversation"
+    lead_before["prospecto"] = {"codigo": "6436", "status": "historic"}
+    lead_before["messages"].append({
+        "role": "user", "content": "Qué lástima, ya encontré una vivienda y terminé mi búsqueda",
+        "provider_message_id": "completed-search-reply",
+    })
+    lead_before["price_drop_v2"]["reply_events"] = [{
+        "campaign_id": OLD_ID, "provider_message_id": "historic-event",
+    }]
+    db["leads"].replace_one({"_id": LID}, lead_before)
+    snapshot = db["leads"].find_one({"_id": LID})
+    assert v2.lead_must_not_be_contacted(snapshot)
+
+    auth = v2.authorize_test_qa_reauthorization(
+        db, lead_id=str(LID), campaign_id=NEW_ID, phone=PHONE,
+        operator="Administrador QA",
+        evidence_reference="Aprobación explícita QA 2026-11-10",
+        now=NOW,
+    )
+    assert auth["status"] == "AUTHORIZED"
+    after_auth = db["leads"].find_one({"_id": LID})
+    assert after_auth["messages"] == snapshot["messages"]
+    assert after_auth["prospecto"] == snapshot["prospecto"]
+    assert after_auth["conversation_id"] == snapshot["conversation_id"]
+    assert after_auth["price_drop_v2"]["campaigns"] == snapshot["price_drop_v2"]["campaigns"]
+    assert after_auth["price_drop_v2"]["reply_events"] == snapshot["price_drop_v2"]["reply_events"]
+    assert after_auth["price_drop_v2"]["processed_inbound_provider_ids"] == ["old-reply-id"]
+
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, NEW_ID)
+    prepared = v2.prepare_one(db, now=NOW + timedelta(minutes=1), **request())
+    campaign = next(c for c in db["leads"].find_one({"_id": LID})["price_drop_v2"]["campaigns"]
+                    if c["campaign_id"] == NEW_ID)
+    assert campaign["qa_reauthorization_id"] == auth["authorization_id"]
+    assert v2.approve_one(db, lead_id=str(LID), campaign_id=NEW_ID,
+                          operator="Administrador QA", now=NOW + timedelta(minutes=1))["status"] == "APPROVED"
+    calls = []
+    sent = v2.send_one(
+        db, lead_id=str(LID), campaign_id=NEW_ID,
+        sender=lambda phone, text: (calls.append((phone, text)) or {
+            "success": True, "provider_message_id": "mock-9804-send",
+            "delivery_status": "accepted",
+        }), now=NOW + timedelta(minutes=2),
+    )
+    assert sent["status"] == "SENT"
+    assert len(calls) == 1 and calls[0][0] == PHONE
+    current = db["leads"].find_one({"_id": LID})
+    assert current["price_drop_v2"]["qa_reauthorizations"][0]["status"] == "CONSUMED"
+    assert current["price_drop_v2"]["reply_events"] == snapshot["price_drop_v2"]["reply_events"]
+    assert v2.record_inbound(
+        db, phone=PHONE, provider_message_id="mock-9804-inbound",
+        text="Me interesa, ¿sigue disponible?", now=NOW + timedelta(minutes=3),
+    )["status"] == "ATTRIBUTED"
+    current = db["leads"].find_one({"_id": LID})
+    assert current["price_drop_v2"]["campaigns"][-1]["last_inbound_provider_id"] == "mock-9804-inbound"
+    assert current["price_drop_v2"]["campaigns"][-1]["notifications"]["administrator"]["status"] == "PENDING_SIMULATION"
+    assert db["leads"].find_one({"phone": "56983219804"}).get("price_drop_v2") is None
+
+
+def test_qa_reauthorization_cannot_override_explicit_opt_out_or_duplicate_route(db, monkeypatch):
+    db["leads"].update_one({"_id": LID}, {"$push": {
+        "messages": {"role": "user", "content": "No quiero recibir más información"},
+    }})
+    blocked = v2.authorize_test_qa_reauthorization(
+        db, lead_id=str(LID), campaign_id=NEW_ID, phone=PHONE,
+        operator="Administrador QA", evidence_reference="Aprobación QA explícita",
+        now=NOW,
+    )
+    assert blocked["status"] == "BLOCKED"
+    assert "qa_reauthorizations" not in db["leads"].find_one({"_id": LID}).get("price_drop_v2", {})
+
+    db["leads"].update_one({"_id": LID}, {"$set": {"messages": []}})
+    db["leads"].insert_one({
+        "_id": ObjectId("690000000000000000000890"),
+        "contact_phone_normalized": PHONE, "phone": "+56983219804",
+    })
+    blocked = v2.authorize_test_qa_reauthorization(
+        db, lead_id=str(LID), campaign_id=NEW_ID, phone=PHONE,
+        operator="Administrador QA", evidence_reference="Aprobación QA explícita",
+        now=NOW,
+    )
+    assert blocked["reason"] == "qa_canonical_lead_ambiguous_or_mismatched"
+
+
+def test_bootstrap_reauthorize_mode_only_records_scoped_approval(db, monkeypatch):
+    from scripts.price_drop_leads_v2_bootstrap import run_bootstrap
+
+    db["leads"].update_one({"_id": LID}, {"$push": {"messages": {
+        "role": "user", "content": "Ya encontré otra propiedad, gracias",
+    }}})
+    monkeypatch.setenv("PRICE_DROP_LEADS_V2_TEST_BOOTSTRAP_MODE", "reauthorize")
+    monkeypatch.setenv("PRICE_DROP_LEADS_V2_TEST_BOOTSTRAP_ID", NEW_ID)
+    monkeypatch.setenv("PRICE_DROP_LEADS_V2_TEST_OPERATOR", "Administrador QA")
+    monkeypatch.setenv(v2.TEST_REAUTH_EVIDENCE_FLAG, "Aprobación explícita QA")
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.APPROVED_ID_FLAG, NEW_ID)
+    calls = []
+    result = run_bootstrap(db, sender=lambda *args: calls.append(args))
+    assert result["status"] == "AUTHORIZED"
+    assert calls == []
+    assert db["leads"].find_one({"_id": LID}).get("messages")[-1]["content"] == "Ya encontré otra propiedad, gracias"
+    assert db["leads"].find_one({"_id": LID})["price_drop_v2"]["campaigns"][0]["status"] == "RESPONDED"

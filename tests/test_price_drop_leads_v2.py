@@ -18,6 +18,7 @@ CAMPAIGN = "test_leads_6436_20261105"
 def db(monkeypatch):
     monkeypatch.setenv(v2.TEST_PHONE_FLAG, PHONE)
     monkeypatch.setenv(v2.ADMIN_PHONE_FLAG, PHONE)
+    monkeypatch.setenv(v2.TEST_LEAD_ID_FLAG, "690000000000000000000777")
     monkeypatch.delenv(v2.EXEC_NOTICE_ENABLED_FLAG, raising=False)
     testdb = mongomock.MongoClient()["URLS"]
     testdb["universo_cartera_prop360"].insert_one({

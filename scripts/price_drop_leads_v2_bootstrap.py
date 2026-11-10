@@ -11,7 +11,9 @@ from typing import Callable
 from chatbot.phone_utils import normalize_phone_strict
 from chatbot.price_drop_leads_v2 import (
     APPROVED_ID_FLAG, CONTEXT_FLAG, SEND_FLAG, TEST_PHONE_FLAG,
-    PilotBlocked, approve_one, prepare_one, preview_one, send_one,
+    TEST_LEAD_ID_FLAG, TEST_REAUTH_EVIDENCE_FLAG,
+    PilotBlocked, _test_qa_webhook_canonical_lead,
+    approve_one, authorize_test_qa_reauthorization, prepare_one, preview_one, send_one,
     reset_test_qa_session,
 )
 
@@ -31,7 +33,7 @@ def _enabled(name: str) -> bool:
 def run_bootstrap(db, *, sender: Callable[[str, str], dict] | None = None) -> dict:
     """Preflight or atomically claim one dispatch; no repeat on restart."""
     mode = os.getenv(BOOT_MODE, "off").strip().lower()
-    if mode not in {"reset", "preview", "send"}:
+    if mode not in {"reset", "reauthorize", "preview", "send"}:
         return {"status": "DISABLED"}
 
     campaign_id = os.getenv(BOOT_ID, "").strip()
@@ -50,15 +52,23 @@ def run_bootstrap(db, *, sender: Callable[[str, str], dict] | None = None) -> di
             phone=phone,
         )
 
-    # Select exactly one canonical existing lead; do not merge or upsert.
-    rows = list(db["leads"].find(
-        {"phone": phone},
-        {"_id": 1, "phone": 1, "price_drop_v2.campaigns": 1},
-    ).limit(2))
-    if len(rows) != 1:
+    if mode == "reauthorize":
+        pinned_lead_id = os.getenv(TEST_LEAD_ID_FLAG, "").strip()
+        if not pinned_lead_id:
+            return {"status": "BLOCKED", "reason": "canonical_test_lead_id_required"}
+        return authorize_test_qa_reauthorization(
+            db, lead_id=pinned_lead_id, campaign_id=campaign_id, phone=phone,
+            operator=os.getenv(BOOT_OPERATOR, ""),
+            evidence_reference=os.getenv(TEST_REAUTH_EVIDENCE_FLAG, ""),
+        )
+
+    # Pin the exact existing canonical lead and verify the unique webhook route.
+    pinned_lead_id = os.getenv(TEST_LEAD_ID_FLAG, "").strip()
+    lead = (_test_qa_webhook_canonical_lead(
+        db, lead_id=pinned_lead_id, phone=phone) if pinned_lead_id else None)
+    if not lead:
         return {"status": "BLOCKED", "reason": "canonical_test_lead_ambiguous_or_missing"}
 
-    lead = rows[0]
     lead_id = str(lead["_id"])
     entries = (lead.get("price_drop_v2") or {}).get("campaigns") or []
     matching = [c for c in entries if c.get("campaign_id") == campaign_id]

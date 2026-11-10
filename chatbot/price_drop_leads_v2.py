@@ -29,6 +29,9 @@ CONTEXT_FLAG = "PRICE_DROP_LEADS_V2_CONTEXT_ENABLED"
 SEND_FLAG = "PRICE_DROP_LEADS_V2_SEND_ENABLED"
 APPROVED_ID_FLAG = "PRICE_DROP_LEADS_V2_APPROVED_ID"
 TEST_PHONE_FLAG = "PRICE_DROP_PILOT_TEST_PHONE"
+TEST_LEAD_ID_FLAG = "PRICE_DROP_LEADS_V2_TEST_LEAD_ID"
+TEST_REAUTH_EVIDENCE_FLAG = "PRICE_DROP_LEADS_V2_TEST_REAUTH_EVIDENCE"
+TEST_QA_REAUTHORIZATIONS = "price_drop_v2.qa_reauthorizations"
 TEST_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_TEST_NOTICES_ENABLED"
 ADMIN_PHONE_FLAG = "PRICE_DROP_LEADS_V2_ADMIN_PHONE"
 EXEC_NOTICE_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_EXECUTIVE_NOTICE_ENABLED"
@@ -102,6 +105,203 @@ def utc(value: datetime) -> datetime:
 def _same_phone(lead: dict, phone: str) -> bool:
     actual = lead.get("contact_phone_normalized") or lead.get("phone")
     return normalize_phone_strict(actual or "") == normalize_phone_strict(phone or "")
+
+
+def _contact_suppression_reasons(lead: dict | None) -> set[str]:
+    """Explain the existing contact guard without weakening it globally."""
+    if not isinstance(lead, dict):
+        return set()
+    reasons: set[str] = set()
+    if lead.get("conversation_status") in {
+        "STOPPED_BY_CLIENT", "STOPPED", "BLOCKED", "BLOCKED_EXTERNAL_BROKER",
+    }:
+        status_reason = str(lead.get("conversation_status_reason") or "")
+        status_evidence = str(lead.get("conversation_status_evidence") or "")
+        status_classification = classify_price_drop_reply(status_evidence)
+        if (status_reason == "already_found_property"
+                or (status_classification.label == "BAJA"
+                    and status_classification.reason == "already_found_property")):
+            reasons.add("completed_search")
+        else:
+            reasons.add("contact_block")
+    if ((lead.get("price_drop_v2") or {}).get("opted_out") is True
+            or (lead.get("price_drop_campaign_v1") or {}).get("opted_out") is True):
+        reasons.add("explicit_opt_out")
+    for campaign in ((lead.get("price_drop_v2") or {}).get("campaigns") or []):
+        if not isinstance(campaign, dict):
+            continue
+        if campaign.get("status") == "OPTED_OUT":
+            reasons.add("explicit_opt_out")
+        classification = classify_price_drop_reply(campaign.get("last_customer_text") or "")
+        if classification.label == "BAJA":
+            reasons.add("completed_search" if classification.reason == "already_found_property"
+                        else "explicit_opt_out")
+    for message in lead.get("messages") or []:
+        if not isinstance(message, dict) or message.get("role") not in {"user", "customer"}:
+            continue
+        classification = classify_price_drop_reply(message.get("content") or "")
+        if classification.label == "BAJA":
+            reasons.add("completed_search" if classification.reason == "already_found_property"
+                        else "explicit_opt_out")
+    return reasons
+
+
+def _test_qa_webhook_canonical_lead(db, *, lead_id: Any, phone: str) -> dict | None:
+    """Require the same unique identity query used by the V2 inbound resolver."""
+    canonical = normalize_phone_strict(phone)
+    if not canonical:
+        return None
+    matches = list(db[LEADS].find(
+        {"$or": [{"phone": canonical}, {"contact_phone_normalized": canonical}]},
+        {"_id": 1},
+    ).limit(2))
+    try:
+        lid = _lead_id(lead_id)
+    except (TypeError, ValueError):
+        return None
+    if len(matches) != 1 or matches[0].get("_id") != lid:
+        return None
+    lead = db[LEADS].find_one({"_id": lid})
+    return lead if lead and _same_phone(lead, canonical) else None
+
+
+def _test_qa_reauthorization(lead: dict, *, campaign_id: str, phone: str,
+                             property_code: str, now: datetime,
+                             expected_authorization_id: str | None = None,
+                             allow_consumed: bool = False) -> dict | None:
+    """Validate a single admin QA exception for completed-search suppression.
+
+    Explicit STOP/opt-out and other contact blocks remain non-overridable.
+    This helper is never used for real-customer campaigns.
+    """
+    canonical = normalize_phone_strict(phone)
+    if (canonical != APPROVED_ADMIN_PHONE
+            or canonical != normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, ""))
+            or canonical != normalize_phone_strict(os.getenv(ADMIN_PHONE_FLAG, ""))
+            or property_code != "6436"
+            or not campaign_id.startswith("test_leads_6436_")
+            or not _same_phone(lead, canonical)):
+        return None
+    if str(lead.get("_id")) != str(os.getenv(TEST_LEAD_ID_FLAG, "")).strip():
+        return None
+    qa = (lead.get("price_drop_v2") or {}).get("qa_session") or {}
+    if qa.get("campaign_id") != campaign_id:
+        return None
+    allowed_statuses = {"ACTIVE", "CONSUMED"} if allow_consumed else {"ACTIVE"}
+    records = [row for row in ((lead.get("price_drop_v2") or {}).get(
+        "qa_reauthorizations") or [])
+        if isinstance(row, dict) and row.get("campaign_id") == campaign_id]
+    if len(records) != 1:
+        return None
+    authorization = records[0]
+    if (authorization.get("status") not in allowed_statuses
+            or authorization.get("phone_normalized") != canonical
+            or authorization.get("property_code") != "6436"
+            or authorization.get("max_messages") != 1
+            or not str(authorization.get("operator") or "").strip()
+            or len(str(authorization.get("evidence_reference") or "").strip()) < 8
+            or not authorization.get("authorization_id")):
+        return None
+    expires_at = authorization.get("expires_at")
+    if not isinstance(expires_at, datetime) or utc(expires_at) <= utc(now):
+        return None
+    reasons = _contact_suppression_reasons(lead)
+    if reasons and reasons != {"completed_search"}:
+        return None
+    if lead_must_not_be_contacted(lead) and reasons != {"completed_search"}:
+        return None
+    if (expected_authorization_id is not None
+            and authorization.get("authorization_id") != expected_authorization_id):
+        return None
+    return authorization
+
+
+def authorize_test_qa_reauthorization(db, *, lead_id: str, campaign_id: str,
+                                      phone: str, operator: str,
+                                      evidence_reference: str, now=None) -> dict:
+    """Append one expiring admin QA authorization without clearing lead history.
+
+    This narrow exception is only for a recorded completed-search suppression
+    on the allowlisted admin test phone. Global STOP/opt-out protections remain
+    in force for every other reason and every real-customer campaign.
+    """
+    canonical = normalize_phone_strict(phone)
+    operator = str(operator or "").strip()
+    evidence = str(evidence_reference or "").strip()
+    if (canonical != APPROVED_ADMIN_PHONE
+            or canonical != normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, ""))
+            or canonical != normalize_phone_strict(os.getenv(ADMIN_PHONE_FLAG, ""))
+            or not VALID_ID.fullmatch(campaign_id)
+            or not campaign_id.startswith("test_leads_6436_")
+            or not operator or len(evidence) < 8):
+        return {"status": "BLOCKED", "reason": "qa_reauthorization_not_authorized"}
+    try:
+        lid = _lead_id(lead_id)
+    except (TypeError, ValueError):
+        return {"status": "BLOCKED", "reason": "qa_canonical_lead_id_invalid"}
+    if str(lid) != str(os.getenv(TEST_LEAD_ID_FLAG, "")).strip():
+        return {"status": "BLOCKED", "reason": "qa_canonical_lead_id_not_pinned"}
+    lead = _test_qa_webhook_canonical_lead(db, lead_id=lid, phone=canonical)
+    if not lead:
+        return {"status": "BLOCKED", "reason": "qa_canonical_lead_ambiguous_or_mismatched"}
+    if campaign_id in {
+            str(row.get("campaign_id") or "")
+            for row in ((lead.get("price_drop_v2") or {}).get("campaigns") or [])
+            if isinstance(row, dict)}:
+        return {"status": "BLOCKED", "reason": "qa_campaign_already_exists"}
+    campaigns = (lead.get("price_drop_v2") or {}).get("campaigns") or []
+    if any(row.get("status") in {
+            "PREPARED", "APPROVED", "SENDING", "DELIVERY_UNKNOWN"}
+            for row in campaigns if isinstance(row, dict)):
+        return {"status": "BLOCKED", "reason": "qa_unresolved_campaign_exists"}
+    reasons = _contact_suppression_reasons(lead)
+    if reasons != {"completed_search"} or not lead_must_not_be_contacted(lead):
+        return {"status": "BLOCKED", "reason": "qa_suppression_not_completed_search_only"}
+
+    from uuid import uuid4
+    stamp = utc(now or datetime.now(timezone.utc))
+    prior_session = (lead.get("price_drop_v2") or {}).get("qa_session")
+    authorization = {
+        "authorization_id": str(uuid4()),
+        "campaign_id": campaign_id,
+        "phone_normalized": canonical,
+        "property_code": "6436",
+        "max_messages": 1,
+        "status": "ACTIVE",
+        "operator": operator[:80],
+        "evidence_reference": evidence[:240],
+        "authorized_at": stamp,
+        "expires_at": stamp + timedelta(hours=24),
+    }
+    qa_session = {
+        "campaign_id": campaign_id,
+        "started_at": stamp,
+        "operator": operator[:80],
+        "reauthorization_id": authorization["authorization_id"],
+        "history_preserved": True,
+    }
+    query = {
+        "_id": lid,
+        TEST_QA_REAUTHORIZATIONS: {"$not": {"$elemMatch": {
+            "campaign_id": campaign_id,
+        }}},
+        ROOT: {"$not": {"$elemMatch": {"campaign_id": campaign_id}}},
+    }
+    update = {
+        "$set": {"price_drop_v2.qa_session": qa_session},
+        "$push": {TEST_QA_REAUTHORIZATIONS: authorization},
+    }
+    if prior_session:
+        update["$push"]["price_drop_v2.qa_session_archive"] = prior_session
+    result = db[LEADS].update_one(query, update)
+    if result.modified_count != 1:
+        return {"status": "BLOCKED", "reason": "qa_reauthorization_concurrent_change"}
+    return {"status": "AUTHORIZED", "campaign_id": campaign_id,
+            "authorization_id": authorization["authorization_id"],
+            "expires_at": authorization["expires_at"],
+            "recipient_last4": canonical[-4:], "max_messages": 1,
+            "historical_messages_preserved": len(lead.get("messages") or []),
+            "historical_campaigns_preserved": len(campaigns)}
 
 
 def _real_campaign_history_blocker(lead: dict, campaign: dict) -> str | None:
@@ -601,6 +801,9 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
     lead = db[LEADS].find_one({"_id": lid})
     if not lead or not _same_phone(lead, canonical):
         raise PilotBlocked("lead_phone_mismatch")
+    if test_mode and _test_qa_webhook_canonical_lead(
+            db, lead_id=lid, phone=canonical) is None:
+        raise PilotBlocked("ambiguous_test_lead_webhook_route")
     clean_temperature_filter = normalize_temperature_filter(temperature_filter)
     if campaign_filters_enabled:
         selected_temperature = effective_temperature(lead, temperature_review)
@@ -629,8 +832,16 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
             raise PilotBlocked("temperature_changed_after_manual_review")
     if lead.get("phone_is_synthetic") or lead.get("contact_identity_incomplete"):
         raise PilotBlocked("incomplete_contact_identity")
+    qa_reauthorization = None
     if lead_must_not_be_contacted(lead):
-        raise PilotBlocked("lead_opted_out")
+        if test_mode:
+            qa_reauthorization = _test_qa_reauthorization(
+                lead, campaign_id=campaign_id, phone=canonical,
+                property_code=property_code,
+                now=utc(now or datetime.now(timezone.utc)),
+            )
+        if qa_reauthorization is None:
+            raise PilotBlocked("lead_opted_out")
     if test_mode:
         if canonical != normalize_phone_strict(os.getenv(TEST_PHONE_FLAG, "")):
             raise PilotBlocked("test_phone_not_allowlisted")
@@ -730,6 +941,7 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         "old_price_clp": old_price_clp, "new_price_clp": new_price_clp,
         "currency": currency, "price_drop_at": drop_at,
         "test_mode": bool(test_mode),
+        "qa_reauthorization_id": (qa_reauthorization or {}).get("authorization_id"),
         "contact_basis_reviewed": bool(contact_basis_reviewed) if not test_mode else False,
         "contact_basis_type": contact_basis_type if not test_mode else "TEST_ONLY",
         "contact_basis": str(contact_basis or "")[:240] if not test_mode else "test_only_no_contact_basis",
@@ -772,6 +984,8 @@ def prepare_one(db, *, now=None, **data) -> dict:
         "price_reference": p["price_reference"],
         "price_history_steps": p["price_history_steps"],
     })
+    if p.get("qa_reauthorization_id"):
+        row["qa_reauthorization_id"] = p["qa_reauthorization_id"]
     if p["campaign_filters_enabled"]:
         row.update({
             "campaign_filters_enabled": True,
@@ -901,8 +1115,12 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     if os.getenv(CONTEXT_FLAG, "").lower() not in {"true", "1", "yes"}:
         return {"status": "CONTEXT_DISABLED"}
     lead = db[LEADS].find_one({"_id": _lead_id(lead_id)}) or {}
-    c = next((x for x in (lead.get("price_drop_v2") or {}).get("campaigns") or []
-              if x.get("campaign_id") == campaign_id), None)
+    all_campaigns = (lead.get("price_drop_v2") or {}).get("campaigns") or []
+    matching_campaigns = [x for x in all_campaigns
+                          if x.get("campaign_id") == campaign_id]
+    if len(matching_campaigns) > 1:
+        return {"status": "DUPLICATE_CAMPAIGN_ID"}
+    c = matching_campaigns[0] if matching_campaigns else None
     if not c or c.get("status") != "APPROVED":
         return {"status": "NOT_APPROVED"}
     channel = os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi").strip().lower()
@@ -915,8 +1133,31 @@ def send_one(db, *, lead_id: str, campaign_id: str,
             os.getenv("RENDER", "").strip().lower() == "true"
             or os.getenv("RENDER_SERVICE_ID")):
         return {"status": "MANUAL_CAMPAIGNS_DISABLED_ON_RENDER"}
+    qa_reauthorization = None
+    if c.get("test_mode") and (
+            str(lead.get("_id")) != str(os.getenv(TEST_LEAD_ID_FLAG, "")).strip()
+            or _test_qa_webhook_canonical_lead(
+                db, lead_id=lead["_id"], phone=c.get("phone_normalized", "")) is None):
+        return {"status": "TEST_LEAD_IDENTITY_NOT_PINNED"}
+    if c.get("test_mode") and c.get("qa_reauthorization_id"):
+        qa_reauthorization = _test_qa_reauthorization(
+            lead, campaign_id=campaign_id,
+            phone=c.get("phone_normalized", ""),
+            property_code=str(c.get("property_code") or ""), now=stamp,
+            expected_authorization_id=str(c.get("qa_reauthorization_id")),
+        )
+        if qa_reauthorization is None:
+            return {"status": "BLOCKED_QA_REAUTHORIZATION_INVALID"}
     if lead_must_not_be_contacted(lead):
-        return {"status": "BLOCKED_OPTED_OUT"}
+        if c.get("test_mode") and qa_reauthorization is None:
+            qa_reauthorization = _test_qa_reauthorization(
+                lead, campaign_id=campaign_id,
+                phone=c.get("phone_normalized", ""),
+                property_code=str(c.get("property_code") or ""), now=stamp,
+                expected_authorization_id=str(c.get("qa_reauthorization_id") or ""),
+            )
+        if qa_reauthorization is None:
+            return {"status": "BLOCKED_OPTED_OUT"}
     # Historical recovery is NOT HOT-only; closed opportunities remain blocked.
     if not c.get("test_mode") and not is_open_campaign_eligible(lead):
         return {"status": "BLOCKED_CLOSED_PIPELINE"}
@@ -991,8 +1232,33 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         _property_price(db, c["property_code"], old, new, currency="CLP")
     else:
         _property_price(db, c["property_code"], old, new)
-    send_claim = {"_id": lead["_id"], ROOT: {"$elemMatch": {
-        "campaign_id": campaign_id, "status": "APPROVED"}}}
+    campaign_index = next((i for i, row in enumerate(all_campaigns)
+                           if row.get("campaign_id") == campaign_id), None)
+    if campaign_index is None:
+        return {"status": "NOT_APPROVED"}
+    campaign_path = f"{ROOT}.{campaign_index}"
+    send_claim = {"_id": lead["_id"],
+                  campaign_path + ".campaign_id": campaign_id,
+                  campaign_path + ".status": "APPROVED"}
+    claim_update = {"$set": {
+        campaign_path + ".status": "SENDING",
+        campaign_path + ".attempted_at": stamp,
+    }}
+    if qa_reauthorization is not None:
+        auth_rows = ((lead.get("price_drop_v2") or {}).get(
+            "qa_reauthorizations") or [])
+        auth_index = next((i for i, row in enumerate(auth_rows)
+                           if isinstance(row, dict) and row.get("authorization_id")
+                           == qa_reauthorization.get("authorization_id")), None)
+        if auth_index is None:
+            return {"status": "BLOCKED_QA_REAUTHORIZATION_MISSING"}
+        auth_path = f"{TEST_QA_REAUTHORIZATIONS}.{auth_index}"
+        send_claim[auth_path + ".authorization_id"] = qa_reauthorization["authorization_id"]
+        send_claim[auth_path + ".status"] = "ACTIVE"
+        claim_update["$set"].update({
+            auth_path + ".status": "CONSUMED",
+            auth_path + ".consumed_at": stamp,
+        })
     if not c.get("test_mode"):
         send_claim.update({
             "pipeline_stage": {"$nin": ["CLOSED_LOST", "CLOSED_WON"]},
@@ -1000,8 +1266,7 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         })
     claimed = db[LEADS].update_one(
         send_claim,
-        {"$set": {f"{ROOT}.$.status": "SENDING",
-                  f"{ROOT}.$.attempted_at": stamp}},
+        claim_update,
     )
     if claimed.modified_count != 1:
         return {"status": "ALREADY_ATTEMPTED"}
@@ -1134,6 +1399,7 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
                                "expires_at": {"$gt": now}}}},
         {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
          "price_drop_v2.campaigns": 1, "price_drop_v2.qa_session": 1,
+         "price_drop_v2.qa_reauthorizations": 1,
          "price_drop_v2.contact_preferences": 1,
          "price_drop_v2.opted_out": 1, "price_drop_campaign_v1.opted_out": 1,
          "conversation_status": 1},
@@ -1141,8 +1407,6 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
     if len(docs) != 1:
         return None
     lead = docs[0]
-    if lead_must_not_be_contacted(lead):
-        return None
     qa = (lead.get("price_drop_v2") or {}).get("qa_session") or {}
     cutoff = utc(qa["started_at"]) if (
         canonical == APPROVED_ADMIN_PHONE
@@ -1161,6 +1425,22 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
     campaign = max(candidates, key=lambda x: utc(x["sent_at"])) if candidates else None
     if not campaign or not _same_phone(lead, canonical):
         return None
+    qa_reauthorization = None
+    if campaign.get("test_mode"):
+        if _test_qa_webhook_canonical_lead(
+                db, lead_id=lead["_id"], phone=canonical) is None:
+            return None
+        expected_authorization_id = str(campaign.get("qa_reauthorization_id") or "")
+        if expected_authorization_id:
+            qa_reauthorization = _test_qa_reauthorization(
+                lead, campaign_id=str(campaign.get("campaign_id") or ""),
+                phone=canonical, property_code=str(campaign.get("property_code") or ""),
+                now=now, expected_authorization_id=expected_authorization_id,
+                allow_consumed=True,
+            )
+    if lead_must_not_be_contacted(lead):
+        if (not campaign.get("test_mode") or qa_reauthorization is None):
+            return None
     code = campaign["property_code"]
     # An explicit other-property reference (including a link) must not be
     # attributed to this campaign. Reuse the existing resolver used by V1.
@@ -1221,15 +1501,24 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
     classification = classify_price_drop_reply(text)
     label = classification.as_dict()
     cid = ctx["campaign_id"]
-    lead = db[LEADS].find_one(
-        {"$or": [{"phone": normalize_phone_strict(phone)},
-                 {"contact_phone_normalized": normalize_phone_strict(phone)}],
-         ROOT: {"$elemMatch": {"campaign_id": cid, "status": {
-             "$in": ["SENT", "RESPONDED"]}}}},
-        {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
-         "price_drop_v2.campaigns": 1,
-         "price_drop_v2.contact_preferences": 1},
-    )
+    if ctx.get("test_mode"):
+        pinned_lead_id = os.getenv(TEST_LEAD_ID_FLAG, "").strip()
+        lead = (_test_qa_webhook_canonical_lead(
+            db, lead_id=pinned_lead_id, phone=phone) if pinned_lead_id else None)
+        if lead and not any(
+                row.get("campaign_id") == cid and row.get("status") in {"SENT", "RESPONDED"}
+                for row in ((lead.get("price_drop_v2") or {}).get("campaigns") or [])):
+            lead = None
+    else:
+        lead = db[LEADS].find_one(
+            {"$or": [{"phone": normalize_phone_strict(phone)},
+                     {"contact_phone_normalized": normalize_phone_strict(phone)}],
+             ROOT: {"$elemMatch": {"campaign_id": cid, "status": {
+                 "$in": ["SENT", "RESPONDED"]}}}},
+            {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
+             "price_drop_v2.campaigns": 1,
+             "price_drop_v2.contact_preferences": 1},
+        )
     if not lead or not _same_phone(lead, phone):
         return {"status": "NOT_CAMPAIGN_REPLY"}
     # Campaign array entries are append-only; an explicit verified index

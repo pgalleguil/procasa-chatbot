@@ -64,12 +64,13 @@ customer-visible generated answer to support manual review.
 
 ## Results
 
-The completed run used the real DeepSeek generator with **40 synthetic
-conversations / 80 inbound turns**. It produced **72 structured model replies**;
-the eight explicit global opt-outs or completed searches were correctly
-suppressed. The generator made **96 API requests**, including structured-format
-retries. All 40 campaign contexts were verified; UF and CLP properties,
-successive reductions, and HOT/NORMAL/COLD lead snapshots were covered.
+The final run, after tightening the V2 prompt to avoid unsupported property
+inferences, used the real DeepSeek generator with **40 synthetic conversations
+/ 80 inbound turns**. It produced **72 structured model replies**; the eight
+explicit global opt-outs or completed searches were correctly suppressed. The
+generator made **95 API requests**, including structured-format retries. All
+40 campaign contexts were verified; UF and CLP properties, successive
+reductions, and HOT/NORMAL/COLD lead snapshots were covered.
 
 The saved matrix passes 80/80 checks for property identity, numeric listing
 facts, price claims, reply presence/suppression, campaign classification,
@@ -80,17 +81,32 @@ the V2 campaign marker; no unstructured fallback was needed. Mock WaSender
 recorded 72 customer deliveries, and mock administrator delivery recorded 24
 positive plus 8 informational notices. Executive notices remained frozen.
 
-One initial run flagged an acknowledgment that said the customer did **not**
-want to coordinate a visit. I corrected the visit-invitation evaluator to
-respect that negation and rechecked all 80 saved real-provider turns. The
-conversation output was not regenerated during that recheck; the JSON records
-`evaluation_replay.replayed_turns: 80` and
-`regenerated_model_replies: 0`. The final report status is `PASS`.
+An earlier pass first misread an acknowledgment that the customer did **not**
+want to coordinate a visit. I corrected that evaluator, then regenerated and
+rechecked the complete 40-conversation matrix against the final V2 prompt. A
+manual scan found the model explicitly avoided claiming lighting effects when
+the fixture only supplied orientation. The final report status is `PASS`.
 
 The naturalness result is a scripted format/length check, not a human quality
 rating. This synthetic acceptance result does not certify the chatbot as ready
 for live operation. Production WhatsApp delivery, provider behavior under a
 live account, and human review of language quality remain outside this run.
+
+The focused local regression command passed **156 tests**:
+
+```powershell
+python -X utf8 -m pytest -q `
+  tests/test_price_drop_campaign_cli.py `
+  tests/test_price_drop_leads_v2.py `
+  tests/test_price_drop_real_pilot.py
+```
+
+A separate local run also included `tests/test_chatbot_durable_queue.py` and
+reported six failures in legacy queue expectations (`ingress_timings`, batch
+window extension, and V1/V2 `pipeline_version` routing/idempotency). Neither
+that queue implementation nor its legacy test file changed in this work. The
+campaign-focused flow itself passed the 80-turn durable queue and delivery-log
+checks above; GitHub CI for the updated PR is reported separately.
 
 The generated result is stored in
 [`reports/price_drop_deepseek_acceptance_latest.json`](../reports/price_drop_deepseek_acceptance_latest.json)

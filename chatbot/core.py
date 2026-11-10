@@ -281,9 +281,23 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     # NOTA: stage es un campo de nivel superior, no está dentro de 'prospecto'
     db = await _run_sync(get_db)
     lead_doc_full = await _run_sync(lambda: db["leads"].find_one({"phone": phone}) or {})
+
+    # Resolve the verified V2 context BEFORE the general contact guard.
+    # A previously completed search must not silence a separately approved
+    # one-phone QA reply. The exception is NEVER valid for real recipients,
+    # explicit opt-outs, or unverified / expired QA campaigns.
+    pilot_context = None
+    try:
+        pilot_context = await _run_sync(load_active_context, db, phone, original_message)
+    except Exception:
+        logger.exception("[PRICE_DROP_PILOT] Optional context lookup failed")
+
     if lead_must_not_be_contacted(lead_doc_full):
-        logger.info("[DO_NOT_CONTACT] Cliente desistió o solicitó baja; inbound persistido sin respuesta automática.")
-        return ""
+        from .price_drop_leads_v2 import qa_completed_search_response_allowed
+        if not qa_completed_search_response_allowed(lead_doc_full, pilot_context):
+            logger.info("[DO_NOT_CONTACT] Cliente desistió o solicitó baja; inbound persistido sin respuesta automática.")
+            return ""
+        logger.info("[PRICE_DROP_QA] verified admin QA reply allowed despite prior completed search")
     if any(phrase in msg_lower for phrase in ("no me escriban", "dejen de escribir", "no quiero mensajes", "stop")):
         await _run_sync(db["leads"].update_one, {"phone": phone}, {"$set": {
             "conversation_status": "STOPPED_BY_CLIENT",
@@ -297,14 +311,6 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
     conversation_id = lead_doc_full.get("conversation_id") or prospecto_actual.get("conversation_id")
     if not conversation_id:
         conversation_id = await _run_sync(ensure_conversation_id, phone)
-
-    # Opt-in, single-phone campaign context. Read-only and fail-closed.
-    # Do not let a failed campaign lookup affect normal customer conversations.
-    pilot_context = None
-    try:
-        pilot_context = await _run_sync(load_active_context, db, phone, original_message)
-    except Exception:
-        logger.exception("[PRICE_DROP_PILOT] Optional context lookup failed")
 
     async def _persist_generated_outbound(response: str, metadata: dict, *, intent: str | None = None,
                                           lead_doc: dict | None = None) -> str:

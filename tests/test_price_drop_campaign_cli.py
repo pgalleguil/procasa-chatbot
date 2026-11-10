@@ -1071,6 +1071,35 @@ def test_wasender_usage_fails_closed_when_any_session_logs_are_disabled():
         )
 
 
+def test_account_usage_uses_personal_access_token_not_session_key(monkeypatch):
+    from config import Config
+
+    monkeypatch.setattr(Config, "WASENDER_TOKEN", "session-api-key", raising=False)
+    monkeypatch.setattr(Config, "WASENDER_PERSONAL_ACCESS_TOKEN", "account-pat", raising=False)
+    monkeypatch.setattr(Config, "WASENDER_BASE_URL", "https://wasenderapi.com/api", raising=False)
+    captured = {}
+
+    def usage_reader(**kwargs):
+        captured.update(kwargs)
+        return {"attempts_last_24h": 0}
+
+    monkeypatch.setattr(cli, "account_attempts_last_24h", usage_reader)
+    assert cli._provider_attempts_last_24h(now=NOW) == {"attempts_last_24h": 0}
+    assert captured["token"] == "account-pat"
+    assert captured["token"] != Config.WASENDER_TOKEN
+
+
+def test_account_usage_does_not_fall_back_to_session_key_when_pat_missing(monkeypatch):
+    from config import Config
+
+    monkeypatch.setattr(Config, "WASENDER_TOKEN", "session-api-key", raising=False)
+    monkeypatch.setattr(Config, "WASENDER_PERSONAL_ACCESS_TOKEN", None, raising=False)
+    monkeypatch.setattr(Config, "WASENDER_BASE_URL", "https://wasenderapi.com/api", raising=False)
+
+    with pytest.raises(cli.CliError, match="personal_access_token_required"):
+        cli._provider_attempts_last_24h(now=NOW)
+
+
 def test_interactive_menu_previews_then_prepares_approves_and_sends_mock_only(tmp_path):
     db = _event_db()
     lead_id = _candidate(db, phone="+56983219801", temperature="NORMAL")

@@ -147,10 +147,13 @@ def _within_hours(now: datetime, config: dict[str, Any]) -> bool:
 
 def _provider_attempts_last_24h(*, now: datetime) -> dict[str, Any]:
     from config import Config
+    personal_access_token = str(Config.WASENDER_PERSONAL_ACCESS_TOKEN or "").strip()
+    if not personal_access_token:
+        raise CliError("wasender_personal_access_token_required_for_account_usage")
     try:
         return account_attempts_last_24h(
             now=now, base_url=str(Config.WASENDER_BASE_URL or ""),
-            token=str(Config.WASENDER_TOKEN or ""),
+            token=personal_access_token,
             naive_timezone_name=os.getenv("PRICE_DROP_WASENDER_LOG_TIMEZONE", "UTC"),
         )
     except WaSenderUsageUnavailable as exc:

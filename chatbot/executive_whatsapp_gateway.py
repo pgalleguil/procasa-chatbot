@@ -138,14 +138,19 @@ def build_unmounted_executive_audit_router(
         # No messages, phone numbers or secrets in response/logs. This endpoint
         # does not import any WhatsApp send or chatbot processing entrypoint.
         try:
-            result = await asyncio.to_thread(
-                ingest_upsert, db_factory(), payload,
-                session_id=binding.session_id,
-                executive_user_id=binding.executive_user_id,
-                signature_header=request.headers.get("x-webhook-signature"),
-                webhook_secret=binding.webhook_secret,
-                commit=bool(persist_enabled),
-            )
+            def run_sync_ingest() -> dict[str, Any]:
+                # Even creation of a sync PyMongo client must stay off the
+                # request event loop. No WhatsApp office workers are invoked.
+                return ingest_upsert(
+                    db_factory(), payload,
+                    session_id=binding.session_id,
+                    executive_user_id=binding.executive_user_id,
+                    signature_header=request.headers.get("x-webhook-signature"),
+                    webhook_secret=binding.webhook_secret,
+                    commit=bool(persist_enabled),
+                )
+
+            result = await asyncio.to_thread(run_sync_ingest)
         except ExecutiveAuditError:
             raise HTTPException(status_code=400, detail="invalid_message") from None
         except Exception:

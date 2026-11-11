@@ -289,6 +289,105 @@ def _display(event: PriceDropEvent, interested: int | None = None) -> str:
             f"{local:%d/%m/%Y %H:%M %Z}{tail}")
 
 
+
+def audit_full_portfolio(
+    db: Any, *, since: datetime | None = None,
+    property_code: str | None = None,
+    currency: str | None = None, operation: str | None = None,
+    temperature_filter: str = "ALL", lead_max_age_days: int | None = 120,
+    limit: int | None = None, batch_size: int = 500,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Read-only inventory of ALL price drops and prior-property inquiries.
+
+    This is an audience discovery report, NOT send approval. It never
+    validates or grants marketing permission, never invokes WaSender,
+    never creates campaigns, and never writes MongoDB.
+    """
+    stamp = now or datetime.now(timezone.utc)
+    normalized_temperature = normalize_temperature_filter(temperature_filter)
+    max_age = normalize_lead_max_age_days(lead_max_age_days)
+    events = _events(db, property_code, since=since, currency=currency,
+                     operation=operation, limit=limit, batch_size=batch_size)
+    unique_eligible_leads: set[str] = set()
+    previously_counted: set[str] = set()
+    reasons: Counter[str] = Counter()
+    properties: set[str] = set()
+    rows_by_event: list[dict[str, Any]] = []
+    totals = {
+        "events_found": len(events),
+        "property_codes": 0,
+        "candidate_event_matches": 0,
+        "verified_inquiries_before_drop": 0,
+        "eligible_event_matches": 0,
+        "unique_eligible_leads": 0,
+        "cross_event_duplicate_matches": 0,
+        "excluded_or_review_needed": 0,
+        "requires_temperature_review": 0,
+        "requires_age_review": 0,
+    }
+    for event in events:
+        properties.add(event.property_code)
+        candidates = find_candidates_for_event(
+            db, event, temperature_filter=normalized_temperature,
+            lead_max_age_days=max_age, now=stamp,
+        )
+        count = 0
+        for row in candidates:
+            totals["candidate_event_matches"] += 1
+            reasons[str(row.get("reason") or "unknown")] += 1
+            if row.get("inquiry_at") is not None:
+                totals["verified_inquiries_before_drop"] += 1
+            if row.get("temperature_review_required"):
+                totals["requires_temperature_review"] += 1
+            if row.get("age_review_required"):
+                totals["requires_age_review"] += 1
+            if row.get("eligible"):
+                count += 1
+                totals["eligible_event_matches"] += 1
+                lead_id = str(row["lead_id"])
+                if lead_id in previously_counted:
+                    totals["cross_event_duplicate_matches"] += 1
+                previously_counted.add(lead_id)
+                unique_eligible_leads.add(lead_id)
+            else:
+                totals["excluded_or_review_needed"] += 1
+        rows_by_event.append({
+            "event_id": event.event_id,
+            "property_code": event.property_code,
+            "comuna": event.comuna,
+            "currency": event.currency,
+            "old_price": event.old_price,
+            "new_price": event.new_price,
+            "dropped_at": event.dropped_at.isoformat(),
+            "candidates": len(candidates),
+            "eligible": count,
+            "excluded_or_review_needed": len(candidates) - count,
+        })
+    totals["property_codes"] = len(properties)
+    totals["unique_eligible_leads"] = len(unique_eligible_leads)
+    return {
+        "scope": "entire_property_price_drop_history" if limit is None else "diagnostic_limited_scan",
+        "database_mode": "READ_ONLY",
+        "send_approved": False,
+        "sending_attempts": 0,
+        "reviewed_whatsapp_authorizations": "NOT_VERIFIED_BY_THIS_AUDIT",
+        "filters": {
+            "since": since.isoformat() if isinstance(since, datetime) else None,
+            "property_code": property_code, "currency": currency,
+            "operation": operation, "temperature": normalized_temperature,
+            "lead_max_age_days": max_age,
+        },
+        "totals": totals,
+        "exclusion_reasons": dict(reasons.most_common()),
+        "events": sorted(rows_by_event, key=lambda x: (
+            -x["eligible"], x["property_code"], x["event_id"]
+        )),
+        "next_step": "Review permission evidence per lead; no recipient is approved by this audit",
+    }
+
+
+
 def _pilot_status(db: Any) -> dict[str, Any]:
     rows = _entries(db, PILOT_CAMPAIGN_ID, (
         "PREPARED", "APPROVED", "SENDING", "SENT", "DELIVERY_UNKNOWN",
@@ -1819,7 +1918,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Descubre rebajas Prop360 y opera campañas V2 aprobadas de forma manual."
     )
     actions = parser.add_mutually_exclusive_group()
-    for flag in ("discover", "dry-run", "interactive", "execute", "resume", "prepare", "approve",
+    for flag in ("discover", "dry-run", "audience-audit", "interactive", "execute", "resume", "prepare", "approve",
                  "review-whatsapp-contact", "report", "summary"):
         actions.add_argument("--" + flag, dest="action", action="store_const", const=flag)
     parser.add_argument("--status", action="store_true", help="consulta estado sin escritura")
@@ -1955,6 +2054,17 @@ def main(argv: list[str] | None = None) -> int:
                 lead_max_age_days=(args.lead_max_age_days if args.lead_max_age_days is not None
                                    else DEFAULT_LEAD_MAX_AGE_DAYS),
             )
+            return 0
+        if args.action == "audience-audit":
+            report = audit_full_portfolio(
+                db, since=since, property_code=args.property_code,
+                currency=args.currency, operation=args.operation,
+                temperature_filter=args.temperature or "ALL",
+                lead_max_age_days=(args.lead_max_age_days if args.lead_max_age_days is not None
+                                   else DEFAULT_LEAD_MAX_AGE_DAYS),
+                limit=args.limit, batch_size=args.batch_size,
+            )
+            print(json.dumps(report, ensure_ascii=False, default=str))
             return 0
         if args.action == "discover":
             return _print_events(db, detailed=False, since=since,

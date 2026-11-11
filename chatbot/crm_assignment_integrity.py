@@ -333,7 +333,16 @@ def _valid_transfer_transition(
             and actor == str(current.get("assigned_by") or "").strip()
         )
     if assigned_by == "sla_reassignment":
-        decision_id = str(current.get("reassignment_decision_id") or "").strip()
+        cycle_id = str(current.get("assignment_cycle_id") or "").strip()
+        # A cycle can itself be rescued later. The executor then records that
+        # outgoing decision on reassignment_decision_id, so this field is not
+        # immutable evidence of the decision that originally CREATED the cycle.
+        # The destination cycle ID contains its original committed decision.
+        original_decision_id = (
+            cycle_id.partition("sla-reassignment:")[2]
+            if cycle_id.startswith("sla-reassignment:") else ""
+        )
+        decision_id = original_decision_id or str(current.get("reassignment_decision_id") or "").strip()
         if not decision_id:
             return False
         if db is None:
@@ -345,7 +354,7 @@ def _valid_transfer_transition(
             "event_type": "SLA_REASSIGNMENT_COMMITTED",
             "decision_id": decision_id,
             "source_cycle_id": str(previous.get("assignment_cycle_id") or ""),
-            "new_cycle_id": str(current.get("assignment_cycle_id") or ""),
+            "new_cycle_id": cycle_id,
         })
         return bool(audit)
     return False
@@ -527,17 +536,28 @@ def _notification_findings(
             })
     for cycle_id, rows in notifications_by_cycle.items():
         cycle = cycle_by_id[cycle_id]
-        # A digest can contain several leads. Count each attached cycle once
-        # per notification so multiple digest rows for the same cycle surface.
-        notification_ids = {str(row.get("_id") or id(row)) for row in rows}
-        if len(notification_ids) > 1:
+        # A non-HOT digest followed by a separate HOT escalation is expected
+        # when a lead becomes HOT. Only duplicate deliveries of the SAME kind
+        # are suspicious. Keep the full original notification IDs in evidence.
+        ids_by_kind: dict[str, set[str]] = {}
+        for row in rows:
+            kind = (
+                "lead_assignment_hot" if row.get("notification_type") == "lead_assignment_hot"
+                else "non_hot_digest_v1" if row.get("digest_type") == "non_hot_digest_v1"
+                else str(row.get("notification_type") or row.get("digest_type") or "unknown")
+            )
+            ids_by_kind.setdefault(kind, set()).add(str(row.get("_id") or id(row)))
+        for kind, notification_ids in ids_by_kind.items():
+            if len(notification_ids) <= 1:
+                continue
             findings.append({
                 "issue_code": "duplicate_delivered_notifications_for_assignment_cycle",
                 "lead_id": lead_id,
                 "assignment_cycle_id": cycle_id,
                 "property_code": str(cycle.get("property_code") or ""),
+                "notification_kind": kind,
                 "notification_ids": sorted(notification_ids),
-                "signature": cycle_id + ":" + ":".join(sorted(notification_ids)),
+                "signature": cycle_id + ":" + kind + ":" + ":".join(sorted(notification_ids)),
             })
     return findings
 

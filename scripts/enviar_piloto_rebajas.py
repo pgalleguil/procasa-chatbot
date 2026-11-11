@@ -196,28 +196,12 @@ def _entries(db: Any, campaign_id: str,
     return output
 
 
-def _has_whatsapp_contact_authorization(entry: dict[str, Any], *, now=None) -> bool:
-    """Accept campaign proof or a valid reusable lead authorization.
-
-    If a lead-level record exists but is expired, mismatched, or revoked, do
-    not let a stale campaign snapshot override that invalidation.
-    """
-    lead = entry.get("lead") or {}
-    campaign = entry.get("campaign") or {}
-    price_drop = lead.get("price_drop_v2") or {}
-    auth_record = price_drop.get("whatsapp_contact_authorization") if isinstance(
-        price_drop, dict
-    ) else None
-    reusable = v2.reusable_whatsapp_contact_authorization(
-        lead, phone=str(campaign.get("phone_normalized") or ""), now=now,
+def _whatsapp_contact_authorization_blocker(
+        entry: dict[str, Any], *, now=None) -> str | None:
+    """Use the send engine's exact permission decision in CLI preflight."""
+    return v2.whatsapp_contact_authorization_blocker(
+        entry.get("lead") or {}, entry.get("campaign") or {}, now=now,
     )
-    if auth_record is not None and reusable is None:
-        return False
-    campaign_proof = (
-        campaign.get("whatsapp_contact_reviewed") is True
-        and bool(str(campaign.get("whatsapp_contact_evidence") or "").strip())
-    )
-    return campaign_proof or reusable is not None
 
 
 def _campaigns_by_status(db: Any, statuses: tuple[str, ...]) -> dict[str, list[dict[str, Any]]]:
@@ -801,9 +785,18 @@ def execute_campaign(
             str(row["campaign"].get("property_code") or "") not in allowed_property_codes
             for row in entries):
         return {"status": "BLOCKED", "reason": "property_outside_campaign_allowlist", "attempts": 0}
-    if any(not _has_whatsapp_contact_authorization(row, now=now) for row in entries):
-        return {"status": "BLOCKED", "reason": "whatsapp_contact_authorization_unverified",
-                "attempts": 0}
+    authorization_blockers = []
+    for row in entries:
+        reason = _whatsapp_contact_authorization_blocker(row, now=now)
+        if reason:
+            authorization_blockers.append({
+                "property_code": str(row["campaign"].get("property_code") or ""),
+                "phone_last4": _phone_last4(row["lead"]),
+                "reason": reason,
+            })
+    if authorization_blockers:
+        return {"status": "BLOCKED", "reason": authorization_blockers[0]["reason"],
+                "authorization_blockers": authorization_blockers, "attempts": 0}
     for entry in entries:
         reason = _campaign_filter_blocker(
             entry, temperature_filter=temperature_filter,

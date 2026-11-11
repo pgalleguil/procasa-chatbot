@@ -1312,6 +1312,35 @@ def _temporary_environment(values: dict[str, str]):
                 os.environ[key] = value
 
 
+
+def deduplicate_wave_recipients(
+    selected_by_event: dict[str, tuple[PriceDropEvent, list[dict[str, Any]]]],
+) -> tuple[dict[str, tuple[PriceDropEvent, list[dict[str, Any]]]], int]:
+    """Never contact a lead twice in the same operator-approved wave.
+
+    Prioritize the newest verified price drop, then greatest percentage
+    reduction. A subsequent separately approved wave is unaffected.
+    """
+    preferred: dict[str, tuple[tuple[Any, ...], str]] = {}
+    total_selected = 0
+    for event_id, (event, rows) in selected_by_event.items():
+        for candidate in rows:
+            total_selected += 1
+            lid = str(candidate["lead_id"])
+            order = (event.dropped_at, event.percent_reduction, event.event_id)
+            if lid not in preferred or order > preferred[lid][0]:
+                preferred[lid] = (order, event_id)
+
+    result = {}
+    for event_id, (event, rows) in selected_by_event.items():
+        kept = [row for row in rows
+                if preferred[str(row["lead_id"])][1] == event_id]
+        if kept:
+            result[event_id] = (event, kept)
+    return result, total_selected - len(preferred)
+
+
+
 def interactive_workflow(
     db: Any, *, input_fn: Callable[[str], str] = input,
     output_fn: Callable[[str], None] = print,
@@ -1480,6 +1509,13 @@ def interactive_workflow(
     if not selected_by_event:
         return {"status": "NO_SELECTED_RECIPIENTS", "prepared": 0, "attempts": 0}
 
+    selected_by_event, overlap_removed = deduplicate_wave_recipients(selected_by_event)
+    if overlap_removed:
+        output_fn(
+            f"Control de duplicados: se descartaron {overlap_removed} selecciones "
+            "repetidas de un mismo lead entre propiedades. Se conserva la "
+            "rebaja más reciente (mayor rebaja porcentual en caso de empate)."
+        )
     selected_count = sum(len(rows) for _, rows in selected_by_event.values())
     try:
         max_messages = int(input_fn(

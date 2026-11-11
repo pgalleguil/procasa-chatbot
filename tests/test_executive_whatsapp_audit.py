@@ -81,6 +81,7 @@ def event(*, outgoing=False, jid="56912345678@s.whatsapp.net",
         "data": {"messages": {
             "key": {"remoteJid": jid, "id": ident, "fromMe": outgoing},
             "messageBody": body,
+            "messageTimestamp": STAMP,
             "message": {"conversation": body},
         }},
     }
@@ -226,6 +227,7 @@ class TestExecutiveWhatsAppAudit(TestCase):
 
     def test_naive_timestamp_rejected_instead_of_guessed_utc(self):
         payload = event()
+        del payload["data"]["messages"]["messageTimestamp"]
         payload["data"]["messages"]["timestamp"] = "2026-11-11T09:00:00"
         del payload["timestamp"]
         records, skipped = normalize_upsert(
@@ -255,3 +257,11 @@ class TestExecutiveWhatsAppAudit(TestCase):
         self.assertIn("$expr", spy.last_write_filter)
         self.assertIn("$bsonSize", str(spy.last_write_filter["$expr"]))
         self.assertIn("executive_whatsapp_messages.provider_key", spy.last_write_filter)
+
+    def test_rejects_history_backfill_without_original_message_timestamp(self):
+        db = FakeDB()
+        payload = event()
+        del payload["data"]["messages"]["messageTimestamp"]
+        result = ingest(db, payload, commit=True)
+        self.assertEqual(result["results"], {"unverified_original_timestamp": 1})
+        self.assertNotIn("executive_whatsapp_messages", db.leads[0])

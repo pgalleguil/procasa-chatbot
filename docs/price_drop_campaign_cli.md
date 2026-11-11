@@ -39,8 +39,11 @@ Las tres propiedades 6436, 6377 y 16479 son una **prueba acotada**, no el univer
 cd "C:\Users\pgall\Desktop\Python\ChatBot_v4_Grok"
 python scripts\enviar_piloto_rebajas.py --audience-audit --full-scan --temperature ALL --lead-max-age-days 0
 python scripts\enviar_piloto_rebajas.py --discover --full-scan --temperature ALL --lead-max-age-days 0
+python scripts\enviar_piloto_rebajas.py --provider-audit
 python scripts\enviar_piloto_rebajas.py --summary
 ```
+
+`--provider-audit` consulta solamente los registros de sesiones de WaSender con el PAT configurado, confirma la lectura de límites reales de toda la cuenta y no envía mensajes. Si falta el PAT o alguna sesión no habilitó logs, devuelve `BLOCKED`. No imprime credenciales.
 
 `--audience-audit` devuelve JSON: número total de eventos, propiedades, consultas históricas candidatas, coincidencias elegibles, clientes únicos elegibles, coincidencias repetidas entre eventos, revisiones pendientes y motivos de exclusión. Es un **inventario operativo**, no una habilitación de mensajes. No determina si existe autorización WhatsApp: ese campo declara `NOT_VERIFIED_BY_THIS_AUDIT`. Nunca almacena consentimientos ficticios ni altera `leads`.
 

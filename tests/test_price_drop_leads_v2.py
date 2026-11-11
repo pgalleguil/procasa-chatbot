@@ -509,6 +509,94 @@ def _approved_real_pilot_sample(db, monkeypatch):
     return lead_id, campaign_id, phone
 
 
+def _clear_campaign_contact_permission(db, lead_id):
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$unset": {
+        "price_drop_v2.whatsapp_contact_authorization": "",
+        "price_drop_v2.campaigns.0.whatsapp_contact_reviewed": "",
+        "price_drop_v2.campaigns.0.whatsapp_contact_evidence": "",
+        "price_drop_v2.campaigns.0.whatsapp_contact_reviewed_by": "",
+        "price_drop_v2.campaigns.0.whatsapp_contact_reviewed_at": "",
+    }})
+
+
+def test_fixed_three_recipient_pilot_allows_verified_prior_inquiry_direct_followup(
+        db, monkeypatch):
+    lead_id, campaign_id, phone = _approved_real_pilot_sample(db, monkeypatch)
+    _clear_campaign_contact_permission(db, lead_id)
+    before = db["leads"].find_one({"_id": ObjectId(lead_id)})
+    assert before["price_drop_v2"].get("whatsapp_contact_authorization") is None
+    sender_calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda actual_phone, message: sender_calls.append(
+            (actual_phone, message)) or {
+                "success": True, "provider_message_id": "mock-prior-inquiry",
+                "delivery_status": "accepted",
+            },
+        now=NOW,
+    )
+    assert result["status"] == "SENT"
+    assert len(sender_calls) == 1
+    assert sender_calls[0][0] == phone
+    sent = db["leads"].find_one({"_id": ObjectId(lead_id)})
+    assert sent["price_drop_v2"].get("whatsapp_contact_authorization") is None
+    assert sent["price_drop_v2"]["campaigns"][0]["status"] == "SENT"
+    assert v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *_: sender_calls.append(("DUPLICATE",)), now=NOW,
+    )["status"] == "NOT_APPROVED"
+    assert len(sender_calls) == 1
+
+
+def test_fixed_pilot_exception_does_not_apply_to_other_campaigns(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    _clear_campaign_contact_permission(db, lead_id)
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
+        "price_drop_v2.campaigns.0.campaign_id": "another-price-drop-campaign",
+        "price_drop_v2.campaigns.0.event_id": "another-price-drop-campaign",
+    }})
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id="another-price-drop-campaign",
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
+    assert calls == []
+
+
+def test_fixed_pilot_still_blocks_optout_without_contact_permission(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    _clear_campaign_contact_permission(db, lead_id)
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
+        "price_drop_v2.opted_out": True,
+    }})
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "BLOCKED_OPTED_OUT"
+    assert calls == []
+
+
+def test_fixed_pilot_still_requires_original_property_inquiry(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    _clear_campaign_contact_permission(db, lead_id)
+    lead = db["leads"].find_one({"_id": ObjectId(lead_id)})
+    messages = [dict(message, content="Consulto por otra propiedad codigo 9999")
+                for message in lead["messages"]]
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
+        "messages": messages,
+    }})
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "REAL_SEND_INQUIRY_NOT_VERIFIED"
+    assert calls == []
+
+
 def test_real_campaign_uses_shared_send_switch_and_never_runs_on_render(db, monkeypatch):
     lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
     provider_calls = []

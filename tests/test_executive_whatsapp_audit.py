@@ -40,6 +40,19 @@ class FakeCollection:
             return [deepcopy(row) for row in self.db.cycles if row["lead_id"] in ids]
         raise AssertionError("unexpected_find")
 
+    def find_one(self, selector, projection=None):
+        if self.name != "leads":
+            raise AssertionError("unexpected_find_one")
+        expected_id = selector.get("_id")
+        provider_key = selector.get("executive_whatsapp_messages.provider_key")
+        for doc in self.db.leads:
+            if doc["_id"] == expected_id and any(
+                msg.get("provider_key") == provider_key
+                for msg in doc.get("executive_whatsapp_messages", [])
+            ):
+                return {"_id": expected_id}
+        return None
+
     def update_one(self, selector, update, upsert=False):
         assert self.name == "leads"
         assert upsert is False
@@ -115,7 +128,7 @@ class TestExecutiveWhatsAppAudit(TestCase):
         first = ingest(db, event(), commit=True)
         repeated = ingest(db, event(), commit=True)
         self.assertEqual(first["results"], {"saved": 1})
-        self.assertEqual(repeated["results"], {"duplicate_or_capacity_or_missing": 1})
+        self.assertEqual(repeated["results"], {"duplicate_confirmed": 1})
         self.assertEqual(len(db.leads[0]["executive_whatsapp_messages"]), 1)
         saved = db.leads[0]["executive_whatsapp_messages"][0]
         self.assertEqual(saved["assignment_cycle_id"], "C1")
@@ -265,3 +278,24 @@ class TestExecutiveWhatsAppAudit(TestCase):
         result = ingest(db, payload, commit=True)
         self.assertEqual(result["results"], {"unverified_original_timestamp": 1})
         self.assertNotIn("executive_whatsapp_messages", db.leads[0])
+
+    def test_zero_modified_is_not_falsely_called_a_duplicate(self):
+        class NoWriteCollection(FakeCollection):
+            def update_one(self, selector, update, upsert=False):
+                return FakeResult(0)
+        class NoWriteDB(FakeDB):
+            def __getitem__(self, key):
+                if key == "leads":
+                    return NoWriteCollection(key, self)
+                return super().__getitem__(key)
+        db = NoWriteDB()
+        result = ingest(db, event(), commit=True)
+        self.assertEqual(result["results"], {"retryable_write_unconfirmed": 1})
+        self.assertNotIn("executive_whatsapp_messages", db.leads[0])
+
+    def test_saved_message_has_original_and_capture_timestamps(self):
+        db = FakeDB()
+        ingest(db, event(), commit=True)
+        saved = db.leads[0]["executive_whatsapp_messages"][0]
+        self.assertIsNotNone(saved.get("captured_at"))
+        self.assertEqual(saved["timestamp_origin"], "message_timestamp")

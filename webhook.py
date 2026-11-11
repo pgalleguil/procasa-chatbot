@@ -1557,49 +1557,6 @@ async def lifespan(app: FastAPI):
                 logger.exception("[PRICE_DROP_V10_RECOVERY] blocked, no automatic retry")
         price_drop_exec_recovery_task = asyncio.create_task(_run_v10_exec_recovery())
 
-    # Real-customer pilot: deliberately a *different* switch from the 9804
-    # test trigger. All four conditions must be explicitly enabled before a
-    # single recipient can be contacted: startup flag, campaign send flag,
-    # exact approved ID in the environment and approval stored in MongoDB.
-    # This background thread uses no shared web/CRM/SLA worker-pool slot.
-    # Fail-closed by default, including normal code deploys.
-    # Separate, operator-controlled staging phase. PREVIEW only reads; PREPARE
-    # creates durable campaign slots but does not send; APPROVE only changes
-    # their approval state. These flags are OFF on normal deployments.
-    bootstrap_mode = str(os.getenv("PRICE_DROP_REAL_PILOT_BOOTSTRAP_MODE", "off")).lower()
-    if bootstrap_mode in {"preview", "prepare", "approve"}:
-        try:
-            from chatbot.price_drop_campaign_bootstrap import run_bootstrap
-            from chatbot.storage import get_db as _campaign_bootstrap_db
-            bootstrap_summary = await asyncio.get_running_loop().run_in_executor(
-                _WEB_THREAD_POOL,
-                lambda: run_bootstrap(_campaign_bootstrap_db()),
-            )
-            # Summary excludes all full phones, message text and owner data.
-            logger.info("[PRICE_DROP_REAL_PILOT_BOOTSTRAP] summary=%s", bootstrap_summary)
-        except Exception:
-            logger.exception("[PRICE_DROP_REAL_PILOT_BOOTSTRAP] blocked; no sends")
-
-    if str(os.getenv("PRICE_DROP_REAL_PILOT_START_ON_BOOT", "")).lower() in {"1", "true", "yes"}:
-        cid = str(os.getenv("PRICE_DROP_REAL_PILOT_APPROVED_ID", "")).strip()
-        send_enabled = str(os.getenv("PRICE_DROP_REAL_PILOT_ENABLED", "")).lower() in {"1", "true", "yes"}
-        if cid and send_enabled:
-            def _run_reviewed_real_campaign():
-                try:
-                    from scripts.price_drop_campaign_real_pilot import run_approved_windows
-                    from chatbot.storage import get_db as _campaign_db
-                    outcome = run_approved_windows(_campaign_db(), cid)
-                    logger.info("[PRICE_DROP_REAL_PILOT_RUNNER] status=%s outcomes=%s",
-                                outcome.get("status"), len(outcome.get("outcomes") or []))
-                except Exception:
-                    logger.exception("[PRICE_DROP_REAL_PILOT_RUNNER] stopped; no automatic retry")
-            threading.Thread(
-                target=_run_reviewed_real_campaign,
-                daemon=True, name="price_drop_real_pilot_reviewed_runner",
-            ).start()
-        else:
-            logger.warning("[PRICE_DROP_REAL_PILOT_RUNNER] declined_missing_runtime_gates")
-
     yield
     
     # Shutdown logic

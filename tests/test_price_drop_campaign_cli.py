@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 import mongomock
 import pytest
@@ -69,6 +70,35 @@ def _event_db(*, code="6436", currency="UF", current=2690,
     return db
 
 
+def _insert_pilot_rows(db, *, status="APPROVED"):
+    rows = []
+    for index, (code, (currency, old_price, new_price)) in enumerate(
+            cli.PILOT_PRICE_WINDOWS.items(), 1):
+        lead_id = ObjectId()
+        phone = f"+569832198{index:02d}"
+        campaign = {
+            "campaign_id": cli.PILOT_CAMPAIGN_ID,
+            "property_code": code,
+            "currency": currency,
+            "old_price_uf": old_price if currency == "UF" else None,
+            "new_price_uf": new_price if currency == "UF" else None,
+            "old_price_clp": old_price if currency == "CLP" else None,
+            "new_price_clp": new_price if currency == "CLP" else None,
+            "status": status,
+            "outbound_message": (
+                f"PROCASA propiedad {code}: {currency} {old_price} a {new_price}. "
+                f"https://www.procasa.cl/propiedad/{code}"
+            ),
+        }
+        db["leads"].insert_one({
+            "_id": lead_id, "phone": phone,
+            "contact_phone_normalized": phone, "messages": [],
+            "price_drop_v2": {"campaigns": [campaign]},
+        })
+        rows.append((code, str(lead_id)))
+    return rows
+
+
 def _candidate(db, *, phone, temperature="NORMAL", content=None, timestamp=None,
                lead_id=None, campaigns=None, extra=None):
     lead_id = lead_id or ObjectId()
@@ -124,10 +154,8 @@ def _dispatch_db(monkeypatch, count=3):
         v2.approve_one(db, lead_id=lead_id, campaign_id=CAMPAIGN,
                        operator="QA operator", now=NOW)
     monkeypatch.setenv(v2.SEND_FLAG, "true")
-    monkeypatch.setenv(v2.APPROVED_ID_FLAG, CAMPAIGN)
     monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
     monkeypatch.setenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, "true")
-    monkeypatch.setenv(v2.REAL_CAMPAIGNS_ENABLED_FLAG, "true")
     monkeypatch.delenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", raising=False)
     return db, event, ids
 
@@ -150,6 +178,114 @@ def _run(db, *, campaign_id=CAMPAIGN, max_messages=20, daily_cap=50,
         journal_path=journal_path, rng=rng, link_verifier=link_verifier,
         progress_path=progress_path, progress_fn=progress_fn,
     )
+
+
+def test_pilot_cli_selects_exact_three_persisted_rows(monkeypatch, capsys):
+    db = _db()
+    approved_rows = _insert_pilot_rows(db)
+    unrelated = _candidate(db, phone="+56983219899")
+    db["leads"].update_one({"_id": unrelated}, {"$set": {
+        "price_drop_v2.campaigns": [{
+            "campaign_id": "general_event_20261109", "property_code": "9999",
+            "currency": "UF", "old_price_uf": 1000, "new_price_uf": 900,
+            "status": "APPROVED", "outbound_message": "outside pilot",
+        }],
+    }})
+    expected_ids = {lead_id for _, lead_id in approved_rows}
+    actual_ids = {str(row["lead"]["_id"])
+                  for row in cli._validated_pilot_rows(db)}
+    assert actual_ids == expected_ids
+
+    captured = {}
+    monkeypatch.setattr(cli, "_get_db", lambda: db)
+    def execute(_db, **kwargs):
+        captured.update(kwargs)
+        return {"status": "COMPLETED", "attempts": 3, "pending": 0}
+    monkeypatch.setattr(cli, "execute_approved_batch", execute)
+    assert cli.main(["--pilot", "--execute", "--max-messages", "3"]) == 0
+    assert captured["include_pilot"] is True
+    assert captured["max_messages"] == 3
+    assert captured["campaigns"] == {
+        cli.PILOT_CAMPAIGN_ID: expected_ids,
+    }
+    assert "outside pilot" not in capsys.readouterr().out
+
+
+def test_shared_batch_sends_multiple_properties_and_resumes_without_duplicates(
+        monkeypatch, tmp_path):
+    db = _event_db()
+    _seed_property(db, code="6377", currency="UF", current=5074)
+    _history(db, "6377", DROP, 5123, 5074)
+    _seed_property(db, code="16479", currency="CLP", current=152000000)
+    _history(db, "16479", DROP, 160000000, 152000000, "CLP")
+    events = {event.property_code: event for event in discover_price_drops(db, now=NOW)}
+    lead_by_event = {}
+    for index, (code, phone) in enumerate((
+            ("6436", "+56983219811"),
+            ("6377", "+56983219812"),
+            ("16479", "+56983219813")), 1):
+        lead_id = _candidate(
+            db, phone=phone, temperature=("HOT", "NORMAL", "COLD")[index - 1],
+            content=f"Me interesa la propiedad código {code}",
+            timestamp=DROP - timedelta(days=2),
+        )
+        event = events[code]
+        cli.prepare_selected(
+            db, event=event, lead_ids=[str(lead_id)], operator="QA",
+            contact_basis_reviewed=True, whatsapp_contact_reviewed=True,
+            whatsapp_contact_evidence="CRM WhatsApp opt-in reviewed 2026-11-09",
+            temperature_filter="ALL", lead_max_age_days=120, now=NOW,
+        )
+        v2.approve_one(db, lead_id=lead_id, campaign_id=event.event_id,
+                       operator="QA", now=NOW)
+        lead_by_event[event.event_id] = str(lead_id)
+
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.delenv(v2.APPROVED_ID_FLAG, raising=False)
+    sent = []
+    sender = lambda phone, body: sent.append((phone, body)) or {
+        "success": True, "provider_message_id": f"mock-{phone[-4:]}",
+        "delivery_status": "accepted",
+    }
+    def verify(_db, *, property_code, currency, expected_price, expected_url, now):
+        return PublicationCheck(
+            "price_verified", True, property_code, expected_url, 200,
+            expected_price, currency, expected_price, currency,
+        )
+    base_kwargs = {
+        "min_delay_seconds": 300, "max_delay_seconds": 300,
+        "provider_plan": "trial", "daily_provider_cap": 50,
+        "confirm": lambda _prompt: "ENVIAR 3",
+        "sender": sender, "usage_reader": lambda _stamp: 0,
+        "now_fn": lambda: NOW, "provider_ready": lambda: True,
+        "sleep_fn": lambda _seconds: None,
+        "journal_path": tmp_path / "shared-batch.json",
+        "progress_path": tmp_path / "shared-progress.jsonl",
+        "publication_verifier": verify,
+    }
+    first = cli.execute_approved_batch(
+        db, campaigns=cli._approved_campaign_batch(db), max_messages=1,
+        **base_kwargs,
+    )
+    assert first["status"] == "LIMIT_REACHED"
+    assert first["attempts"] == 1 and first["pending"] == 2
+    assert len(sent) == 1
+
+    resumed = cli.execute_approved_batch(
+        db, campaigns=cli._approved_campaign_batch(db), max_messages=20,
+        **{**base_kwargs, "confirm": lambda _prompt: "ENVIAR 2"},
+    )
+    assert resumed["status"] == "COMPLETED"
+    assert resumed["attempts"] == 2 and resumed["pending"] == 0
+    assert len(sent) == 3
+    assert len({phone for phone, _ in sent}) == 3
+    for campaign_id, lead_id in lead_by_event.items():
+        campaign = next(row for row in db["leads"].find_one({"_id": ObjectId(lead_id)})
+                        ["price_drop_v2"]["campaigns"]
+                        if row["campaign_id"] == campaign_id)
+        assert campaign["status"] == "SENT"
+        assert campaign["provider_message_id"]
 
 
 def test_discovery_finds_only_current_step_and_preserves_multistep_history():
@@ -398,7 +534,6 @@ def test_filters_are_rechecked_before_send_after_campaign_approval(monkeypatch):
     monkeypatch.setenv(v2.SEND_FLAG, "true")
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, event.event_id)
     monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
-    monkeypatch.setenv(v2.REAL_CAMPAIGNS_ENABLED_FLAG, "true")
     monkeypatch.setenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, "true")
     monkeypatch.setenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi")
     calls = []
@@ -439,6 +574,24 @@ def test_candidate_selection_rejects_duplicate_identity_opt_out_and_completed_se
     assert rows[str(duplicate_id)]["reason"] == "duplicate_phone"
     assert rows[str(opted_out_id)]["eligible"] is False
     assert rows[str(closed_id)]["reason"] == "closed_opportunity"
+
+
+def test_general_discovery_excludes_same_price_event_already_sent_by_pilot():
+    db = _event_db()
+    event = discover_price_drops(db, now=NOW)[0]
+    lead_id = _candidate(db, phone="+56983219831")
+    db["leads"].update_one({"_id": lead_id}, {"$push": {
+        "price_drop_v2.campaigns": {
+            "campaign_id": cli.PILOT_CAMPAIGN_ID,
+            "property_code": "6436", "currency": "UF",
+            "old_price_uf": 2790, "new_price_uf": 2690,
+            "status": "SENT", "sent_at": NOW,
+        },
+    }})
+    row = next(row for row in find_candidates_for_event(db, event)
+               if row["lead_id"] == str(lead_id))
+    assert row["eligible"] is False
+    assert row["reason"] == "event_already_attempted"
 
 
 def test_dedupe_blocks_same_event_unknown_and_declined_but_allows_new_drop():
@@ -1008,6 +1161,46 @@ def test_public_listing_verification_distinguishes_verified_unknown_and_mismatch
     assert unknown.sendable is False
 
 
+def test_public_listing_verification_reads_labeled_visible_price_and_blocks_ambiguity():
+    db = _db()
+    _seed_property(db)
+    visible = "<main>Venta - Departamento - UF 2.690</main>"
+    verified = _listing_check(db, visible)
+    assert verified.status == "price_verified" and verified.sendable is True
+    assert verified.public_price == 2690
+    assert extract_public_prices("<main>Venta - Casa - $ 152.000.000</main>") == {
+        ("CLP", Decimal("152000000")),
+    }
+
+    ambiguous = _listing_check(
+        db,
+        visible + "<div>Venta - Departamento - UF 2.750</div>",
+    )
+    assert ambiguous.status == "link_accessible_price_unverifiable"
+    assert ambiguous.sendable is False
+
+
+def test_approved_message_url_is_compared_with_active_publication():
+    message = "Te dejo la publicación actualizada: https://www.procasa.cl/6436\n"
+    expected = cli._expected_publication_from_campaign({
+        "currency": "UF", "new_price_uf": 2690, "outbound_message": message,
+    })
+    assert expected["url"] == "https://www.procasa.cl/6436"
+
+    db = _event_db()
+    check = verify_current_listing(
+        db, property_code="6436", currency=expected["currency"],
+        expected_price=expected["price"], expected_url=expected["url"],
+        http_get=lambda *_args, **_kwargs: _HttpResponse(
+            200, b"<main>Venta - Departamento - UF 2.690</main>",
+        ),
+        now=NOW,
+    )
+    assert check.status == "inventory_public_inconsistent"
+    assert check.reason == "active_listing_url_changed_after_preview"
+    assert check.sendable is False
+
+
 def test_public_listing_verification_distinguishes_removed_and_inaccessible():
     db = _event_db()
     removed = _listing_check(db, "", status=404)
@@ -1115,9 +1308,11 @@ def test_account_usage_does_not_fall_back_to_session_key_when_pat_missing(monkey
         cli._provider_attempts_last_24h(now=NOW)
 
 
-def test_interactive_menu_previews_then_prepares_approves_and_sends_mock_only(tmp_path):
+def test_interactive_menu_previews_then_prepares_approves_and_sends_mock_only(tmp_path, monkeypatch):
     db = _event_db()
     lead_id = _candidate(db, phone="+56983219801", temperature="NORMAL")
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
     answers = iter([
         "TODOS", "120", "1", "1", "1", "300", "600", "QA operator",
         "CRM opt-in reviewed ref 2026-11-01", "CONFIRMO 1", "PREPARAR 1",
@@ -1161,6 +1356,37 @@ def test_interactive_cancel_before_prepare_keeps_mongo_read_only():
     assert result["status"] == "CANCELLED"
     assert not lead.get("price_drop_v2")
     assert len(lead["messages"]) == 1
+
+
+def test_interactive_max_messages_is_a_per_run_ceiling():
+    db = _event_db()
+    _candidate(db, phone="+56983219841")
+    before = list(db["leads"].find({}))
+    answers = iter(["ALL", "120", "1", "1", "2", "300", "600"])
+    with pytest.raises(cli.CliError, match="command_line_ceiling"):
+        cli.interactive_workflow(
+            db, input_fn=lambda _prompt: next(answers), output_fn=lambda _line: None,
+            max_messages_default=1, now_fn=lambda: NOW,
+        )
+    assert list(db["leads"].find({})) == before
+
+
+def test_legacy_v1_senders_and_bootstrap_are_closed():
+    from chatbot.price_drop_campaign_bootstrap import run_bootstrap
+    from chatbot.price_drop_campaign_real import send_one_due
+    from scripts.price_drop_campaign_real_pilot import main as legacy_main
+
+    calls = []
+    blocked = send_one_due(
+        object(), "legacy_campaign",
+        sender=lambda *args: calls.append(args) or {"success": True},
+    )
+    assert blocked["status"] == "BLOCKED"
+    assert calls == []
+    bootstrap = run_bootstrap(object())
+    assert bootstrap["status"] == "BLOCKED"
+    assert bootstrap["writes"] == bootstrap["sends"] == 0
+    assert legacy_main([]) == 2
 
 
 def test_full_portfolio_audit_counts_all_events_without_writes_or_provider_calls(monkeypatch, capsys):

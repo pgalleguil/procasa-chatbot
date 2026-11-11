@@ -222,7 +222,7 @@ def test_model_cannot_claim_executive_was_notified(isolated):
 
 
 def test_webhook_interception_occurs_before_production_operations():
-    source = Path(__file__).resolve().parents[1].joinpath("webhook.py").read_text()
+    source = Path(__file__).resolve().parents[1].joinpath("webhook.py").read_text(encoding="utf-8")
     marker = source.index("    # Intercept only a tester WITH an active/uncertain/opted-out test campaign.")
     assert marker < source.index("    # Para el log de eventos, usamos el número limpio sin el '+'", marker)
     assert marker < source.index("    # Persist to the durable queue.", marker)
@@ -233,7 +233,7 @@ def test_webhook_interception_occurs_before_production_operations():
 
 
 def test_script_no_longer_looks_up_or_edits_existing_leads():
-    source = Path(__file__).resolve().parents[1].joinpath("scripts/price_drop_pilot_test.py").read_text()
+    source = Path(__file__).resolve().parents[1].joinpath("scripts/price_drop_pilot_test.py").read_text(encoding="utf-8")
     assert 'db["leads"]' not in source
     assert '"test_mode": True' in source
     assert "if not send:" in source
@@ -241,7 +241,7 @@ def test_script_no_longer_looks_up_or_edits_existing_leads():
 
 
 def test_bootstrap_one_shot_is_disabled_by_default():
-    source = Path(__file__).resolve().parents[1].joinpath("webhook.py").read_text()
+    source = Path(__file__).resolve().parents[1].joinpath("webhook.py").read_text(encoding="utf-8")
     assert 'price_drop_send_on_start = str(os.getenv("PRICE_DROP_PILOT_SEND_ON_START", "")).lower()' in source
     assert 'PRICE_DROP_PILOT_PREFLIGHT_ON_START' in source
     assert 'price_drop_send_on_start and not price_drop_preflight_on_start' in source
@@ -644,7 +644,7 @@ def test_v7_sender_fresh_id_and_copy_is_warm_specific_and_historically_grounded(
     assert sender.TEST_ID == "20261104-6436-price-drop-pilot-v13-regression-single-test"
     source = Path(__file__).resolve().parents[1].joinpath(
         "scripts", "price_drop_pilot_test.py"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     message_source = source.split("    message = (", 1)[1].split("    if not send:", 1)[0]
     for expected in (
         "Hola, ¿cómo estás? Soy de PROCASA", "San Miguel",

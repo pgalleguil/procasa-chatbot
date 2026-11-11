@@ -37,19 +37,7 @@ ADMIN_PHONE_FLAG = "PRICE_DROP_LEADS_V2_ADMIN_PHONE"
 EXEC_NOTICE_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_EXECUTIVE_NOTICE_ENABLED"
 REAL_ADMIN_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_REAL_ADMIN_NOTICES_ENABLED"
 REAL_EXEC_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_REAL_EXECUTIVE_NOTICES_ENABLED"
-REAL_PILOT_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_REAL_PILOT_ENABLED"
-REAL_PILOT_RECIPIENTS_FLAG = "PRICE_DROP_LEADS_V2_REAL_PILOT_RECIPIENTS"
-REAL_CAMPAIGNS_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_REAL_CAMPAIGNS_ENABLED"
 WHATSAPP_CONTACT_REVIEWED_FLAG = "PRICE_DROP_LEADS_V2_WHATSAPP_CONTACT_REVIEWED"
-REAL_PILOT_CAMPAIGN_ID = "pilot_real_rebajas_20261109_v2"
-# Narrow price windows for the approved three-property proposal. These are
-# public property values, not customer identifiers. The three recipient IDs
-# must be configured separately, after a human reviews the contact basis.
-REAL_PILOT_PRICE_WINDOWS = {
-    "6436": ("UF", 2790, 2690),
-    "6377": ("UF", 5123, 5074),
-    "16479": ("CLP", 160000000, 152000000),
-}
 
 # The real pilot is limited to a follow-up requested by the lead about the
 # same property. This is distinct from a blanket marketing opt-in.
@@ -342,11 +330,46 @@ def _real_campaign_history_blocker(lead: dict, campaign: dict) -> str | None:
     code = str(campaign.get("property_code") or "")
     campaign_id = str(campaign.get("campaign_id") or "")
     event_id = str(campaign.get("event_id") or campaign_id)
+    current_events = {
+        str(value) for value in (
+            event_id, *(campaign.get("history_event_ids") or [])
+        ) if value
+    }
+    currency = str(campaign.get("currency") or "UF").upper()
+    old_price = (campaign.get("old_price_clp") if currency == "CLP"
+                 else campaign.get("old_price_uf"))
+    new_price = (campaign.get("new_price_clp") if currency == "CLP"
+                 else campaign.get("new_price_uf"))
     campaigns = (lead.get("price_drop_v2") or {}).get("campaigns") or []
-    if any(row.get("campaign_id") != campaign_id
-           and str(row.get("property_code") or "") == code
-           and row.get("status") == "DECLINED" for row in campaigns):
-        return "property_previously_declined"
+    for prior in campaigns:
+        if (prior.get("campaign_id") == campaign_id
+                or str(prior.get("property_code") or "") != code):
+            continue
+        if prior.get("status") == "DECLINED":
+            return "property_previously_declined"
+        if prior.get("status") in {"SENDING", "DELIVERY_UNKNOWN"}:
+            return "unresolved_previous_delivery"
+        if prior.get("status") in {"PREPARED", "APPROVED"}:
+            return "active_campaign_for_property"
+        prior_events = {
+            str(value) for value in (
+                prior.get("event_id"), *(prior.get("history_event_ids") or [])
+            ) if value
+        }
+        if prior_events:
+            if prior_events.intersection(current_events):
+                return "same_price_drop_already_recorded"
+            continue
+        prior_currency = str(prior.get("currency") or (
+            "CLP" if prior.get("old_price_clp") is not None else "UF"
+        )).upper()
+        prior_old = (prior.get("old_price_clp") if currency == "CLP"
+                     else prior.get("old_price_uf"))
+        prior_new = (prior.get("new_price_clp") if currency == "CLP"
+                     else prior.get("new_price_uf"))
+        if (prior_currency == currency and prior_old == old_price
+                and prior_new == new_price):
+            return "same_price_drop_already_recorded"
     for message in lead.get("messages") or []:
         if not isinstance(message, dict):
             continue
@@ -400,92 +423,8 @@ def _text_sender_window_blocker(lead: dict, now: datetime) -> str | None:
     return None
 
 
-def _real_pilot_send_blocker(db, lead: dict, campaign: dict) -> str | None:
-    """Fail closed until exactly three independently reviewed recipients are set.
-
-    This is a temporary three-property pilot release gate. The recipient
-    allowlist is configured at runtime, never embedded in this public source.
-    The gate never prepares/approves a campaign or sends on startup.
-    """
-    if os.getenv(REAL_PILOT_ENABLED_FLAG, "").strip().lower() not in {"1", "true", "yes"}:
-        return "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
-
-    rows = [row.strip() for row in os.getenv(
-        REAL_PILOT_RECIPIENTS_FLAG, "").split(";") if row.strip()]
-    if len(rows) != 3:
-        return "REAL_SEND_NOT_ALLOWLISTED"
-    allowed: dict[str, str] = {}
-    for row in rows:
-        parts = [part.strip() for part in row.split(":")]
-        if len(parts) != 2:
-            return "REAL_SEND_NOT_ALLOWLISTED"
-        lead_id, property_code = parts
-        if (not re.fullmatch(r"[0-9a-fA-F]{24}", lead_id)
-                or property_code not in REAL_PILOT_PRICE_WINDOWS
-                or lead_id.lower() in allowed
-                or property_code in allowed.values()):
-            return "REAL_SEND_NOT_ALLOWLISTED"
-        allowed[lead_id.lower()] = property_code
-    if set(allowed.values()) != set(REAL_PILOT_PRICE_WINDOWS):
-        return "REAL_SEND_NOT_ALLOWLISTED"
-
-    code = str(campaign.get("property_code") or "")
-    if allowed.get(str(lead.get("_id") or "").lower()) != code:
-        return "REAL_SEND_NOT_ALLOWLISTED"
-    actual_window = (
-        campaign.get("currency") or "UF",
-        campaign.get("old_price_clp") if code == "16479" else campaign.get("old_price_uf"),
-        campaign.get("new_price_clp") if code == "16479" else campaign.get("new_price_uf"),
-    )
-    if actual_window != REAL_PILOT_PRICE_WINDOWS[code]:
-        return "REAL_SEND_WRONG_PRICE_OR_PROPERTY"
-
-    if (campaign.get("contact_basis_reviewed") is not True
-            or campaign.get("contact_basis_type") != DIRECT_RESPONSE_BASIS_TYPE
-            or not str(campaign.get("contact_basis") or "").strip()
-            or not str(campaign.get("approved_by") or "").strip()
-            or not isinstance(campaign.get("approved_at"), datetime)):
-        return "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
-    if (campaign.get("whatsapp_contact_reviewed") is not True
-            or not str(campaign.get("whatsapp_contact_evidence") or "").strip()):
-        return "WHATSAPP_CONTACT_AUTHORIZATION_MISSING"
-    if campaign.get("simulated_prior_inquiry") is not False:
-        return "REAL_SEND_SIMULATED_INQUIRY"
-    history_blocker = _real_campaign_history_blocker(lead, campaign)
-    if history_blocker:
-        return history_blocker
-
-    phone = normalize_phone_strict(campaign.get("phone_normalized") or "")
-    if (not phone or not has_real_phone(phone)
-            or not _same_phone(lead, phone)
-            or lead.get("phone_is_synthetic")
-            or lead.get("contact_identity_incomplete")):
-        return "REAL_SEND_PHONE_CHANGED"
-    variants = phone_identity_variants(phone)
-    matches = list(db[LEADS].find({
-        "$or": [{"phone": {"$in": variants}},
-                {"contact_phone_normalized": {"$in": variants}}],
-    }, {"_id": 1}).limit(2))
-    if len(matches) != 1 or matches[0]["_id"] != lead["_id"]:
-        return "REAL_SEND_AMBIGUOUS_PHONE"
-
-    if (not isinstance(campaign.get("price_drop_at"), datetime)
-            or not isinstance(campaign.get("inquiry_evidence_at"), datetime)):
-        return "REAL_SEND_INQUIRY_NOT_VERIFIED"
-    original = _inquiry_before(
-        lead, code, utc(campaign["price_drop_at"]),
-        _verified_listing_ids(db, code), return_evidence=True,
-    )
-    if (not original
-            or utc(original["inquiry_at"]) != utc(campaign["inquiry_evidence_at"])):
-        return "REAL_SEND_INQUIRY_NOT_VERIFIED"
-    return None
-
-
 def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
-    """Fail-closed gate for separately approved, event-specific campaigns."""
-    if os.getenv(REAL_CAMPAIGNS_ENABLED_FLAG, "").strip().lower() not in {"1", "true", "yes"}:
-        return "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
+    """Shared fail-closed contact and event checks for every real campaign."""
     if (campaign.get("contact_basis_reviewed") is not True
             or campaign.get("contact_basis_type") != DIRECT_RESPONSE_BASIS_TYPE
             or not str(campaign.get("contact_basis") or "").strip()
@@ -1143,8 +1082,7 @@ def send_one(db, *, lead_id: str, campaign_id: str,
              lead_max_age_days_override: int | None = None,
              enforce_campaign_filters: bool = False) -> dict:
     """One irreversible attempt; no sender invoked without separate gates."""
-    if not (os.getenv(SEND_FLAG, "").lower() in {"true", "1", "yes"}
-            and os.getenv(APPROVED_ID_FLAG) == campaign_id):
+    if os.getenv(SEND_FLAG, "").lower() not in {"true", "1", "yes"}:
         return {"status": "DISABLED"}
     if os.getenv(CONTEXT_FLAG, "").lower() not in {"true", "1", "yes"}:
         return {"status": "CONTEXT_DISABLED"}
@@ -1157,6 +1095,11 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     c = matching_campaigns[0] if matching_campaigns else None
     if not c or c.get("status") != "APPROVED":
         return {"status": "NOT_APPROVED"}
+    # Test-only bootstrap remains pinned to one exact approved campaign.
+    # Real campaign approval is persisted per lead and guarded by the shared
+    # global send switch plus the operator's final CLI confirmation.
+    if c.get("test_mode") and os.getenv(APPROVED_ID_FLAG) != campaign_id:
+        return {"status": "DISABLED"}
     channel = os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi").strip().lower()
     if channel == "official":
         return {"status": "OFFICIAL_CHANNEL_SENDER_NOT_IMPLEMENTED"}
@@ -1198,12 +1141,10 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     # Historical recovery is NOT HOT-only; closed opportunities remain blocked.
     if not c.get("test_mode") and not is_open_campaign_eligible(lead):
         return {"status": "BLOCKED_CLOSED_PIPELINE"}
-    # The approved three-recipient campaign retains its narrow allowlist.
-    # A future event with the same property and price is still a new campaign.
+    # Pilot and portfolio selections arrive here through the same real-send
+    # eligibility and authorization checks.
     if not c.get("test_mode"):
-        blocker = (_real_pilot_send_blocker(db, lead, c)
-                   if campaign_id == REAL_PILOT_CAMPAIGN_ID
-                   else _real_campaign_send_blocker(db, lead, c))
+        blocker = _real_campaign_send_blocker(db, lead, c)
         if blocker:
             return {"status": blocker}
         window_blocker = _text_sender_window_blocker(lead, stamp)

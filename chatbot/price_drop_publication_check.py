@@ -90,7 +90,7 @@ def _walk_json(value: Any):
 
 
 def extract_public_prices(html: str) -> set[tuple[str, Decimal]]:
-    """Return unambiguous structured currency/price pairs from common metadata."""
+    """Return unambiguous structured or clearly labeled visible prices."""
     soup = BeautifulSoup(html or "", "html.parser")
     found: set[tuple[str, Decimal]] = set()
 
@@ -126,6 +126,25 @@ def extract_public_prices(html: str) -> set[tuple[str, Decimal]]:
         for node in _walk_json(payload):
             if "price" in node:
                 add(node.get("price"), node.get("priceCurrency") or node.get("currency"))
+
+    # PROCASA listings can omit structured price metadata while showing the
+    # asking price in the visible "Venta - <type> - <price>" heading. Parse
+    # only that labeled heading; unrelated amounts elsewhere remain ignored.
+    visible_text = soup.get_text(" ", strip=True)
+    visible_heading_price = re.compile(
+        r"\bventa\s*[-–—]\s*[^|,;–—-]{1,80}?\s*[-–—]\s*"
+        r"(?P<price>(?:UF|U\.F\.|CLP)\s*\$?\s*\d[\d.,]*"
+        r"|\$\s*\d[\d.,]*"
+        r"|\d[\d.,]*\s*(?:UF|U\.F\.|CLP|pesos?))",
+        re.I,
+    )
+    for match in visible_heading_price.finditer(visible_text):
+        phrase = match.group("price")
+        currency_match = re.search(r"(?i)U\.F\.|UF|CLP|CL\$|pesos?", phrase)
+        currency_marker = currency_match.group(0) if currency_match else "$"
+        amount = re.sub(r"(?i)U\.F\.|UF|CLP|CL\$|pesos?", "", phrase)
+        amount = amount.replace("$", "").strip()
+        add(amount, currency_marker)
     return found
 
 

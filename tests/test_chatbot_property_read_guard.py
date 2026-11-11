@@ -146,9 +146,9 @@ def test_nested_unknown_fields_cannot_be_smuggled_through_allowed_parents():
 def test_customer_facing_entrypoints_use_scoped_property_reader():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1] / "chatbot"
-    assert "db = chatbot_safe_property_db(db)" in (root / "core.py").read_text()
-    link = (root / "link_extractor.py").read_text()
-    rag = (root / "rag.py").read_text()
+    assert "db = chatbot_safe_property_db(db)" in (root / "core.py").read_text(encoding="utf-8")
+    link = (root / "link_extractor.py").read_text(encoding="utf-8")
+    rag = (root / "rag.py").read_text(encoding="utf-8")
     assert link.count("db = chatbot_safe_property_db(get_db())") >= 3
     assert rag.count("db = chatbot_safe_property_db(get_db())") >= 2
 

@@ -72,7 +72,7 @@ def validate_audit_result(raw: Mapping[str, Any], prepared: Mapping[str, Any]) -
     if status not in COMMERCIAL_STATUSES:
         raise ValueError("invalid_commercial_status")
     for key in ("contact_effective", "follow_up_required", "opt_out"):
-        if raw.get(key) not in (True, False, None):
+        if raw.get(key) is not None and type(raw.get(key)) is not bool:
             raise ValueError("invalid_boolean_field:" + key)
     evidence = raw.get("evidence_provider_keys")
     if not isinstance(evidence, list) or any(not isinstance(x, str) for x in evidence):
@@ -83,6 +83,33 @@ def validate_audit_result(raw: Mapping[str, Any], prepared: Mapping[str, Any]) -
     }
     if any(key not in available for key in evidence):
         raise ValueError("evidence_not_in_transcript")
+    cited = [
+        msg for msg in prepared.get("messages", [])
+        if msg.get("evidence_key") in set(evidence)
+    ]
+    if raw.get("contact_effective") is True:
+        # Contacto humano verificable: intercambio entre cliente y ejecutivo
+        # EN EL MISMO ciclo, no sólo mensajes del chatbot de oficina.
+        exec_cycles = {
+            msg.get("assignment_cycle_id")
+            for msg in cited
+            if msg.get("source") == "executive_whatsapp"
+            and msg.get("actor_type") == "executive"
+            and msg.get("assignment_cycle_id")
+        }
+        client_cycles = {
+            msg.get("assignment_cycle_id")
+            for msg in cited
+            if msg.get("source") == "executive_whatsapp"
+            and msg.get("actor_type") == "client"
+            and msg.get("assignment_cycle_id")
+        }
+        if not (exec_cycles & client_cycles):
+            raise ValueError("effective_contact_requires_bidirectional_executive_evidence")
+    if raw.get("opt_out") is True and not any(
+        msg.get("actor_type") == "client" for msg in cited
+    ):
+        raise ValueError("opt_out_requires_client_evidence")
     if raw.get("coverage_complete") is not prepared.get("coverage_complete"):
         raise ValueError("fabricated_coverage")
     if raw.get("opt_out") is True and not evidence:

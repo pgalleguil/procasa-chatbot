@@ -1954,7 +1954,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Descubre rebajas Prop360 y opera campañas V2 aprobadas de forma manual."
     )
     actions = parser.add_mutually_exclusive_group()
-    for flag in ("discover", "dry-run", "audience-audit", "interactive", "execute", "resume", "prepare", "approve",
+    for flag in ("discover", "dry-run", "audience-audit", "provider-audit", "interactive", "execute", "resume", "prepare", "approve",
                  "review-whatsapp-contact", "report", "summary"):
         actions.add_argument("--" + flag, dest="action", action="store_const", const=flag)
     parser.add_argument("--status", action="store_true", help="consulta estado sin escritura")
@@ -2090,6 +2090,15 @@ def main(argv: list[str] | None = None) -> int:
                 lead_max_age_days=(args.lead_max_age_days if args.lead_max_age_days is not None
                                    else DEFAULT_LEAD_MAX_AGE_DAYS),
             )
+            return 0
+        if args.action == "provider-audit":
+            # GET-only account verification. Never send, prepare or approve.
+            usage = _provider_attempts_last_24h(now=datetime.now(timezone.utc))
+            print(json.dumps({
+                "status": "READY", "provider": "WaSender",
+                "send_attempts": 0,
+                "account_usage": usage,
+            }, ensure_ascii=False, default=str))
             return 0
         if args.action == "audience-audit":
             report = audit_full_portfolio(

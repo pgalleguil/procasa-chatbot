@@ -98,3 +98,53 @@ Las nuevas suites se ejecutan en .github/workflows/executive-whatsapp-audit-ci.y
 - https://wasenderapi.com/api-docs/webhooks/webhook-message-upsert/
 
 **Estado de aceptación para conexión real: NO APTO, PENDIENTE DE VALIDACIONES.**
+
+
+## Extensión: persistencia protegida, auditoría IA y búsqueda semántica
+
+### Escritura de mensajes
+
+- Claves de evidencia WaSender con SHA-256, sin teléfono literal.
+- Si un teléfono corresponde a dos leads, la identidad queda ambigua y NO se escribe.
+- Timestamps sin zona horaria: no se interpretan como UTC automáticamente.
+- Requisito obligatorio: timestamp original del mensaje para atribución a un ciclo. La fecha del webhook no sirve para datar mensajes históricos.
+- Inserción condicionada atómicamente por deduplicación y tamaño BSON del documento actual, con techo conservador de 12 MiB (frente a 16 MiB del servidor).
+- Pruebas de concurrencia en Atlas NO ejecutadas: no asumir que mocks las sustituyen.
+
+### Contrato de IA
+
+Archivo: chatbot/executive_whatsapp_audit_runner.py.
+
+- Prepara entrada de sólo lectura. Usa evidencia cronológica y distingue chatbot, cliente y ejecutivo.
+- Minimiza algunos PII: URL, email, teléfono móvil chileno e identificadores internos.
+- Transport hacia modelo inyectado. NO tiene cliente DeepSeek configurado, llamadas de red, escrituras, ni actos comerciales.
+- Rechaza respuesta no JSON, evidencia inventada y contacto efectivo sin ambos participantes en el mismo ciclo.
+- Si la transcripción es truncada, nunca afirma que la cobertura es completa.
+- Regresa únicamente una propuesta con revisión humana pendiente.
+- La depuración por regex NO garantiza anonimización plena: enviar chats reales al proveedor de IA exige autorización y revisión legal.
+
+### Capa de embeddings
+
+Archivo: chatbot/executive_whatsapp_semantic.py.
+
+- NO vectoriza cada mensaje ni conversaciones completas.
+- Sólo genera perfiles estructurados con preferencias aprobadas por revisión humana, campos y valores limitados a listas cerradas.
+- Excluye automáticamente bajas, operaciones resueltas, falta de evidencia y perfiles sin preferencias comerciales útiles.
+- Genera revision SHA-256 para detectar cambios.
+- No invoca un modelo de embeddings, no crea índice vectorial y no almacena vectores en MongoDB.
+- Cualquier índice futuro debe aplicar controles de acceso, retención, baja y permisos del CRM.
+
+### Pendientes que mantienen bloqueado cualquier despliegue
+
+1. Confirmar retrospectiva WaSender de 30/60 días con un teléfono real y autorización.
+2. Implementar cola durable, ACK tras guardar, retry y monitoreo sin PII.
+3. Probar limitación BSON y escritura atómica con concurrencia en DB no productiva.
+4. Aprobar política de tratamiento, acceso, retención y exclusión de chats personales.
+5. Integrar DeepSeek con privacidad aprobada, presupuesto y evaluación de precisión humana.
+6. Almacenar resultados aprobados en leads sin tocar SLA ni lógica CRM.
+7. Diseñar índice de embeddings con revocación y eliminación de datos.
+8. Registrar ruta de webhook protegida mediante activación explícita; actualmente sigue SIN montar.
+9. Implementar importador de exportaciones TXT con verificación humana de lead/ciclo; hoy sólo existe un parser.
+10. Piloto canario y evaluación de 15-20 conversaciones antes de ampliar a seis sesiones.
+
+No fusionar ni desplegar PR #168. Nunca permitir que el chatbot opere en teléfonos de ejecutivos. Los logs de envíos API no acreditan historial manual antiguo.

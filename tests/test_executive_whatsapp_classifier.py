@@ -15,6 +15,12 @@ def lead_example():
         ],
         "executive_whatsapp_messages": [
             {
+                "actor_type": "executive", "content": "Te contacto por tu consulta",
+                "timestamp": "2026-11-03T09:55:00Z",
+                "provider_key": "session:messages.upsert:phone:msg0",
+                "executive_user_id": "U1", "assignment_cycle_id": "C1",
+            },
+            {
                 "actor_type": "client", "content": "Todavía busco en San Miguel",
                 "timestamp": "2026-11-03T10:00:00Z",
                 "provider_key": "session:messages.upsert:phone:msg1",
@@ -32,7 +38,10 @@ def example_result(prepared, **kwargs):
         "opt_out": False,
         "next_action": "Revisar seguimiento",
         "preferences": {"comuna": "San Miguel"},
-        "evidence_provider_keys": ["session:messages.upsert:phone:msg1"],
+        "evidence_provider_keys": [
+            "session:messages.upsert:phone:msg0",
+            "session:messages.upsert:phone:msg1",
+        ],
         "uncertainty": "No hay confirmación de cobertura histórica completa",
         "coverage_complete": prepared["coverage_complete"],
     }
@@ -46,7 +55,7 @@ class TestExecutiveAuditClassifier(TestCase):
         self.assertFalse(prepared["coverage_complete"])
         self.assertEqual(
             [x["actor_type"] for x in prepared["messages"]],
-            ["chatbot", "client"],
+            ["chatbot", "executive", "client"],
         )
 
     def test_validates_grounded_classification_for_manual_review(self):
@@ -100,3 +109,34 @@ class TestExecutiveAuditClassifier(TestCase):
             "coverage_complete": False,
         }, prepared)
         self.assertEqual(result["commercial_status"], "UNKNOWN")
+
+    def test_effective_contact_rejects_only_client_or_only_executive_evidence(self):
+        prepared = prepare_audit_input(lead_example())
+        for only in ("session:messages.upsert:phone:msg0",
+                     "session:messages.upsert:phone:msg1"):
+            with self.assertRaisesRegex(ValueError, "bidirectional"):
+                validate_audit_result(example_result(
+                    prepared, evidence_provider_keys=[only],
+                ), prepared)
+
+    def test_effective_contact_requires_same_assignment_cycle(self):
+        lead = lead_example()
+        lead["executive_whatsapp_messages"][1]["assignment_cycle_id"] = "C2"
+        prepared = prepare_audit_input(lead)
+        with self.assertRaisesRegex(ValueError, "bidirectional"):
+            validate_audit_result(example_result(prepared), prepared)
+
+    def test_reject_integer_flags_as_not_booleans(self):
+        prepared = prepare_audit_input(lead_example())
+        for key in ("contact_effective", "follow_up_required", "opt_out"):
+            with self.assertRaisesRegex(ValueError, "invalid_boolean_field"):
+                validate_audit_result(example_result(prepared, **{key: 1}), prepared)
+
+    def test_optout_requires_evidence_from_client_not_executive(self):
+        prepared = prepare_audit_input(lead_example())
+        with self.assertRaisesRegex(ValueError, "client_evidence"):
+            validate_audit_result(example_result(
+                prepared, commercial_status="DO_NOT_CONTACT",
+                contact_effective=False, opt_out=True,
+                evidence_provider_keys=["session:messages.upsert:phone:msg0"],
+            ), prepared)

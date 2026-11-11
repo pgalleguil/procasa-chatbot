@@ -1206,10 +1206,6 @@ def send_one(db, *, lead_id: str, campaign_id: str,
                    else _real_campaign_send_blocker(db, lead, c))
         if blocker:
             return {"status": blocker}
-        if os.getenv(WHATSAPP_CONTACT_REVIEWED_FLAG, "").strip().lower() not in {
-            "1", "true", "yes"
-        }:
-            return {"status": "WHATSAPP_CONTACT_REVIEW_REQUIRED"}
         window_blocker = _text_sender_window_blocker(lead, stamp)
         if window_blocker:
             return {"status": window_blocker}

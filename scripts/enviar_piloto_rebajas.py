@@ -696,8 +696,6 @@ def execute_campaign(
         return {"status": "BLOCKED", "reason": "manual_cli_disabled_on_render", "attempts": 0}
     if not provider_ready():
         return {"status": "BLOCKED", "reason": "wasender_provider_not_configured", "attempts": 0}
-    if not _truthy(os.getenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG)):
-        return {"status": "BLOCKED", "reason": "whatsapp_contact_policy_review_required", "attempts": 0}
     if (os.getenv(v2.SEND_FLAG, "").strip().lower() not in {"1", "true", "yes"}
             or os.getenv(v2.APPROVED_ID_FLAG) != campaign_id):
         return {"status": "BLOCKED", "reason": "v2_campaign_runtime_gate_disabled", "attempts": 0}
@@ -1653,7 +1651,6 @@ def interactive_workflow(
         env = {
             v2.SEND_FLAG: "true", v2.APPROVED_ID_FLAG: event_id,
             v2.CONTEXT_FLAG: "true", v2.REAL_CAMPAIGNS_ENABLED_FLAG: "true",
-            v2.WHATSAPP_CONTACT_REVIEWED_FLAG: "true",
             "PRICE_DROP_WHATSAPP_CHANNEL_MODE": "wasenderapi",
         }
         with _temporary_environment(env):

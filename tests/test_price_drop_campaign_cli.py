@@ -1251,3 +1251,24 @@ def test_read_only_provider_audit_never_sends_or_writes(monkeypatch, capsys):
     assert report["account_usage"]["sessions_scanned"] == 2
     assert len(calls) == 1
     assert list(db["universo_cartera_prop360_historial"].find()) == before
+
+
+def test_preapproved_campaign_does_not_need_redundant_global_release_toggle(monkeypatch, tmp_path):
+    db, _, _ = _dispatch_db(monkeypatch, count=1)
+    monkeypatch.delenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, raising=False)
+    result = _run(db, journal_path=tmp_path / "released-without-global-toggle.json")
+    assert result["status"] == "COMPLETED"
+    assert result["attempts"] == 1
+    assert result["accepted"] == 1
+
+
+def test_missing_contact_evidence_still_blocks_send_without_global_toggle(monkeypatch, tmp_path):
+    db, _, _ = _dispatch_db(monkeypatch, count=1)
+    monkeypatch.delenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, raising=False)
+    db["leads"].update_one(
+        {}, {"$unset": {"price_drop_v2.campaigns.0.whatsapp_contact_evidence": ""}},
+    )
+    result = _run(db, journal_path=tmp_path / "missing-contact-evidence.json")
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "whatsapp_contact_authorization_review_required"
+    assert result["attempts"] == 0

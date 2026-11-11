@@ -285,6 +285,7 @@ def ingest_upsert(
             continue
         message = {k: v for k, v in record.items() if k != "phone"}
         message["assignment_cycle_id"] = str(cycle["assignment_cycle_id"])
+        message["captured_at"] = datetime.now(timezone.utc)
         try:
             message_bytes = len(BSON.encode(message))
         except (ValueError, TypeError, OverflowError):
@@ -312,7 +313,17 @@ def ingest_upsert(
             {"$push": {"executive_whatsapp_messages": message}},
             upsert=False,
         )
-        status = "saved" if result.modified_count == 1 else "duplicate_or_capacity_or_missing"
+        if result.modified_count == 1:
+            status = "saved"
+        else:
+            # Match the exact identity before calling a retry a duplicate.
+            # No update may have occurred because of size, lead deletion or
+            # concurrent changes. Those cases must NOT receive a success ACK.
+            confirmed = db["leads"].find_one({
+                "_id": lead["_id"],
+                "executive_whatsapp_messages.provider_key": record["provider_key"],
+            }, {"_id": 1})
+            status = "duplicate_confirmed" if confirmed else "retryable_write_unconfirmed"
         statuses[status] = statuses.get(status, 0) + 1
     return {
         "mode": "persist" if commit else "dry_run",

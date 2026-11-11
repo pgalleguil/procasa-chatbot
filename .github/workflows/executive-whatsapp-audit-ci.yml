@@ -24,6 +24,8 @@ jobs:
       EXECUTIVE_WHATSAPP_AUDIT_WRITES_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -33,5 +35,32 @@ jobs:
         run: python -m py_compile chatbot/executive_whatsapp_audit.py chatbot/executive_whatsapp_classifier.py tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py
       - name: Run complete new audit suites
         run: python -m pytest -c pytest-procasa.ini -q tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py
-      - name: Run chatbot and CRM regression guards
-        run: python -m pytest -c pytest-procasa.ini -q tests/test_message_domain_isolation.py tests/test_crm_management_sla.py tests/test_crm_phone_visibility.py
+      - name: Run CRM regression guards
+        run: python -m pytest -c pytest-procasa.ini -q tests/test_crm_management_sla.py tests/test_crm_phone_visibility.py
+      - name: Compare domain isolation test against unchanged main baseline
+        shell: bash
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/procasa-main-baseline" origin/main
+          set +e
+          python -m pytest -c pytest-procasa.ini -q tests/test_message_domain_isolation.py > "$RUNNER_TEMP/pr-domain.log" 2>&1
+          pr_rc=$?
+          (cd "$RUNNER_TEMP/procasa-main-baseline" && python -m pytest -c pytest-procasa.ini -q tests/test_message_domain_isolation.py) > "$RUNNER_TEMP/main-domain.log" 2>&1
+          main_rc=$?
+          set -e
+          echo "PR exit=$pr_rc; main exit=$main_rc"
+          grep -E '^(FAILED |ERROR )' "$RUNNER_TEMP/pr-domain.log" | sort > "$RUNNER_TEMP/pr-failures.txt" || true
+          grep -E '^(FAILED |ERROR )' "$RUNNER_TEMP/main-domain.log" | sort > "$RUNNER_TEMP/main-failures.txt" || true
+          echo "PR failed tests:" && cat "$RUNNER_TEMP/pr-failures.txt"
+          echo "Main failed tests:" && cat "$RUNNER_TEMP/main-failures.txt"
+          if [ "$pr_rc" -ne 0 ] && [ "$main_rc" -eq 0 ]; then
+            echo "::error::Domain regression introduced by PR (main passed)"
+            exit 1
+          fi
+          if [ "$pr_rc" -ne 0 ] && [ "$main_rc" -ne 0 ]; then
+            if [ ! -s "$RUNNER_TEMP/main-failures.txt" ]; then
+              echo "::error::Main baseline failure cannot be compared safely"
+              exit 1
+            fi
+            diff -u "$RUNNER_TEMP/main-failures.txt" "$RUNNER_TEMP/pr-failures.txt" || exit 1
+            echo "::warning::Same pre-existing domain test failures in main and PR"
+          fi

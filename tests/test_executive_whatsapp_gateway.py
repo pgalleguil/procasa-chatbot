@@ -79,7 +79,7 @@ def test_explicit_test_only_persistence_and_idempotency():
     res1, res2 = send(client), send(client)
     assert res1.status_code == 200
     assert res1.json()["results"] == {"saved": 1}
-    assert res2.json()["results"] == {"duplicate_or_missing": 1}
+    assert res2.json()["results"] == {"duplicate_or_capacity_or_missing": 1}
     assert len(db.leads[0]["executive_whatsapp_messages"]) == 1
     assert db.leads[0]["messages"][0]["role"] == "user"
 

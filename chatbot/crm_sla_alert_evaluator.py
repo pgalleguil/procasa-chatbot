@@ -292,6 +292,31 @@ async def _get_active_agents_batched(db, cycles) -> dict[str, dict]:
 # Bounded batch fetch of CRM events (avoids one MongoDB read per active cycle).
 # ---------------------------------------------------------------------------
 
+def _needs_sla_event_evidence(cycle, *, alert_cutover, mongo_cutover) -> bool:
+    """Conservatively omit event reads only for cycles already excluded.
+
+    This is a read optimization, NOT an eligibility decision. The main
+    evaluator still iterates over every cycle in its original order, applies
+    every exclusion, and calculates the exact same SLA and alert payload.
+    Only two conditions can avoid loading events:
+
+    1) The persisted canonical first-management marker already stops SLA
+       regardless of any event or management results; or
+    2) A verifiable effective SLA start precedes an existing mandatory
+       cutoff (the loop will reject the cycle before touching event evidence).
+
+    Missing, invalid or uncertain dates always retain the original reads.
+    """
+    if is_first_sla_management_completed(cycle):
+        return False
+    assigned_at = coerce_utc_datetime(cycle.get("assigned_at"))
+    sla_started_at = coerce_utc_datetime(cycle.get("sla_started_at")) or assigned_at
+    if sla_started_at is not None:
+        if sla_started_at < alert_cutover or sla_started_at < mongo_cutover:
+            return False
+    return True
+
+
 async def _load_sla_events_batched(db, cycles, *, limit_events: int, batch_size: int = 64):
     """Fetch events with the (lead_id, timestamp) index, retaining exact-cycle semantics.
 
@@ -454,10 +479,23 @@ async def evaluate_sla_alerts(
         if cid:
             notifications_by_cycle.setdefault(cid, []).append(n)
 
-    # Prefetch indexed event evidence in bounded batches. This is read-only;
-    # failures propagate, so missing evidence can never be treated as no management.
+    # Do not read large event histories for cycles that the canonical
+    # first-management marker or an existing mandatory cutover already
+    # excludes. All other cycles still receive the exact same event evidence.
+    # Crucially, the evaluation loop below still visits *every* original
+    # cycle in its original order, preserving exclusions and alert semantics.
+    event_cycles = [
+        cycle for cycle in cycles
+        if _needs_sla_event_evidence(
+            cycle, alert_cutover=alert_cutover, mongo_cutover=mongo_cutover,
+        )
+    ]
+    logger.info(
+        "[SLA_ALERT_EVAL] event_prefetch_cycles=%s skipped_proven_ineligible=%s",
+        len(event_cycles), len(cycles) - len(event_cycles),
+    )
     events_by_cycle = await _load_sla_events_batched(
-        db, cycles, limit_events=limit_events,
+        db, event_cycles, limit_events=limit_events,
     )
 
     # Resolve at most one fresh, indexed user batch per evaluation rather

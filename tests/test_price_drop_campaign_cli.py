@@ -1210,3 +1210,22 @@ def test_full_portfolio_audit_reports_missing_temperature_review_without_approvi
     assert report["totals"]["requires_temperature_review"] == 1
     assert report["totals"]["excluded_or_review_needed"] == 1
     assert report["send_approved"] is False
+
+
+def test_full_portfolio_wave_deduplicates_lead_across_two_price_drops():
+    db = _event_db()
+    _seed_property(db, code="6377", currency="UF", current=5074)
+    _history(db, "6377", DROP + timedelta(days=1), 5123, 5074)
+    events = discover_price_drops(db, now=NOW)
+    assert len(events) == 2
+    newer = max(events, key=lambda event: event.dropped_at)
+    older = min(events, key=lambda event: event.dropped_at)
+    choices = {
+        older.event_id: (older, [{"lead_id": "one"}, {"lead_id": "two"}]),
+        newer.event_id: (newer, [{"lead_id": "one"}]),
+    }
+    deduped, suppressed = cli.deduplicate_wave_recipients(choices)
+    assert suppressed == 1
+    assert [c["lead_id"] for c in deduped[older.event_id][1]] == ["two"]
+    assert [c["lead_id"] for c in deduped[newer.event_id][1]] == ["one"]
+    assert len({row["lead_id"] for _, rows in deduped.values() for row in rows}) == 2

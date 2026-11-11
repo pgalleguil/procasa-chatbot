@@ -189,6 +189,7 @@ def parse_authorized_whatsapp_export(
     flush()
     return {
         "records": messages,
+        "source_sha256": hashlib.sha256(source_text.encode("utf-8")).hexdigest(),
         "skipped_counts": dict(skipped),
         "coverage_complete": False,
         "requires_phone_and_assignment_verification": True,

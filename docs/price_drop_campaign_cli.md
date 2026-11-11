@@ -53,7 +53,7 @@ Para preparar una campaña posterior al piloto, una vez revisado cada contacto y
 python scripts\enviar_piloto_rebajas.py --interactive --full-scan --temperature ALL --lead-max-age-days 0 --max-messages 20 --min-delay-seconds 300 --max-delay-seconds 600
 ```
 
-El menú permite seleccionar `all` en eventos y luego en los destinatarios elegibles de cada evento. Si un lead coincide con dos o más rebajas seleccionadas, **se conserva una sola por tanda**, priorizando la rebaja más reciente y usando el mayor porcentaje de descuento como desempate. La exclusión queda visible antes de preparar campañas. **Cada destinatario** requiere verificación y referencia de consentimiento de WhatsApp. Si no existe, debe excluirse; una consulta histórica **no reemplaza** el consentimiento. Los envíos se fragmentan por jornada, según el límite real de la cuenta, y no se envían automáticamente al iniciar el programa.
+El menú permite seleccionar `all` en eventos y luego en los destinatarios elegibles de cada evento. Si un lead coincide con dos o más rebajas seleccionadas, **se conserva una sola por tanda**, priorizando la rebaja más reciente y usando el mayor porcentaje de descuento como desempate. La exclusión queda visible antes de preparar campañas. El programa reutiliza una autorización registrada en el lead, o recupera una de una campaña anterior, solo si incluye alcance explícito de avisos de rebaja por WhatsApp, coincide con el teléfono actual, tiene referencia CRM, fuente, revisor y fecha, y no está vencida ni revocada. Si no encuentra esa autorización, pide revisar y documentar el consentimiento del CRM para avisos de rebaja. Una consulta histórica **no reemplaza** el consentimiento. STOP, bajas y rechazos mantienen prioridad y bloquean cualquier autorización reutilizada. Los envíos se fragmentan por jornada, según el límite real de la cuenta, y no se envían automáticamente al iniciar el programa.
 
 **Secuencia de despliegue:** 1) piloto 3 leads con autorización y confirmación, 2) verificar chat entrante, rechazos, avisos admin/ejecutivo e idempotencia con registros reales, 3) auditar universo completo, 4) revisar consentimientos y preparar nuevos eventos, 5) aprobar mensajes por evento y ejecutar lotes pequeños, observando respuestas y bajas, 6) reanudar únicamente campañas aún aprobadas. Cada rebaja se identifica por evento distinto y se registra dentro del lead existente. El sistema no debe interpretar múltiples eventos para un mismo lead como autorización para bombardearlo: el operador debe evitar contactos concurrentes a un mismo número y respetar su preferencia de mensajes.
 
@@ -69,7 +69,7 @@ python scripts/enviar_piloto_rebajas.py --interactive --full-scan --max-messages
 
 El menú muestra los eventos con el total de elegibles y excluidos. El operador selecciona eventos y destinatarios con números, revisa las consultas verificadas y los motivos de exclusión, configura el máximo y las pausas, y ve todos los mensajes exactos. No se escribe nada hasta confirmar `PREPARAR N`; después de revisar el contenido persistido, `APROBAR N` aprueba cada campaña por lead. El envío requiere una tercera confirmación exacta: `ENVIAR N`.
 
-Ejemplo: para elegir tres propiedades y hasta veinte destinatarios con pausas entre cinco y diez minutos, usa el mismo comando anterior, selecciona las propiedades y números de leads en pantalla, y deja los parámetros `20`, `300` y `600`. No se necesitan ObjectIds. El menú pide el nombre del operador y una referencia de consentimiento del CRM para cada teléfono seleccionado, mostrado con sus últimos cuatro dígitos. Los respaldos locales de los leads se crean antes de preparar y antes de aprobar.
+Ejemplo: para elegir tres propiedades y hasta veinte destinatarios con pausas entre cinco y diez minutos, usa el mismo comando anterior, selecciona las propiedades y números de leads en pantalla, y deja los parámetros `20`, `300` y `600`. No se necesitan ObjectIds. El menú identifica autorizaciones reutilizables y no vuelve a pedir su referencia. Solo para contactos sin una autorización válida pide al operador que compruebe en el CRM la autorización específica de avisos de rebaja e ingrese una referencia por teléfono, mostrado con sus últimos cuatro dígitos. Al confirmar `PREPARAR N`, el operador declara haber revisado esa evidencia y las reutilizadas. Los respaldos locales de los leads se crean antes de preparar y antes de aprobar.
 
 Las campañas `PREPARED` que no se aprueben quedan pendientes sin envío. Las campañas `APPROVED` que no se envíen permanecen aprobadas. Una cancelación en cualquiera de esas etapas no invoca WaSender.
 
@@ -81,8 +81,6 @@ Se conservan los comandos avanzados. Para preparar y aprobar un lead individual:
 python scripts/enviar_piloto_rebajas.py `
   --prepare --event-id <EVENT_ID> --lead-id <MONGO_LEAD_ID> `
   --operator "Supervisor" --contact-basis-reviewed `
-  --whatsapp-contact-reviewed `
-  --whatsapp-contact-evidence "Referencia CRM opt-in <ID/fecha>" `
   --confirm-action PREPARAR_<EVENT_ID>
 
 python scripts/enviar_piloto_rebajas.py `
@@ -90,7 +88,7 @@ python scripts/enviar_piloto_rebajas.py `
   --operator "Supervisor" --confirm-action APROBAR_<EVENT_ID>
 ```
 
-El operador debe revisar la autorización de cada lead. La consulta histórica de una propiedad demuestra la relación comercial, pero no se interpreta como consentimiento genérico de marketing. No incluyas el texto del consentimiento ni información personal en el campo de evidencia; usa una referencia del CRM.
+Si el lead ya tiene una autorización reusable válida, no se requieren los flags de revisión ni una nueva referencia. Si falta, el operador debe revisar el CRM para ese teléfono y confirmar que la evidencia cubre avisos de rebaja por WhatsApp; solo entonces añade `--whatsapp-contact-reviewed --whatsapp-contact-evidence "Referencia CRM <ID/fecha>`. El modo técnico permite un lead por llamada cuando se registra evidencia nueva. La consulta histórica de una propiedad demuestra la relación comercial, pero no se interpreta como consentimiento genérico de marketing. No incluyas el texto del consentimiento ni información personal en el campo de evidencia; usa una referencia del CRM.
 
 Para ejecutar una campaña futura ya aprobada, el comando técnico sigue requiriendo los flags V2 locales habilitados para la campaña exacta. El menú interactivo los activa solo en el proceso local después de la confirmación final y los restaura al terminar. El envío se bloquea en Render en ambos casos.
 
@@ -102,7 +100,7 @@ El piloto ya existente no se reconstruye ni se incorpora al menú de campañas n
 python scripts/enviar_piloto_rebajas.py --pilot --status
 ```
 
-Después de revisar el consentimiento individual en el CRM, se puede registrar una referencia en sus tres filas con `--pilot --review-whatsapp-contact`; el comando crea respaldo local y no envía. Para ejecutar posteriormente, conserva el control específico del piloto:
+No registres una referencia común para varios clientes. Si un lead del piloto no tiene autorización reusable válida y su evidencia CRM para avisos de rebaja está verificada, registra solo ese contacto con `--pilot --review-whatsapp-contact --lead-id <MONGO_LEAD_ID>` y una referencia propia; el comando crea respaldo local y no envía. Los demás clientes no se modifican. Para ejecutar posteriormente, conserva el control específico del piloto:
 
 ```powershell
 python scripts/enviar_piloto_rebajas.py --pilot --execute `

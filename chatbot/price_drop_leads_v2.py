@@ -38,6 +38,8 @@ EXEC_NOTICE_ENABLED_FLAG = "PRICE_DROP_LEADS_V2_EXECUTIVE_NOTICE_ENABLED"
 REAL_ADMIN_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_REAL_ADMIN_NOTICES_ENABLED"
 REAL_EXEC_NOTICE_FLAG = "PRICE_DROP_LEADS_V2_REAL_EXECUTIVE_NOTICES_ENABLED"
 WHATSAPP_CONTACT_REVIEWED_FLAG = "PRICE_DROP_LEADS_V2_WHATSAPP_CONTACT_REVIEWED"
+WHATSAPP_CONTACT_AUTHORIZATION = "price_drop_v2.whatsapp_contact_authorization"
+WHATSAPP_CONTACT_SCOPE = "PRICE_DROP_UPDATES"
 
 # The real pilot is limited to a follow-up requested by the lead about the
 # same property. This is distinct from a blanket marketing opt-in.
@@ -100,6 +102,80 @@ def utc(value: datetime) -> datetime:
 def _same_phone(lead: dict, phone: str) -> bool:
     actual = lead.get("contact_phone_normalized") or lead.get("phone")
     return normalize_phone_strict(actual or "") == normalize_phone_strict(phone or "")
+
+
+def reusable_whatsapp_contact_authorization(
+        lead: dict | None, *, phone: str, now=None) -> dict | None:
+    """Resolve an explicitly reviewed contact-level authorization for reuse.
+
+    Reuse the canonical lead-level record, or recover it from a prior campaign
+    row only when that row explicitly records the reusable scope and channel.
+    A generic/campaign-only review is never silently promoted to a reusable
+    opt-in. The phone, channel, scope, reviewer, evidence, and review time must
+    all match. The caller still checks opt-outs and other suppressions
+    independently; a valid permission record never overrides them.
+    """
+    if not isinstance(lead, dict):
+        return None
+    price_drop = lead.get("price_drop_v2") or {}
+    if not isinstance(price_drop, dict):
+        return None
+    stamp = utc(now or datetime.now(timezone.utc))
+    actual_phone = normalize_phone_strict(
+        phone or lead.get("contact_phone_normalized") or lead.get("phone") or "",
+    )
+    if (not actual_phone or not has_real_phone(actual_phone)
+            or not _same_phone(lead, actual_phone)):
+        return None
+
+    def valid(record: dict | None) -> bool:
+        if not isinstance(record, dict):
+            return False
+        authorized_phone = normalize_phone_strict(record.get("phone_normalized") or "")
+        evidence = str(record.get("evidence_reference") or "").strip()
+        reviewed_at = record.get("reviewed_at")
+        if (record.get("status") != "ACTIVE"
+                or record.get("channel") != "WHATSAPP"
+                or record.get("scope") != WHATSAPP_CONTACT_SCOPE
+                or authorized_phone != actual_phone
+                or len(evidence) < 8
+                or not str(record.get("reviewed_by") or "").strip()
+                or not str(record.get("source_campaign_id") or "").strip()
+                or not isinstance(reviewed_at, datetime)
+                or record.get("revoked_at") is not None):
+            return False
+        if utc(reviewed_at) > stamp:
+            return False
+        expires_at = record.get("expires_at")
+        return expires_at is None or (
+            isinstance(expires_at, datetime) and utc(expires_at) > stamp
+        )
+
+    stored = price_drop.get("whatsapp_contact_authorization")
+    if stored is not None:
+        return stored if valid(stored) else None
+
+    recovered = []
+    for campaign in price_drop.get("campaigns") or []:
+        if not isinstance(campaign, dict) or campaign.get("test_mode") is True:
+            continue
+        row = {
+            "status": "ACTIVE",
+            "channel": campaign.get("whatsapp_contact_channel"),
+            "scope": campaign.get("whatsapp_contact_scope"),
+            "phone_normalized": campaign.get("phone_normalized"),
+            "evidence_reference": campaign.get("whatsapp_contact_evidence"),
+            "reviewed_by": campaign.get("whatsapp_contact_reviewed_by"),
+            "reviewed_at": campaign.get("whatsapp_contact_reviewed_at"),
+            "revoked_at": campaign.get("whatsapp_contact_revoked_at"),
+            "expires_at": campaign.get("whatsapp_contact_expires_at"),
+            "source_campaign_id": campaign.get("campaign_id"),
+        }
+        if (campaign.get("whatsapp_contact_reviewed") is True and valid(row)):
+            recovered.append(row)
+    if not recovered:
+        return None
+    return max(recovered, key=lambda item: utc(item["reviewed_at"]))
 
 
 def _contact_suppression_reasons(lead: dict | None) -> set[str]:
@@ -431,9 +507,22 @@ def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
             or not str(campaign.get("approved_by") or "").strip()
             or not isinstance(campaign.get("approved_at"), datetime)):
         return "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
-    if (campaign.get("whatsapp_contact_reviewed") is not True
-            or not str(campaign.get("whatsapp_contact_evidence") or "").strip()):
-        return "WHATSAPP_CONTACT_AUTHORIZATION_MISSING"
+    campaign_authorization = (
+        campaign.get("whatsapp_contact_reviewed") is True
+        and bool(str(campaign.get("whatsapp_contact_evidence") or "").strip())
+    )
+    reusable_authorization = reusable_whatsapp_contact_authorization(
+        lead, phone=str(campaign.get("phone_normalized") or ""),
+    )
+    price_drop = lead.get("price_drop_v2") or {}
+    contact_authorization_record = (
+        price_drop.get("whatsapp_contact_authorization")
+        if isinstance(price_drop, dict) else None
+    )
+    if contact_authorization_record is not None and reusable_authorization is None:
+        return "WHATSAPP_CONTACT_AUTHORIZATION_INVALID_OR_REVOKED"
+    if not campaign_authorization and reusable_authorization is None:
+        return "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
     if campaign.get("simulated_prior_inquiry") is not False:
         return "REAL_SEND_SIMULATED_INQUIRY"
     if str(campaign.get("event_id") or campaign.get("campaign_id") or "") != str(
@@ -913,6 +1002,11 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
             "event_id": step_id[:100], "dropped_at": step_at[:40],
             "currency": step_currency, "old_price": step_old, "new_price": step_new,
         })
+    reusable_contact_authorization = (
+        None if test_mode else reusable_whatsapp_contact_authorization(
+            lead, phone=canonical, now=now or datetime.now(timezone.utc),
+        )
+    )
     return {
         "lead_id": lid, "phone_normalized": canonical,
         "campaign_id": campaign_id, "property_code": property_code,
@@ -942,6 +1036,7 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         "lead_max_age_days": lead_max_age_days,
         "lead_age_days_snapshot": lead_age_days_snapshot,
         "message_variant_id": str(message_variant_id or "")[:40] or None,
+        "reusable_whatsapp_contact_authorization": reusable_contact_authorization,
         "message": message,
     }
 
@@ -957,6 +1052,17 @@ def prepare_one(db, *, now=None, **data) -> dict:
         "contact_basis_type", "contact_basis",
         "simulated_prior_inquiry", "phone_normalized", "qa_session_started_at",
         "inquiry_evidence_at", "inquiry_message_id", "inquiry_reference")}
+    reusable_authorization = p.get("reusable_whatsapp_contact_authorization")
+    if reusable_authorization is not None:
+        row.update({
+            "whatsapp_contact_authorization_reused": True,
+            "whatsapp_contact_authorization_source_campaign_id":
+                reusable_authorization.get("source_campaign_id"),
+            "whatsapp_contact_authorization_reviewed_at": reusable_authorization["reviewed_at"],
+            "whatsapp_contact_scope": reusable_authorization["scope"],
+        })
+    elif not p["test_mode"]:
+        row["whatsapp_contact_reviewed"] = False
     row.update({
         "event_id": p["event_id"],
         "history_event_ids": p["history_event_ids"],
@@ -1053,19 +1159,53 @@ def approve_one(db, *, lead_id: str, campaign_id: str, operator: str, now=None) 
 
 def review_whatsapp_contact(db, *, lead_id: str, campaign_id: str,
                             operator: str, evidence: str, now=None) -> dict:
-    """Record a human-verified, campaign-specific WhatsApp opt-in reference.
+    """Record human-verified evidence for a campaign and reusable scope.
 
-    Evidence should identify the source and date in the CRM; do not paste a
-    full consent transcript or unrelated personal data into this field.
-    Only prepared or approved, unsent campaigns may be reviewed.
+    The operator must confirm in the CRM that the reference authorizes
+    WhatsApp price-drop updates. Store only its source/date reference, not a
+    consent transcript. Every later send still checks STOP, opt-out, phone,
+    campaign approval, and other contact suppressions.
     """
     operator = str(operator or "").strip()
     evidence = str(evidence or "").strip()
     if not operator or len(evidence) < 8:
         raise PilotBlocked("whatsapp_contact_authorization_evidence_required")
     stamp = utc(now or datetime.now(timezone.utc))
+    lid = _lead_id(lead_id)
+    lead = db[LEADS].find_one({"_id": lid}) or {}
+    price_drop = lead.get("price_drop_v2") or {}
+    campaigns = price_drop.get("campaigns") or []
+    matches = [row for row in campaigns
+               if isinstance(row, dict) and row.get("campaign_id") == campaign_id]
+    if len(matches) != 1:
+        raise PilotBlocked("campaign_not_reviewable_or_ambiguous")
+    campaign = matches[0]
+    if (campaign.get("test_mode") is True
+            or campaign.get("status") not in {"PREPARED", "APPROVED"}
+            or campaign.get("provider_message_id")
+            or campaign.get("send_attempted_at")
+            or campaign.get("attempted_at")):
+        raise PilotBlocked("campaign_not_reviewable_or_already_attempted")
+    if _contact_suppression_reasons(lead):
+        raise PilotBlocked("lead_contact_suppressed")
+    canonical = normalize_phone_strict(campaign.get("phone_normalized") or "")
+    if (not canonical or not has_real_phone(canonical)
+            or not _same_phone(lead, canonical)
+            or lead.get("phone_is_synthetic")
+            or lead.get("contact_identity_incomplete")):
+        raise PilotBlocked("whatsapp_contact_phone_changed_or_invalid")
+    reusable = {
+        "status": "ACTIVE", "channel": "WHATSAPP",
+        "scope": WHATSAPP_CONTACT_SCOPE,
+        "phone_normalized": canonical,
+        "evidence_reference": evidence[:240],
+        "reviewed_by": operator[:80], "reviewed_at": stamp,
+        "source_campaign_id": str(campaign_id)[:120],
+    }
     result = db[LEADS].update_one(
-        {"_id": _lead_id(lead_id), ROOT: {"$elemMatch": {
+        {"_id": lid,
+         "$or": [{"phone": canonical}, {"contact_phone_normalized": canonical}],
+         ROOT: {"$elemMatch": {
             "campaign_id": campaign_id, "status": {"$in": ["PREPARED", "APPROVED"]},
             "provider_message_id": {"$in": [None, ""]},
         }}},
@@ -1074,11 +1214,15 @@ def review_whatsapp_contact(db, *, lead_id: str, campaign_id: str,
             f"{ROOT}.$.whatsapp_contact_evidence": evidence[:240],
             f"{ROOT}.$.whatsapp_contact_reviewed_by": operator[:80],
             f"{ROOT}.$.whatsapp_contact_reviewed_at": stamp,
+            f"{ROOT}.$.whatsapp_contact_channel": "WHATSAPP",
+            f"{ROOT}.$.whatsapp_contact_scope": WHATSAPP_CONTACT_SCOPE,
+            WHATSAPP_CONTACT_AUTHORIZATION: reusable,
         }},
     )
     if result.modified_count != 1:
         raise PilotBlocked("campaign_not_reviewable_or_already_attempted")
-    return {"status": "WHATSAPP_CONTACT_REVIEWED", "campaign_id": campaign_id}
+    return {"status": "WHATSAPP_CONTACT_REVIEWED", "campaign_id": campaign_id,
+            "reusable_authorization": True}
 
 
 def send_one(db, *, lead_id: str, campaign_id: str,

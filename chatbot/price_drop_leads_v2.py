@@ -461,8 +461,14 @@ def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
         lead, code, utc(campaign["price_drop_at"]),
         _verified_listing_ids(db, code), return_evidence=True,
     )
+    # MongoDB BSON dates have millisecond precision. The original inbound
+    # timestamp can retain microseconds in the message payload, while the
+    # reviewed campaign evidence is persisted with those sub-millisecond
+    # digits truncated. Accept only that storage precision loss; larger
+    # timestamp differences still fail closed.
     if (not evidence
-            or utc(evidence["inquiry_at"]) != utc(campaign["inquiry_evidence_at"])):
+            or abs(utc(evidence["inquiry_at"])
+                   - utc(campaign["inquiry_evidence_at"])) > timedelta(milliseconds=1)):
         return "REAL_SEND_INQUIRY_NOT_VERIFIED"
     return None
 

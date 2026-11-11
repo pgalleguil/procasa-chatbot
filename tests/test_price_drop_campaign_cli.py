@@ -180,6 +180,49 @@ def _run(db, *, campaign_id=CAMPAIGN, max_messages=20, daily_cap=50,
     )
 
 
+def test_exact_prior_inquiry_pilot_preflight_never_grants_general_marketing_permission():
+    for code, (currency, old_price, new_price) in cli.PILOT_PRICE_WINDOWS.items():
+        campaign = {
+            "campaign_id": cli.PILOT_CAMPAIGN_ID, "property_code": code,
+            "currency": currency, "status": "APPROVED", "test_mode": False,
+            "simulated_prior_inquiry": False,
+            "contact_basis_reviewed": True,
+            "contact_basis_type": v2.DIRECT_RESPONSE_BASIS_TYPE,
+            "contact_basis": "Consulta previa verificada sobre la misma propiedad",
+            "approved_by": "QA operator", "approved_at": NOW,
+            "old_price_uf": old_price if currency == "UF" else None,
+            "new_price_uf": new_price if currency == "UF" else None,
+            "old_price_clp": old_price if currency == "CLP" else None,
+            "new_price_clp": new_price if currency == "CLP" else None,
+        }
+        lead = {"phone": "+56983219801", "price_drop_v2": {"campaigns": [campaign]}}
+        entry = {"lead": lead, "campaign": campaign}
+        assert cli._whatsapp_contact_authorization_blocker(entry, now=NOW) is None
+
+        other = dict(campaign, campaign_id="another-marketing-campaign")
+        assert cli._whatsapp_contact_authorization_blocker(
+            {"lead": lead, "campaign": other}, now=NOW,
+        ) == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
+
+        wrong_price = dict(campaign)
+        key = "new_price_clp" if currency == "CLP" else "new_price_uf"
+        wrong_price[key] = new_price + 1
+        assert cli._whatsapp_contact_authorization_blocker(
+            {"lead": lead, "campaign": wrong_price}, now=NOW,
+        ) == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
+
+        revoked = {"phone": "+56983219801", "price_drop_v2": {
+            "campaigns": [campaign],
+            "whatsapp_contact_authorization": {
+                "status": "REVOKED", "channel": "WHATSAPP",
+                "scope": v2.WHATSAPP_CONTACT_SCOPE,
+            },
+        }}
+        assert cli._whatsapp_contact_authorization_blocker(
+            {"lead": revoked, "campaign": campaign}, now=NOW,
+        ) == "WHATSAPP_CONTACT_AUTHORIZATION_INVALID_OR_REVOKED"
+
+
 def test_pilot_cli_selects_exact_three_persisted_rows(monkeypatch, capsys):
     db = _db()
     approved_rows = _insert_pilot_rows(db)

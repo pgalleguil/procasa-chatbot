@@ -45,8 +45,13 @@ def build_private_model_request(
     """
     if not 1 <= max_messages <= 300:
         raise ValueError("invalid_message_limit")
+    total_messages = (
+        len(lead.get("messages") or [])
+        + len(lead.get("executive_whatsapp_messages") or [])
+    )
+    effective_coverage = bool(coverage_complete) and total_messages <= max_messages
     prepared = prepare_audit_input(
-        lead, coverage_complete=coverage_complete, max_messages=max_messages
+        lead, coverage_complete=effective_coverage, max_messages=max_messages
     )
     clean_messages = []
     for msg in prepared["messages"]:
@@ -65,7 +70,7 @@ def build_private_model_request(
     request = {
         "system": prepared["system"],
         "task": "commercial_audit_candidate_only",
-        "coverage_complete": False if not coverage_complete else True,
+        "coverage_complete": effective_coverage,
         "messages": clean_messages,
         "required_schema": prepared["required_schema"],
         "no_automatic_actions": True,

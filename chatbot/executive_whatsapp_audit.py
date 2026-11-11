@@ -246,6 +246,7 @@ def ingest_upsert(
     session_id: str, executive_user_id: str,
     signature_header: str | None, webhook_secret: str | None,
     commit: bool = False,
+    received_at_utc: datetime | None = None,
 ) -> dict[str, Any]:
     """Dry-run por defecto. No toca mensajes existentes ni altera el ciclo/SLA.
 
@@ -254,6 +255,10 @@ def ingest_upsert(
     No invocar desde el handler del chatbot de oficina.
     """
     verify_webhook_secret(signature_header, webhook_secret)
+    now = received_at_utc if received_at_utc is not None else datetime.now(timezone.utc)
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        raise ExecutiveAuditError("received_at_requires_timezone")
+    now = now.astimezone(timezone.utc)
     records, skipped = normalize_upsert(
         payload, session_id=session_id, executive_user_id=executive_user_id
     )
@@ -266,16 +271,22 @@ def ingest_upsert(
             statuses["duplicate_in_batch"] = statuses.get("duplicate_in_batch", 0) + 1
             continue
         seen.add(record["provider_key"])
-        # The ingestion event time is not proof of when a historic message was
-        # written. Never attribute it to a CRM assignment cycle without an
-        # original provider message timestamp.
-        if record["timestamp_origin"] != "message_timestamp":
-            statuses["unverified_original_timestamp"] = (
-                statuses.get("unverified_original_timestamp", 0) + 1
-            )
-            continue
+        original_time_verified = record["timestamp_origin"] == "message_timestamp"
+        if not original_time_verified:
+            # WaSender's public messages.upsert example has ONLY the envelope
+            # timestamp. Permit fresh real-time evidence, but NEVER infer
+            # historical management time or an SLA stop from this value.
+            lag_seconds = (now - record["timestamp"]).total_seconds()
+            if not (-60 <= lag_seconds <= 300):
+                statuses["unverified_original_timestamp"] = (
+                    statuses.get("unverified_original_timestamp", 0) + 1
+                )
+                continue
+        # For envelope-only timestamps the match is to the *currently active*
+        # assignee at receipt. It is not proof of when the manual text was sent.
+        matching_time = record["timestamp"] if original_time_verified else now
         lead, cycle, reason = _find_cycle_for_message(
-            db, record["phone"], executive_user_id, record["timestamp"]
+            db, record["phone"], executive_user_id, matching_time
         )
         if reason != "matched":
             statuses[reason] = statuses.get(reason, 0) + 1
@@ -285,7 +296,13 @@ def ingest_upsert(
             continue
         message = {k: v for k, v in record.items() if k != "phone"}
         message["assignment_cycle_id"] = str(cycle["assignment_cycle_id"])
-        message["captured_at"] = datetime.now(timezone.utc)
+        message["timestamp_verified"] = original_time_verified
+        message["time_usable_for_sla"] = False
+        message["cycle_attribution"] = (
+            "message_time_verified" if original_time_verified
+            else "current_assignment_at_receipt"
+        )
+        message["captured_at"] = now
         try:
             message_bytes = len(BSON.encode(message))
         except (ValueError, TypeError, OverflowError):

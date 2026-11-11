@@ -125,7 +125,7 @@ def test_cold_real_send_remains_locked_until_separate_pilot_approval(db, monkeyp
     calls = []
     outcome = v2.send_one(db, lead_id=LID, campaign_id=CID,
                           sender=lambda *a: calls.append(a), now=NOW)
-    assert outcome["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_MISSING"
+    assert outcome["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
     assert calls == []
     assert db["leads"].find_one()["price_drop_v2"]["campaigns"][0]["status"] == "APPROVED"
 
@@ -140,5 +140,5 @@ def test_real_hot_send_still_requires_separate_pilot_approval(db, monkeypatch):
     calls = []
     result = v2.send_one(db, lead_id=LID, campaign_id=CID,
                          sender=lambda *a: calls.append(a), now=NOW)
-    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_MISSING"
+    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
     assert calls == []

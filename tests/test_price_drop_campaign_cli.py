@@ -1229,3 +1229,25 @@ def test_full_portfolio_wave_deduplicates_lead_across_two_price_drops():
     assert [c["lead_id"] for c in deduped[older.event_id][1]] == ["two"]
     assert [c["lead_id"] for c in deduped[newer.event_id][1]] == ["one"]
     assert len({row["lead_id"] for _, rows in deduped.values() for row in rows}) == 2
+
+
+def test_read_only_provider_audit_never_sends_or_writes(monkeypatch, capsys):
+    import json
+
+    db = _event_db()
+    before = list(db["universo_cartera_prop360_historial"].find())
+    monkeypatch.setattr(cli, "_get_db", lambda: db)
+    calls = []
+    def fake_usage(*, now):
+        calls.append(now)
+        return {"attempts_last_24h": 9, "sessions_scanned": 2,
+                "log_rows_scanned": 20, "pages_scanned": 2,
+                "source": "wasender_session_message_logs"}
+    monkeypatch.setattr(cli, "_provider_attempts_last_24h", fake_usage)
+    assert cli.main(["--provider-audit"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "READY"
+    assert report["send_attempts"] == 0
+    assert report["account_usage"]["sessions_scanned"] == 2
+    assert len(calls) == 1
+    assert list(db["universo_cartera_prop360_historial"].find()) == before

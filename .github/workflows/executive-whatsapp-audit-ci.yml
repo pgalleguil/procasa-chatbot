@@ -13,6 +13,7 @@ on:
       - "chatbot/executive_whatsapp_audit_runner.py"
       - "chatbot/executive_whatsapp_audit_storage.py"
       - "chatbot/executive_whatsapp_deepseek.py"
+      - "chatbot/executive_whatsapp_backfill.py"
       - "executive_whatsapp_standalone.py"
       - "tests/test_executive_whatsapp_audit.py"
       - "tests/test_executive_whatsapp_classifier.py"
@@ -23,6 +24,7 @@ on:
       - "tests/test_executive_whatsapp_audit_runner.py"
       - "tests/test_executive_whatsapp_audit_storage.py"
       - "tests/test_executive_whatsapp_deepseek.py"
+      - "tests/test_executive_whatsapp_backfill.py"
       - "tests/test_executive_whatsapp_standalone.py"
       - "docs/executive_whatsapp_audit_precontract.md"
       - ".github/workflows/executive-whatsapp-audit-ci.yml"
@@ -49,7 +51,7 @@ jobs:
       - name: Install test dependencies
         run: python -m pip install -r requirements.txt pytest pytest-asyncio beautifulsoup4
       - name: Compile isolated audit files
-        run: python -m py_compile chatbot/executive_whatsapp_audit.py chatbot/executive_whatsapp_classifier.py chatbot/executive_whatsapp_gateway.py chatbot/executive_whatsapp_cohort.py chatbot/executive_whatsapp_export.py chatbot/executive_whatsapp_semantic.py chatbot/executive_whatsapp_audit_runner.py chatbot/executive_whatsapp_audit_storage.py chatbot/executive_whatsapp_deepseek.py executive_whatsapp_standalone.py tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py tests/test_executive_whatsapp_gateway.py tests/test_executive_whatsapp_cohort.py tests/test_executive_whatsapp_export.py tests/test_executive_whatsapp_semantic.py tests/test_executive_whatsapp_audit_runner.py tests/test_executive_whatsapp_audit_storage.py tests/test_executive_whatsapp_deepseek.py tests/test_executive_whatsapp_standalone.py
+        run: python -m py_compile chatbot/executive_whatsapp_audit.py chatbot/executive_whatsapp_classifier.py chatbot/executive_whatsapp_gateway.py chatbot/executive_whatsapp_cohort.py chatbot/executive_whatsapp_export.py chatbot/executive_whatsapp_semantic.py chatbot/executive_whatsapp_audit_runner.py chatbot/executive_whatsapp_audit_storage.py chatbot/executive_whatsapp_deepseek.py chatbot/executive_whatsapp_backfill.py executive_whatsapp_standalone.py tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py tests/test_executive_whatsapp_gateway.py tests/test_executive_whatsapp_cohort.py tests/test_executive_whatsapp_export.py tests/test_executive_whatsapp_semantic.py tests/test_executive_whatsapp_audit_runner.py tests/test_executive_whatsapp_audit_storage.py tests/test_executive_whatsapp_deepseek.py tests/test_executive_whatsapp_backfill.py tests/test_executive_whatsapp_standalone.py
       - name: Run complete new audit suites
         run: python -m pytest -c pytest-procasa.ini -q tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py tests/test_executive_whatsapp_gateway.py tests/test_executive_whatsapp_cohort.py tests/test_executive_whatsapp_export.py tests/test_executive_whatsapp_semantic.py tests/test_executive_whatsapp_audit_runner.py
       - name: Run CRM regression guards

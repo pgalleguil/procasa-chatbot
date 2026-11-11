@@ -114,7 +114,7 @@ class TestExecutiveWhatsAppAudit(TestCase):
         first = ingest(db, event(), commit=True)
         repeated = ingest(db, event(), commit=True)
         self.assertEqual(first["results"], {"saved": 1})
-        self.assertEqual(repeated["results"], {"duplicate_or_missing": 1})
+        self.assertEqual(repeated["results"], {"duplicate_or_capacity_or_missing": 1})
         self.assertEqual(len(db.leads[0]["executive_whatsapp_messages"]), 1)
         saved = db.leads[0]["executive_whatsapp_messages"][0]
         self.assertEqual(saved["assignment_cycle_id"], "C1")
@@ -203,5 +203,55 @@ class TestExecutiveWhatsAppAudit(TestCase):
             "cycle_status": "active",
         })
         result = ingest(db, event(), commit=True)
-        self.assertEqual(result["results"], {"ambiguous_lead_or_assignment": 1})
+        self.assertEqual(result["results"], {"ambiguous_phone_lead_identity": 1})
         self.assertTrue(all("executive_whatsapp_messages" not in x for x in db.leads))
+
+    def test_duplicate_phone_is_always_ambiguous_even_when_one_lead_unassigned(self):
+        db = FakeDB()
+        db.leads.append({"_id": "L2", "phone": PHONE, "messages": []})
+        result = ingest(db, event(), commit=True)
+        self.assertEqual(result["results"], {"ambiguous_phone_lead_identity": 1})
+        self.assertTrue(all("executive_whatsapp_messages" not in x for x in db.leads))
+
+    def test_evidence_key_is_stable_but_does_not_include_phone(self):
+        first, _ = normalize_upsert(
+            event(), session_id=SESSION, executive_user_id=EXECUTIVE,
+        )
+        second, _ = normalize_upsert(
+            event(), session_id=SESSION, executive_user_id=EXECUTIVE,
+        )
+        self.assertEqual(first[0]["provider_key"], second[0]["provider_key"])
+        self.assertNotIn("56912345678", first[0]["provider_key"])
+        self.assertEqual(len(first[0]["provider_key"].removeprefix("wasender:")), 64)
+
+    def test_naive_timestamp_rejected_instead_of_guessed_utc(self):
+        payload = event()
+        payload["data"]["messages"]["timestamp"] = "2026-11-11T09:00:00"
+        del payload["timestamp"]
+        records, skipped = normalize_upsert(
+            payload, session_id=SESSION, executive_user_id=EXECUTIVE,
+        )
+        self.assertEqual(records, [])
+        self.assertEqual(skipped, ["missing_timestamp"])
+
+    def test_live_atomic_bson_capacity_condition_always_present(self):
+        db = FakeDB()
+        result = ingest(db, event(), commit=True)
+        self.assertEqual(result["results"], {"saved": 1})
+        # This fake DB does not evaluate expressions, but the production query
+        # is instrumented below in an exact spy to inspect its safety contract.
+        class SpyDB(FakeDB):
+            def __getitem__(self, key):
+                if key == "leads":
+                    parent = self
+                    class SpyCollection(FakeCollection):
+                        def update_one(self, selector, update, upsert=False):
+                            parent.last_write_filter = selector
+                            return super().update_one(selector, update, upsert)
+                    return SpyCollection(key, self)
+                return super().__getitem__(key)
+        spy = SpyDB()
+        ingest(spy, event(), commit=True)
+        self.assertIn("$expr", spy.last_write_filter)
+        self.assertIn("$bsonSize", str(spy.last_write_filter["$expr"]))
+        self.assertIn("executive_whatsapp_messages.provider_key", spy.last_write_filter)

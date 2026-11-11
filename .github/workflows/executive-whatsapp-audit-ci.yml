@@ -1,0 +1,37 @@
+name: Executive WhatsApp Audit - Isolated CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "chatbot/executive_whatsapp_audit.py"
+      - "chatbot/executive_whatsapp_classifier.py"
+      - "tests/test_executive_whatsapp_audit.py"
+      - "tests/test_executive_whatsapp_classifier.py"
+      - ".github/workflows/executive-whatsapp-audit-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-feature-tests:
+    name: Executive WhatsApp - unit and regression safeguards
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Never inject real WaSender or MongoDB credentials.
+      EXECUTIVE_WHATSAPP_AUDIT_ENABLED: "false"
+      EXECUTIVE_WHATSAPP_AUDIT_WRITES_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: python -m pip install -r requirements.txt pytest pytest-asyncio beautifulsoup4
+      - name: Compile isolated audit files
+        run: python -m py_compile chatbot/executive_whatsapp_audit.py chatbot/executive_whatsapp_classifier.py tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py
+      - name: Run complete new audit suites
+        run: python -m pytest -c pytest-procasa.ini -q tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py
+      - name: Run chatbot and CRM regression guards
+        run: python -m pytest -c pytest-procasa.ini -q tests/test_message_domain_isolation.py tests/test_crm_management_sla.py tests/test_crm_phone_visibility.py

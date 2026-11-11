@@ -52,3 +52,49 @@ No ampliar directamente a seis sesiones antes de demostrar la cobertura históri
 - https://www.wasenderapi.com/api-docs/getting-started/how-to-receive-messages-and-media-from-wasenderapi
 - https://app.wasenderapi.com/api-docs/webhooks/webhook-setup/
 - https://wasenderapi.com/help/messaging/handling-duplicate-webhooks
+
+
+## Avance posterior: adaptador HTTP y cohorte (todavía sin activar)
+
+Se incorporaron **dos componentes nuevos no registrados en webhook.py**:
+
+- chatbot/executive_whatsapp_gateway.py:
+  - función build_unmounted_executive_audit_router;
+  - registro de sesiones por alias opaco y SessionBinding inyectados por configuración confiable;
+  - validación de encabezado X-Webhook-Signature frente al secreto de la sesión;
+  - tamaño HTTP limitado, rechazo de JSON inválido y claves duplicadas;
+  - sólo evento messages.upsert y lotes acotados;
+  - dos barreras de activación: enabled=False y persist_enabled=False por defecto;
+  - operaciones síncronas de Mongo ejecutadas fuera del event loop;
+  - respuesta con conteos sin datos de clientes;
+  - ante fallo de almacenamiento responde 503, no declara evento almacenado;
+  - NO IMPORTA el bot, endpoints de envío ni workers de campañas;
+  - no montado en FastAPI de producción, ningún teléfono conectado.
+
+- chatbot/executive_whatsapp_cohort.py:
+  - creación de consulta READ-ONLY para cohortes de 30/60 días por assigned_at de crm_assignment_cycles;
+  - reporte agregado por ejecutivo, ciclos y leads sin exponer teléfonos/conversaciones;
+  - los conteos no acreditan captura histórica ni entrega del lead.
+
+Las nuevas suites se ejecutan en .github/workflows/executive-whatsapp-audit-ci.yml:
+- tests/test_executive_whatsapp_gateway.py
+- tests/test_executive_whatsapp_cohort.py
+- tests/test_executive_whatsapp_audit.py
+- tests/test_executive_whatsapp_classifier.py
+
+### Riesgos que SIGUEN pendientes y prohíben el despliegue
+
+1. **No hay webhook vivo ni cola durable**. La ruta está deliberadamente sin registrar: no debe montarse en producción sin aislamiento, idempotencia bajo concurrencia, reintentos y revisión de privacidad.
+2. **No está probada la recuperación histórica** de 30–60 días. No confundir message logs de llamadas API con mensajes manuales antiguos.
+3. **No hay importador de chats exportados**, sólo diseño pendiente.
+4. **No existe orquestación real con DeepSeek** ni guardado de auditorías; el clasificador es contrato validado, no evaluación en producción.
+5. **No se ha validado el límite BSON de 16 MiB bajo concurrencia real**. Bloquear escritura masiva hasta implementar guard y pruebas apropiadas.
+6. **No existen todavía permisos de auditoría en UI** ni política de consentimiento/retención acordada.
+7. La muestra oficial de Webhook Upsert no garantiza timestamp original de cada mensaje; el normalizador marca timestamp_origin="webhook_timestamp" cuando sólo existe fecha del evento. Esa marca no autoriza inferir gestiones históricas o SLA.
+
+### Fuentes verificadas
+
+- https://wasenderapi.com/api-docs/webhooks/webhook-setup/
+- https://wasenderapi.com/api-docs/webhooks/webhook-message-upsert/
+
+**Estado de aceptación para conexión real: NO APTO, PENDIENTE DE VALIDACIONES.**

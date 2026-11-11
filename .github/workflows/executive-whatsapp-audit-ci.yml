@@ -41,7 +41,7 @@ jobs:
       - name: Compile isolated audit files
         run: python -m py_compile chatbot/executive_whatsapp_audit.py chatbot/executive_whatsapp_classifier.py chatbot/executive_whatsapp_gateway.py chatbot/executive_whatsapp_cohort.py chatbot/executive_whatsapp_export.py tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py tests/test_executive_whatsapp_gateway.py tests/test_executive_whatsapp_cohort.py tests/test_executive_whatsapp_export.py
       - name: Run complete new audit suites
-        run: python -m pytest -c pytest-procasa.ini -q tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py tests/test_executive_whatsapp_gateway.py tests/test_executive_whatsapp_cohort.py
+        run: python -m pytest -c pytest-procasa.ini -q tests/test_executive_whatsapp_audit.py tests/test_executive_whatsapp_classifier.py tests/test_executive_whatsapp_gateway.py tests/test_executive_whatsapp_cohort.py tests/test_executive_whatsapp_export.py
       - name: Run CRM regression guards
         run: python -m pytest -c pytest-procasa.ini -q tests/test_crm_management_sla.py tests/test_crm_phone_visibility.py
       - name: Compare domain isolation test against unchanged main baseline

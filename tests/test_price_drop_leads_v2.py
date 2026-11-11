@@ -582,6 +582,40 @@ def test_real_pilot_blocks_duplicate_or_lost_historic_inquiry(db, monkeypatch):
     assert calls == []
 
 
+def test_real_pilot_accepts_only_bson_millisecond_inquiry_precision_loss(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    persisted_millisecond = datetime(2026, 10, 1, 13, 0, 0, 0, tzinfo=timezone.utc)
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
+        "messages.0.timestamp": "2026-10-01T10:00:00.000700-03:00",
+        "price_drop_v2.campaigns.0.inquiry_evidence_at": persisted_millisecond,
+    }})
+    provider_calls = []
+    sender = lambda *args: provider_calls.append(args) or {
+        "success": True, "provider_message_id": "mock-bson-precision-id",
+        "delivery_status": "accepted",
+    }
+    result = v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
+                         sender=sender, now=NOW)
+    assert result["status"] == "SENT"
+    assert len(provider_calls) == 1
+
+
+def test_real_pilot_still_blocks_inquiry_evidence_over_one_millisecond_apart(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
+        "messages.0.timestamp": "2026-10-01T10:00:00.000700-03:00",
+        "price_drop_v2.campaigns.0.inquiry_evidence_at":
+            datetime(2026, 10, 1, 13, 0, 0, 2000, tzinfo=timezone.utc),
+    }})
+    provider_calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: provider_calls.append(args), now=NOW,
+    )
+    assert result["status"] == "REAL_SEND_INQUIRY_NOT_VERIFIED"
+    assert provider_calls == []
+
+
 def test_shared_real_send_blocker_rejects_same_legacy_price_event(db, monkeypatch):
     lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
     db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$push": {

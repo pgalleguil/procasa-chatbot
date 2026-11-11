@@ -182,6 +182,7 @@ def _entries(db: Any, campaign_id: str,
         {"_id": 1, "phone": 1, "contact_phone_normalized": 1, "messages": 1,
          "created_at": 1, "lead_temperature_effective": 1, "lead_temperature": 1,
          "price_drop_v2.campaigns": 1, "price_drop_v2.opted_out": 1,
+         "price_drop_v2.whatsapp_contact_authorization": 1,
          "conversation_status": 1, "pipeline_stage": 1, "stage": 1},
     )
     output = []
@@ -193,6 +194,30 @@ def _entries(db: Any, campaign_id: str,
         if matches:
             output.append({"lead": lead, "campaign": matches[0]})
     return output
+
+
+def _has_whatsapp_contact_authorization(entry: dict[str, Any], *, now=None) -> bool:
+    """Accept campaign proof or a valid reusable lead authorization.
+
+    If a lead-level record exists but is expired, mismatched, or revoked, do
+    not let a stale campaign snapshot override that invalidation.
+    """
+    lead = entry.get("lead") or {}
+    campaign = entry.get("campaign") or {}
+    price_drop = lead.get("price_drop_v2") or {}
+    auth_record = price_drop.get("whatsapp_contact_authorization") if isinstance(
+        price_drop, dict
+    ) else None
+    reusable = v2.reusable_whatsapp_contact_authorization(
+        lead, phone=str(campaign.get("phone_normalized") or ""), now=now,
+    )
+    if auth_record is not None and reusable is None:
+        return False
+    campaign_proof = (
+        campaign.get("whatsapp_contact_reviewed") is True
+        and bool(str(campaign.get("whatsapp_contact_evidence") or "").strip())
+    )
+    return campaign_proof or reusable is not None
 
 
 def _campaigns_by_status(db: Any, statuses: tuple[str, ...]) -> dict[str, list[dict[str, Any]]]:
@@ -776,10 +801,8 @@ def execute_campaign(
             str(row["campaign"].get("property_code") or "") not in allowed_property_codes
             for row in entries):
         return {"status": "BLOCKED", "reason": "property_outside_campaign_allowlist", "attempts": 0}
-    if any(row["campaign"].get("whatsapp_contact_reviewed") is not True
-           or not str(row["campaign"].get("whatsapp_contact_evidence") or "").strip()
-           for row in entries):
-        return {"status": "BLOCKED", "reason": "whatsapp_contact_authorization_review_required",
+    if any(not _has_whatsapp_contact_authorization(row, now=now) for row in entries):
+        return {"status": "BLOCKED", "reason": "whatsapp_contact_authorization_unverified",
                 "attempts": 0}
     for entry in entries:
         reason = _campaign_filter_blocker(
@@ -1096,8 +1119,8 @@ def execute_campaign(
 
 def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
                      operator: str, contact_basis_reviewed: bool,
-                     whatsapp_contact_reviewed: bool,
-                     whatsapp_contact_evidence: str | dict[str, str],
+                     whatsapp_contact_reviewed: bool = False,
+                     whatsapp_contact_evidence: str | dict[str, str] | None = None,
                      temperature_filter: str = "ALL",
                      lead_max_age_days: int | None = DEFAULT_LEAD_MAX_AGE_DAYS,
                      temperature_reviews: dict[str, dict[str, Any]] | None = None,
@@ -1106,10 +1129,9 @@ def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
         raise CliError("operator_required")
     if not contact_basis_reviewed:
         raise CliError("contact_basis_must_be_reviewed")
-    if not whatsapp_contact_reviewed:
-        raise CliError("whatsapp_contact_authorization_review_required")
     if not lead_ids:
         raise CliError("at_least_one_lead_id_required")
+    selected_ids = list(dict.fromkeys(str(value) for value in lead_ids))
     reviews = temperature_reviews or {}
     stamp = now or datetime.now(timezone.utc)
     candidates = {row["lead_id"]: row for row in find_candidates_for_event(
@@ -1117,22 +1139,43 @@ def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
         lead_max_age_days=lead_max_age_days,
         temperature_reviews=reviews, now=stamp,
     )}
+    plans = []
+    missing_authorization = []
+    for lead_id in selected_ids:
+        candidate = candidates.get(lead_id)
+        if not candidate or not candidate["eligible"]:
+            raise CliError(f"selected_lead_not_eligible:{lead_id[-6:]}")
+        lead = db[LEADS_COLLECTION].find_one({"_id": _lead_id(lead_id)}) or {}
+        phone = lead.get("contact_phone_normalized") or lead.get("phone") or ""
+        authorization = v2.reusable_whatsapp_contact_authorization(
+            lead, phone=str(phone), now=stamp,
+        )
+        if authorization is None:
+            missing_authorization.append(lead_id)
+        plans.append({"lead_id": lead_id, "candidate": candidate, "lead": lead,
+                      "reusable_authorization": authorization})
+    evidence_by_lead: dict[str, str] = {}
     if isinstance(whatsapp_contact_evidence, dict):
         evidence_by_lead = {str(key): str(value or "").strip()
                             for key, value in whatsapp_contact_evidence.items()}
-        if any(len(evidence_by_lead.get(str(value), "")) < 8 for value in lead_ids):
-            raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
-    else:
+    elif whatsapp_contact_evidence is not None:
         evidence = str(whatsapp_contact_evidence or "").strip()
-        if len(evidence) < 8:
-            raise CliError("whatsapp_contact_authorization_review_required")
-        evidence_by_lead = {str(value): evidence for value in lead_ids}
+        if len(missing_authorization) > 1:
+            raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
+        if missing_authorization:
+            evidence_by_lead[missing_authorization[0]] = evidence
+    if missing_authorization and not whatsapp_contact_reviewed:
+        raise CliError("whatsapp_contact_authorization_review_required")
+    if any(len(evidence_by_lead.get(value, "")) < 8
+           for value in missing_authorization):
+        raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
     output = []
-    for lead_id in dict.fromkeys(lead_ids):
-        candidate = candidates.get(str(lead_id))
-        if not candidate or not candidate["eligible"]:
-            raise CliError(f"selected_lead_not_eligible:{str(lead_id)[-6:]}")
-        lead = db[LEADS_COLLECTION].find_one({"_id": _lead_id(lead_id)}) or {}
+    reused_count = 0
+    reviewed_count = 0
+    for plan in plans:
+        lead_id = plan["lead_id"]
+        candidate = plan["candidate"]
+        lead = plan["lead"]
         history = _history_steps(db, event, candidate["last_notice"].get("sent_at")
                                  if candidate["last_notice"] else None)
         variant_id = message_variant_id(str(lead_id), event.event_id)
@@ -1185,15 +1228,20 @@ def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
             "now": stamp,
         }
         prepared = v2.prepare_one(db, **data)
-        v2.review_whatsapp_contact(
-            db, lead_id=str(lead_id), campaign_id=event.campaign_id,
-            operator=operator, evidence=evidence_by_lead[str(lead_id)],
-        )
+        if plan["reusable_authorization"] is not None:
+            reused_count += 1
+        else:
+            v2.review_whatsapp_contact(
+                db, lead_id=lead_id, campaign_id=event.campaign_id,
+                operator=operator, evidence=evidence_by_lead[lead_id], now=stamp,
+            )
+            reviewed_count += 1
         output.append(prepared)
     return {"status": "PREPARED", "campaign_id": event.campaign_id,
             "prepared_count": len(output),
             "lead_last6": [str(row["lead_id"])[-6:] for row in output],
-            "whatsapp_review_evidence_present": True}
+            "whatsapp_authorizations_reused": reused_count,
+            "whatsapp_authorizations_reviewed": reviewed_count}
 
 
 def approve_selected(db: Any, *, campaign_id: str, lead_ids: list[str],
@@ -1210,12 +1258,13 @@ def approve_selected(db: Any, *, campaign_id: str, lead_ids: list[str],
 def review_selected_whatsapp_contact(db: Any, *, campaign_id: str,
                                      lead_ids: list[str], operator: str,
                                      evidence: str) -> dict[str, Any]:
-    if not operator.strip() or len(evidence.strip()) < 8 or not lead_ids:
-        raise CliError("operator_leads_and_whatsapp_evidence_required")
+    unique_ids = list(dict.fromkeys(str(value) for value in lead_ids))
+    if not operator.strip() or len(evidence.strip()) < 8 or len(unique_ids) != 1:
+        raise CliError("one_lead_operator_and_whatsapp_evidence_required")
     output = [v2.review_whatsapp_contact(
-        db, lead_id=lead_id, campaign_id=campaign_id,
+        db, lead_id=unique_ids[0], campaign_id=campaign_id,
         operator=operator, evidence=evidence,
-    ) for lead_id in dict.fromkeys(lead_ids)]
+    )]
     return {"status": "WHATSAPP_CONTACT_REVIEWED", "campaign_id": campaign_id,
             "reviewed_count": len(output)}
 
@@ -1790,20 +1839,43 @@ def interactive_workflow(
     if not operator:
         raise CliError("operator_required")
     evidence_by_lead = {}
+    reusable_authorizations = set()
     for event, rows in selected_by_event.values():
         for candidate in rows:
+            lead = db[LEADS_COLLECTION].find_one(
+                {"_id": _lead_id(candidate["lead_id"])},
+                {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
+                 "price_drop_v2.whatsapp_contact_authorization": 1,
+                 "price_drop_v2.opted_out": 1, "price_drop_v2.campaigns": 1,
+                 "messages": 1, "conversation_status": 1,
+                 "conversation_status_reason": 1, "conversation_status_evidence": 1},
+            ) or {}
+            authorization = v2.reusable_whatsapp_contact_authorization(
+                lead,
+                phone=str(lead.get("contact_phone_normalized") or lead.get("phone") or ""),
+                now=now,
+            )
+            if authorization is not None:
+                reusable_authorizations.add(candidate["lead_id"])
+                output_fn(
+                    f"Autorización WhatsApp reutilizable verificada para "
+                    f"propiedad {event.property_code}, teléfono ***{candidate['phone_last4']}."
+                )
+                continue
             evidence_by_lead[candidate["lead_id"]] = input_fn(
-                f"Referencia CRM del opt-in WhatsApp para propiedad {event.property_code}, "
-                f"teléfono ***{candidate['phone_last4']}: "
+                f"Referencia CRM de autorización WhatsApp para avisos de rebaja "
+                f"(propiedad {event.property_code}, teléfono ***{candidate['phone_last4']}): "
             ).strip()
-    if any(len(value) < 8 for value in evidence_by_lead.values()):
+    missing_authorizations = [
+        row["lead_id"] for _, rows in selected_by_event.values() for row in rows
+        if row["lead_id"] not in reusable_authorizations
+    ]
+    if any(len(evidence_by_lead.get(value, "")) < 8 for value in missing_authorizations):
         raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
     if input_fn(
-        f"Confirma revisión de consulta previa y consentimiento para {selected_count} contactos "
-        f"(escribe CONFIRMO {selected_count}): "
-    ).strip() != f"CONFIRMO {selected_count}":
-        return {"status": "CANCELLED", "phase": "review", "prepared": 0, "attempts": 0}
-    if input_fn(f"Escribe PREPARAR {selected_count} para crear campañas PREPARED: ").strip() \
+        f"Escribe PREPARAR {selected_count} para crear campañas PREPARED. "
+        "Confirmas los permisos CRM indicados y el uso de los permisos reutilizables: "
+    ).strip() \
             != f"PREPARAR {selected_count}":
         return {"status": "CANCELLED", "phase": "prepare", "prepared": 0, "attempts": 0}
 
@@ -1817,7 +1889,8 @@ def interactive_workflow(
                      if event.event_id == event_id)
         prepare_selected(
             db, event=event, lead_ids=ids, operator=operator,
-            contact_basis_reviewed=True, whatsapp_contact_reviewed=True,
+            contact_basis_reviewed=True,
+            whatsapp_contact_reviewed=any(value in evidence_by_lead for value in ids),
             whatsapp_contact_evidence=evidence_by_lead,
             temperature_filter=temperature_filter,
             lead_max_age_days=lead_max_age_days,
@@ -2192,10 +2265,10 @@ def _validate_cli(args: argparse.Namespace) -> datetime | None:
         raise CliError("event_id_required_for_prepare")
     if args.action in {"approve", "review-whatsapp-contact"} and not args.campaign_id and not args.pilot:
         raise CliError("campaign_id_required")
-    if args.action == "prepare" and (not args.contact_basis_reviewed
-            or not args.whatsapp_contact_reviewed
-            or len(args.whatsapp_contact_evidence.strip()) < 8):
-        raise CliError("contact_basis_and_whatsapp_authorization_reviews_required")
+    if args.action == "review-whatsapp-contact" and len(args.lead_id) != 1:
+        raise CliError("whatsapp_authorization_review_requires_one_lead_id")
+    if args.action == "prepare" and not args.contact_basis_reviewed:
+        raise CliError("contact_basis_review_required")
     if (args.action in {"prepare", "approve", "review-whatsapp-contact"}
             and not args.lead_id and not (args.pilot and args.action == "review-whatsapp-contact")):
         raise CliError("lead_id_required")
@@ -2338,20 +2411,24 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({**result, "backup": str(backup)}, ensure_ascii=False, default=str))
             return 0
         if args.action == "review-whatsapp-contact":
-            expected = _confirm_token("REVISAR_WHATSAPP", args.campaign_id)
+            review_campaign_id = PILOT_CAMPAIGN_ID if args.pilot else args.campaign_id
+            expected = _confirm_token("REVISAR_WHATSAPP", review_campaign_id)
             if args.confirm_action != expected:
                 raise CliError(f"type_exact_confirm_action:{expected}")
             lead_ids = args.lead_id
-            if args.pilot and not lead_ids:
+            if args.pilot:
                 pilot_rows = _entries(db, PILOT_CAMPAIGN_ID, ("PREPARED", "APPROVED"))
                 codes = {str(row["campaign"].get("property_code") or "") for row in pilot_rows}
                 if len(pilot_rows) != 3 or codes != PILOT_PROPERTY_CODES:
                     raise CliError("pilot_whatsapp_review_requires_exact_three_unsent_rows")
-                lead_ids = [str(row["lead"].get("_id")) for row in pilot_rows]
+                pilot_ids = {str(row["lead"].get("_id")) for row in pilot_rows}
+                if len(lead_ids) != 1 or str(lead_ids[0]) not in pilot_ids:
+                    raise CliError("pilot_whatsapp_review_requires_one_persisted_lead_id")
+                lead_ids = [str(lead_ids[0])]
             ids = [_lead_id(value) for value in dict.fromkeys(lead_ids)]
             backup = _backup_leads(db, ids)
             result = review_selected_whatsapp_contact(
-                db, campaign_id=args.campaign_id, lead_ids=lead_ids,
+                db, campaign_id=review_campaign_id, lead_ids=lead_ids,
                 operator=args.operator, evidence=args.whatsapp_contact_evidence,
             )
             print(json.dumps({**result, "backup": str(backup)}, ensure_ascii=False, default=str))

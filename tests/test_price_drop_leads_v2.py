@@ -492,6 +492,15 @@ def _approved_real_pilot_sample(db, monkeypatch):
         evidence="Consentimiento explícito fixture CRM 2026-10-01",
         now=NOW,
     )["status"] == "WHATSAPP_CONTACT_REVIEWED"
+    saved = db["leads"].find_one({"_id": ObjectId(lead_id)})
+    reusable = saved["price_drop_v2"]["whatsapp_contact_authorization"]
+    assert reusable["status"] == "ACTIVE"
+    assert reusable["channel"] == "WHATSAPP"
+    assert reusable["scope"] == v2.WHATSAPP_CONTACT_SCOPE
+    assert reusable["phone_normalized"] == phone
+    assert reusable["source_campaign_id"] == campaign_id
+    assert saved["lead_temperature_effective"] == "COLD"
+    assert saved["pipeline_stage"] == "CONTACTED"
     assert v2.approve_one(db, lead_id=lead_id, campaign_id=campaign_id,
                           operator="Operador de pruebas", now=NOW)["status"] == "APPROVED"
     monkeypatch.setenv(v2.SEND_FLAG, "true")
@@ -560,6 +569,69 @@ def test_real_pilot_rechecks_contact_basis_and_allows_exactly_one_mock_send(db, 
         "leads", "universo_cartera_prop360",
         "universo_cartera_prop360_historial",
     }
+
+
+def test_reusable_whatsapp_authorization_allows_send_without_campaign_review_snapshot(db, monkeypatch):
+    lead_id, campaign_id, phone = _approved_real_pilot_sample(db, monkeypatch)
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$unset": {
+        "price_drop_v2.campaigns.0.whatsapp_contact_reviewed": "",
+        "price_drop_v2.campaigns.0.whatsapp_contact_evidence": "",
+        "price_drop_v2.campaigns.0.whatsapp_contact_reviewed_by": "",
+        "price_drop_v2.campaigns.0.whatsapp_contact_reviewed_at": "",
+    }})
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args) or {
+            "success": True, "provider_message_id": "mock-reused-auth",
+            "delivery_status": "accepted",
+        }, now=NOW,
+    )
+    assert result["status"] == "SENT"
+    assert len(calls) == 1 and calls[0][0] == phone
+
+
+def test_revoked_reusable_authorization_blocks_even_with_campaign_snapshot(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
+        "price_drop_v2.whatsapp_contact_authorization.status": "REVOKED",
+        "price_drop_v2.whatsapp_contact_authorization.revoked_at": NOW,
+    }})
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_INVALID_OR_REVOKED"
+    assert calls == []
+
+
+def test_reusable_authorization_does_not_override_stop_or_global_opt_out(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
+        "price_drop_v2.opted_out": True,
+    }})
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "BLOCKED_OPTED_OUT"
+    assert calls == []
+
+
+def test_contact_review_refuses_to_record_reusable_auth_after_opt_out(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
+        "price_drop_v2.opted_out": True,
+    }})
+    with pytest.raises(v2.PilotBlocked, match="lead_contact_suppressed"):
+        v2.review_whatsapp_contact(
+            db, lead_id=lead_id, campaign_id=campaign_id,
+            operator="Operador de pruebas",
+            evidence="Consentimiento explícito fixture CRM 2026-10-01",
+            now=NOW + timedelta(minutes=5),
+        )
 
 
 def test_real_pilot_blocks_duplicate_or_lost_historic_inquiry(db, monkeypatch):

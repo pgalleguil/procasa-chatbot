@@ -116,7 +116,7 @@ def test_clp_preview_and_audited_lead_record_are_durable_but_no_send(db, monkeyp
     calls = []
     result = v2.send_one(db, lead_id=str(LEAD_ID), campaign_id=CID,
                          sender=lambda *a: calls.append(a), now=NOW)
-    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_MISSING"
+    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
     assert not calls
 
 

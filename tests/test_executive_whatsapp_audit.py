@@ -299,3 +299,33 @@ class TestExecutiveWhatsAppAudit(TestCase):
         saved = db.leads[0]["executive_whatsapp_messages"][0]
         self.assertIsNotNone(saved.get("captured_at"))
         self.assertEqual(saved["timestamp_origin"], "message_timestamp")
+
+    def test_fresh_envelope_only_message_is_stored_but_time_unverified(self):
+        db = FakeDB()
+        payload = event(outgoing=True)
+        del payload["data"]["messages"]["messageTimestamp"]
+        received_at = datetime.fromtimestamp(STAMP + 8, tz=timezone.utc)
+        result = ingest_upsert(
+            db, payload, session_id=SESSION, executive_user_id=EXECUTIVE,
+            signature_header="secret", webhook_secret="secret", commit=True,
+            received_at_utc=received_at,
+        )
+        self.assertEqual(result["results"], {"saved": 1})
+        saved = db.leads[0]["executive_whatsapp_messages"][0]
+        self.assertEqual(saved["timestamp_origin"], "webhook_timestamp")
+        self.assertFalse(saved["timestamp_verified"])
+        self.assertFalse(saved["time_usable_for_sla"])
+        self.assertEqual(saved["cycle_attribution"], "current_assignment_at_receipt")
+
+    def test_rejects_stale_envelope_even_when_phone_matches(self):
+        db = FakeDB()
+        payload = event()
+        del payload["data"]["messages"]["messageTimestamp"]
+        later = datetime.fromtimestamp(STAMP + 901, tz=timezone.utc)
+        result = ingest_upsert(
+            db, payload, session_id=SESSION, executive_user_id=EXECUTIVE,
+            signature_header="secret", webhook_secret="secret", commit=True,
+            received_at_utc=later,
+        )
+        self.assertEqual(result["results"], {"unverified_original_timestamp": 1})
+        self.assertNotIn("executive_whatsapp_messages", db.leads[0])

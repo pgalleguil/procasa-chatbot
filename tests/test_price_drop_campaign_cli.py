@@ -211,6 +211,31 @@ def test_pilot_cli_selects_exact_three_persisted_rows(monkeypatch, capsys):
     assert "outside pilot" not in capsys.readouterr().out
 
 
+def test_pilot_status_reports_actual_primary_blockers_without_mongo_writes(monkeypatch):
+    db = _db()
+    _insert_pilot_rows(db)
+    before = list(db["leads"].find())
+    result = cli._pilot_status(db)
+
+    assert result["pilot_property_set_complete"] is True
+    assert result["preflight_is_read_only"] is True
+    assert result["live_publication_and_delivery_rechecked_only_at_execution"] is True
+    assert {entry["property_code"] for entry in result["recipient_preflight"]} == {
+        "6436", "6377", "16479",
+    }
+    assert all(entry["campaign_status"] == "APPROVED"
+               for entry in result["recipient_preflight"])
+    assert all(entry["primary_send_blocker"]
+               for entry in result["recipient_preflight"])
+    assert all(len(entry["phone_last4"]) == 4
+               for entry in result["recipient_preflight"])
+    assert set(result["runtime_on_this_machine"]) == {
+        "send_enabled", "context_enabled", "provider_configured",
+        "channel_mode", "manual_cli_allowed_here",
+    }
+    assert list(db["leads"].find()) == before
+
+
 def test_shared_batch_sends_multiple_properties_and_resumes_without_duplicates(
         monkeypatch, tmp_path):
     db = _event_db()

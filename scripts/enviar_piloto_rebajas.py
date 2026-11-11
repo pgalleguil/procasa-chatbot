@@ -407,6 +407,11 @@ def audit_full_portfolio(
 
 
 def _pilot_status(db: Any) -> dict[str, Any]:
+    """Read-only status of the exact pilot and its primary per-lead blockers.
+
+    This is a diagnostic view, NOT a substitute for live publication, provider
+    and transactional delivery checks performed by the execution path.
+    """
     rows = _entries(db, PILOT_CAMPAIGN_ID, _CAMPAIGN_REPORT_STATES)
     codes = {str(row["campaign"].get("property_code") or "") for row in rows}
     history_count = sum(
@@ -414,8 +419,43 @@ def _pilot_status(db: Any) -> dict[str, Any]:
         if isinstance(message, dict)
         and (message.get("metadata") or {}).get("campaign_id") == PILOT_CAMPAIGN_ID
     )
-    return {**_status_report(rows), "pilot_property_set_complete": codes == PILOT_PROPERTY_CODES,
-            "messages_in_history": history_count}
+    runtime = {
+        "send_enabled": _truthy(os.getenv(v2.SEND_FLAG)),
+        "context_enabled": _truthy(os.getenv(v2.CONTEXT_FLAG)),
+        "provider_configured": _provider_ready(),
+        "channel_mode": os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi"),
+        "manual_cli_allowed_here": not (
+            _truthy(os.getenv("RENDER")) or bool(os.getenv("RENDER_SERVICE_ID"))
+        ),
+    }
+    recipients = []
+    for row in rows:
+        campaign = row["campaign"]
+        lead = row["lead"]
+        current_status = str(campaign.get("status") or "")
+        if current_status != "APPROVED":
+            blocker = "CAMPAIGN_NOT_APPROVED"
+        elif v2.lead_must_not_be_contacted(lead):
+            blocker = "BLOCKED_OPTED_OUT"
+        elif not v2.is_open_campaign_eligible(lead):
+            blocker = "BLOCKED_CLOSED_PIPELINE"
+        else:
+            blocker = v2._real_campaign_send_blocker(db, lead, campaign)
+        recipients.append({
+            "property_code": str(campaign.get("property_code") or ""),
+            "phone_last4": _phone_last4(lead),
+            "campaign_status": current_status,
+            "primary_send_blocker": blocker,
+        })
+    return {
+        **_status_report(rows),
+        "pilot_property_set_complete": codes == PILOT_PROPERTY_CODES,
+        "messages_in_history": history_count,
+        "runtime_on_this_machine": runtime,
+        "recipient_preflight": sorted(recipients, key=lambda x: x["property_code"]),
+        "preflight_is_read_only": True,
+        "live_publication_and_delivery_rechecked_only_at_execution": True,
+    }
 
 
 def _validated_pilot_rows(db: Any) -> list[dict[str, Any]]:

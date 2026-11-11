@@ -1,3 +1,48 @@
+# ESTADO CONSOLIDADO — PREPARACIÓN PARA PILOTO DE UN TELÉFONO
+
+Este bloque tiene prioridad sobre las secciones históricas de avances previos
+que aparecen más abajo. Todas las funcionalidades siguen desactivadas y sin
+desplegar; la PR #168 permanece en borrador.
+
+Código añadido:
+- executive_whatsapp_standalone.py: aplicación FastAPI aislada. No toca webhook.py.
+  Tiene un canary limitado a UNA sesión, doble autorización y privacidad.
+- chatbot/executive_whatsapp_gateway.py: receptor autenticado, body acotado,
+  escritura confirmada antes de ACK y sin clientes de envío.
+- chatbot/executive_whatsapp_audit.py: identidad conservadora, timestamps
+  originales o aproximados explícitos, idempotencia y control BSON.
+- chatbot/executive_whatsapp_cohort.py: consulta agregada 30/60 días.
+- chatbot/executive_whatsapp_export.py: parser TXT con checksum.
+- chatbot/executive_whatsapp_backfill.py: importación manual con dos revisores
+  y control de asignación; escribe solo mensajes del lead.
+- chatbot/executive_whatsapp_audit_runner.py: minimización parcial de datos.
+- chatbot/executive_whatsapp_deepseek.py: transporte JSON actualizado,
+  bloqueado por autorización explícita de privacidad.
+- chatbot/executive_whatsapp_audit_orchestrator.py: análisis supervisado,
+  fuera de webhook; nunca modifica SLA, chatbot ni campañas.
+- chatbot/executive_whatsapp_audit_storage.py: guarda resultado preliminar
+  de auditoría dentro del documento de leads.
+- chatbot/executive_whatsapp_semantic.py: genera texto de preferencias
+  revisadas sin crear embeddings ni enviar mensajes.
+
+**No existe todavía una vista CRM de conversaciones, un proceso automático de
+análisis ni un índice vectorial operativo.** Estos elementos no son necesarios
+para demostrar captura y atribución con un teléfono, pero sí para el sistema
+comercial completo.
+
+La entrega no autoriza conectar seis teléfonos. Para un teléfono real exige:
+revisión de privacidad, aprobación de costos de un servicio separado,
+CI del SHA exacto, credenciales de mínimo privilegio, activación explícita
+de la app aislada y pruebas canarias de recepción y recuperación histórica.
+Consulta el procedimiento:
+docs/executive_whatsapp_one_phone_canary_runbook.md
+
+No se garantiza reintento por HTTP 503 de WaSender: antes del piloto se debe
+verificar respuesta real y alternativa de reconciliación. Los tests con mocks
+no prueban este comportamiento del proveedor.
+
+---
+
 # PROCASA — Auditoría WhatsApp de ejecutivos (precontrato, rama aislada)
 
 **Estado: prototipo no desplegado**, sin endpoints expuestos ni sesiones de ejecutivos activadas.

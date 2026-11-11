@@ -389,6 +389,9 @@ def audit_transcript(lead: Mapping[str, Any], *, limit: int = 300) -> list[dict]
                 "assignment_cycle_id": row.get("assignment_cycle_id"),
                 "content": row.get("content"),
                 "message_type": row.get("message_type"),
+                "timestamp_origin": row.get("timestamp_origin"),
+                "timestamp_verified": row.get("timestamp_verified") is True,
+                "cycle_attribution": row.get("cycle_attribution"),
                 "source": "executive_whatsapp",
                 "evidence_key": row.get("provider_key"),
             })

@@ -1,0 +1,6 @@
+# Standalone PROCASA executive WhatsApp audit canary ONLY.
+# DO NOT replace requirements.txt in the office chatbot service.
+fastapi==0.121.0
+uvicorn==0.38.0
+pymongo==4.15.3
+openai>=1.30.0

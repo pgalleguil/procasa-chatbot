@@ -1215,7 +1215,7 @@ def test_public_listing_verification_distinguishes_removed_and_inaccessible():
     assert inaccessible.sendable is False
 
 
-def test_wasender_usage_counts_recent_api_logs_across_all_sessions():
+def test_wasender_usage_uses_account_pat_for_all_endpoints_without_session_api_key():
     recent = (NOW - timedelta(hours=2)).isoformat()
     old = (NOW - timedelta(hours=30)).isoformat()
     calls = []
@@ -1230,10 +1230,10 @@ def test_wasender_usage_counts_recent_api_logs_across_all_sessions():
         session = url.split("/whatsapp-sessions/")[1].split("/")[0]
         if not url.endswith("/message-logs"):
             return _HttpResponse(payload={"success": True, "data": {
-                "id": session, "api_key": f"{session}-key", "log_messages": True,
+                "id": session, "log_messages": True,
             }})
         page = params["page"]
-        assert headers["Authorization"] == f"Bearer {session}-key"
+        assert headers["Authorization"] == "Bearer account-pat"
         if session == "session-1" and page == 1:
             data = [{"id": "1", "created_at": recent, "status": "sent"},
                     {"id": "2", "created_at": old, "status": "failed"}]
@@ -1256,13 +1256,7 @@ def test_wasender_usage_counts_recent_api_logs_across_all_sessions():
     assert result["pages_scanned"] == 3
     assert len(calls) == 6
     assert calls[0][2]["Authorization"] == "Bearer account-pat"
-    assert all(
-        call[2]["Authorization"] == (
-            "Bearer account-pat" if not call[0].endswith("/message-logs")
-            else "Bearer " + call[0].split("/whatsapp-sessions/")[1].split("/")[0] + "-key"
-        )
-        for call in calls
-    )
+    assert all(call[2]["Authorization"] == "Bearer account-pat" for call in calls)
 
 
 def test_wasender_usage_fails_closed_when_any_session_logs_are_disabled():

@@ -145,10 +145,11 @@ def normalize_upsert(
         if kind in {"unsupported", "oversized_text"}:
             skipped.append(kind)
             continue
+        detail = item.get("message") if isinstance(item.get("message"), dict) else {}
         msg_dt = _datetime_utc(
             item.get("messageTimestamp")
             or item.get("timestamp")
-            or (item.get("message") or {}).get("messageTimestamp")
+            or detail.get("messageTimestamp")
         )
         ts_origin = "message_timestamp" if msg_dt else "webhook_timestamp"
         msg_dt = msg_dt or _datetime_utc(payload.get("timestamp"))

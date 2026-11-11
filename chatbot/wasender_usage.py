@@ -99,12 +99,6 @@ def account_attempts_last_24h(*, now: datetime, base_url: str, personal_access_t
         detail = detail_payload.get("data")
         if not isinstance(detail, dict) or detail.get("log_messages") is not True:
             raise WaSenderUsageUnavailable("wasender_session_details_incomplete")
-        session_api_key = str(detail.get("api_key") or "").strip()
-        if not session_api_key:
-            raise WaSenderUsageUnavailable("wasender_session_api_key_unavailable")
-        session_headers = {
-            "Authorization": f"Bearer {session_api_key}", "Accept": "application/json",
-        }
         page = 1
         last_page = None
         while last_page is None or page <= last_page:
@@ -113,7 +107,7 @@ def account_attempts_last_24h(*, now: datetime, base_url: str, personal_access_t
             try:
                 payload = _body(http_get(
                     f"{root}/whatsapp-sessions/{session_id}/message-logs",
-                    headers=session_headers, params={"page": page, "per_page": page_size},
+                    headers=account_headers, params={"page": page, "per_page": page_size},
                     timeout=(3, 12),
                 ))
             except WaSenderUsageUnavailable:

@@ -41,7 +41,7 @@ def test_full_public_ficha_restored_for_both_customer_flows():
     raw = public_property_summary(data)
     # Production core delegates to the same pure/public formatter, but this
     # test intentionally avoids importing network-authenticated LLM clients.
-    core_source = (Path(__file__).resolve().parents[1] / "chatbot" / "core.py").read_text()
+    core_source = (Path(__file__).resolve().parents[1] / "chatbot" / "core.py").read_text(encoding="utf-8")
     assert "return public_property_summary(propiedad)" in core_source
     normal = public_property_summary(data)
     rebaja = build_specific_property_response("Envíame la ficha técnica completa", data)

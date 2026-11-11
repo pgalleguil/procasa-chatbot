@@ -7,6 +7,8 @@ una ruta DISTINTA a la del chatbot de oficina, tras revisión de seguridad.
 from __future__ import annotations
 
 import hmac
+import hashlib
+from bson import BSON
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -14,6 +16,9 @@ from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_
 
 EVENT_NAME = "messages.upsert"
 MAX_MESSAGE_CHARACTERS = 20_000
+# Cota conservadora bajo los 16 MiB oficiales de MongoDB.
+MAX_LEAD_BSON_BYTES = 12 * 1024 * 1024
+BSON_ARRAY_ELEMENT_MARGIN = 1024
 
 
 class ExecutiveAuditError(ValueError):
@@ -53,8 +58,9 @@ def _datetime_utc(value: Any) -> datetime | None:
             return None
     else:
         return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+    # Una fecha local sin zona horaria podría atribuirse al ejecutivo equivocado.
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        return None
     return dt.astimezone(timezone.utc)
 
 
@@ -158,7 +164,10 @@ def normalize_upsert(
             continue
         key_id = str(key["id"]).strip()
         records.append({
-            "provider_key": f"{session_id}:{EVENT_NAME}:{phone}:{key_id}",
+            # Nunca incorporar el teléfono en las claves de evidencia o logs.
+            "provider_key": "wasender:" + hashlib.sha256(
+                f"{session_id}|{EVENT_NAME}|{phone}|{key_id}".encode("utf-8")
+            ).hexdigest(),
             "provider_message_id": key_id,
             "actor_type": "executive" if outgoing else "client",
             "executive_user_id": str(executive_user_id),
@@ -189,6 +198,9 @@ def _find_cycle_for_message(db: Any, phone: str, executive_user_id: str,
     leads = list(db["leads"].find({"$or": or_filter}, {"_id": 1}))
     if not leads:
         return None, None, "lead_not_found"
+    # Con dos fichas para el mismo teléfono NO elegimos una por aproximación.
+    if len(leads) != 1:
+        return None, None, "ambiguous_phone_lead_identity"
     ids = [lead["_id"] for lead in leads]
     cycles = list(db["crm_assignment_cycles"].find(
         {"lead_id": {"$in": ids}},
@@ -265,14 +277,34 @@ def ingest_upsert(
             continue
         message = {k: v for k, v in record.items() if k != "phone"}
         message["assignment_cycle_id"] = str(cycle["assignment_cycle_id"])
-        # Atomic condition suppresses duplicates across concurrent workers.
+        try:
+            message_bytes = len(BSON.encode(message))
+        except (ValueError, TypeError, OverflowError):
+            statuses["invalid_bson_message"] = statuses.get("invalid_bson_message", 0) + 1
+            continue
+        room_threshold = MAX_LEAD_BSON_BYTES - message_bytes - BSON_ARRAY_ELEMENT_MARGIN
+        if room_threshold <= 0:
+            statuses["message_too_large_for_lead"] = (
+                statuses.get("message_too_large_for_lead", 0) + 1
+            )
+            continue
+        # Cada actualización evalúa el tamaño del documento ACTUAL en MongoDB,
+        # en la misma operación atómica que agrega el mensaje. No hay read/then/write
+        # vulnerable a dos workers paralelos. MongoDB 8.0 admite $bsonSize.
         result = db["leads"].update_one(
-            {"_id": lead["_id"],
-             "executive_whatsapp_messages.provider_key": {"$ne": record["provider_key"]}},
+            {
+                "_id": lead["_id"],
+                "executive_whatsapp_messages.provider_key": {
+                    "$ne": record["provider_key"]
+                },
+                "$expr": {
+                    "$lt": [{"$bsonSize": "$ROOT"}, room_threshold]
+                },
+            },
             {"$push": {"executive_whatsapp_messages": message}},
             upsert=False,
         )
-        status = "saved" if result.modified_count == 1 else "duplicate_or_missing"
+        status = "saved" if result.modified_count == 1 else "duplicate_or_capacity_or_missing"
         statuses[status] = statuses.get(status, 0) + 1
     return {
         "mode": "persist" if commit else "dry_run",

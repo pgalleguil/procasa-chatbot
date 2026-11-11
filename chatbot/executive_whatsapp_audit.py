@@ -266,6 +266,14 @@ def ingest_upsert(
             statuses["duplicate_in_batch"] = statuses.get("duplicate_in_batch", 0) + 1
             continue
         seen.add(record["provider_key"])
+        # The ingestion event time is not proof of when a historic message was
+        # written. Never attribute it to a CRM assignment cycle without an
+        # original provider message timestamp.
+        if record["timestamp_origin"] != "message_timestamp":
+            statuses["unverified_original_timestamp"] = (
+                statuses.get("unverified_original_timestamp", 0) + 1
+            )
+            continue
         lead, cycle, reason = _find_cycle_for_message(
             db, record["phone"], executive_user_id, record["timestamp"]
         )

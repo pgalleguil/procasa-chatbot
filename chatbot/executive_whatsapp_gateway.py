@@ -91,8 +91,9 @@ def build_unmounted_executive_audit_router(
     session_alias is only an opaque lookup key; identity comes from the binding,
     never from a request parameter, body, or unsigned event field.
 
-    This pre-contract prototype has no durable event queue. Do not mount it in
-    production until queue/retry, consent, capacity, and access are approved.
+    This prototype ACKs only after synchronous durable commit (or known duplicate).
+    Any unconfirmed writes return 503 for provider retry. Do not mount in
+    production before verifying vendor retry behavior, consent and capacity.
     """
     if max_request_bytes < 1024 or max_request_bytes > 1024 * 1024:
         raise ValueError("unsafe_max_request_bytes")
@@ -157,6 +158,19 @@ def build_unmounted_executive_audit_router(
             # Fail closed: non-2xx lets WaSender retry instead of losing an event.
             # Do not echo the exception, which might contain private data.
             raise HTTPException(status_code=503, detail="audit_ingest_unavailable") from None
+        # Never acknowledge an authenticated provider event as durable if a
+        # known lead's write was not confirmed. With no separate queue the
+        # provider's retry mechanism is the at-least-once delivery boundary.
+        retryable = {
+            "retryable_write_unconfirmed",
+            "invalid_bson_message",
+            "message_too_large_for_lead",
+            "unverified_original_timestamp",
+        }
+        if persist_enabled and any(
+            result["results"].get(key, 0) for key in retryable
+        ):
+            raise HTTPException(status_code=503, detail="audit_persistence_not_confirmed")
         return {
             "accepted": True,
             "mode": result["mode"],

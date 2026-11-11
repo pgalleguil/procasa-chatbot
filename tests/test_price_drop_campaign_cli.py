@@ -1161,3 +1161,93 @@ def test_interactive_cancel_before_prepare_keeps_mongo_read_only():
     assert result["status"] == "CANCELLED"
     assert not lead.get("price_drop_v2")
     assert len(lead["messages"]) == 1
+
+
+def test_full_portfolio_audit_counts_all_events_without_writes_or_provider_calls(monkeypatch, capsys):
+    """Two price drops, one lead interested in both: report overlap not bulk send."""
+    import json
+
+    db = _event_db()
+    _seed_property(db, code="6377", currency="UF", current=5074)
+    _history(db, "6377", DROP, 5123, 5074)
+    lead_id = _candidate(
+        db, phone="+56983219801", temperature="NORMAL",
+        content="Me interesa la propiedad código 6436",
+    )
+    db["leads"].update_one({"_id": lead_id}, {"$push": {"messages": {
+        "role": "user", "content": "También consulté por la propiedad 6377",
+        "timestamp": (DROP - timedelta(days=1)).isoformat(),
+    }}})
+    _candidate(db, phone="+56983219802", temperature="COLD",
+               content="Me interesa la propiedad 6377")
+    before = list(db["leads"].find())
+    report = cli.audit_full_portfolio(
+        db, now=NOW, temperature_filter="ALL", lead_max_age_days=None,
+    )
+    assert report["database_mode"] == "READ_ONLY"
+    assert report["send_approved"] is False
+    assert report["totals"]["events_found"] == 2
+    assert report["totals"]["property_codes"] == 2
+    assert report["totals"]["eligible_event_matches"] == 3
+    assert report["totals"]["unique_eligible_leads"] == 2
+    assert report["totals"]["cross_event_duplicate_matches"] == 1
+    assert report["reviewed_whatsapp_authorizations"] == "NOT_VERIFIED_BY_THIS_AUDIT"
+    assert list(db["leads"].find()) == before
+    monkeypatch.setattr(cli, "_get_db", lambda: db)
+    assert cli.main(["--audience-audit", "--full-scan",
+                     "--lead-max-age-days", "0"]) == 0
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["totals"]["eligible_event_matches"] == 3
+    assert parsed["sending_attempts"] == 0
+    assert list(db["leads"].find()) == before
+
+
+def test_full_portfolio_audit_reports_missing_temperature_review_without_approving_it():
+    db = _event_db()
+    _candidate(db, phone="+56983219801", temperature="UNKNOWN")
+    report = cli.audit_full_portfolio(db, now=NOW, lead_max_age_days=None)
+    assert report["totals"]["eligible_event_matches"] == 0
+    assert report["totals"]["requires_temperature_review"] == 1
+    assert report["totals"]["excluded_or_review_needed"] == 1
+    assert report["send_approved"] is False
+
+
+def test_full_portfolio_wave_deduplicates_lead_across_two_price_drops():
+    db = _event_db()
+    _seed_property(db, code="6377", currency="UF", current=5074)
+    _history(db, "6377", DROP + timedelta(days=1), 5123, 5074)
+    events = discover_price_drops(db, now=NOW)
+    assert len(events) == 2
+    newer = max(events, key=lambda event: event.dropped_at)
+    older = min(events, key=lambda event: event.dropped_at)
+    choices = {
+        older.event_id: (older, [{"lead_id": "one"}, {"lead_id": "two"}]),
+        newer.event_id: (newer, [{"lead_id": "one"}]),
+    }
+    deduped, suppressed = cli.deduplicate_wave_recipients(choices)
+    assert suppressed == 1
+    assert [c["lead_id"] for c in deduped[older.event_id][1]] == ["two"]
+    assert [c["lead_id"] for c in deduped[newer.event_id][1]] == ["one"]
+    assert len({row["lead_id"] for _, rows in deduped.values() for row in rows}) == 2
+
+
+def test_read_only_provider_audit_never_sends_or_writes(monkeypatch, capsys):
+    import json
+
+    db = _event_db()
+    before = list(db["universo_cartera_prop360_historial"].find())
+    monkeypatch.setattr(cli, "_get_db", lambda: db)
+    calls = []
+    def fake_usage(*, now):
+        calls.append(now)
+        return {"attempts_last_24h": 9, "sessions_scanned": 2,
+                "log_rows_scanned": 20, "pages_scanned": 2,
+                "source": "wasender_session_message_logs"}
+    monkeypatch.setattr(cli, "_provider_attempts_last_24h", fake_usage)
+    assert cli.main(["--provider-audit"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["status"] == "READY"
+    assert report["send_attempts"] == 0
+    assert report["account_usage"]["sessions_scanned"] == 2
+    assert len(calls) == 1
+    assert list(db["universo_cartera_prop360_historial"].find()) == before

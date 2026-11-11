@@ -29,6 +29,36 @@ python scripts/enviar_piloto_rebajas.py --report
 
 `--discover`, `--dry-run`, `--status` y `--report` no escriben en MongoDB ni llaman al endpoint de envío. El menú calcula y descarta el conjunto de candidatos para cada evento, y solo vuelve a cargar los candidatos de las propiedades que el operador selecciona.
 
+## Plan de expansión: piloto de 3 y después universo elegible completo
+
+Las tres propiedades 6436, 6377 y 16479 son una **prueba acotada**, no el universo de campañas. Después se pueden revisar **todas las rebajas** de la cartera activa y todos los leads que consultaron la propiedad **antes de la rebaja**. No significa enviar indiscriminadamente a cada contacto del CRM: se excluyen búsquedas terminadas, bajas, teléfonos ambiguos, propiedades no vigentes y consultas sin evidencia.
+
+**Auditoría general (solo lectura, sin envíos ni escrituras):**
+
+```powershell
+cd "C:\Users\pgall\Desktop\Python\ChatBot_v4_Grok"
+python scripts\enviar_piloto_rebajas.py --audience-audit --full-scan --temperature ALL --lead-max-age-days 0
+python scripts\enviar_piloto_rebajas.py --discover --full-scan --temperature ALL --lead-max-age-days 0
+python scripts\enviar_piloto_rebajas.py --provider-audit
+python scripts\enviar_piloto_rebajas.py --summary
+```
+
+`--provider-audit` consulta solamente los registros de sesiones de WaSender con el PAT configurado, confirma la lectura de límites reales de toda la cuenta y no envía mensajes. Si falta el PAT o alguna sesión no habilitó logs, devuelve `BLOCKED`. No imprime credenciales.
+
+`--audience-audit` devuelve JSON: número total de eventos, propiedades, consultas históricas candidatas, coincidencias elegibles, clientes únicos elegibles, coincidencias repetidas entre eventos, revisiones pendientes y motivos de exclusión. Es un **inventario operativo**, no una habilitación de mensajes. No determina si existe autorización WhatsApp: ese campo declara `NOT_VERIFIED_BY_THIS_AUDIT`. Nunca almacena consentimientos ficticios ni altera `leads`.
+
+Para preparar una campaña posterior al piloto, una vez revisado cada contacto y su consentimiento documentado:
+
+```powershell
+python scripts\enviar_piloto_rebajas.py --interactive --full-scan --temperature ALL --lead-max-age-days 0 --max-messages 20 --min-delay-seconds 300 --max-delay-seconds 600
+```
+
+El menú permite seleccionar `all` en eventos y luego en los destinatarios elegibles de cada evento. Si un lead coincide con dos o más rebajas seleccionadas, **se conserva una sola por tanda**, priorizando la rebaja más reciente y usando el mayor porcentaje de descuento como desempate. La exclusión queda visible antes de preparar campañas. **Cada destinatario** requiere verificación y referencia de consentimiento de WhatsApp. Si no existe, debe excluirse; una consulta histórica **no reemplaza** el consentimiento. Los envíos se fragmentan por jornada, según el límite real de la cuenta, y no se envían automáticamente al iniciar el programa.
+
+**Secuencia de despliegue:** 1) piloto 3 leads con autorización y confirmación, 2) verificar chat entrante, rechazos, avisos admin/ejecutivo e idempotencia con registros reales, 3) auditar universo completo, 4) revisar consentimientos y preparar nuevos eventos, 5) aprobar mensajes por evento y ejecutar lotes pequeños, observando respuestas y bajas, 6) reanudar únicamente campañas aún aprobadas. Cada rebaja se identifica por evento distinto y se registra dentro del lead existente. El sistema no debe interpretar múltiples eventos para un mismo lead como autorización para bombardearlo: el operador debe evitar contactos concurrentes a un mismo número y respetar su preferencia de mensajes.
+
+Antes de cualquier envío real, comprueba que el PAT de WaSender permite consultar los logs de **todas** las sesiones, que Render tiene habilitados el contexto V2 y los avisos correspondientes, y que los precios y URL siguen coincidiendo. El código de aviso al ejecutivo verifica el ciclo CRM activo y está separado del SLA. No se habilita ningún flag de emisión por esta auditoría.
+
 ## Flujo interactivo
 
 Comando para abrir el menú completo y procesar todo el historial por lotes:

@@ -123,6 +123,17 @@ Al preparar el menú y justo antes de cada intento, el programa vuelve a consult
 
 El envío se bloquea salvo `price_verified`. La lista inicial de hosts permitidos está en `.env.example`; se puede ampliar mediante `PRICE_DROP_PUBLIC_HOST_ALLOWLIST` para dominios inmobiliarios públicos aprobados. El verificador no sigue redirecciones fuera de esa lista.
 
+## Liberación de campañas
+
+Se eliminó el **interruptor global duplicado**
+`PRICE_DROP_LEADS_V2_WHATSAPP_CONTACT_REVIEWED`: no debe existir un
+segundo visto bueno técnico después de la aprobación individual del
+destinatario. El estado `APPROVED`, el mensaje exacto, la consulta
+histórica, la verificación de autorización de contacto por destinatario,
+los límites de proveedor, las bajas y la prevención de duplicados
+siguen siendo controles independientes. No inventar ni autocompletar
+autorizaciones ausentes.
+
 ## WaSender, consentimiento y ventana de mensajes
 
 El sender que realmente usa V2 hace `POST /api/send-message` con `to` y `text` contra una sesión activa de WaSender. La documentación de WaSender describe mensajes de texto libre y no documenta una restricción técnica de 24 horas para ese endpoint. Por eso el programa ya no bloquea el modo `wasenderapi` solo por antigüedad del último mensaje entrante.

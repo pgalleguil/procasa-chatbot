@@ -499,6 +499,45 @@ def _text_sender_window_blocker(lead: dict, now: datetime) -> str | None:
     return None
 
 
+# This is a fixed, manual one-off follow-up for three customers who
+# previously initiated a conversation about the same property. It is never
+# inherited by portfolio campaigns or future price-drop events.
+DIRECT_RESPONSE_PILOT_ID = "pilot_real_rebajas_20261109_v2"
+DIRECT_RESPONSE_PILOT_WINDOWS = {
+    "6436": ("UF", 2790, 2690),
+    "6377": ("UF", 5123, 5074),
+    "16479": ("CLP", 160000000, 152000000),
+}
+
+
+def _fixed_prior_inquiry_pilot(campaign: dict) -> bool:
+    """Recognize only the explicitly approved one-off direct follow-up.
+
+    A previously initiated property inquiry is not recorded as marketing
+    opt-in. This exception cannot authorize other campaigns or recipients;
+    send_one still verifies unique identity, original inbound evidence,
+    history, current price, opt-outs and deduplication independently.
+    """
+    code = str(campaign.get("property_code") or "")
+    expected = DIRECT_RESPONSE_PILOT_WINDOWS.get(code)
+    if not expected or campaign.get("campaign_id") != DIRECT_RESPONSE_PILOT_ID:
+        return False
+    currency = str(campaign.get("currency") or "UF").upper()
+    old = campaign.get("old_price_clp") if currency == "CLP" else campaign.get("old_price_uf")
+    new_price = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
+    return bool(
+        campaign.get("test_mode") is False
+        and campaign.get("status") == "APPROVED"
+        and campaign.get("simulated_prior_inquiry") is False
+        and campaign.get("contact_basis_reviewed") is True
+        and campaign.get("contact_basis_type") == DIRECT_RESPONSE_BASIS_TYPE
+        and str(campaign.get("contact_basis") or "").strip()
+        and campaign.get("approved_by")
+        and isinstance(campaign.get("approved_at"), datetime)
+        and (currency, old, new_price) == expected
+    )
+
+
 def whatsapp_contact_authorization_blocker(
         lead: dict, campaign: dict, *, now=None) -> str | None:
     """Return the same contact-permission blocker for CLI and send_one.
@@ -522,6 +561,12 @@ def whatsapp_contact_authorization_blocker(
     if contact_authorization_record is not None and reusable_authorization is None:
         return "WHATSAPP_CONTACT_AUTHORIZATION_INVALID_OR_REVOKED"
     if not campaign_authorization and reusable_authorization is None:
+        # The customer initiated the exact property inquiry before the price
+        # reduction and a supervisor approved this individual direct follow-up.
+        # Never manufacture an opt-in record; the full sender independently
+        # verifies the inbound evidence and exclusions before dispatch.
+        if _fixed_prior_inquiry_pilot(campaign) and not lead_must_not_be_contacted(lead):
+            return None
         return "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
     return None
 

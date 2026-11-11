@@ -478,7 +478,7 @@ def _approved_real_pilot_sample(db, monkeypatch):
             "timestamp": (NOW - timedelta(hours=1)).isoformat(),
         }],
     })
-    campaign_id = v2.REAL_PILOT_CAMPAIGN_ID
+    campaign_id = "pilot_real_rebajas_20261109_v2"
     p = params(
         lead_id=lead_id, phone=phone, campaign_id=campaign_id,
         test_mode=False, contact_basis_reviewed=True,
@@ -495,18 +495,12 @@ def _approved_real_pilot_sample(db, monkeypatch):
     assert v2.approve_one(db, lead_id=lead_id, campaign_id=campaign_id,
                           operator="Operador de pruebas", now=NOW)["status"] == "APPROVED"
     monkeypatch.setenv(v2.SEND_FLAG, "true")
-    monkeypatch.setenv(v2.APPROVED_ID_FLAG, campaign_id)
     monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
     monkeypatch.setenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, "true")
-    monkeypatch.setenv(v2.REAL_PILOT_RECIPIENTS_FLAG, (
-        f"{lead_id}:6436;"
-        "690000000000000000000798:6377;"
-        "690000000000000000000797:16479"
-    ))
     return lead_id, campaign_id, phone
 
 
-def test_real_pilot_remains_locked_until_separate_runtime_activation(db, monkeypatch):
+def test_real_campaign_uses_shared_send_switch_and_never_runs_on_render(db, monkeypatch):
     lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
     provider_calls = []
     def sender(*args):
@@ -516,18 +510,14 @@ def test_real_pilot_remains_locked_until_separate_runtime_activation(db, monkeyp
     assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
                        sender=sender, now=NOW)["status"] == "MANUAL_CAMPAIGNS_DISABLED_ON_RENDER"
     monkeypatch.delenv("RENDER")
+    monkeypatch.delenv(v2.SEND_FLAG)
     assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
-                       sender=sender, now=NOW)["status"] == "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
-    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
-    monkeypatch.setenv(v2.REAL_PILOT_RECIPIENTS_FLAG, f"{lead_id}:6436")
-    assert v2.send_one(db, lead_id=lead_id, campaign_id=campaign_id,
-                       sender=sender, now=NOW)["status"] == "REAL_SEND_NOT_ALLOWLISTED"
+                       sender=sender, now=NOW)["status"] == "DISABLED"
     assert provider_calls == []
 
 
 def test_real_pilot_rechecks_contact_basis_and_allows_exactly_one_mock_send(db, monkeypatch):
     lead_id, campaign_id, phone = _approved_real_pilot_sample(db, monkeypatch)
-    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
     db["leads"].update_one(
         {"_id": ObjectId(lead_id)},
         {"$set": {"price_drop_v2.campaigns.0.contact_basis_reviewed": False}},
@@ -574,7 +564,6 @@ def test_real_pilot_rechecks_contact_basis_and_allows_exactly_one_mock_send(db, 
 
 def test_real_pilot_blocks_duplicate_or_lost_historic_inquiry(db, monkeypatch):
     lead_id, campaign_id, phone = _approved_real_pilot_sample(db, monkeypatch)
-    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
     calls = []
     sender = lambda *args: calls.append(args)
     db["leads"].insert_one({
@@ -593,9 +582,27 @@ def test_real_pilot_blocks_duplicate_or_lost_historic_inquiry(db, monkeypatch):
     assert calls == []
 
 
+def test_shared_real_send_blocker_rejects_same_legacy_price_event(db, monkeypatch):
+    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$push": {
+        "price_drop_v2.campaigns": {
+            "campaign_id": "legacy_6436_same_drop",
+            "property_code": "6436", "currency": "UF",
+            "old_price_uf": 2790, "new_price_uf": 2690,
+            "status": "SENT", "sent_at": NOW - timedelta(days=1),
+        },
+    }})
+    calls = []
+    result = v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *args: calls.append(args), now=NOW,
+    )
+    assert result["status"] == "same_price_drop_already_recorded"
+    assert calls == []
+
+
 def test_real_wasender_sender_can_follow_up_outside_24_hours_with_reviewed_opt_in(db, monkeypatch):
     lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
-    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
     db["leads"].update_one(
         {"_id": ObjectId(lead_id)},
         {"$set": {"messages.1.timestamp": "2026-10-14T11:52:43-03:00"}},
@@ -614,7 +621,6 @@ def test_real_wasender_sender_can_follow_up_outside_24_hours_with_reviewed_opt_i
 
 def test_official_channel_is_never_mislabeled_as_wasender_sender(db, monkeypatch):
     lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
-    monkeypatch.setenv(v2.REAL_PILOT_ENABLED_FLAG, "true")
     monkeypatch.setenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "official")
     calls = []
     result = v2.send_one(
@@ -625,30 +631,12 @@ def test_official_channel_is_never_mislabeled_as_wasender_sender(db, monkeypatch
     assert calls == []
 
 
-def test_real_pilot_cli_requires_explicit_confirmation_and_link_check(db, monkeypatch):
-    from scripts.price_drop_leads_v2_real_pilot import run_action
-    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
-    status = run_action(db, mode="status", code="6436", campaign_id=campaign_id)
-    assert status["status"] == "FOUND"
-    assert status["campaign_state"] == "APPROVED"
-    assert status["writes"] == status["sends"] == 0
-    calls = []
-    result = run_action(db, mode="send-one", code="6436",
-                        campaign_id=campaign_id, operator="Tester",
-                        sender=lambda *args: calls.append(args))
-    assert result["reason"] == "explicit_operator_confirmation_required"
-    result = run_action(db, mode="send-one", code="6436",
-                        campaign_id=campaign_id, operator="Tester",
-                        confirm_action="SEND_6436",
-                        sender=lambda *args: calls.append(args))
-    assert result["reason"] == "published_link_not_verified"
-    assert calls == []
-    result = run_action(db, mode="send-one", code="6436",
-                        campaign_id=campaign_id, operator="Tester",
-                        confirm_action="SEND_6436", confirmed_live_link=True,
-                        sender=lambda *args: calls.append(args))
-    assert result["status"] == "REAL_SEND_LOCKED_PENDING_ACCEPTANCE"
-    assert calls == []
+def test_legacy_pilot_cli_fails_closed_and_points_to_shared_program(capsys):
+    from scripts.price_drop_leads_v2_real_pilot import main
+    assert main([]) == 2
+    output = capsys.readouterr().out
+    assert "BLOCKED" in output
+    assert "scripts_enviar_piloto_rebajas" in output
 
 
 @pytest.mark.parametrize("reply, expected_label, expected_status", [

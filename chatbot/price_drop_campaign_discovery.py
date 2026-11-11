@@ -305,7 +305,30 @@ def _property_rows(lead: dict[str, Any], code: str) -> list[dict[str, Any]]:
 
 def _block_reason(lead: dict[str, Any], event: PriceDropEvent) -> str | None:
     for row in _rows(lead):
+        if str(row.get("property_code") or "") != event.property_code:
+            continue
+        existing_events = {
+            str(value) for value in (
+                row.get("event_id"), *(row.get("history_event_ids") or [])
+            ) if value
+        }
+        current_events = {event.event_id, *event.prior_event_ids}
         if row.get("campaign_id") == event.event_id:
+            duplicate = True
+        elif existing_events:
+            duplicate = bool(existing_events.intersection(current_events))
+        else:
+            old_price = (row.get("old_price_clp") if event.currency == "CLP"
+                         else row.get("old_price_uf"))
+            new_price = (row.get("new_price_clp") if event.currency == "CLP"
+                         else row.get("new_price_uf"))
+            row_currency = str(row.get("currency") or (
+                "CLP" if row.get("old_price_clp") is not None else "UF"
+            )).upper()
+            duplicate = (row_currency == event.currency
+                         and old_price == event.old_price
+                         and new_price == event.new_price)
+        if duplicate:
             status = str(row.get("status") or "").upper()
             return ("event_already_attempted" if status in {"SENT", "RESPONDED"}
                     else "event_delivery_unresolved" if status in {"SENDING", "DELIVERY_UNKNOWN"}
@@ -338,6 +361,8 @@ def _block_reason(lead: dict[str, Any], event: PriceDropEvent) -> str | None:
         return "property_declined"
     if any(row.get("status") in {"SENDING", "DELIVERY_UNKNOWN"} for row in same):
         return "unresolved_previous_delivery"
+    if any(row.get("status") in {"PREPARED", "APPROVED"} for row in same):
+        return "active_campaign_for_property"
     return None
 
 

@@ -49,6 +49,15 @@ from chatbot.price_drop_campaign_real import _lead_id
 
 PILOT_CAMPAIGN_ID = "pilot_real_rebajas_20261109_v2"
 PILOT_PROPERTY_CODES = {"6436", "6377", "16479"}
+PILOT_PRICE_WINDOWS = {
+    "6436": ("UF", 2790, 2690),
+    "6377": ("UF", 5123, 5074),
+    "16479": ("CLP", 160000000, 152000000),
+}
+_CAMPAIGN_REPORT_STATES = (
+    "PREPARED", "APPROVED", "SENDING", "SENT", "FAILED", "DELIVERY_UNKNOWN",
+    "RESPONDED", "DECLINED", "OPTED_OUT", "BLOCKED", "SUPERSEDED",
+)
 DEFAULT_LEAD_MAX_AGE_DAYS = 120
 MAX_MESSAGES_PER_RUN = 50
 MAX_DELAY_SECONDS = 3600
@@ -389,10 +398,7 @@ def audit_full_portfolio(
 
 
 def _pilot_status(db: Any) -> dict[str, Any]:
-    rows = _entries(db, PILOT_CAMPAIGN_ID, (
-        "PREPARED", "APPROVED", "SENDING", "SENT", "DELIVERY_UNKNOWN",
-        "RESPONDED", "DECLINED", "OPTED_OUT", "BLOCKED",
-    ))
+    rows = _entries(db, PILOT_CAMPAIGN_ID, _CAMPAIGN_REPORT_STATES)
     codes = {str(row["campaign"].get("property_code") or "") for row in rows}
     history_count = sum(
         1 for row in rows for message in row["lead"].get("messages") or []
@@ -401,6 +407,30 @@ def _pilot_status(db: Any) -> dict[str, Any]:
     )
     return {**_status_report(rows), "pilot_property_set_complete": codes == PILOT_PROPERTY_CODES,
             "messages_in_history": history_count}
+
+
+def _validated_pilot_rows(db: Any) -> list[dict[str, Any]]:
+    """Return only the three persisted, property-and-price-pinned pilot rows."""
+    rows = _entries(db, PILOT_CAMPAIGN_ID, _CAMPAIGN_REPORT_STATES)
+    codes = [str(row["campaign"].get("property_code") or "") for row in rows]
+    if len(rows) != 3 or set(codes) != PILOT_PROPERTY_CODES or len(set(codes)) != 3:
+        raise CliError("pilot_must_contain_exactly_three_persisted_property_rows")
+    lead_ids = [str(row["lead"].get("_id")) for row in rows]
+    if len(set(lead_ids)) != 3:
+        raise CliError("pilot_recipient_identity_must_be_unique")
+    for row in rows:
+        campaign = row["campaign"]
+        code = str(campaign.get("property_code") or "")
+        expected_currency, expected_old, expected_new = PILOT_PRICE_WINDOWS[code]
+        currency = str(campaign.get("currency") or "UF").upper()
+        old_price = (campaign.get("old_price_clp") if currency == "CLP"
+                     else campaign.get("old_price_uf"))
+        new_price = (campaign.get("new_price_clp") if currency == "CLP"
+                     else campaign.get("new_price_uf"))
+        if (currency, old_price, new_price) != (
+                expected_currency, expected_old, expected_new):
+            raise CliError("pilot_property_price_window_mismatch")
+    return rows
 
 
 def _backup_leads(db: Any, ids: list[Any]) -> Path:
@@ -431,9 +461,8 @@ def _verify_current_links(db: Any, expected: dict[str, dict[str, Any]],
 def _expected_publication_from_campaign(campaign: dict[str, Any]) -> dict[str, Any]:
     currency = str(campaign.get("currency") or "UF").upper()
     price = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
-    match = re.search(r"(?im)^Publicaci[oó]n:\s*(https://\S+)",
-                      str(campaign.get("outbound_message") or ""))
-    url = match.group(1).rstrip(".,);]") if match else ""
+    urls = re.findall(r"https://[^\s<>]+", str(campaign.get("outbound_message") or ""), re.I)
+    url = urls[0].rstrip(".,);]") if urls else ""
     return {"currency": currency, "price": price, "url": url}
 
 
@@ -696,15 +725,10 @@ def execute_campaign(
         return {"status": "BLOCKED", "reason": "manual_cli_disabled_on_render", "attempts": 0}
     if not provider_ready():
         return {"status": "BLOCKED", "reason": "wasender_provider_not_configured", "attempts": 0}
-    if (os.getenv(v2.SEND_FLAG, "").strip().lower() not in {"1", "true", "yes"}
-            or os.getenv(v2.APPROVED_ID_FLAG) != campaign_id):
+    if os.getenv(v2.SEND_FLAG, "").strip().lower() not in {"1", "true", "yes"}:
         return {"status": "BLOCKED", "reason": "v2_campaign_runtime_gate_disabled", "attempts": 0}
     if os.getenv(v2.CONTEXT_FLAG, "").strip().lower() not in {"1", "true", "yes"}:
         return {"status": "BLOCKED", "reason": "campaign_context_disabled", "attempts": 0}
-    campaign_gate = (v2.REAL_PILOT_ENABLED_FLAG if campaign_id == PILOT_CAMPAIGN_ID
-                     else v2.REAL_CAMPAIGNS_ENABLED_FLAG)
-    if os.getenv(campaign_gate, "").strip().lower() not in {"1", "true", "yes"}:
-        return {"status": "BLOCKED", "reason": "real_campaign_runtime_gate_disabled", "attempts": 0}
     channel = os.getenv("PRICE_DROP_WHATSAPP_CHANNEL_MODE", "wasenderapi").strip().lower()
     if channel not in {"wasenderapi", "official"}:
         return {"status": "BLOCKED", "reason": "whatsapp_channel_mode_invalid", "attempts": 0}
@@ -727,13 +751,12 @@ def execute_campaign(
                 "uncertain_count": len(uncertain), "attempts": 0}
 
     stale_result = {"count": 0, "campaign_ids": []}
-    if campaign_id != PILOT_CAMPAIGN_ID:
-        property_codes = {
-            str(row["campaign"].get("property_code") or "")
-            for row in _entries(db, campaign_id, ("PREPARED", "APPROVED"), lead_allowlist)
-            if row["campaign"].get("property_code")
-        }
-        stale_result = _supersede_stale_pending_campaigns(db, property_codes, now=now)
+    property_codes = {
+        str(row["campaign"].get("property_code") or "")
+        for row in _entries(db, campaign_id, ("PREPARED", "APPROVED"), lead_allowlist)
+        if row["campaign"].get("property_code")
+    }
+    stale_result = _supersede_stale_pending_campaigns(db, property_codes, now=now)
     entries = _entries(db, campaign_id, ("APPROVED",), lead_allowlist)
     if not entries:
         if stale_result["count"]:
@@ -842,25 +865,24 @@ def execute_campaign(
         if current != initial:
             return {"status": "BLOCKED", "reason": "campaign_changed_after_preview", "attempts": 0}
         entries = current_entries
-        if campaign_id != PILOT_CAMPAIGN_ID:
-            stale_result = _supersede_stale_pending_campaigns(
-                db, {str(row["campaign"].get("property_code") or "")
-                     for row in entries if row["campaign"].get("property_code")},
-                now=now_fn(),
+        stale_result = _supersede_stale_pending_campaigns(
+            db, {str(row["campaign"].get("property_code") or "")
+                 for row in entries if row["campaign"].get("property_code")},
+            now=now_fn(),
+        )
+        entries = _entries(db, campaign_id, ("APPROVED",), lead_allowlist)
+        if not entries:
+            return {"status": "STOPPED_STALE_CAMPAIGN", "attempts": 0,
+                    "superseded_count": stale_result["count"],
+                    "superseded_campaign_ids": stale_result["campaign_ids"]}
+        for entry in entries:
+            reason = _campaign_filter_blocker(
+                entry, temperature_filter=temperature_filter,
+                lead_max_age_days=lead_max_age_days, now=now_fn(),
+                enforce_filters=enforce_campaign_filters,
             )
-            entries = _entries(db, campaign_id, ("APPROVED",), lead_allowlist)
-            if not entries:
-                return {"status": "STOPPED_STALE_CAMPAIGN", "attempts": 0,
-                        "superseded_count": stale_result["count"],
-                        "superseded_campaign_ids": stale_result["campaign_ids"]}
-            for entry in entries:
-                reason = _campaign_filter_blocker(
-                    entry, temperature_filter=temperature_filter,
-                    lead_max_age_days=lead_max_age_days, now=now_fn(),
-                    enforce_filters=enforce_campaign_filters,
-                )
-                if reason:
-                    return {"status": "BLOCKED", "reason": reason, "attempts": 0}
+            if reason:
+                return {"status": "BLOCKED", "reason": reason, "attempts": 0}
         try:
             daily_before = usage_count(now_fn())
         except Exception as exc:
@@ -886,15 +908,14 @@ def execute_campaign(
                         "pending": max(len(entries)-len(results), 0), "results": results}
             if daily_current >= daily_provider_cap:
                 break
-            if campaign_id != PILOT_CAMPAIGN_ID:
-                last_stale_check = _supersede_stale_pending_campaigns(
-                    db, {str(entry["campaign"].get("property_code") or "")}, now=now,
-                )
-                if last_stale_check["count"]:
-                    return {"status": "STOPPED_STALE_CAMPAIGN", "attempts": attempts,
-                            "pending": len(_entries(db, campaign_id, ("APPROVED",), lead_allowlist)),
-                            "superseded_count": last_stale_check["count"],
-                            "results": results}
+            last_stale_check = _supersede_stale_pending_campaigns(
+                db, {str(entry["campaign"].get("property_code") or "")}, now=now,
+            )
+            if last_stale_check["count"]:
+                return {"status": "STOPPED_STALE_CAMPAIGN", "attempts": attempts,
+                        "pending": len(_entries(db, campaign_id, ("APPROVED",), lead_allowlist)),
+                        "superseded_count": last_stale_check["count"],
+                        "results": results}
             reason = _campaign_filter_blocker(
                 entry, temperature_filter=temperature_filter,
                 lead_max_age_days=lead_max_age_days, now=now,
@@ -1296,21 +1317,6 @@ def _preview_message(db: Any, event: PriceDropEvent,
     }
 
 
-@contextlib.contextmanager
-def _temporary_environment(values: dict[str, str]):
-    previous = {key: os.environ.get(key) for key in values}
-    try:
-        os.environ.update(values)
-        yield
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-
-
-
 def deduplicate_wave_recipients(
     selected_by_event: dict[str, tuple[PriceDropEvent, list[dict[str, Any]]]],
 ) -> tuple[dict[str, tuple[PriceDropEvent, list[dict[str, Any]]]], int]:
@@ -1336,6 +1342,179 @@ def deduplicate_wave_recipients(
         if kept:
             result[event_id] = (event, kept)
     return result, total_selected - len(preferred)
+
+
+def _approved_campaign_batch(
+    db: Any, *, campaign_id: str | None = None, include_pilot: bool = False,
+) -> dict[str, set[str]]:
+    """Select approved pending rows; sent rows are never included for retries."""
+    groups = _campaigns_by_status(db, ("APPROVED", "SENDING", "DELIVERY_UNKNOWN"))
+    if campaign_id:
+        groups = {campaign_id: groups.get(campaign_id, [])}
+    result: dict[str, set[str]] = {}
+    owner_by_lead: dict[str, str] = {}
+    uncertain_leads = {
+        str(row["lead"].get("_id"))
+        for rows in groups.values() for row in rows
+        if row["campaign"].get("status") in {"SENDING", "DELIVERY_UNKNOWN"}
+    }
+    for cid, rows in sorted(groups.items()):
+        if cid == PILOT_CAMPAIGN_ID and not include_pilot and campaign_id is None:
+            continue
+        ids = set()
+        for row in rows:
+            if row["campaign"].get("status") != "APPROVED":
+                continue
+            lead_id = str(row["lead"].get("_id"))
+            if lead_id in uncertain_leads:
+                raise CliError("lead_has_uncertain_delivery_reconcile_before_new_attempt")
+            prior = owner_by_lead.get(lead_id)
+            if prior and prior != cid:
+                raise CliError("lead_has_multiple_approved_campaigns_review_before_send")
+            owner_by_lead[lead_id] = cid
+            ids.add(lead_id)
+        if ids:
+            result[cid] = ids
+    return result
+
+
+def execute_approved_batch(
+    db: Any, *, campaigns: dict[str, set[str]] | None = None,
+    campaign_id: str | None = None, include_pilot: bool = False,
+    max_messages: int = 20, min_delay_seconds: float = 300,
+    max_delay_seconds: float = 600,
+    start_time: day_time = day_time(9), end_time: day_time = day_time(19),
+    allowed_weekdays: str = "MON,TUE,WED,THU,FRI",
+    timezone_name: str = "America/Santiago", provider_plan: str = "trial",
+    daily_provider_cap: int = 50, temperature_filter: str | None = None,
+    lead_max_age_days: int | None = None, enforce_campaign_filters: bool = False,
+    already_confirmed: bool = False,
+    confirm: Callable[[str], str] = input,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    sender: Callable[[str, str], dict] | None = None,
+    now_fn: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    provider_ready: Callable[[], bool] = _provider_ready,
+    usage_reader: Callable[[datetime], dict[str, Any] | int] | None = None,
+    journal_path: str | Path | None = None,
+    progress_path: str | Path | None = None,
+    publication_verifier: Callable[..., Any] = verify_current_listing,
+    progress_fn: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Shared paced sender for pilot rows, resumed batches and portfolio campaigns."""
+    validate_limits(max_messages, min_delay_seconds, max_delay_seconds,
+                    provider_plan=provider_plan, daily_cap=daily_provider_cap)
+    selected = campaigns if campaigns is not None else _approved_campaign_batch(
+        db, campaign_id=campaign_id, include_pilot=include_pilot,
+    )
+    selected = {cid: set(ids) for cid, ids in selected.items() if ids}
+    if not selected:
+        return {"status": "NO_APPROVED_RECIPIENTS", "attempts": 0, "pending": 0}
+
+    approved_rows: dict[str, list[dict[str, Any]]] = {}
+    snapshots: dict[str, dict[str, str]] = {}
+    expected_by_campaign: dict[str, dict[str, dict[str, Any]]] = {}
+    publication_checks: dict[str, Any] = {}
+    seen_leads: dict[str, str] = {}
+    for cid, ids in selected.items():
+        rows = _entries(db, cid, ("APPROVED",), ids)
+        if len(rows) != len(ids):
+            raise CliError("approved_campaign_rows_changed_before_execution")
+        approved_rows[cid] = rows
+        snapshots[cid] = {
+            str(row["lead"]["_id"]): str(row["campaign"].get("outbound_message") or "")
+            for row in rows
+        }
+        expected_by_campaign[cid] = {}
+        for row in rows:
+            lead_id = str(row["lead"]["_id"])
+            if lead_id in seen_leads and seen_leads[lead_id] != cid:
+                raise CliError("lead_has_multiple_approved_campaigns_review_before_send")
+            seen_leads[lead_id] = cid
+            campaign = row["campaign"]
+            code = str(campaign.get("property_code") or "")
+            expected = _expected_publication_from_campaign(campaign)
+            expected_by_campaign[cid][code] = expected
+            key = f"{cid}:{code}"
+            if key not in publication_checks:
+                publication_checks[key] = _publication_result_dict(publication_verifier(
+                    db, property_code=code, currency=expected["currency"],
+                    expected_price=expected["price"], expected_url=expected["url"],
+                    now=now_fn(),
+                ))
+    print(json.dumps({"publication_checks": publication_checks},
+                     ensure_ascii=False, default=str))
+    blocked = next((row for row in publication_checks.values()
+                    if not row.get("sendable")), None)
+    if blocked:
+        return {"status": "BLOCKED_PUBLICATION_REVIEW", "attempts": 0,
+                "pending": sum(map(len, selected.values())),
+                "publication_checks": publication_checks}
+
+    total_selected = sum(map(len, selected.values()))
+    print(f"PROCASA — CAMPAÑA DE REBAJAS | aprobados pendientes: {total_selected} | "
+          f"máximo de intentos en esta ejecución: {max_messages}")
+    print("Vista previa exacta de los registros aprobados:")
+    for index, (cid, rows) in enumerate(
+            ((cid, row) for cid in sorted(approved_rows) for row in approved_rows[cid]), 1):
+        print(f"\n[{index}] campaña {cid} | propiedad {rows['campaign'].get('property_code')} | "
+              f"teléfono ***{_phone_last4(rows['lead'])}")
+        print(rows["campaign"].get("outbound_message") or "[mensaje faltante]")
+    if not already_confirmed:
+        expected_token = f"ENVIAR {total_selected}"
+        if confirm(f"\nEscribe exactamente {expected_token} para iniciar el lote: ").strip() != expected_token:
+            return {"status": "CANCELLED", "attempts": 0, "pending": total_selected}
+
+    total_attempts = 0
+    outcomes = []
+    campaign_items = list(sorted(selected.items()))
+    all_pending = {cid: set(ids) for cid, ids in campaign_items}
+    for position, (cid, ids) in enumerate(campaign_items):
+        remaining = max_messages - total_attempts
+        if remaining <= 0:
+            break
+        outcome = execute_campaign(
+            db, campaign_id=cid, max_messages=remaining,
+            min_delay_seconds=min_delay_seconds, max_delay_seconds=max_delay_seconds,
+            start_time=start_time, end_time=end_time,
+            allowed_weekdays=allowed_weekdays, timezone_name=timezone_name,
+            provider_plan=provider_plan, daily_provider_cap=daily_provider_cap,
+            live_links_verified=True,
+            link_verifier=lambda code, stamp, cid=cid: _publication_result_dict(
+                publication_verifier(
+                    db, property_code=code,
+                    currency=expected_by_campaign[cid][code]["currency"],
+                    expected_price=expected_by_campaign[cid][code]["price"],
+                    expected_url=expected_by_campaign[cid][code]["url"], now=stamp,
+                )),
+            lead_allowlist=ids, expected_messages=snapshots[cid],
+            pending_campaigns=all_pending,
+            temperature_filter=temperature_filter,
+            lead_max_age_days=lead_max_age_days,
+            enforce_campaign_filters=enforce_campaign_filters,
+            confirm=lambda _prompt, selected_id=cid: f"ENVIAR {selected_id}",
+            sleep_fn=sleep_fn, sender=sender, now_fn=now_fn,
+            provider_ready=provider_ready, usage_reader=usage_reader,
+            journal_path=journal_path,
+            progress_path=progress_path,
+            progress_offset=total_attempts, progress_total_limit=max_messages,
+            display_max_messages=max_messages,
+            pause_after_last=position < len(campaign_items) - 1,
+            progress_fn=progress_fn,
+        )
+        outcomes.append({"campaign_id": cid, **outcome})
+        total_attempts += int(outcome.get("attempts") or 0)
+        if outcome.get("status") not in {"COMPLETED", "LIMIT_REACHED", "NO_APPROVED_RECIPIENTS"}:
+            pending = sum(len(_entries(db, item_id, ("APPROVED",), item_ids))
+                          for item_id, item_ids in campaign_items)
+            return {"status": outcome.get("status"), "attempts": total_attempts,
+                    "pending": pending, "campaign_results": outcomes,
+                    "publication_checks": publication_checks}
+    pending = sum(len(_entries(db, cid, ("APPROVED",), ids))
+                  for cid, ids in campaign_items)
+    return {"status": "LIMIT_REACHED" if pending else "COMPLETED",
+            "attempts": total_attempts, "pending": pending,
+            "campaign_results": outcomes,
+            "publication_checks": publication_checks}
 
 
 
@@ -1379,6 +1558,45 @@ def interactive_workflow(
     else:
         lead_max_age_days = normalize_lead_max_age_days(lead_max_age_days)
     now = now_fn()
+    try:
+        pending_batch = _approved_campaign_batch(db)
+    except CliError as exc:
+        output_fn(f"No se puede reanudar el lote: {exc}")
+        return {"status": "BLOCKED", "reason": str(exc), "attempts": 0}
+    pending_count = sum(map(len, pending_batch.values()))
+    if pending_count:
+        output_fn(f"Hay {pending_count} mensajes aprobados pendientes de campañas anteriores.")
+        if input_fn(
+                f"Escribe REANUDAR {pending_count} para revisar y continuar ese lote: ").strip() \
+                != f"REANUDAR {pending_count}":
+            return {"status": "APPROVED_PENDING_SEND", "prepared": 0,
+                    "attempts": 0, "pending": pending_count}
+        try:
+            batch_limit = int(input_fn(
+                f"Máximo de intentos en esta ejecución [predeterminado {max_messages_default}]: "
+            ).strip() or max_messages_default)
+            batch_min = float(input_fn(
+                f"Pausa mínima en segundos [predeterminado {min_delay_default:g}]: "
+            ).strip() or min_delay_default)
+            batch_max = float(input_fn(
+                f"Pausa máxima en segundos [predeterminado {max_delay_default:g}]: "
+            ).strip() or max_delay_default)
+        except ValueError as exc:
+            raise CliError("message_limit_and_delays_must_be_numbers") from exc
+        if batch_limit > max_messages_default:
+            raise CliError("max_messages_exceeds_command_line_ceiling")
+        return execute_approved_batch(
+            db, campaigns=pending_batch, max_messages=batch_limit,
+            min_delay_seconds=batch_min, max_delay_seconds=batch_max,
+            start_time=start_time, end_time=end_time,
+            allowed_weekdays=allowed_weekdays, timezone_name=timezone_name,
+            provider_plan=provider_plan, daily_provider_cap=daily_provider_cap,
+            temperature_filter=temperature_filter, lead_max_age_days=lead_max_age_days,
+            enforce_campaign_filters=True, confirm=input_fn, sleep_fn=sleep_fn,
+            sender=sender, now_fn=now_fn, provider_ready=provider_ready,
+            usage_reader=usage_reader, journal_path=journal_path,
+            publication_verifier=publication_verifier, progress_fn=output_fn,
+        )
     events = _events(db, property_code, since=since, currency=currency,
                      operation=operation, limit=history_limit, batch_size=batch_size)
     if not events:
@@ -1527,6 +1745,8 @@ def interactive_workflow(
         ).strip() or max_delay_default)
     except ValueError as exc:
         raise CliError("message_limit_and_delays_must_be_numbers") from exc
+    if max_messages > max_messages_default:
+        raise CliError("max_messages_exceeds_command_line_ceiling")
     validate_limits(max_messages, min_delay, max_delay,
                     provider_plan=provider_plan, daily_cap=daily_provider_cap)
     if start_time >= end_time:
@@ -1608,14 +1828,10 @@ def interactive_workflow(
             now=now,
         )
     output_fn("Campañas PREPARED. Mensajes exactos leídos desde los registros preparados:")
-    approved_snapshots = {}
     for event_id, ids in lead_ids_by_event.items():
         rows = _entries(db, event_id, ("PREPARED",), set(ids))
         if len(rows) != len(ids):
             return {"status": "BLOCKED_PREPARE_READBACK_MISMATCH", "attempts": 0}
-        approved_snapshots[event_id] = {
-            str(row["lead"]["_id"]): row["campaign"]["outbound_message"] for row in rows
-        }
         for row in rows:
             output_fn(f"\n[{row['campaign'].get('property_code')}] {row['campaign']['outbound_message']}")
     if input_fn(f"Escribe APROBAR {selected_count} para aprobar individualmente estas campañas: ").strip() \
@@ -1639,67 +1855,20 @@ def interactive_workflow(
                 "attempts": 0, "campaign_ids": list(lead_ids_by_event),
                 "backup": str(approval_backup)}
 
-    campaign_items = list(lead_ids_by_event.items())
-    total_attempts = 0
-    results = []
-    for campaign_index, (event_id, ids) in enumerate(campaign_items):
-        remaining_budget = max_messages - total_attempts
-        if remaining_budget <= 0:
-            break
-        event = next(event for event, _ in selected_by_event.values()
-                     if event.event_id == event_id)
-        env = {
-            v2.SEND_FLAG: "true", v2.APPROVED_ID_FLAG: event_id,
-            v2.CONTEXT_FLAG: "true", v2.REAL_CAMPAIGNS_ENABLED_FLAG: "true",
-            "PRICE_DROP_WHATSAPP_CHANNEL_MODE": "wasenderapi",
-        }
-        with _temporary_environment(env):
-            outcome = execute_campaign(
-                db, campaign_id=event_id, max_messages=remaining_budget,
-                min_delay_seconds=min_delay, max_delay_seconds=max_delay,
-                confirm=lambda _prompt, cid=event_id: f"ENVIAR {cid}",
-                start_time=start_time, end_time=end_time,
-                allowed_weekdays=allowed_weekdays, timezone_name=timezone_name,
-                provider_plan=provider_plan, daily_provider_cap=daily_provider_cap,
-                temperature_filter=temperature_filter,
-                lead_max_age_days=lead_max_age_days,
-                provider_ready=provider_ready,
-                live_links_verified=True, sender=sender, usage_reader=usage_reader,
-                now_fn=now_fn,
-                sleep_fn=sleep_fn,
-                journal_path=journal_path,
-                allowed_property_codes=None,
-                link_verifier=lambda code, stamp, e=event: _publication_result_dict(publication_verifier(
-                    db, property_code=code, currency=e.currency,
-                    expected_price=e.current_price, expected_url=e.listing_url,
-                    now=stamp,
-                )),
-                lead_allowlist=set(ids),
-                pause_after_last=campaign_index < len(campaign_items) - 1,
-                expected_messages=approved_snapshots[event_id],
-                progress_offset=total_attempts,
-                progress_total_limit=max_messages,
-                display_max_messages=max_messages,
-                pending_campaigns={cid: set(selected_ids)
-                                   for cid, selected_ids in lead_ids_by_event.items()},
-                progress_fn=output_fn,
-            )
-        results.append({"campaign_id": event_id, **outcome})
-        total_attempts += int(outcome.get("attempts") or 0)
-        if outcome.get("status") not in {"COMPLETED", "NO_APPROVED_RECIPIENTS"}:
-            return {"status": outcome.get("status"), "prepared": selected_count,
-                    "attempts": total_attempts, "pending": sum(
-                        max(len(lead_ids_by_event[cid]) - sum(
-                            1 for row in _entries(db, cid, ("SENT", "RESPONDED"), set(lead_ids_by_event[cid]))
-                    ), 0) for cid in lead_ids_by_event
-                    ), "campaign_results": results,
-                    "backup": str(approval_backup)}
-    total_pending = sum(len(_entries(db, campaign_id, ("APPROVED",), set(ids)))
-                        for campaign_id, ids in lead_ids_by_event.items())
-    return {"status": "LIMIT_REACHED" if total_pending else "COMPLETED",
-            "prepared": selected_count, "attempts": total_attempts,
-            "pending": total_pending, "campaign_results": results,
-            "backup": str(approval_backup)}
+    outcome = execute_approved_batch(
+        db, campaigns={cid: set(ids) for cid, ids in lead_ids_by_event.items()},
+        max_messages=max_messages, min_delay_seconds=min_delay,
+        max_delay_seconds=max_delay, start_time=start_time, end_time=end_time,
+        allowed_weekdays=allowed_weekdays, timezone_name=timezone_name,
+        provider_plan=provider_plan, daily_provider_cap=daily_provider_cap,
+        temperature_filter=temperature_filter, lead_max_age_days=lead_max_age_days,
+        enforce_campaign_filters=True, already_confirmed=True,
+        sender=sender, usage_reader=usage_reader, now_fn=now_fn,
+        provider_ready=provider_ready, sleep_fn=sleep_fn,
+        journal_path=journal_path, publication_verifier=publication_verifier,
+        progress_fn=output_fn,
+    )
+    return {**outcome, "prepared": selected_count, "backup": str(approval_backup)}
 
 
 def _report(db: Any, campaign_id: str | None = None) -> int:
@@ -2032,14 +2201,9 @@ def _validate_cli(args: argparse.Namespace) -> datetime | None:
         raise CliError("lead_id_required")
     if args.action == "execute" and not args.pilot and not args.campaign_id:
         raise CliError("campaign_id_required_for_execution")
+    if args.campaign_id == PILOT_CAMPAIGN_ID and not args.pilot:
+        raise CliError("approved_three_recipient_campaign_requires_pilot_selector")
     return since
-
-
-def _select_resume_campaign(db: Any) -> str:
-    groups = _campaigns_by_status(db, ("APPROVED", "SENDING", "DELIVERY_UNKNOWN"))
-    if len(groups) != 1:
-        raise CliError("resume_requires_one_active_campaign_or_campaign_id")
-    return next(iter(groups))
 
 
 def _confirm_token(action: str, identity: str) -> str:
@@ -2070,8 +2234,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.pilot:
             args.campaign_id = PILOT_CAMPAIGN_ID
         db = _get_db()
-        if args.action == "resume" and not args.campaign_id:
-            args.campaign_id = _select_resume_campaign(db)
 
         if args.status:
             if args.pilot:
@@ -2196,39 +2358,39 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.action in {"execute", "resume"}:
             if args.pilot:
-                pilot = _pilot_status(db)
-                if (pilot["recipient_count"] != 3 or not pilot["pilot_property_set_complete"]):
-                    raise CliError("pilot_must_contain_exactly_three_approved_property_rows")
-                if args.action == "execute" and pilot["statuses"] != {"APPROVED": 3}:
-                    raise CliError("pilot_execute_requires_three_approved_unsent_campaigns_use_resume")
+                pilot_rows = _validated_pilot_rows(db)
+                pilot_statuses = {row["campaign"].get("status") for row in pilot_rows}
+                if args.action == "execute" and pilot_statuses != {"APPROVED"}:
+                    raise CliError("pilot_initial_execution_requires_three_approved_unsent_rows_use_resume")
                 if args.action == "resume" and any(
-                        status not in {"APPROVED", "SENT", "RESPONDED"}
-                        for status in pilot["statuses"]):
-                    raise CliError("pilot_has_uncertain_or_blocked_state_review_status_first")
-            active = _entries(db, args.campaign_id, ("APPROVED",))
-            if not active:
+                        status not in {"APPROVED", "SENT", "RESPONDED", "DECLINED", "OPTED_OUT"}
+                        for status in pilot_statuses):
+                    raise CliError("pilot_has_uncertain_or_unreviewed_state_reconcile_first")
+                campaigns = {
+                    PILOT_CAMPAIGN_ID: {
+                        str(row["lead"]["_id"]) for row in pilot_rows
+                        if row["campaign"].get("status") == "APPROVED"
+                    }
+                }
+                if args.lead_id:
+                    raise CliError("pilot_recipient_set_is_fixed_by_approved_campaign_rows")
+            else:
+                campaigns = _approved_campaign_batch(
+                    db, campaign_id=args.campaign_id,
+                )
+                if args.lead_id:
+                    wanted = set(args.lead_id)
+                    if args.campaign_id:
+                        campaigns[args.campaign_id] = campaigns.get(args.campaign_id, set()) & wanted
+                    else:
+                        campaigns = {cid: ids & wanted for cid, ids in campaigns.items()}
+                        campaigns = {cid: ids for cid, ids in campaigns.items() if ids}
+            if not any(campaigns.values()):
                 print(json.dumps({"status": "NO_APPROVED_RECIPIENTS", "attempts": 0},
                                  ensure_ascii=False))
                 return 0
-            codes = {str(item["campaign"].get("property_code") or "") for item in active}
-            if args.pilot and not codes <= PILOT_PROPERTY_CODES:
-                raise CliError("pilot_campaign_contains_unapproved_property")
-            now = datetime.now(timezone.utc)
-            expected_by_code = {
-                str(item["campaign"].get("property_code") or ""):
-                _expected_publication_from_campaign(item["campaign"])
-                for item in active
-            }
-            publication_checks = _verify_current_links(db, expected_by_code, now)
-            print(json.dumps({"publication_checks": publication_checks},
-                             ensure_ascii=False, default=str))
-            blocked_check = next((check for check in publication_checks.values()
-                                  if not check.get("sendable")), None)
-            if blocked_check:
-                raise CliError("public_listing_verification_failed:" +
-                               str(blocked_check.get("status")))
-            result = execute_campaign(
-                db, campaign_id=args.campaign_id,
+            result = execute_approved_batch(
+                db, campaigns=campaigns, include_pilot=args.pilot,
                 max_messages=args.max_messages,
                 min_delay_seconds=args.min_delay_seconds,
                 max_delay_seconds=args.max_delay_seconds,
@@ -2236,15 +2398,10 @@ def main(argv: list[str] | None = None) -> int:
                 allowed_weekdays=args.allowed_weekdays,
                 timezone_name=args.timezone, provider_plan=args.provider_plan,
                 daily_provider_cap=args.daily_provider_cap,
-                live_links_verified=True,
-                allowed_property_codes=PILOT_PROPERTY_CODES if args.pilot else None,
-                link_verifier=lambda code, stamp: _verify_current_links(
-                    db, {code: expected_by_code[code]}, stamp,
-                )[code],
-                lead_allowlist=set(args.lead_id) if args.lead_id else None,
-                temperature_filter=None if args.pilot else args.temperature,
-                lead_max_age_days=None if args.pilot else args.lead_max_age_days,
+                temperature_filter=args.temperature,
+                lead_max_age_days=args.lead_max_age_days,
                 enforce_campaign_filters=not args.pilot,
+                confirm=input,
             )
             print(json.dumps(result, ensure_ascii=False, default=str))
             return 0 if result.get("status") in {

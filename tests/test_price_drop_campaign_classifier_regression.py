@@ -106,6 +106,24 @@ def test_independent_audit_message_matrix(message, expected):
 
 
 @pytest.mark.parametrize("message,expected_label,expected_intent", [
+    ("Te ofrezco 2.500 UF", PRIORITY, "GIVE_OFFER"),
+    ("Mi oferta sería $145.000.000", PRIORITY, "GIVE_OFFER"),
+    ("Te ofrezco 2,500 UF", PRIORITY, "GIVE_OFFER"),
+    ("Podría pagar $152.000.000; ¿lo aceptarían?", PRIORITY, "GIVE_OFFER"),
+    ("No te ofrezco 2.500 UF", "SIN_SENAL", "OTHER"),
+    ("No ofrezco 2.500 UF", "SIN_SENAL", "OTHER"),
+    ("No quiero ofertar 2.500 UF", "SIN_SENAL", "OTHER"),
+    ("No te ofrezco 2.500 UF, pero te ofrezco 2.400 UF", PRIORITY, "GIVE_OFFER"),
+])
+def test_explicit_offer_with_grouped_amounts_and_negations(
+        message, expected_label, expected_intent):
+    result = classify_price_drop_reply(message)
+    assert result.label == expected_label
+    assert result.intent == expected_intent
+    assert result.explicit_offer is (expected_intent == "GIVE_OFFER")
+
+
+@pytest.mark.parametrize("message,expected_label,expected_intent", [
     ("Me puede llamar una asesora", PRIORITY, "ASK_CONTACT"),
     ("Estoy interesado en coordinar una visita", PRIORITY, "ASK_VISIT"),
     ("¿Podemos ver el departamento?", PRIORITY, "ASK_VISIT"),

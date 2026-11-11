@@ -11,7 +11,6 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Request, HTTPException, Form, Depends, Header, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
-from pymongo import MongoClient
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -116,8 +115,16 @@ async def _run_blocking(fn, *args, **kwargs):
     return await loop.run_in_executor(_VISITAS_DB_EXECUTOR, lambda: fn(*args, **kwargs))
 
 def get_db():
-    client = MongoClient(Config.MONGO_URI)
-    return client[Config.DB_NAME]
+    """Use the shared, bounded PyMongo pool already owned by chatbot.storage.
+
+    This module previously created a new MongoClient on every call. Routes
+    that fetch, download or sign orders can execute repeatedly; an uncached
+    client adds monitoring threads, connection pools and memory. Preserve
+    the existing get_db() interface and database while reusing the centrally
+    managed client with configured connection limits and timeouts.
+    """
+    from chatbot.storage import get_db as get_shared_db
+    return get_shared_db()
 
 def get_client_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For")
@@ -246,6 +253,9 @@ async def property_lookup_api(code: str):
 @router.post("/api/preview")
 async def preview_contract(request: Request):
     """Retorna un PDF generado en caliente para previsualización."""
+    # Snapshot only: no request body, user details or contact data in logs.
+    preview_t0 = time.perf_counter()
+    rss_before = psutil.Process().memory_info().rss
     try:
         data = _normalize_visita_fields(await request.json())
         # Enriquecer con datos de propiedad si el código existe en la BD
@@ -267,8 +277,23 @@ async def preview_contract(request: Request):
             data["ejecutivo_telefono"] = ""
 
         pdf_bytes = await _run_blocking(PDFGenerator.generate_original_contract, data)
+        rss_after = psutil.Process().memory_info().rss
+        logger.info(
+            "[VISITAS_PREVIEW_RESOURCE] duration_ms=%.1f rss_before_mib=%.1f "
+            "rss_after_mib=%.1f rss_delta_mib=%.1f pdf_kib=%.1f",
+            (time.perf_counter() - preview_t0) * 1000,
+            rss_before / 1048576,
+            rss_after / 1048576,
+            (rss_after - rss_before) / 1048576,
+            len(pdf_bytes) / 1024,
+        )
         return Response(content=pdf_bytes, media_type="application/pdf")
     except Exception as e:
+        logger.error(
+            "[VISITAS_PREVIEW_RESOURCE] failure duration_ms=%.1f rss_mib=%.1f",
+            (time.perf_counter() - preview_t0) * 1000,
+            psutil.Process().memory_info().rss / 1048576,
+        )
         logger.error(f"Error generating preview: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 

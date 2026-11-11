@@ -499,20 +499,20 @@ def _text_sender_window_blocker(lead: dict, now: datetime) -> str | None:
     return None
 
 
-def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
-    """Shared fail-closed contact and event checks for every real campaign."""
-    if (campaign.get("contact_basis_reviewed") is not True
-            or campaign.get("contact_basis_type") != DIRECT_RESPONSE_BASIS_TYPE
-            or not str(campaign.get("contact_basis") or "").strip()
-            or not str(campaign.get("approved_by") or "").strip()
-            or not isinstance(campaign.get("approved_at"), datetime)):
-        return "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
+def whatsapp_contact_authorization_blocker(
+        lead: dict, campaign: dict, *, now=None) -> str | None:
+    """Return the same contact-permission blocker for CLI and send_one.
+
+    No campaign is authorized merely because the customer inquired about a
+    property. A revoked/invalid lead-level record takes precedence over a
+    campaign-level snapshot, including when the snapshot was once valid.
+    """
     campaign_authorization = (
         campaign.get("whatsapp_contact_reviewed") is True
         and bool(str(campaign.get("whatsapp_contact_evidence") or "").strip())
     )
     reusable_authorization = reusable_whatsapp_contact_authorization(
-        lead, phone=str(campaign.get("phone_normalized") or ""),
+        lead, phone=str(campaign.get("phone_normalized") or ""), now=now,
     )
     price_drop = lead.get("price_drop_v2") or {}
     contact_authorization_record = (
@@ -523,6 +523,20 @@ def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
         return "WHATSAPP_CONTACT_AUTHORIZATION_INVALID_OR_REVOKED"
     if not campaign_authorization and reusable_authorization is None:
         return "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
+    return None
+
+
+def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
+    """Shared fail-closed contact and event checks for every real campaign."""
+    if (campaign.get("contact_basis_reviewed") is not True
+            or campaign.get("contact_basis_type") != DIRECT_RESPONSE_BASIS_TYPE
+            or not str(campaign.get("contact_basis") or "").strip()
+            or not str(campaign.get("approved_by") or "").strip()
+            or not isinstance(campaign.get("approved_at"), datetime)):
+        return "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
+    authorization_blocker = whatsapp_contact_authorization_blocker(lead, campaign)
+    if authorization_blocker:
+        return authorization_blocker
     if campaign.get("simulated_prior_inquiry") is not False:
         return "REAL_SEND_SIMULATED_INQUIRY"
     if str(campaign.get("event_id") or campaign.get("campaign_id") or "") != str(

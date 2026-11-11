@@ -61,7 +61,8 @@ def _plain(text: str) -> str:
 def _clauses(text: str) -> list[str]:
     folded = _fold(text)
     parts = re.split(
-        r"\b(?:pero|sin embargo|no obstante|aunque|sino|mas bien)\b|[,;.!?\n]+",
+        r"\b(?:pero|sin embargo|no obstante|aunque|sino|mas bien)\b|"
+        r"(?<!\d)[,;.!?\n]+|[,;.!?\n]+(?!\d)",
         folded,
     )
     return [normalized for part in parts if (normalized := _plain(part))]
@@ -185,9 +186,11 @@ _NEGATED_INTEREST = re.compile(
     re.IGNORECASE,
 )
 _NEGATED_OFFER = re.compile(
-    r"\b(?:no\s+(?:quiero|quisiera|puedo|podr[ií]a|voy\s+a|deseo|"
+    r"\b(?:(?:no\s+(?:quiero|quisiera|puedo|podr[ií]a|voy\s+a|deseo|"
     r"pienso|pretendo)|prefiero\s+no)\b.{0,55}\b"
-    r"(?:ofert\w*|ofrec\w*|hacer\s+una\s+oferta|propon\w*\s+pagar)\b",
+    r"(?:ofert\w*|ofrec\w*|hacer\s+una\s+oferta|propon\w*\s+pagar)|"
+    r"no\s+(?:te\s+)?(?:ofrezco|oferto|ofreceria|hago\s+una\s+oferta|"
+    r"presento\s+una\s+oferta)\b)",
     re.IGNORECASE,
 )
 _NEGATED_ALTERNATIVE = re.compile(
@@ -248,9 +251,9 @@ _OFFER = re.compile(
     r"proponer|oferta\s+por|ofrezco\s+\d|ofertar\s+\d)\b|"
     r"\b(?:ofrezco|puedo\s+ofrecer|podr[ií]a\s+ofrecer|propongo\s+pagar|"
     r"pagar[ií]a|mi\s+oferta\s+(?:es|ser[ií]a))\b.{0,35}\b"
-    r"(?:\d(?:[ .]\d{3})+(?:[,.]\d+)?|\d{3,}(?:[,.]\d+)?)\b|"
+    r"(?:\d{1,3}(?:[ .]\d{3})+(?:[,.]\d+)?|\d{3,}(?:[,.]\d+)?)\b|"
     r"\b(?:te\s+)?(?:ofrezco|oferto)\b.{0,30}\b"
-    r"(?:\d(?:[ .]\d{3})+(?:[,.]\d+)?|\d{3,}(?:[,.]\d+)?)\b|"
+    r"(?:\d{1,3}(?:[ .]\d{3})+(?:[,.]\d+)?|\d{3,}(?:[,.]\d+)?)\b|"
     r"\b(?:quiero|quisiera|me\s+gustar[ií]a)\s+(?:hacer|presentar|enviar)\s+"
     r"(?:una\s+)?oferta\b|\bhagamos\s+una\s+oferta\b",
     re.IGNORECASE,

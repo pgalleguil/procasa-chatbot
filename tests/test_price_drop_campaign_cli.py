@@ -1611,8 +1611,31 @@ def test_missing_contact_evidence_still_blocks_send_without_global_toggle(monkey
     )
     result = _run(db, journal_path=tmp_path / "missing-contact-evidence.json")
     assert result["status"] == "BLOCKED"
-    assert result["reason"] == "whatsapp_contact_authorization_unverified"
+    assert result["reason"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
+    assert result["authorization_blockers"] == [{
+        "property_code": "6436", "phone_last4": "9801",
+        "reason": "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED",
+    }]
     assert result["attempts"] == 0
+
+
+def test_revoked_contact_authorization_reports_precise_blocker_before_sending(
+        monkeypatch, tmp_path):
+    db, _, _ = _dispatch_db(monkeypatch, count=1)
+    db["leads"].update_one({}, {"$set": {
+        "price_drop_v2.whatsapp_contact_authorization.status": "REVOKED",
+        "price_drop_v2.whatsapp_contact_authorization.revoked_at": NOW,
+    }})
+    sent = []
+    result = _run(
+        db, journal_path=tmp_path / "revoked-contact-authorization.json",
+        sender=lambda *args: sent.append(args),
+    )
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "WHATSAPP_CONTACT_AUTHORIZATION_INVALID_OR_REVOKED"
+    assert result["authorization_blockers"][0]["property_code"] == "6436"
+    assert result["attempts"] == 0
+    assert sent == []
 
 
 def test_valid_reusable_consent_replaces_campaign_specific_review(monkeypatch, tmp_path):

@@ -79,7 +79,7 @@ def test_explicit_test_only_persistence_and_idempotency():
     res1, res2 = send(client), send(client)
     assert res1.status_code == 200
     assert res1.json()["results"] == {"saved": 1}
-    assert res2.json()["results"] == {"duplicate_or_capacity_or_missing": 1}
+    assert res2.json()["results"] == {"duplicate_confirmed": 1}
     assert len(db.leads[0]["executive_whatsapp_messages"]) == 1
     assert db.leads[0]["messages"][0]["role"] == "user"
 
@@ -158,3 +158,30 @@ def test_no_router_is_mounted_unless_an_app_explicitly_includes_it():
 def test_invalid_binding_rejected_before_app_can_mount():
     with pytest.raises(ValueError):
         SessionBinding(session_id="x", executive_user_id="e", webhook_secret="")
+
+def test_no_2xx_ack_when_write_unconfirmed():
+    from tests.test_executive_whatsapp_audit import FakeCollection, FakeResult
+    class NeverWrites(FakeCollection):
+        def update_one(self, selector, update, upsert=False):
+            return FakeResult(0)
+
+    class NoWriteDB(FakeDB):
+        def __getitem__(self, key):
+            if key == "leads":
+                return NeverWrites(key, self)
+            return super().__getitem__(key)
+
+    client, db = build_client(persist=True, db=NoWriteDB())
+    result = send(client)
+    assert result.status_code == 503
+    assert result.json()["detail"] == "audit_persistence_not_confirmed"
+    assert "executive_whatsapp_messages" not in db.leads[0]
+
+
+def test_missing_original_timestamp_must_not_be_acknowledged_in_live_mode():
+    client, db = build_client(persist=True)
+    payload = event()
+    del payload["data"]["messages"]["messageTimestamp"]
+    result = send(client, payload)
+    assert result.status_code == 503
+    assert "executive_whatsapp_messages" not in db.leads[0]

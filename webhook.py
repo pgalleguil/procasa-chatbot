@@ -4129,13 +4129,11 @@ async def webhook(
 ):
     raw_body = await request.body()
     if Config.WASENDER_WEBHOOK_SECRET:
-        expected = hmac.new(
-            Config.WASENDER_WEBHOOK_SECRET.encode("utf-8"),
-            raw_body,
-            hashlib.sha256
-        ).hexdigest()
-        if not hmac.compare_digest(expected, x_webhook_signature or ""):
-            logger.warning("Firma inválida en webhook")
+        from chatbot.webhook_event_policy import verify_wasender_webhook_signature
+        if not verify_wasender_webhook_signature(
+            raw_body, x_webhook_signature, Config.WASENDER_WEBHOOK_SECRET,
+        ):
+            logger.warning("[WASENDER_WEBHOOK] rejected invalid or absent signature")
             raise HTTPException(status_code=401, detail="Invalid signature")
 
     try:

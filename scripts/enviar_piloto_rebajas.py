@@ -329,6 +329,7 @@ def audit_full_portfolio(
                      operation=operation, limit=limit, batch_size=batch_size)
     unique_eligible_leads: set[str] = set()
     previously_counted: set[str] = set()
+    eligible_by_event: dict[str, set[str]] = {}
     reasons: Counter[str] = Counter()
     properties: set[str] = set()
     rows_by_event: list[dict[str, Any]] = []
@@ -368,6 +369,7 @@ def audit_full_portfolio(
                     totals["cross_event_duplicate_matches"] += 1
                 previously_counted.add(lead_id)
                 unique_eligible_leads.add(lead_id)
+                eligible_by_event.setdefault(event.event_id, set()).add(lead_id)
             else:
                 totals["excluded_or_review_needed"] += 1
         rows_by_event.append({
@@ -384,12 +386,92 @@ def audit_full_portfolio(
         })
     totals["property_codes"] = len(properties)
     totals["unique_eligible_leads"] = len(unique_eligible_leads)
+
+    # Count reusable WhatsApp authorizations against the exact eligible
+    # audience, rather than treating a historical property inquiry as opt-in.
+    # Load each distinct lead once in bounded batches. Do not read message
+    # content, expose contact details, change MongoDB or call the provider.
+    contact_readiness: dict[str, str] = {}
+    candidate_ids = sorted(unique_eligible_leads)
+    for offset in range(0, len(candidate_ids), 500):
+        selected_ids = candidate_ids[offset:offset + 500]
+        lead_docs = db[LEADS_COLLECTION].find(
+            {"_id": {"$in": [_lead_id(value) for value in selected_ids]}},
+            {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
+             "price_drop_v2.whatsapp_contact_authorization": 1,
+             "price_drop_v2.campaigns": 1},
+        )
+        for lead in lead_docs:
+            lead_id = str(lead["_id"])
+            contact_phone = str(
+                lead.get("contact_phone_normalized") or lead.get("phone") or ""
+            )
+            if v2.reusable_whatsapp_contact_authorization(
+                    lead, phone=contact_phone, now=stamp) is not None:
+                status = "VERIFIED_REUSABLE"
+            elif (lead.get("price_drop_v2") or {}).get(
+                    "whatsapp_contact_authorization") is not None:
+                status = "INVALID_OR_REVOKED"
+            else:
+                status = "EVIDENCE_REVIEW_REQUIRED"
+            contact_readiness[lead_id] = status
+    for lead_id in candidate_ids:
+        contact_readiness.setdefault(lead_id, "EVIDENCE_REVIEW_REQUIRED")
+
+    counts = Counter(contact_readiness.values())
+    review_queue_preview = []
+    for row in sorted(rows_by_event, key=lambda item: (
+            -item["eligible"], item["property_code"], item["event_id"])):
+        event_ids = eligible_by_event.get(row["event_id"], set())
+        row["whatsapp_reusable_verified"] = sum(
+            contact_readiness.get(lead_id) == "VERIFIED_REUSABLE"
+            for lead_id in event_ids
+        )
+        row["whatsapp_evidence_review_required"] = sum(
+            contact_readiness.get(lead_id) == "EVIDENCE_REVIEW_REQUIRED"
+            for lead_id in event_ids
+        )
+        row["whatsapp_invalid_or_revoked"] = sum(
+            contact_readiness.get(lead_id) == "INVALID_OR_REVOKED"
+            for lead_id in event_ids
+        )
+        for lead_id in sorted(event_ids):
+            status = contact_readiness[lead_id]
+            if status != "VERIFIED_REUSABLE" and len(review_queue_preview) < 50:
+                review_queue_preview.append({
+                    "event_id": row["event_id"],
+                    "property_code": row["property_code"],
+                    "lead_last6": lead_id[-6:],
+                    "contact_readiness": status,
+                })
+
+    totals["unique_eligible_whatsapp_reusable_verified"] = counts["VERIFIED_REUSABLE"]
+    totals["unique_eligible_whatsapp_evidence_review_required"] = counts[
+        "EVIDENCE_REVIEW_REQUIRED"
+    ]
+    totals["unique_eligible_whatsapp_invalid_or_revoked"] = counts[
+        "INVALID_OR_REVOKED"
+    ]
+    totals["eligible_event_matches_whatsapp_reusable_verified"] = sum(
+        row["whatsapp_reusable_verified"] for row in rows_by_event
+    )
+    totals["eligible_event_matches_whatsapp_review_required"] = sum(
+        row["whatsapp_evidence_review_required"] + row["whatsapp_invalid_or_revoked"]
+        for row in rows_by_event
+    )
     return {
         "scope": "entire_property_price_drop_history" if limit is None else "diagnostic_limited_scan",
         "database_mode": "READ_ONLY",
         "send_approved": False,
         "sending_attempts": 0,
-        "reviewed_whatsapp_authorizations": "NOT_VERIFIED_BY_THIS_AUDIT",
+        "reviewed_whatsapp_authorizations": "VERIFIED_STORED_REUSABLE_RECORDS_ONLY",
+        "contact_readiness_explanation": (
+            "Verifica registros CRM reutilizables, no permisos externos ni consentimiento "
+            "supuesto por consulta histórica. Cada destinatario sigue necesitando revisión "
+            "individual y aprobación antes de enviar."
+        ),
+        "whatsapp_review_queue_preview": review_queue_preview,
+        "whatsapp_review_queue_preview_limit": 50,
         "filters": {
             "since": since.isoformat() if isinstance(since, datetime) else None,
             "property_code": property_code, "currency": currency,

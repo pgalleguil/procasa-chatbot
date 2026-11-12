@@ -1585,6 +1585,17 @@ def test_full_portfolio_audit_counts_all_events_without_writes_or_provider_calls
     }}})
     _candidate(db, phone="+56983219802", temperature="COLD",
                content="Me interesa la propiedad 6377")
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "price_drop_v2.whatsapp_contact_authorization": {
+            "status": "ACTIVE", "channel": "WHATSAPP",
+            "scope": v2.WHATSAPP_CONTACT_SCOPE,
+            "phone_normalized": "+56983219801",
+            "evidence_reference": "CRM opt-in 2026-11-01",
+            "reviewed_by": "Operador QA",
+            "reviewed_at": NOW - timedelta(days=2),
+            "source_campaign_id": "older-manual-campaign",
+        },
+    }})
     before = list(db["leads"].find())
     report = cli.audit_full_portfolio(
         db, now=NOW, temperature_filter="ALL", lead_max_age_days=None,
@@ -1596,7 +1607,18 @@ def test_full_portfolio_audit_counts_all_events_without_writes_or_provider_calls
     assert report["totals"]["eligible_event_matches"] == 3
     assert report["totals"]["unique_eligible_leads"] == 2
     assert report["totals"]["cross_event_duplicate_matches"] == 1
-    assert report["reviewed_whatsapp_authorizations"] == "NOT_VERIFIED_BY_THIS_AUDIT"
+    assert report["reviewed_whatsapp_authorizations"] == "VERIFIED_STORED_REUSABLE_RECORDS_ONLY"
+    assert report["totals"]["unique_eligible_whatsapp_reusable_verified"] == 1
+    assert report["totals"]["unique_eligible_whatsapp_evidence_review_required"] == 1
+    assert report["totals"]["unique_eligible_whatsapp_invalid_or_revoked"] == 0
+    assert report["totals"]["eligible_event_matches_whatsapp_reusable_verified"] == 2
+    assert report["totals"]["eligible_event_matches_whatsapp_review_required"] == 1
+    assert len(report["whatsapp_review_queue_preview"]) == 1
+    assert report["whatsapp_review_queue_preview"][0]["contact_readiness"] == "EVIDENCE_REVIEW_REQUIRED"
+    assert "phone" not in report["whatsapp_review_queue_preview"][0]
+    assert all(row["whatsapp_reusable_verified"] + row["whatsapp_evidence_review_required"]
+               + row["whatsapp_invalid_or_revoked"] == row["eligible"]
+               for row in report["events"])
     assert list(db["leads"].find()) == before
     monkeypatch.setattr(cli, "_get_db", lambda: db)
     assert cli.main(["--audience-audit", "--full-scan",
@@ -1604,6 +1626,34 @@ def test_full_portfolio_audit_counts_all_events_without_writes_or_provider_calls
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["totals"]["eligible_event_matches"] == 3
     assert parsed["sending_attempts"] == 0
+    assert list(db["leads"].find()) == before
+
+
+def test_portfolio_audit_flags_revoked_whatsapp_authorization_without_any_writes():
+    db = _event_db()
+    lid = _candidate(db, phone="+56983219811", temperature="NORMAL")
+    db["leads"].update_one({"_id": lid}, {"$set": {
+        "price_drop_v2.whatsapp_contact_authorization": {
+            "status": "REVOKED", "channel": "WHATSAPP",
+            "scope": v2.WHATSAPP_CONTACT_SCOPE,
+            "phone_normalized": "+56983219811",
+            "evidence_reference": "CRM prior opt-in 2026-10-01",
+            "reviewed_by": "Operador QA",
+            "reviewed_at": NOW - timedelta(days=4),
+            "source_campaign_id": "previous-campaign",
+            "revoked_at": NOW - timedelta(days=1),
+        },
+    }})
+    before = list(db["leads"].find())
+    report = cli.audit_full_portfolio(
+        db, now=NOW, lead_max_age_days=None,
+    )
+    assert report["totals"]["eligible_event_matches"] == 1
+    assert report["totals"]["unique_eligible_whatsapp_reusable_verified"] == 0
+    assert report["totals"]["unique_eligible_whatsapp_invalid_or_revoked"] == 1
+    assert report["whatsapp_review_queue_preview"][0]["contact_readiness"] == "INVALID_OR_REVOKED"
+    assert report["send_approved"] is False
+    assert report["sending_attempts"] == 0
     assert list(db["leads"].find()) == before
 
 

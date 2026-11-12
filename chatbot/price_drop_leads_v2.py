@@ -716,6 +716,18 @@ def _property_price(db, code: str, old: int | float, new: int | float,
         raise PilotBlocked("audited_price_change_missing")
     return max(verified)
 
+def _verified_campaign_price(db, code: str, old: int | float,
+                             new: int | float, *, currency: str = "UF",
+                             operation: str = "venta") -> datetime:
+    """Keep existing sale call semantics for QA and frozen pilot listeners."""
+    if operation == "arriendo":
+        return _property_price(db, code, old, new, currency=currency,
+                               operation="arriendo")
+    if currency == "CLP":
+        return _property_price(db, code, old, new, currency="CLP")
+    return _property_price(db, code, old, new)
+
+
 def _verified_listing_ids(db, code: str) -> set[str]:
     """Read current and historic publication IDs linked to this exact Prop360 property."""
     prop = db["universo_cartera_prop360"].find_one(
@@ -1049,7 +1061,7 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
             raise PilotBlocked("ambiguous_lead_identity")
         if not is_open_campaign_eligible(lead):
             raise PilotBlocked("lead_closed_pipeline_stage")
-    drop_at = _property_price(
+    drop_at = _verified_campaign_price(
         db, property_code, old_value, new_value, currency=currency,
         operation=operation,
     )
@@ -1482,8 +1494,8 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     currency = c.get("currency") or "UF"
     old = c.get("old_price_clp") if currency == "CLP" else c.get("old_price_uf")
     new = c.get("new_price_clp") if currency == "CLP" else c.get("new_price_uf")
-    _property_price(db, c["property_code"], old, new, currency=currency,
-                    operation=str(c.get("operation") or "venta").lower())
+    _verified_campaign_price(db, c["property_code"], old, new, currency=currency,
+                             operation=str(c.get("operation") or "venta").lower())
     campaign_index = next((i for i, row in enumerate(all_campaigns)
                            if row.get("campaign_id") == campaign_id), None)
     if campaign_index is None:
@@ -1705,8 +1717,8 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
     old = campaign.get("old_price_clp") if currency == "CLP" else campaign.get("old_price_uf")
     new = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
     try:
-        _property_price(db, code, old, new, currency=currency,
-                        operation=str(campaign.get("operation") or "venta").lower())
+        _verified_campaign_price(db, code, old, new, currency=currency,
+                                 operation=str(campaign.get("operation") or "venta").lower())
     except PilotBlocked:
         return None
     return {

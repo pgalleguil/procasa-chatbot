@@ -185,6 +185,51 @@ def normalize_price_event(history: dict[str, Any], prop: dict[str, Any],
     )
 
 
+def _embedded_current_price_drop(prop: dict[str, Any], *,
+                                 now: datetime | None = None,
+                                 since: datetime | None = None,
+                                 currency: str | None = None) -> PriceDropEvent | None:
+    """Use the original timestamped Prop360 price history when the central
+    history collection has no eligible event for this property.
+
+    Only original sale-price changes (precio_uf/precio_clp) are accepted.
+    Derived/converted fields and price-change requests are not evidence of a
+    confirmed reduction. normalize_price_event rechecks the current price,
+    currency, sale availability, office and published HTTPS listing.
+    """
+    matches: list[PriceDropEvent] = []
+    code = str(prop.get("codigo") or "")
+    for row in prop.get("historial_cambios") or []:
+        if not isinstance(row, dict):
+            continue
+        field = str(row.get("campo") or "")
+        if field not in {"precio_uf", "precio_clp"}:
+            continue
+        historical_currency = "UF" if field == "precio_uf" else "CLP"
+        if currency and historical_currency != currency:
+            continue
+        event = normalize_price_event({
+            "campo": "precio_publicado",
+            "codigo": code,
+            "fecha": row.get("fecha"),
+            "moneda_anterior": historical_currency,
+            "moneda_nueva": historical_currency,
+            "monto_anterior": row.get("valor_anterior"),
+            "monto_nuevo": row.get("valor_nuevo"),
+            "_id": f"embedded:{code}:{field}:{row.get('fecha')}",
+        }, prop, now=now)
+        if event and (since is None or event.dropped_at >= since):
+            matches.append(event)
+    if not matches:
+        return None
+    # One active price window per property. Never target a customer with two
+    # simultaneous campaigns because different historical steps ended at the
+    # same current asking price.
+    return max(matches, key=lambda event: (
+        event.dropped_at, event.event_id,
+    ))
+
+
 def discover_price_drops(db: Any, *, since: datetime | None = None,
                          limit: int | None = None, now: datetime | None = None,
                          property_code: str | None = None,
@@ -270,6 +315,43 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
                 continue
             seen.add(key)
             events[event.event_id] = event
+    # The central price-history collection is not a complete historic
+    # backfill. Prop360 also stores genuine, dated price changes in each
+    # property's historial_cambios array. Include those missing property
+    # windows without altering identities of centrally recorded campaigns.
+    # A diagnostic --limit intentionally examines only central history rows.
+    if limit is None:
+        embedded_query: dict[str, Any] = {
+            "estado.oficina": "PROCASA SUCRE",
+            "tipo_operacion.venta": True,
+            "disponible_prop360": True,
+        }
+        if property_code:
+            embedded_query["codigo"] = str(property_code)
+        embedded_projection = {
+            **property_projection, "historial_cambios": 1,
+        }
+        properties_with_event = {
+            event.property_code for event in events.values()
+        }
+        cursor = db[PROPERTY_COLLECTION].find(
+            embedded_query, embedded_projection,
+        )
+        if hasattr(cursor, "batch_size"):
+            cursor = cursor.batch_size(batch_size)
+        for prop in cursor:
+            code = str(prop.get("codigo") or "")
+            if code in properties_with_event:
+                continue
+            extra = _embedded_current_price_drop(
+                prop, now=now, since=since_utc, currency=currency_filter or None,
+            )
+            if extra is None:
+                continue
+            if operation and extra.operation.casefold() != str(operation).strip().casefold():
+                continue
+            events[extra.event_id] = extra
+            properties_with_event.add(code)
     return sorted(events.values(), key=lambda item: (item.dropped_at, item.property_code, item.event_id))
 
 

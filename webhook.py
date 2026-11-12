@@ -6815,10 +6815,18 @@ async def retiro_contactar(request: Request, email: str = Query(...), codigo: st
 
 @app.exception_handler(401)
 async def unauthorized_exception_handler(request: Request, exc: HTTPException):
-    # Si el usuario intenta acceder a una ruta de la interfaz (HTML), lo mandamos al login
+    # Machine-to-machine callbacks must never redirect to interactive login.
+    # WaSender retries and logs the 401; a 307 causes its POST to become a
+    # misleading 405 and prevents reliable diagnosis of signature mismatch.
+    if request.url.path == "/webhook":
+        logger.warning("[WASENDER_WEBHOOK] auth_failed http=401 redirect=false")
+        return JSONResponse(
+            {"status": "unauthorized", "reason": "webhook_authentication_failed"},
+            status_code=401,
+        )
+    # Keep existing HTML browser login behavior unchanged.
     logger.warning(f"Redirigiendo a login por sesión expirada en: {request.url.path}")
     if request.url.path.startswith("/api/"):
-        from fastapi.responses import JSONResponse
         return JSONResponse({"status": "error", "message": "Sesión expirada o no autenticado"}, status_code=401)
     requested_url = request.url.path
     if request.url.query:

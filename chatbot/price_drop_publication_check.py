@@ -89,7 +89,7 @@ def _walk_json(value: Any):
             yield from _walk_json(child)
 
 
-def extract_public_prices(html: str) -> set[tuple[str, Decimal]]:
+def extract_public_prices(html: str, *, operation: str = "venta") -> set[tuple[str, Decimal]]:
     """Return unambiguous structured or clearly labeled visible prices."""
     soup = BeautifulSoup(html or "", "html.parser")
     found: set[tuple[str, Decimal]] = set()
@@ -127,12 +127,13 @@ def extract_public_prices(html: str) -> set[tuple[str, Decimal]]:
             if "price" in node:
                 add(node.get("price"), node.get("priceCurrency") or node.get("currency"))
 
-    # PROCASA listings can omit structured price metadata while showing the
-    # asking price in the visible "Venta - <type> - <price>" heading. Parse
-    # only that labeled heading; unrelated amounts elsewhere remain ignored.
+    # PROCASA may omit structured metadata but label the asking amount
+    # "Venta - <type> - <price>" or "Arriendo - <type> - <price>".
+    # Never attribute a sale price to a rental (or vice versa).
     visible_text = soup.get_text(" ", strip=True)
+    heading_operation = "arriendo" if operation == "arriendo" else "venta"
     visible_heading_price = re.compile(
-        r"\bventa\s*[-–—]\s*[^|,;–—-]{1,80}?\s*[-–—]\s*"
+        rf"\b{heading_operation}\s*[-–—]\s*[^|,;–—-]{{1,80}}?\s*[-–—]\s*"
         r"(?P<price>(?:UF|U\.F\.|CLP)\s*\$?\s*\d[\d.,]*"
         r"|\$\s*\d[\d.,]*"
         r"|\d[\d.,]*\s*(?:UF|U\.F\.|CLP|pesos?))",
@@ -227,7 +228,8 @@ def _fetch_public_html(url: str, *, get: Callable[..., Any],
 def verify_current_listing(db: Any, *, property_code: str, currency: str,
                            expected_price: int | float, expected_url: str = "",
                            now: datetime | None = None,
-                           http_get: Callable[..., Any] = requests.get) -> PublicationCheck:
+                           http_get: Callable[..., Any] = requests.get,
+                           operation: str = "venta") -> PublicationCheck:
     """Verify current Prop360 state and, when reachable, the public list price.
 
     Non-verified states are deliberately not sendable. Preview callers can show
@@ -243,8 +245,16 @@ def verify_current_listing(db: Any, *, property_code: str, currency: str,
         {"_id": 0, "codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
          "tipo_operacion": 1, "publicaciones": 1},
     ) or {}
-    operation = prop.get("tipo_operacion") or {}
-    pricing = operation.get("precio_venta") or {}
+    operation = str(operation or "").strip().lower()
+    if operation not in {"venta", "arriendo"}:
+        return PublicationCheck(
+            status="inventory_public_inconsistent", sendable=False,
+            property_code=code, reason="unsupported_property_operation",
+        )
+    operation_data = prop.get("tipo_operacion") or {}
+    pricing = operation_data.get(
+        "precio_venta" if operation == "venta" else "precio_arriendo"
+    ) or {}
     inventory_currency = _currency(
         pricing.get("moneda_publicada") or pricing.get("moneda_publicacion")
     )
@@ -263,13 +273,15 @@ def verify_current_listing(db: Any, *, property_code: str, currency: str,
             public_currency=public_currency, reason=reason,
         )
 
-    if prop.get("disponible_prop360") is not True or operation.get("venta") is not True:
-        return result("property_removed", reason="prop360_property_not_available_for_sale")
+    if (prop.get("disponible_prop360") is not True
+            or operation_data.get(operation) is not True):
+        return result("property_removed",
+                      reason=f"prop360_property_not_available_for_{operation}")
     if (prop.get("estado") or {}).get("oficina") != "PROCASA SUCRE":
         return result("inventory_public_inconsistent", reason="property_office_changed")
     if not expected or not currency or inventory_currency != currency or inventory_price != expected:
         return result("inventory_public_inconsistent", reason="prop360_price_or_currency_changed")
-    published, current_url = _published(prop, stamp)
+    published, current_url = _published(prop, stamp, operation=operation)
     if not published:
         return result("property_removed", reason="no_active_prop360_publication")
     if expected_url and expected_url != current_url:
@@ -293,7 +305,7 @@ def verify_current_listing(db: Any, *, property_code: str, currency: str,
         return result("property_removed", url=current_url, http_status=http_status,
                       reason="public_page_reports_removed_listing")
 
-    prices = extract_public_prices(html)
+    prices = extract_public_prices(html, operation=operation)
     if not prices:
         return result("link_accessible_price_unverifiable", url=current_url,
                       http_status=http_status, reason="no_structured_public_price_found")

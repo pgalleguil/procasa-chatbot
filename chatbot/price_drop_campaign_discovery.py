@@ -109,7 +109,7 @@ def _walk_publications(value: Any) -> Iterable[dict[str, Any]]:
                 yield from _walk_publications(child)
 
 
-def _published(prop: dict[str, Any], now: datetime) -> tuple[bool, str]:
+def _published(prop: dict[str, Any], now: datetime, *, operation: str = "venta") -> tuple[bool, str]:
     for row in _walk_publications(prop.get("publicaciones") or {}):
         status = str(row.get("publication_status") or "").casefold()
         state = row.get("estado")
@@ -117,8 +117,10 @@ def _published(prop: dict[str, Any], now: datetime) -> tuple[bool, str]:
             state in (1, "1", "ACTIVA", "PUBLICADA", "ACTIVE") or status == "active"
         ):
             continue
-        operation = str(row.get("operacion") or "").casefold()
-        if operation and operation not in {"venta", "v", "sell"}:
+        row_operation = str(row.get("operacion") or "").casefold()
+        allowed_operations = ({"arriendo", "a", "rent", "rental", "alquiler"}
+                              if operation == "arriendo" else {"venta", "v", "sell"})
+        if row_operation and row_operation not in allowed_operations:
             continue
         url = str(row.get("url") or "").strip()
         expiry = row.get("expiration_date")
@@ -163,26 +165,90 @@ def normalize_price_event(history: dict[str, Any], prop: dict[str, Any],
     if dropped_at is None or current_time is None or dropped_at > current_time:
         return None
     op = prop.get("tipo_operacion") or {}
-    pricing = op.get("precio_venta") or {}
-    currency_now = str(pricing.get("moneda_publicada") or pricing.get("moneda_publicacion") or "").upper()
-    current_price = _decimal(pricing.get("precio_publicado"))
-    if currency_now != old_currency or current_price != new:
+    if (prop.get("disponible_prop360") is not True
+            or (prop.get("estado") or {}).get("oficina") != "PROCASA SUCRE"):
         return None
-    if op.get("venta") is not True or prop.get("disponible_prop360") is not True:
+    forced_operation = str(history.get("operacion") or "").strip().casefold()
+    if forced_operation not in {"", "venta", "arriendo"}:
         return None
-    if (prop.get("estado") or {}).get("oficina") != "PROCASA SUCRE":
+    candidates: list[tuple[str, Decimal, str]] = []
+    for label, pricing_key in (("venta", "precio_venta"), ("arriendo", "precio_arriendo")):
+        if forced_operation and label != forced_operation:
+            continue
+        if op.get(label) is not True:
+            continue
+        pricing = op.get(pricing_key) or {}
+        currency_now = str(
+            pricing.get("moneda_publicada") or pricing.get("moneda_publicacion") or ""
+        ).upper()
+        current_price = _decimal(pricing.get("precio_publicado"))
+        if currency_now != old_currency or current_price != new:
+            continue
+        published, url = _published(prop, current_time, operation=label)
+        if published:
+            candidates.append((label, current_price, url))
+    # The same price can occur in both sale and rent on mixed-operation
+    # properties; a generic central-history row cannot identify which changed.
+    if len(candidates) != 1:
         return None
-    published, url = _published(prop, current_time)
-    if not published:
-        return None
-    event_id = stable_event_id(code, dropped_at, old_currency, old, new)
+    label, current_price, url = candidates[0]
+    base_event_id = stable_event_id(code, dropped_at, old_currency, old, new)
+    event_id = base_event_id if label == "venta" else f"{base_event_id}_arriendo"
     delta = old - new
     return PriceDropEvent(
         event_id, event_id, code, str(op.get("tipo") or "N/A"), _comuna(prop),
-        "Venta", dropped_at, _number(old), _number(new), old_currency, _number(delta),
+        "Venta" if label == "venta" else "Arriendo",
+        dropped_at, _number(old), _number(new), old_currency, _number(delta),
         float(delta / old * Decimal("100")), True, True, _number(current_price),
         url, str(history.get("_id") or ""),
     )
+
+
+def _embedded_current_price_drop(prop: dict[str, Any], *,
+                                 now: datetime | None = None,
+                                 since: datetime | None = None,
+                                 currency: str | None = None,
+                                 operation: str = "venta") -> PriceDropEvent | None:
+    """Use the original timestamped Prop360 price history when the central
+    history collection has no eligible event for this property.
+
+    Only genuine original-price changes (precio_uf/precio_clp) are accepted
+    for the requested sale or rental operation. Converted fields and price
+    change requests are not evidence of a confirmed reduction. The current
+    price, operation, listing and office must also match.
+    """
+    matches: list[PriceDropEvent] = []
+    code = str(prop.get("codigo") or "")
+    for row in prop.get("historial_cambios") or []:
+        if not isinstance(row, dict):
+            continue
+        field = str(row.get("campo") or "")
+        if field not in {"precio_uf", "precio_clp"}:
+            continue
+        historical_currency = "UF" if field == "precio_uf" else "CLP"
+        if currency and historical_currency != currency:
+            continue
+        event = normalize_price_event({
+            "campo": "precio_publicado",
+            "codigo": code,
+            "operacion": operation,
+            "fecha": row.get("fecha"),
+            "moneda_anterior": historical_currency,
+            "moneda_nueva": historical_currency,
+            "monto_anterior": row.get("valor_anterior"),
+            "monto_nuevo": row.get("valor_nuevo"),
+            "_id": f"embedded:{code}:{field}:{row.get('fecha')}",
+        }, prop, now=now)
+        if event and (since is None or event.dropped_at >= since):
+            matches.append(event)
+    if not matches:
+        return None
+    # One active price window per property. Never target a customer with two
+    # simultaneous campaigns because different historical steps ended at the
+    # same current asking price.
+    return max(matches, key=lambda event: (
+        event.dropped_at, event.event_id,
+    ))
 
 
 def discover_price_drops(db: Any, *, since: datetime | None = None,
@@ -201,6 +267,9 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
         raise DiscoveryError("limit_must_be_positive_or_unset")
     if type(batch_size) is not int or not 1 <= batch_size <= 5000:
         raise DiscoveryError("batch_size_must_be_between_1_and_5000")
+    if operation and str(operation).strip().lower() not in {"venta", "arriendo"}:
+        raise DiscoveryError("operation_must_be_venta_or_arriendo")
+    operation = str(operation or "").strip().lower() or None
     since_utc = parse_aware_datetime(since) if since is not None else None
     query: dict[str, Any] = {"campo": "precio_publicado"}
     if property_code:
@@ -264,12 +333,56 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
                 continue
             if currency_filter and event.currency != currency_filter:
                 continue
-            key = (event.property_code, event.dropped_at.isoformat(), event.currency,
-                   str(event.old_price), str(event.new_price))
+            key = (event.property_code, event.operation, event.dropped_at.isoformat(),
+                   event.currency, str(event.old_price), str(event.new_price))
             if key in seen:
                 continue
             seen.add(key)
             events[event.event_id] = event
+    # The central price-history collection is not a complete historic
+    # backfill. Prop360 also stores genuine, dated price changes in each
+    # property's historial_cambios array. Include those missing property
+    # windows without altering identities of centrally recorded campaigns.
+    # A diagnostic --limit intentionally examines only central history rows.
+    if limit is None:
+        embedded_query: dict[str, Any] = {
+            "estado.oficina": "PROCASA SUCRE",
+            "disponible_prop360": True,
+        }
+        if operation:
+            embedded_query[f"tipo_operacion.{operation}"] = True
+        else:
+            embedded_query["$or"] = [
+                {"tipo_operacion.venta": True},
+                {"tipo_operacion.arriendo": True},
+            ]
+        if property_code:
+            embedded_query["codigo"] = str(property_code)
+        embedded_projection = {
+            **property_projection, "historial_cambios": 1,
+        }
+        properties_with_event = {
+            (event.property_code, event.operation.casefold())
+            for event in events.values()
+        }
+        cursor = db[PROPERTY_COLLECTION].find(
+            embedded_query, embedded_projection,
+        )
+        if hasattr(cursor, "batch_size"):
+            cursor = cursor.batch_size(batch_size)
+        for prop in cursor:
+            code = str(prop.get("codigo") or "")
+            for selected_operation in ([operation] if operation else ["venta", "arriendo"]):
+                if (code, selected_operation) in properties_with_event:
+                    continue
+                extra = _embedded_current_price_drop(
+                    prop, now=now, since=since_utc,
+                    currency=currency_filter or None, operation=selected_operation,
+                )
+                if extra is None:
+                    continue
+                events[extra.event_id] = extra
+                properties_with_event.add((code, selected_operation))
     return sorted(events.values(), key=lambda item: (item.dropped_at, item.property_code, item.event_id))
 
 
@@ -556,6 +669,8 @@ def event_message(event: PriceDropEvent, *, last_notice: dict[str, Any] | None =
     first = str(recipient_name or "").strip()
     greeting = f"Hola, {first}." if first else "Hola, ¿cómo estás?"
     opening = MESSAGE_VARIANTS[variant_id]["opening"].format(code=event.property_code)
+    opening += (" Se trata de un arriendo." if event.operation == "Arriendo"
+                else " Se trata de una venta.")
     if prior is not None:
         opening += f" Desde el aviso cuando estaba en {format_price(prior, event.currency)}, "
     else:
@@ -565,7 +680,8 @@ def event_message(event: PriceDropEvent, *, last_notice: dict[str, Any] | None =
         greeting + " 😊\n\n" + opening + changes + ". "
         f"La última rebaja fue de {format_price(event.old_price, event.currency)} a "
         f"{format_price(event.new_price, event.currency)}, es decir, {reduction}. "
-        f"El precio publicado hoy es {format_price(event.current_price, event.currency)}.\n\n"
+        f"El {'arriendo mensual' if event.operation == 'Arriendo' else 'precio de venta'} "
+        f"publicado hoy es {format_price(event.current_price, event.currency)}.\n\n"
         f"Publicación: {event.listing_url}\n\n"
         f"{MESSAGE_VARIANTS[variant_id]['question']} "
         "Si prefieres no recibir más avisos, dínoslo."

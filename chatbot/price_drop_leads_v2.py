@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
 from pymongo import ReturnDocument
@@ -579,6 +580,8 @@ def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
             or not str(campaign.get("approved_by") or "").strip()
             or not isinstance(campaign.get("approved_at"), datetime)):
         return "REAL_SEND_CONTACT_BASIS_OR_APPROVAL_MISSING"
+    if str(campaign.get("operation") or "venta").strip().lower() not in {"venta", "arriendo"}:
+        return "REAL_SEND_OPERATION_INVALID"
     authorization_blocker = whatsapp_contact_authorization_blocker(lead, campaign)
     if authorization_blocker:
         return authorization_blocker
@@ -621,43 +624,108 @@ def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
     return None
 
 
-def _property_price(db, code: str, old: int, new: int,
-                    *, currency: str = "UF") -> datetime:
-    if currency not in {"UF", "CLP"}:
-        raise PilotBlocked("unsupported_campaign_currency")
+def _property_price(db, code: str, old: int | float, new: int | float,
+                    *, currency: str = "UF", operation: str = "venta") -> datetime:
+    """Verify exactly one historical reduction in the same listing operation.
+
+    For rental UF, fractional prices are allowed. Sale logic and the frozen
+    three-recipient pilot retain their original currency and price checks.
+    """
+    if currency not in {"UF", "CLP"} or operation not in {"venta", "arriendo"}:
+        raise PilotBlocked("unsupported_campaign_currency_or_operation")
     prop = db["universo_cartera_prop360"].find_one(
         {"codigo": code},
         {"codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
-         "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1,
-         "tipo_operacion.precio_venta.precio_publicado": 1,
-         "tipo_operacion.precio_venta.moneda_publicada": 1},
+         "tipo_operacion": 1, "historial_cambios": 1},
     ) or {}
-    sale = prop.get("tipo_operacion") or {}
-    pricing = sale.get("precio_venta") or {}
-    current = (pricing.get("precio_uf") if currency == "UF"
+    operations = prop.get("tipo_operacion") or {}
+    pricing = operations.get(
+        "precio_arriendo" if operation == "arriendo" else "precio_venta"
+    ) or {}
+    current_currency = str(
+        pricing.get("moneda_publicada") or pricing.get("moneda_publicacion") or ""
+    ).upper()
+    current = (pricing.get("precio_uf") if operation == "venta" and currency == "UF"
                else pricing.get("precio_publicado"))
-    current_currency = str(pricing.get("moneda_publicada") or "")
-    if not (prop.get("disponible_prop360") is True
-            and (prop.get("estado") or {}).get("oficina") == "PROCASA SUCRE"
-            and sale.get("venta") is True
-            and (currency == "UF" or current_currency == "CLP")
-            and isinstance(old, int) and isinstance(new, int)
-            and current == new and old > new > 0):
-        raise PilotBlocked("property_price_or_availability_changed")
-    change = db["universo_cartera_prop360_historial"].find_one(
-        {"codigo": code, "campo": "precio_publicado",
-         "moneda_anterior": currency, "moneda_nueva": currency,
-         "monto_anterior": old, "monto_nuevo": new},
-        {"fecha": 1},
-        sort=[("fecha", -1)],
-    )
-    if not change:
-        raise PilotBlocked("audited_price_change_missing")
     try:
-        when = datetime.fromisoformat(str(change["fecha"]).replace("Z", "+00:00"))
-    except (ValueError, KeyError, TypeError) as exc:
-        raise PilotBlocked("audited_price_date_invalid") from exc
-    return utc(when)
+        old_decimal, new_decimal = Decimal(str(old)), Decimal(str(new))
+        current_decimal = Decimal(str(current))
+        valid_prices = (old_decimal.is_finite() and new_decimal.is_finite()
+                        and current_decimal.is_finite()
+                        and old_decimal > new_decimal > 0
+                        and current_decimal == new_decimal)
+    except (TypeError, ValueError, InvalidOperation):
+        valid_prices = False
+    if (not valid_prices or isinstance(old, bool) or isinstance(new, bool)
+            or (operation == "venta"
+                and (type(old) is not int or type(new) is not int))
+            or (currency == "CLP"
+                and (type(old) is not int or type(new) is not int))
+            or prop.get("disponible_prop360") is not True
+            or (prop.get("estado") or {}).get("oficina") != "PROCASA SUCRE"
+            or operations.get(operation) is not True
+            or (operation == "arriendo" or currency == "CLP")
+            and current_currency != currency):
+        raise PilotBlocked("property_price_or_availability_changed")
+
+    # For rental, prefer original operation-relevant per-property evidence.
+    # Generic central rows do not always identify a sale vs rental change;
+    # only rental-only properties can use an unlabelled central row.
+    if operation == "venta" or operations.get("venta") is not True:
+        change = db["universo_cartera_prop360_historial"].find_one(
+            {"codigo": code, "campo": "precio_publicado",
+             "moneda_anterior": currency, "moneda_nueva": currency,
+             "monto_anterior": old, "monto_nuevo": new},
+            {"fecha": 1, "operacion": 1},
+            sort=[("fecha", -1)],
+        )
+        if change and (operation == "venta"
+                       or str(change.get("operacion") or "").lower()
+                       in {"", "arriendo"}):
+            try:
+                when = datetime.fromisoformat(str(change["fecha"]).replace("Z", "+00:00"))
+            except (ValueError, KeyError, TypeError) as exc:
+                raise PilotBlocked("audited_price_date_invalid") from exc
+            return utc(when)
+
+    expected_field = "precio_uf" if currency == "UF" else "precio_clp"
+    verified = []
+    for row in prop.get("historial_cambios") or []:
+        if not isinstance(row, dict) or row.get("campo") != expected_field:
+            continue
+        try:
+            prior = Decimal(str(row.get("valor_anterior")))
+            reduced = Decimal(str(row.get("valor_nuevo")))
+        except (TypeError, ValueError, InvalidOperation):
+            continue
+        if not (prior.is_finite() and reduced.is_finite()
+                and prior == old_decimal and reduced == new_decimal):
+            continue
+        try:
+            stamp = datetime.fromisoformat(
+                str(row.get("fecha") or "").replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if stamp.tzinfo is None or stamp.utcoffset() is None:
+            continue
+        stamp = utc(stamp)
+        if stamp > datetime.now(timezone.utc):
+            continue
+        verified.append(stamp)
+    if not verified:
+        raise PilotBlocked("audited_price_change_missing")
+    return max(verified)
+
+def _verified_campaign_price(db, code: str, old: int | float,
+                             new: int | float, *, currency: str = "UF",
+                             operation: str = "venta") -> datetime:
+    """Keep existing sale call semantics for QA and frozen pilot listeners."""
+    if operation == "arriendo":
+        return _property_price(db, code, old, new, currency=currency,
+                               operation="arriendo")
+    if currency == "CLP":
+        return _property_price(db, code, old, new, currency="CLP")
+    return _property_price(db, code, old, new)
 
 
 def _verified_listing_ids(db, code: str) -> set[str]:
@@ -893,6 +961,7 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
                 test_mode: bool, contact_basis_reviewed: bool = False,
                 contact_basis_type: str = "",
                 contact_basis: str = "", currency: str = "UF",
+                operation: str = "venta",
                 old_price_clp: int | None = None,
                 new_price_clp: int | None = None,
                 event_id: str | None = None,
@@ -909,10 +978,14 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
     """Read-only preflight. Tests use an explicit existing canonical lead."""
     if not VALID_ID.fullmatch(campaign_id) or not VALID_CODE.fullmatch(property_code):
         raise PilotBlocked("invalid_id_or_property")
-    if currency not in {"UF", "CLP"}:
-        raise PilotBlocked("unsupported_campaign_currency")
+    if currency not in {"UF", "CLP"} or operation not in {"venta", "arriendo"}:
+        raise PilotBlocked("unsupported_campaign_currency_or_operation")
     if currency == "UF":
-        if type(old_price_uf) is not int or type(new_price_uf) is not int:
+        if operation == "arriendo":
+            if (type(old_price_uf) not in {int, float}
+                    or type(new_price_uf) not in {int, float}):
+                raise PilotBlocked("invalid_rental_uf_price")
+        elif type(old_price_uf) is not int or type(new_price_uf) is not int:
             raise PilotBlocked("integer_uf_required")
         old_value, new_value = old_price_uf, new_price_uf
     else:
@@ -988,8 +1061,9 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
             raise PilotBlocked("ambiguous_lead_identity")
         if not is_open_campaign_eligible(lead):
             raise PilotBlocked("lead_closed_pipeline_stage")
-    drop_at = _property_price(
+    drop_at = _verified_campaign_price(
         db, property_code, old_value, new_value, currency=currency,
+        operation=operation,
     )
     inquiry_evidence = None
     if not test_mode:
@@ -1030,6 +1104,8 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         for c in same_property
     ):
         raise PilotBlocked("active_campaign_for_property")
+    if operation == "arriendo" and outbound_message_override is None:
+        raise PilotBlocked("rental_message_must_identify_arriendo")
     message = (
         str(outbound_message_override).strip()
         if outbound_message_override is not None
@@ -1049,17 +1125,24 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
             raise PilotBlocked("price_history_step_invalid")
         try:
             step_currency = str(step.get("currency") or "").upper()
-            step_old, step_new = int(step["old_price"]), int(step["new_price"])
+            step_old = Decimal(str(step["old_price"]))
+            step_new = Decimal(str(step["new_price"]))
             step_id = str(step["event_id"])
             step_at = str(step["dropped_at"])
-            if (step_currency not in {"UF", "CLP"} or not step_old > step_new > 0
-                    or not step_id or not step_at):
+            if (step_currency not in {"UF", "CLP"}
+                    or not step_old.is_finite() or not step_new.is_finite()
+                    or not step_old > step_new > 0 or not step_id or not step_at
+                    or step_currency == "CLP"
+                    and (step_old != step_old.to_integral_value()
+                         or step_new != step_new.to_integral_value())):
                 raise ValueError
         except (KeyError, TypeError, ValueError) as exc:
             raise PilotBlocked("price_history_step_invalid") from exc
         clean_history.append({
             "event_id": step_id[:100], "dropped_at": step_at[:40],
-            "currency": step_currency, "old_price": step_old, "new_price": step_new,
+            "currency": step_currency,
+            "old_price": int(step_old) if step_old == step_old.to_integral_value() else float(step_old),
+            "new_price": int(step_new) if step_new == step_new.to_integral_value() else float(step_new),
         })
     reusable_contact_authorization = (
         None if test_mode else reusable_whatsapp_contact_authorization(
@@ -1071,7 +1154,7 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
         "campaign_id": campaign_id, "property_code": property_code,
         "old_price_uf": old_price_uf, "new_price_uf": new_price_uf,
         "old_price_clp": old_price_clp, "new_price_clp": new_price_clp,
-        "currency": currency, "price_drop_at": drop_at,
+        "currency": currency, "operation": operation, "price_drop_at": drop_at,
         "test_mode": bool(test_mode),
         "qa_reauthorization_id": (qa_reauthorization or {}).get("authorization_id"),
         "contact_basis_reviewed": bool(contact_basis_reviewed) if not test_mode else False,
@@ -1106,7 +1189,7 @@ def prepare_one(db, *, now=None, **data) -> dict:
     p = preview_one(db, now=stamp, **data)
     row = {k: p[k] for k in (
         "campaign_id", "property_code", "old_price_uf", "new_price_uf",
-        "old_price_clp", "new_price_clp", "currency",
+        "old_price_clp", "new_price_clp", "currency", "operation",
         "price_drop_at", "test_mode", "contact_basis_reviewed",
         "contact_basis_type", "contact_basis",
         "simulated_prior_inquiry", "phone_normalized", "qa_session_started_at",
@@ -1411,10 +1494,8 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     currency = c.get("currency") or "UF"
     old = c.get("old_price_clp") if currency == "CLP" else c.get("old_price_uf")
     new = c.get("new_price_clp") if currency == "CLP" else c.get("new_price_uf")
-    if currency == "CLP":
-        _property_price(db, c["property_code"], old, new, currency="CLP")
-    else:
-        _property_price(db, c["property_code"], old, new)
+    _verified_campaign_price(db, c["property_code"], old, new, currency=currency,
+                             operation=str(c.get("operation") or "venta").lower())
     campaign_index = next((i for i, row in enumerate(all_campaigns)
                            if row.get("campaign_id") == campaign_id), None)
     if campaign_index is None:
@@ -1636,10 +1717,8 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
     old = campaign.get("old_price_clp") if currency == "CLP" else campaign.get("old_price_uf")
     new = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
     try:
-        if currency == "CLP":
-            _property_price(db, code, old, new, currency="CLP")
-        else:
-            _property_price(db, code, old, new)
+        _verified_campaign_price(db, code, old, new, currency=currency,
+                                 operation=str(campaign.get("operation") or "venta").lower())
     except PilotBlocked:
         return None
     return {

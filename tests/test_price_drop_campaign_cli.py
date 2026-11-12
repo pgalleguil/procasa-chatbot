@@ -223,6 +223,118 @@ def test_exact_prior_inquiry_pilot_preflight_never_grants_general_marketing_perm
         ) == "WHATSAPP_CONTACT_AUTHORIZATION_INVALID_OR_REVOKED"
 
 
+def _rental_property(db, *, code, currency, current, old, at=DROP):
+    pricing = {"moneda_publicada": currency, "precio_publicado": current}
+    pricing["precio_uf" if currency == "UF" else "precio_clp"] = current
+    db["universo_cartera_prop360"].insert_one({
+        "codigo": code, "disponible_prop360": True,
+        "estado": {"oficina": "PROCASA SUCRE"},
+        "ubicacion": {"comuna": "Maipú"},
+        "tipo_operacion": {
+            "venta": False, "arriendo": True, "tipo": "Local Comercial",
+            "precio_arriendo": pricing,
+        },
+        "historial_cambios": [{
+            "campo": "precio_uf" if currency == "UF" else "precio_clp",
+            "valor_anterior": old, "valor_nuevo": current, "fecha": at.isoformat(),
+        }],
+        "publicaciones": {"procasa": {"publicaciones": {"arriendo": {
+            "publicada": True, "estado": "ACTIVA", "operacion": "Arriendo",
+            "url": f"https://www.procasa.cl/{code}",
+        }}}},
+    })
+
+
+def test_both_sales_and_rentals_discovered_and_filters_are_separate():
+    db = _event_db()
+    _rental_property(db, code="17252", currency="CLP",
+                     current=400000, old=435000)
+    _rental_property(db, code="16544", currency="UF",
+                     current=36.5, old=50)
+    events = discover_price_drops(db, now=NOW)
+    assert {(item.property_code, item.operation) for item in events} == {
+        ("6436", "Venta"), ("17252", "Arriendo"), ("16544", "Arriendo"),
+    }
+    assert len(discover_price_drops(db, now=NOW, operation="venta")) == 1
+    assert len(discover_price_drops(db, now=NOW, operation="arriendo")) == 2
+    rental_uf = next(item for item in events if item.property_code == "16544")
+    assert rental_uf.old_price == 50 and rental_uf.new_price == 36.5
+    assert rental_uf.event_id.endswith("_arriendo")
+    assert "arriendo mensual" in cli.event_message(rental_uf).lower()
+    assert v2._property_price(db, "16544", 50, 36.5,
+                              currency="UF", operation="arriendo") == DROP
+
+
+def test_rental_price_is_not_verified_as_sale_price():
+    db = _event_db()
+    _rental_property(db, code="17252", currency="CLP",
+                     current=400000, old=435000)
+    with pytest.raises(v2.PilotBlocked):
+        v2._property_price(db, "17252", 435000, 400000, currency="CLP")
+    assert v2._property_price(db, "17252", 435000, 400000,
+                              currency="CLP", operation="arriendo") == DROP
+    assert len(discover_price_drops(db, now=NOW, operation="venta")) == 1
+    assert len(discover_price_drops(db, now=NOW, operation="arriendo")) == 1
+
+
+def test_rental_publication_verifier_uses_rental_heading_not_sale():
+    db = _db()
+    _rental_property(db, code="17252", currency="CLP",
+                     current=400000, old=435000)
+    html = "<html><body><h1>Arriendo - Departamento - $400.000</h1></body></html>"
+
+    class Reply:
+        status_code = 200
+        headers = {}
+        content = html.encode("utf-8")
+        def close(self):
+            pass
+
+    def get(_url, **_kwargs):
+        return Reply()
+
+    result = verify_current_listing(
+        db, property_code="17252", currency="CLP", expected_price=400000,
+        operation="arriendo", now=NOW, http_get=get,
+    )
+    assert result.sendable is True and result.status == "price_verified"
+    assert not verify_current_listing(
+        db, property_code="17252", currency="CLP", expected_price=400000,
+        now=NOW, http_get=get,
+    ).sendable
+
+
+def test_rental_preparation_stores_operation_and_requires_exact_permission():
+    db = _event_db()
+    _rental_property(db, code="17252", currency="CLP",
+                     current=400000, old=435000)
+    lead_id = _candidate(
+        db, phone="+56983219890", temperature="NORMAL",
+        content="Quiero arrendar la propiedad código 17252",
+    )
+    event = next(event for event in discover_price_drops(db, now=NOW)
+                 if event.operation == "Arriendo")
+    candidate = next(row for row in find_candidates_for_event(
+        db, event, now=NOW, lead_max_age_days=None) if row["eligible"])
+    assert candidate["lead_id"] == str(lead_id)
+    preview = v2.preview_one(
+        db, now=NOW, lead_id=str(lead_id), phone="+56983219890",
+        campaign_id=event.campaign_id, property_code="17252",
+        old_price_uf=None, new_price_uf=None, old_price_clp=435000,
+        new_price_clp=400000, operation="arriendo", currency="CLP",
+        test_mode=False, contact_basis_reviewed=True,
+        contact_basis_type=v2.DIRECT_RESPONSE_BASIS_TYPE,
+        contact_basis="Consulta entrante documentada de arriendo",
+        outbound_message_override=cli.event_message(event),
+    )
+    assert preview["operation"] == "arriendo"
+    assert "arriendo" in preview["message"].lower()
+    assert v2.whatsapp_contact_authorization_blocker(
+        db["leads"].find_one({"_id":lead_id}),
+        {"operation":"arriendo","status":"APPROVED","campaign_id":event.campaign_id},
+    ) == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
+
+
 def test_pilot_cli_selects_exact_three_persisted_rows(monkeypatch, capsys):
     db = _db()
     approved_rows = _insert_pilot_rows(db)

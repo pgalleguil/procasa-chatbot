@@ -193,11 +193,27 @@ def _find_cycle_for_message(db: Any, phone: str, executive_user_id: str,
         {"phone": {"$in": variants}},
         {"contact_phone": {"$in": variants}},
         {"contact_phone_normalized": {"$in": variants}},
+        {"lifecycle.contact_phone": {"$in": variants}},
+        {"lifecycle.contact_phone_normalized": {"$in": variants}},
         {"prospecto.phone": {"$in": variants}},
     ]
-    leads = list(db["leads"].find({"$or": or_filter}, {"_id": 1}))
+    # A duplicate phone in any lead remains ambiguous, even if the other
+    # record is synthetic or inactive. Never guess the owner of a private chat.
+    leads = list(db["leads"].find({"$or": or_filter}, {
+        "_id": 1, "phone_is_synthetic": 1,
+        "contact_identity_incomplete": 1,
+        "lifecycle.phone_is_synthetic": 1,
+        "lifecycle.contact_identity_incomplete": 1,
+    }))
     if not leads:
         return None, None, "lead_not_found"
+    if len(leads) == 1 and (
+        leads[0].get("phone_is_synthetic") is True
+        or leads[0].get("contact_identity_incomplete") is True
+        or (leads[0].get("lifecycle") or {}).get("phone_is_synthetic") is True
+        or (leads[0].get("lifecycle") or {}).get("contact_identity_incomplete") is True
+    ):
+        return None, None, "unverified_lead_phone_identity"
     # Con dos fichas para el mismo teléfono NO elegimos una por aproximación.
     if len(leads) != 1:
         return None, None, "ambiguous_phone_lead_identity"

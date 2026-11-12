@@ -44,6 +44,10 @@ def test_no_override_of_global_opt_out_and_contact_block():
         {"messages": [{"role": "user", "content": "No me escriban más"}]},
         {"conversation_status": "STOPPED_BY_CLIENT",
          "conversation_status_reason": "explicit_stop_request"},
+        {"conversation_status": "STOPPED_BY_CLIENT",
+         "conversation_status_reason": "already_found_property"},
+        {"conversation_status": "BLOCKED_EXTERNAL_BROKER",
+         "conversation_status_reason": "already_found_property"},
         {"price_drop_v2": {"campaigns": [{"status": "OPTED_OUT"}]}},
     ):
         lead = {**completed_search_lead(), **reason}

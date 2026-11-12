@@ -335,6 +335,115 @@ def test_rental_preparation_stores_operation_and_requires_exact_permission():
     ) == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
 
 
+def _three_false_superseded_pilot_rows():
+    db = _db()
+    actual = datetime(2026, 10, 14, 11, 52, 43, 405868, tzinfo=timezone.utc)
+    stored = actual.replace(microsecond=405000)
+    for index, (code, (currency, old, new)) in enumerate(
+            cli.PILOT_PRICE_WINDOWS.items(), 1):
+        _seed_property(db, code=code, currency=currency, current=new)
+        _history(db, code, actual, old, new, currency)
+        event = discover_price_drops(db, now=NOW, property_code=code)[0]
+        db["leads"].insert_one({
+            "_id": ObjectId(),
+            "phone": f"+569832198{index:02d}",
+            "contact_phone_normalized": f"+569832198{index:02d}",
+            "lead_temperature_effective": "NORMAL",
+            "pipeline_stage": "CONTACTED", "stage": "CONTACTED",
+            "messages": [],
+            "price_drop_v2": {"campaigns": [{
+                "campaign_id": cli.PILOT_CAMPAIGN_ID,
+                "event_id": cli.PILOT_CAMPAIGN_ID,
+                "property_code": code, "operation": "venta",
+                "status": "SUPERSEDED", "test_mode": False,
+                "currency": currency,
+                "old_price_clp": old if currency == "CLP" else None,
+                "new_price_clp": new if currency == "CLP" else None,
+                "old_price_uf": old if currency == "UF" else None,
+                "new_price_uf": new if currency == "UF" else None,
+                "price_drop_at": stored,
+                "outbound_message": f"Aviso https://www.procasa.cl/propiedad/{code}",
+                "contact_basis_reviewed": True,
+                "contact_basis_type": v2.DIRECT_RESPONSE_BASIS_TYPE,
+                "contact_basis": "Consulta histórica revisada",
+                "approved_by": "Operador",
+                "approved_at": NOW - timedelta(days=1),
+                "superseded_reason": "newer_property_price_drop",
+                "superseded_at": NOW,
+                "superseded_by_event_id": event.event_id,
+            }]},
+        })
+    return db
+
+
+def test_restore_exact_three_false_superseded_pilot_approvals_no_sends(monkeypatch):
+    db = _three_false_superseded_pilot_rows()
+    monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
+    monkeypatch.delenv("RENDER", raising=False)
+    backups, checks = [], []
+    def validate_publication(_db, *, property_code, currency, expected_price,
+                             expected_url, now):
+        checks.append((property_code, currency, expected_price))
+        return PublicationCheck(
+            "price_verified", True, property_code, expected_url,
+            200, expected_price, currency, expected_price, currency,
+        )
+    result = cli.restore_false_superseded_pilot(
+        db, now=NOW, publication_verifier=validate_publication,
+        backup_fn=lambda database, ids: backups.append(list(ids))
+        or "safe-pilot-backup.json",
+    )
+    assert result["status"] == "RESTORED_APPROVALS"
+    assert result["restored_count"] == 3 and result["attempts"] == 0
+    assert len(backups) == 1 and len(backups[0]) == 3
+    assert len(checks) == 3
+    rows = cli._validated_pilot_rows(db)
+    assert all(x["campaign"]["status"] == "APPROVED" for x in rows)
+    assert all(x["campaign"]["supersession_recovery_reason"]
+               == "FALSE_SUPERSESSION_SAME_PRICE_BSON_TIMESTAMP_PRECISION"
+               for x in rows)
+    assert all("superseded_at" not in x["campaign"] for x in rows)
+    assert all(not x["campaign"].get("attempted_at") for x in rows)
+    assert all(not x["campaign"].get("provider_message_id") for x in rows)
+    # Running the restoration twice is safe and never attempts a send.
+    again = cli.restore_false_superseded_pilot(
+        db, now=NOW, publication_verifier=validate_publication,
+        backup_fn=lambda *_args: pytest.fail("no backup on an idempotent rerun"),
+    )
+    assert again["status"] == "ALREADY_APPROVED"
+    assert again["restored_count"] == 0
+
+
+def test_restore_pilot_aborts_without_writes_on_invalid_timestamp_or_publication(
+        monkeypatch):
+    db = _three_false_superseded_pilot_rows()
+    monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
+    monkeypatch.delenv("RENDER", raising=False)
+    db["leads"].update_one({"price_drop_v2.campaigns.property_code": "6436"},
+                           {"$set": {"price_drop_v2.campaigns.0.price_drop_at":
+                                     NOW - timedelta(days=9)}})
+    before = list(db["leads"].find())
+    with pytest.raises(cli.CliError, match="submillisecond_false_positive"):
+        cli.restore_false_superseded_pilot(
+            db, now=NOW,
+            publication_verifier=lambda *_args, **_kwargs: pytest.fail(
+                "no publication check for mismatched timestamp"),
+            backup_fn=lambda *_args: pytest.fail("no backup"),
+        )
+    assert list(db["leads"].find()) == before
+
+    db = _three_false_superseded_pilot_rows()
+    before = list(db["leads"].find())
+    with pytest.raises(cli.CliError, match="not_live_verified"):
+        cli.restore_false_superseded_pilot(
+            db, now=NOW,
+            publication_verifier=lambda _db, **kw: PublicationCheck(
+                "inventory_public_inconsistent", False, kw["property_code"]),
+            backup_fn=lambda *_args: pytest.fail("no backup"),
+        )
+    assert list(db["leads"].find()) == before
+
+
 def test_pilot_cli_selects_exact_three_persisted_rows(monkeypatch, capsys):
     db = _db()
     approved_rows = _insert_pilot_rows(db)

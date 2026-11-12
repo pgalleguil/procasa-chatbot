@@ -586,6 +586,126 @@ def _backup_leads(db: Any, ids: list[Any]) -> Path:
     return path
 
 
+def restore_false_superseded_pilot(
+    db: Any, *, now: datetime | None = None,
+    publication_verifier: Callable[..., Any] = verify_current_listing,
+    backup_fn: Callable[..., Path] | None = None,
+) -> dict[str, Any]:
+    """Restore ONLY three original manual approvals canceled by timestamp truncation.
+
+    Never send messages, create consent, expand recipients, or overwrite the
+    pre-existing approval. The original event/prices and current public
+    listings must match before a single mutation is attempted.
+    """
+    if _truthy(os.getenv("RENDER")) or bool(os.getenv("RENDER_SERVICE_ID")):
+        raise CliError("pilot_restore_requires_authorized_local_operator")
+    stamp = now or datetime.now(timezone.utc)
+    rows = _validated_pilot_rows(db)
+    planned = []
+    for entry in rows:
+        lead, campaign = entry["lead"], entry["campaign"]
+        code = str(campaign["property_code"])
+        status = str(campaign.get("status") or "")
+        if status not in {"SUPERSEDED", "APPROVED"}:
+            raise CliError("pilot_restore_requires_only_unsent_approved_or_false_superseded")
+        if (campaign.get("attempted_at") is not None
+                or campaign.get("sent_at") is not None
+                or campaign.get("provider_message_id")
+                or campaign.get("provider_status")):
+            raise CliError("pilot_restore_disallowed_after_any_provider_attempt")
+        if (not isinstance(campaign.get("approved_at"), datetime)
+                or not str(campaign.get("approved_by") or "").strip()
+                or campaign.get("test_mode") is not False
+                or campaign.get("contact_basis_reviewed") is not True
+                or campaign.get("contact_basis_type") != v2.DIRECT_RESPONSE_BASIS_TYPE
+                or not str(campaign.get("contact_basis") or "").strip()):
+            raise CliError("pilot_original_human_approval_or_inquiry_missing")
+        if v2.lead_must_not_be_contacted(lead) or not v2.is_open_campaign_eligible(lead):
+            raise CliError("pilot_lead_opted_out_or_closed")
+        currency, old, new = PILOT_PRICE_WINDOWS[code]
+        expected = _expected_publication_from_campaign(campaign)
+        if expected["currency"] != currency or expected["price"] != new:
+            raise CliError("pilot_expected_price_changed")
+        possible_events = _events(db, property_code=code, operation="venta")
+        current = next((
+            event for event in possible_events
+            if event.currency == currency and event.old_price == old
+            and event.new_price == new
+        ), None)
+        if current is None:
+            raise CliError("pilot_original_price_window_no_longer_current")
+        if status == "SUPERSEDED":
+            if (campaign.get("superseded_reason") != "newer_property_price_drop"
+                    or campaign.get("superseded_by_event_id") != current.event_id):
+                raise CliError("pilot_supersession_reason_not_exact_known_incident")
+            raw = campaign.get("price_drop_at")
+            original_at = (v2.utc(raw) if isinstance(raw, datetime)
+                           else parse_aware_datetime(raw))
+            if (original_at is None
+                    or abs(current.dropped_at - original_at) >
+                    timedelta(milliseconds=1)):
+                raise CliError("pilot_supersession_not_submillisecond_false_positive")
+        publication = _publication_result_dict(_publication_for_operation(
+            publication_verifier, db, operation="venta",
+            property_code=code, currency=currency, expected_price=new,
+            expected_url=expected["url"], now=stamp,
+        ))
+        if (publication.get("status") != "price_verified"
+                or publication.get("sendable") is not True):
+            raise CliError("pilot_publication_price_not_live_verified")
+        if status == "SUPERSEDED":
+            planned.append(entry)
+    if not planned:
+        return {"status": "ALREADY_APPROVED", "restored_count": 0,
+                "pilot_recipients": 3, "attempts": 0}
+
+    backup = (backup_fn or _backup_leads)(
+        db, [entry["lead"]["_id"] for entry in rows],
+    )
+    restored = []
+    for entry in planned:
+        lead, campaign = entry["lead"], entry["campaign"]
+        code = str(campaign["property_code"])
+        all_campaigns = (lead.get("price_drop_v2") or {}).get("campaigns") or []
+        indices = [index for index, row in enumerate(all_campaigns)
+                   if row.get("campaign_id") == PILOT_CAMPAIGN_ID]
+        if len(indices) != 1:
+            raise CliError("pilot_campaign_row_not_unique")
+        path = f"price_drop_v2.campaigns.{indices[0]}"
+        update = db[LEADS_COLLECTION].update_one({
+            "_id": lead["_id"],
+            f"{path}.campaign_id": PILOT_CAMPAIGN_ID,
+            f"{path}.property_code": code,
+            f"{path}.status": "SUPERSEDED",
+            f"{path}.superseded_by_event_id": campaign["superseded_by_event_id"],
+            f"{path}.attempted_at": None,
+            f"{path}.sent_at": None,
+            f"{path}.provider_message_id": None,
+        }, {
+            "$set": {
+                f"{path}.status": "APPROVED",
+                f"{path}.supersession_recovered_at": stamp,
+                f"{path}.supersession_recovery_reason":
+                    "FALSE_SUPERSESSION_SAME_PRICE_BSON_TIMESTAMP_PRECISION",
+            },
+            "$unset": {
+                f"{path}.superseded_at": "",
+                f"{path}.superseded_by_event_id": "",
+                f"{path}.superseded_reason": "",
+            },
+        })
+        if update.modified_count != 1:
+            raise CliError(
+                "pilot_restore_concurrent_change_review_status_before_retry")
+        restored.append(code)
+    return {
+        "status": "RESTORED_APPROVALS", "restored_count": len(restored),
+        "property_codes": sorted(restored), "pilot_recipients": 3,
+        "attempts": 0, "backup": str(backup),
+        "next_step": "Run --pilot --status then --pilot --execute",
+    }
+
+
 def _verify_current_links(db: Any, expected: dict[str, dict[str, Any]],
                           now: datetime) -> dict[str, dict[str, Any]]:
     checks = {}
@@ -2357,7 +2477,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     actions = parser.add_mutually_exclusive_group()
     for flag in ("discover", "dry-run", "audience-audit", "provider-audit", "interactive", "execute", "resume", "prepare", "approve",
-                 "review-whatsapp-contact", "report", "summary"):
+                 "review-whatsapp-contact", "restore-false-pilot-supersession", "report", "summary"):
         actions.add_argument("--" + flag, dest="action", action="store_const", const=flag)
     parser.add_argument("--status", action="store_true", help="consulta estado sin escritura")
     parser.add_argument("--pilot", action="store_true", help="restringe al piloto aprobado de tres propiedades")
@@ -2411,8 +2531,13 @@ def _validate_cli(args: argparse.Namespace) -> datetime | None:
         raise CliError("status_cannot_be_combined_with_another_action")
     if not args.status and not args.action:
         raise CliError("choose_an_action_or_status")
-    if args.pilot and args.action not in {"execute", "resume", "review-whatsapp-contact", None} and not args.status:
+    if args.pilot and args.action not in {"execute", "resume", "review-whatsapp-contact", "restore-false-pilot-supersession", None} and not args.status:
         raise CliError("pilot_only_supports_status_execute_or_resume")
+    if args.action == "restore-false-pilot-supersession":
+        if not args.pilot or args.confirm_action != "RESTAURAR 3":
+            raise CliError("pilot_restore_requires_pilot_and_RESTAURAR_3")
+        if args.lead_id or args.property_code or args.campaign_id:
+            raise CliError("pilot_restore_fixed_exact_three_rows_only")
     if args.pilot and (args.temperature is not None or args.lead_max_age_days is not None):
         raise CliError("new_filters_are_separate_from_the_approved_three_recipient_pilot")
     if args.period_days is not None:
@@ -2485,6 +2610,10 @@ def main(argv: list[str] | None = None) -> int:
                 lead_max_age_days=(args.lead_max_age_days if args.lead_max_age_days is not None
                                    else DEFAULT_LEAD_MAX_AGE_DAYS),
             )
+            return 0
+        if args.action == "restore-false-pilot-supersession":
+            result = restore_false_superseded_pilot(db)
+            print(json.dumps(result, ensure_ascii=False, default=str))
             return 0
         if args.action == "provider-audit":
             # GET-only account verification. Never send, prepare or approve.

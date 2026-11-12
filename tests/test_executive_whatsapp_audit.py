@@ -34,7 +34,9 @@ class FakeCollection:
                     variants.update(value.get("$in", []))
             return [deepcopy(doc) for doc in self.db.leads
                     if doc.get("phone") in variants or
-                    doc.get("contact_phone_normalized") in variants]
+                    doc.get("contact_phone_normalized") in variants or
+                    (doc.get("lifecycle") or {}).get("contact_phone") in variants or
+                    (doc.get("lifecycle") or {}).get("contact_phone_normalized") in variants]
         if self.name == "crm_assignment_cycles":
             ids = set(selector["lead_id"]["$in"])
             return [deepcopy(row) for row in self.db.cycles if row["lead_id"] in ids]
@@ -329,3 +331,18 @@ class TestExecutiveWhatsAppAudit(TestCase):
         )
         self.assertEqual(result["results"], {"unverified_original_timestamp": 1})
         self.assertNotIn("executive_whatsapp_messages", db.leads[0])
+
+    def test_matches_real_lifecycle_contact_phone_without_top_level_phone(self):
+        db = FakeDB()
+        del db.leads[0]["phone"]
+        db.leads[0]["lifecycle"] = {"contact_phone_normalized": PHONE}
+        result = ingest(db, event(), commit=True)
+        self.assertEqual(result["results"], {"saved": 1})
+
+    def test_rejects_synthetic_or_incomplete_phone_identity(self):
+        for flag in ("phone_is_synthetic", "contact_identity_incomplete"):
+            db = FakeDB()
+            db.leads[0]["lifecycle"] = {flag: True}
+            result = ingest(db, event(), commit=True)
+            self.assertEqual(result["results"], {"unverified_lead_phone_identity": 1})
+            self.assertNotIn("executive_whatsapp_messages", db.leads[0])

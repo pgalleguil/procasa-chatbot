@@ -262,6 +262,11 @@ def _history_steps(db: Any, event: PriceDropEvent,
     if isinstance(since, datetime) and since.tzinfo is None:
         since = since.replace(tzinfo=timezone.utc)
     since_utc = parse_aware_datetime(since) if since is not None else None
+    if event.operation == "Arriendo":
+        # Do not mix sale history into rental messages. The current, verified
+        # rental price window is the only step until operations are recorded
+        # explicitly in the shared history feed.
+        return [event]
     rows = db[HISTORY_COLLECTION].find(
         {"codigo": event.property_code, "campo": "precio_publicado"},
         {"_id": 1, "codigo": 1, "fecha": 1, "moneda_anterior": 1,
@@ -301,7 +306,7 @@ def _display(event: PriceDropEvent, interested: int | None = None) -> str:
     from chatbot.price_drop_campaign_discovery import format_price
     tail = "" if interested is None else f" | leads elegibles: {interested}"
     local = event.dropped_at.astimezone(CHILE_TZ)
-    return (f"{event.property_code} | {event.property_type} | {event.comuna} | "
+    return (f"{event.property_code} | {event.operation} | {event.property_type} | {event.comuna} | "
             f"{format_price(event.old_price,event.currency)} → "
             f"{format_price(event.new_price,event.currency)} (-{event.percent_reduction:.2f}%) | "
             f"{local:%d/%m/%Y %H:%M %Z}{tail}")
@@ -336,6 +341,8 @@ def audit_full_portfolio(
     totals = {
         "events_found": len(events),
         "property_codes": 0,
+        "venta_events": 0,
+        "arriendo_events": 0,
         "candidate_event_matches": 0,
         "verified_inquiries_before_drop": 0,
         "eligible_event_matches": 0,
@@ -375,6 +382,7 @@ def audit_full_portfolio(
         rows_by_event.append({
             "event_id": event.event_id,
             "property_code": event.property_code,
+            "operation": event.operation,
             "comuna": event.comuna,
             "currency": event.currency,
             "old_price": event.old_price,
@@ -385,6 +393,8 @@ def audit_full_portfolio(
             "excluded_or_review_needed": len(candidates) - count,
         })
     totals["property_codes"] = len(properties)
+    totals["venta_events"] = sum(event.operation == "Venta" for event in events)
+    totals["arriendo_events"] = sum(event.operation == "Arriendo" for event in events)
     totals["unique_eligible_leads"] = len(unique_eligible_leads)
 
     # Count reusable WhatsApp authorizations against the exact eligible
@@ -580,11 +590,13 @@ def _verify_current_links(db: Any, expected: dict[str, dict[str, Any]],
                           now: datetime) -> dict[str, dict[str, Any]]:
     checks = {}
     for code, row in expected.items():
+        op = str(row.get("operation") or "venta").lower()
+        kwargs = {"operation": op} if op == "arriendo" else {}
         checks[code] = verify_current_listing(
             db, property_code=code,
             currency=str(row.get("currency") or ""),
             expected_price=row.get("price"), expected_url=str(row.get("url") or ""),
-            now=now,
+            now=now, **kwargs,
         ).as_dict()
     return checks
 
@@ -594,7 +606,16 @@ def _expected_publication_from_campaign(campaign: dict[str, Any]) -> dict[str, A
     price = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
     urls = re.findall(r"https://[^\s<>]+", str(campaign.get("outbound_message") or ""), re.I)
     url = urls[0].rstrip(".,);]") if urls else ""
-    return {"currency": currency, "price": price, "url": url}
+    return {"currency": currency, "price": price, "url": url,
+            "operation": str(campaign.get("operation") or "venta").lower()}
+
+
+def _publication_for_operation(verifier: Callable[..., Any], db: Any, *,
+                               operation: str = "venta", **kwargs: Any) -> Any:
+    # Preserve existing sale verifier callback signatures and tests.
+    # Rental checks must explicitly target the rental operation.
+    kw = {"operation": "arriendo"} if str(operation).lower() == "arriendo" else {}
+    return verifier(db, **kwargs, **kw)
 
 
 def _publication_result_dict(result: Any) -> dict[str, Any]:
@@ -646,12 +667,15 @@ def _temperature_set(value: str) -> set[str]:
     return {"HOT", "NORMAL", "COLD"} if normalized == "ALL" else set(normalized.split(","))
 
 
-def _latest_event_by_code(db: Any, property_codes: set[str]) -> dict[str, PriceDropEvent]:
+def _latest_event_by_code(db: Any, property_codes: set[str]) -> dict[tuple[str, str], PriceDropEvent]:
     result = {}
     for code in property_codes:
         events = _events(db, property_code=code, limit=None, batch_size=500)
-        if events:
-            result[code] = max(events, key=lambda event: (event.dropped_at, event.event_id))
+        for event in events:
+            key = (code, event.operation.lower())
+            if key not in result or (event.dropped_at, event.event_id) > (
+                    result[key].dropped_at, result[key].event_id):
+                result[key] = event
     return result
 
 
@@ -676,7 +700,8 @@ def _supersede_stale_pending_campaigns(
     for lead in docs:
         for index, campaign in enumerate((lead.get("price_drop_v2") or {}).get("campaigns") or []):
             code = str(campaign.get("property_code") or "")
-            current = latest.get(code)
+            current = latest.get((
+                code, str(campaign.get("operation") or "venta").lower()))
             old_event_id = str(campaign.get("event_id") or campaign.get("campaign_id") or "")
             if (not current or campaign.get("status") not in pending_states
                     or old_event_id == current.event_id):
@@ -1318,7 +1343,8 @@ def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
             "lead_id": str(lead_id),
             "phone": lead.get("contact_phone_normalized") or lead.get("phone") or "",
             "campaign_id": event.campaign_id, "property_code": event.property_code,
-            "currency": event.currency, "test_mode": False,
+            "currency": event.currency, "operation": event.operation.lower(),
+            "test_mode": False,
             "old_price_uf": event.old_price if event.currency == "UF" else None,
             "new_price_uf": event.new_price if event.currency == "UF" else None,
             "old_price_clp": event.old_price if event.currency == "CLP" else None,
@@ -1600,8 +1626,9 @@ def execute_approved_batch(
             expected_by_campaign[cid][code] = expected
             key = f"{cid}:{code}"
             if key not in publication_checks:
-                publication_checks[key] = _publication_result_dict(publication_verifier(
-                    db, property_code=code, currency=expected["currency"],
+                publication_checks[key] = _publication_result_dict(_publication_for_operation(
+                    publication_verifier, db, operation=expected["operation"],
+                    property_code=code, currency=expected["currency"],
                     expected_price=expected["price"], expected_url=expected["url"],
                     now=now_fn(),
                 ))
@@ -1644,8 +1671,10 @@ def execute_approved_batch(
             provider_plan=provider_plan, daily_provider_cap=daily_provider_cap,
             live_links_verified=True,
             link_verifier=lambda code, stamp, cid=cid: _publication_result_dict(
-                publication_verifier(
-                    db, property_code=code,
+                _publication_for_operation(
+                    publication_verifier, db,
+                    operation=expected_by_campaign[cid][code]["operation"],
+                    property_code=code,
                     currency=expected_by_campaign[cid][code]["currency"],
                     expected_price=expected_by_campaign[cid][code]["price"],
                     expected_url=expected_by_campaign[cid][code]["url"], now=stamp,
@@ -1934,8 +1963,9 @@ def interactive_workflow(
 
     publication_checks = {}
     for event, _ in selected_by_event.values():
-        publication_checks[event.event_id] = _publication_result_dict(publication_verifier(
-            db, property_code=event.property_code, currency=event.currency,
+        publication_checks[event.event_id] = _publication_result_dict(_publication_for_operation(
+            publication_verifier, db, operation=event.operation.lower(),
+            property_code=event.property_code, currency=event.currency,
             expected_price=event.current_price, expected_url=event.listing_url,
             now=now_fn(),
         ))
@@ -2319,8 +2349,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--property", dest="property_code")
     parser.add_argument("--since", help="fecha ISO 8601 con zona horaria")
     parser.add_argument("--currency", choices=("UF", "CLP"), help="filtra por moneda original")
-    parser.add_argument("--operation", choices=("venta",),
-                        help="filtro de operación; campañas de rebaja habilitadas para venta")
+    parser.add_argument("--operation", choices=("venta", "arriendo"),
+                        help="filtra rebajas de venta o arriendo; por defecto ambas")
     parser.add_argument("--temperature", type=_parse_temperature_arg,
                         help="HOT, NORMAL, COLD, HOT,NORMAL o TODOS; desconocidos requieren revisión manual")
     parser.add_argument("--lead-max-age-days", type=_parse_lead_age_arg,

@@ -1,3 +1,46 @@
+# ACTUALIZACIÓN: PRUEBA INICIAL SIN MONGODB — PROBE_ONLY
+
+Existe un servicio gratuito separado:
+- Render ID: srv-dbqplp0ae00c7393la60
+- URL: https://procasa-executive-whatsapp-audit-canary.onrender.com
+- Git: rama feat/executive-whatsapp-audit-precontract; autoDeploy desactivado.
+
+**La primera prueba debe usar PROBE_ONLY, NO persistencia.**
+
+Variables para habilitar la prueba de recepción de una única sesión:
+- PROCASA_EXEC_AUDIT_ENABLED=true
+- PROCASA_EXEC_AUDIT_PROBE_ONLY=true
+- PROCASA_EXEC_AUDIT_PERSIST=false
+- PROCASA_EXEC_AUDIT_PILOT_APPROVED=AUTHORIZED_ONE_PHONE_CANARY
+- PROCASA_EXEC_AUDIT_BINDINGS_JSON={"canary01":{"session_id":"ID_REAL_DE_NUEVA_SESION","executive_user_id":"ID_CRM_VERIFICADO","webhook_secret":"SECRETO_REAL_DE_ESA_SESION"}}
+
+No colocar claves reales en GitHub, correos, archivos de prueba o esta conversación. Configurar el JSON desde variables privadas de Render. La aplicación rechaza automáticamente más de una sesión.
+
+En PROBE_ONLY, la aplicación **NO necesita URI de MongoDB**, no conoce ningún lead y no guarda contenido. Loguea exclusivamente conteos de mensajes válidos entrantes/salientes y descartados. Tampoco descarga archivos ni responde automáticamente.
+
+La URL del webhook para el nuevo número piloto es:
+https://procasa-executive-whatsapp-audit-canary.onrender.com/internal/executive-whatsapp/canary01/events
+
+No habilitar esta URL para el número de oficina. No copiar el webhook de la oficina al nuevo número ni cambiar su configuración.
+
+Procedimiento:
+1. Obtener autorización expresa del usuario del teléfono piloto y aprobar el alcance de tratamiento de conversaciones.
+2. Crear una sesión WaSender adicional; si sólo existe la de oficina, no reutilizarla ni desconectarla.
+3. Vincular desde el móvil del ejecutivo mediante Dispositivos vinculados > Vincular un dispositivo > escanear el QR de la nueva sesión.
+4. Obtener ID real de sesión y webhook secret desde WaSender, añadirlos a la variable JSON privada del servicio aislado de Render, activar el PROBE_ONLY y comprobar /health (capture_enabled=true, probe_only=true, storage_enabled=false).
+5. Registrar la URL nueva en la configuración de webhook **sólo de la nueva sesión**, evento messages.upsert; conservar el secret idéntico.
+6. Enviar a mano un mensaje de prueba desde un teléfono cliente autorizado y responder manualmente desde el móvil vinculado.
+7. Verificar en logs de Render únicamente contadores incoming=1/outgoing=1, sin textos ni números. Revisar que no hubo ningún envío del sistema.
+8. Si falla el envío manual, no asumir que funciona; inspeccionar payload de forma local y temporal con permisos, sin loguear PII.
+9. Comprobar que el chatbot de oficina no cambió y que no hay escrituras al CRM/MongoDB.
+10. Solo tras ese éxito evaluar activar persistencia para un único lead de prueba y DB de mínimo privilegio.
+
+El servicio Render Free puede dormirse por inactividad. Despertarlo comprobando /health antes del canary y no confiar en él para capturar continuamente mensajes reales. Un plan pagado para captura continua requiere aprobación independiente.
+
+**No conectar seis teléfonos en esta primera fase.**
+
+---
+
 # PROCASA — Manual de habilitación de un teléfono de ejecutivo
 
 **Estado actual: código preparado en PR borrador #168; no fusionado y sin despliegue.**

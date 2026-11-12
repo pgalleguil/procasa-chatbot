@@ -1035,6 +1035,77 @@ def test_progress_journal_survives_interrupt_and_resume_skips_accepted_lead(monk
     assert states == ["SENT", "SENT", "SENT"]
 
 
+def test_pilot_same_price_microseconds_never_auto_superseded():
+    # Exact production bug: Prop360 central history stores .405868 seconds
+    # while MongoDB rounds a campaign date to .405000 seconds; a different
+    # event ID must not cancel the same approved old/new price window.
+    db = _db()
+    history_at = datetime(2026, 10, 14, 11, 52, 43, 405868,
+                          tzinfo=timezone.utc)
+    stored_at = history_at.replace(microsecond=405000)
+    seed = [
+        ("16479", "CLP", 160000000, 152000000),
+        ("6436", "UF", 2790, 2690),
+        ("6377", "UF", 5123, 5074),
+    ]
+    ids = []
+    for index, (code, currency, old, new) in enumerate(seed, 1):
+        _seed_property(db, code=code, currency=currency, current=new)
+        _history(db, code, history_at, old, new, currency)
+        lead_id = _candidate(
+            db, phone=f"+569832198{index:02d}", extra={"price_drop_v2": {
+                "campaigns": [{
+                    "campaign_id": cli.PILOT_CAMPAIGN_ID,
+                    "event_id": cli.PILOT_CAMPAIGN_ID,
+                    "property_code": code,
+                    "price_drop_at": stored_at,
+                    "currency": currency,
+                    "old_price_clp": old if currency == "CLP" else None,
+                    "new_price_clp": new if currency == "CLP" else None,
+                    "old_price_uf": old if currency == "UF" else None,
+                    "new_price_uf": new if currency == "UF" else None,
+                    "status": "APPROVED", "approved_by": "Operador",
+                    "approved_at": NOW - timedelta(days=1),
+                }],
+            }}
+        )
+        ids.append(lead_id)
+    before = [db["leads"].find_one({"_id": lid}) for lid in ids]
+    event_ids = {
+        item.event_id
+        for item in discover_price_drops(db, now=NOW)
+    }
+    assert len(event_ids) == 3
+    assert cli.PILOT_CAMPAIGN_ID not in event_ids
+    result = cli._supersede_stale_pending_campaigns(
+        db, {"16479", "6436", "6377"}, now=NOW,
+    )
+    assert result["count"] == 0
+    assert result["campaign_ids"] == []
+    assert [db["leads"].find_one({"_id": lid}) for lid in ids] == before
+
+
+def test_same_current_price_repeated_history_date_is_not_new_reduction():
+    db = _event_db()
+    old_event = discover_price_drops(db, now=NOW)[0]
+    db["leads"].insert_one({
+        "_id": ObjectId(),
+        "price_drop_v2": {"campaigns": [{
+            "campaign_id": "manual_followup_6436",
+            "event_id": "manual_followup_6436",
+            "property_code": "6436", "currency": "UF",
+            "old_price_uf": 2790, "new_price_uf": 2690,
+            "status": "APPROVED", "price_drop_at": DROP - timedelta(days=5),
+        }]},
+    })
+    result = cli._supersede_stale_pending_campaigns(db, {"6436"}, now=NOW)
+    assert result["count"] == 0
+    row = db["leads"].find_one({"price_drop_v2.campaigns.campaign_id":
+                                "manual_followup_6436"})["price_drop_v2"]["campaigns"][0]
+    assert row["status"] == "APPROVED"
+    assert old_event.new_price == 2690
+
+
 def test_newer_drop_supersedes_only_unsent_campaigns_and_keeps_sent_rows():
     db = _event_db()
     old = discover_price_drops(db, now=NOW)[0]

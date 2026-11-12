@@ -293,11 +293,20 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         logger.exception("[PRICE_DROP_PILOT] Optional context lookup failed")
 
     if lead_must_not_be_contacted(lead_doc_full):
-        from .price_drop_leads_v2 import qa_completed_search_response_allowed
-        if not qa_completed_search_response_allowed(lead_doc_full, pilot_context):
-            logger.info("[DO_NOT_CONTACT] Cliente desistió o solicitó baja; inbound persistido sin respuesta automática.")
+        from .price_drop_leads_v2 import (
+            qa_completed_search_response_allowed,
+            direct_inbound_reengagement_allowed,
+        )
+        # Inbound customer replies are not unsolicited campaigns. A historical
+        # completed property search by itself must never permanently silence
+        # a fresh customer-initiated conversation; explicit STOP still blocks.
+        if qa_completed_search_response_allowed(lead_doc_full, pilot_context):
+            logger.info("[PRICE_DROP_QA] verified admin QA reply allowed despite prior completed search")
+        elif direct_inbound_reengagement_allowed(lead_doc_full, original_message):
+            logger.info("[INBOUND_REENGAGEMENT] customer_initiated_reply_after_completed_search")
+        else:
+            logger.info("[DO_NOT_CONTACT] explicit opt-out/contact block; inbound persisted, no bot reply")
             return ""
-        logger.info("[PRICE_DROP_QA] verified admin QA reply allowed despite prior completed search")
     if any(phrase in msg_lower for phrase in ("no me escriban", "dejen de escribir", "no quiero mensajes", "stop")):
         await _run_sync(db["leads"].update_one, {"phone": phone}, {"$set": {
             "conversation_status": "STOPPED_BY_CLIENT",

@@ -706,6 +706,19 @@ def _supersede_stale_pending_campaigns(
             if (not current or campaign.get("status") not in pending_states
                     or old_event_id == current.event_id):
                 continue
+            # A later *recorded* timestamp does not mean there was a new
+            # commercial reduction. Some import rows use microseconds while
+            # MongoDB truncates campaign.price_drop_at to milliseconds.
+            # Never supersede an approved notice when the currently verified
+            # asking price and currency remain identical.
+            row_currency = str(campaign.get("currency") or (
+                "CLP" if campaign.get("old_price_clp") is not None else "UF"
+            )).upper()
+            row_price = (campaign.get("new_price_clp") if row_currency == "CLP"
+                         else campaign.get("new_price_uf"))
+            if (row_price is not None and row_currency == current.currency
+                    and row_price == current.current_price):
+                continue
             raw_old_stamp = campaign.get("price_drop_at")
             if isinstance(raw_old_stamp, datetime):
                 old_stamp = (raw_old_stamp.replace(tzinfo=timezone.utc)
@@ -713,7 +726,12 @@ def _supersede_stale_pending_campaigns(
                              else raw_old_stamp.astimezone(timezone.utc))
             else:
                 old_stamp = parse_aware_datetime(raw_old_stamp)
-            if old_stamp is not None and current.dropped_at <= old_stamp:
+            # BSON stores timestamps to millisecond precision. A sub-ms
+            # difference cannot establish a genuinely newer price change.
+            # Unknown original timestamps fail closed to manual review;
+            # do not silently cancel an operator-approved campaign.
+            if (old_stamp is None
+                    or current.dropped_at <= old_stamp + timedelta(milliseconds=1)):
                 continue
             campaign_id = str(campaign.get("campaign_id") or "")
             update = db[LEADS_COLLECTION].update_one({

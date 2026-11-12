@@ -16,6 +16,7 @@ from chatbot.executive_whatsapp_gateway import (
     SessionBinding,
     build_unmounted_executive_audit_router,
 )
+from chatbot.executive_whatsapp_probe import build_probe_only_router
 
 ENABLE_KEY = "PROCASA_EXEC_AUDIT_ENABLED"
 PERSIST_KEY = "PROCASA_EXEC_AUDIT_PERSIST"
@@ -81,6 +82,9 @@ def create_app(
     env = dict(os.environ if env is None else env)
     enabled = _enabled(env.get(ENABLE_KEY))
     persist = _enabled(env.get(PERSIST_KEY))
+    probe_only = _enabled(env.get("PROCASA_EXEC_AUDIT_PROBE_ONLY"))
+    if probe_only and persist:
+        raise ValueError("probe_mode_must_not_persist")
 
     app = FastAPI(
         title="PROCASA Executive WhatsApp Audit (isolated)",
@@ -95,6 +99,7 @@ def create_app(
             "service": "executive_whatsapp_audit_isolated",
             "capture_enabled": enabled,
             "storage_enabled": persist if enabled else False,
+            "probe_only": probe_only if enabled else False,
             "office_chatbot_connected": False,
         }
 
@@ -112,6 +117,11 @@ def create_app(
         raise ValueError("privacy_approval_required_for_persistence")
 
     registry = _bindings(env)
+    if probe_only:
+        # No Mongo client, no lead lookup, no WhatsApp messages persisted.
+        # Use for the first manual inbound/outbound test only.
+        app.include_router(build_probe_only_router(registry))
+        return app
     db = db_factory if db_factory is not None else _default_db_factory(env)
     app.include_router(build_unmounted_executive_audit_router(
         session_bindings=registry,

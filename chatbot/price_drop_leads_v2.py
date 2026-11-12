@@ -326,6 +326,12 @@ def direct_inbound_reengagement_allowed(lead: dict | None, message: str) -> bool
     """
     if not isinstance(lead, dict):
         return False
+    # Never override an explicit stop/block status, even if inconsistent
+    # historical metadata calls its reason an already-completed search.
+    if lead.get("conversation_status") in {
+        "STOPPED_BY_CLIENT", "STOPPED", "BLOCKED", "BLOCKED_EXTERNAL_BROKER",
+    }:
+        return False
     text = str(message or "").strip()
     if not text or len(text) > 8000:
         return False

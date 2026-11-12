@@ -7,11 +7,14 @@ to any real client chat data.
 from __future__ import annotations
 
 import json
+import logging
 from typing import Mapping
 
 from fastapi import APIRouter, HTTPException, Request
 
 from .executive_whatsapp_audit import ExecutiveAuditError, normalize_upsert, verify_webhook_secret
+_logger = logging.getLogger("procasa.executive_whatsapp_probe")
+
 from .executive_whatsapp_gateway import (
     SessionBinding,
     _bounded_body,
@@ -75,6 +78,15 @@ def build_probe_only_router(
             "mongo_connections": 0,
             "outbound_messages_sent": 0,
         }
+        # Observability ONLY: aggregate counts. Never log request body,
+        # clients, phone numbers, message IDs, aliases or account secrets.
+        _logger.info(
+            "executive_whatsapp_probe valid=%d inbound=%d outgoing=%d ignored=%d",
+            result["total_valid"],
+            result["incoming_client_messages"],
+            result["outgoing_executive_messages"],
+            result["unmatched_or_unsupported"],
+        )
         return result
 
     return router

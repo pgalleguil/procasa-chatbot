@@ -39,15 +39,15 @@ MAX_EXPORT_BYTES = 5_000_000
 MAX_MESSAGES = 100
 # Android: 12/11/2026, 11:32 - Ana: Hola
 ANDROID = re.compile(
-    r"^\\u200e?(?P<day>\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{2,4}),?\\s+"
-    r"(?P<clock>\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*(?:AM|PM|a\\.?\\s*m\\.?|p\\.?\\s*m\\.?))?)\\s+-\\s+"
-    r"(?P<sender>[^:]{1,150}):\\s*(?P<text>.*)$", re.IGNORECASE,
+    r"^\u200e?(?P<day>\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}),?\s+"
+    r"(?P<clock>\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM|a\.?\s*m\.?|p\.?\s*m\.?))?)\s+-\s+"
+    r"(?P<sender>[^:]{1,150}):\s*(?P<text>.*)$", re.IGNORECASE,
 )
 # iOS: [12/11/2026, 11:32:05] Ana: Hola
 IOS = re.compile(
-    r"^\\[(?P<day>\\d{1,2}[/.-]\\d{1,2}[/.-]\\d{2,4}),?\\s+"
-    r"(?P<clock>\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\s*(?:AM|PM|a\\.?\\s*m\\.?|p\\.?\\s*m\\.?))?)\\]\\s+"
-    r"(?P<sender>[^:]{1,150}):\\s*(?P<text>.*)$", re.IGNORECASE,
+    r"^\[(?P<day>\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}),?\s+"
+    r"(?P<clock>\d{1,2}:\d{2}(?::\d{2})?(?:\s*(?:AM|PM|a\.?\s*m\.?|p\.?\s*m\.?))?)\]\s+"
+    r"(?P<sender>[^:]{1,150}):\s*(?P<text>.*)$", re.IGNORECASE,
 )
 
 
@@ -61,10 +61,10 @@ def _sender_key(value: str) -> str:
 
 def _when(day: str, clock: str) -> datetime:
     d = re.sub(r"[/.-]", "/", day)
-    c = clock.replace("\\u202f", " ").replace("\\xa0", " ").upper().strip()
-    c = re.sub(r"A\\.?\\s*M\\.?", "AM", c)
-    c = re.sub(r"P\\.?\\s*M\\.?", "PM", c)
-    c = re.sub(r"\\s+", " ", c)
+    c = clock.replace("\u202f", " ").replace("\xa0", " ").upper().strip()
+    c = re.sub(r"A\.?\s*M\.?", "AM", c)
+    c = re.sub(r"P\.?\s*M\.?", "PM", c)
+    c = re.sub(r"\s+", " ", c)
     for df in ("%d/%m/%Y", "%d/%m/%y"):
         for tf in ("%H:%M:%S", "%H:%M", "%I:%M:%S %p", "%I:%M %p"):
             try:
@@ -91,7 +91,7 @@ def _read_export(path: Path) -> str:
         data = path.read_bytes()
     else:
         raise RecoveryBlocked("export_must_be_whatsapp_txt_or_zip")
-    if data.startswith((b"\\xff\\xfe", b"\\xfe\\xff")):
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
         return data.decode("utf-16")
     try:
         return data.decode("utf-8-sig")
@@ -102,7 +102,7 @@ def _read_export(path: Path) -> str:
 def parse_export(path: Path) -> list[dict]:
     messages: list[dict] = []
     for source_line in _read_export(path).splitlines():
-        line = source_line.replace("\\u200e", "").replace("\\u202f", " ")
+        line = source_line.replace("\u200e", "").replace("\u202f", " ")
         match = IOS.match(line) or ANDROID.match(line)
         if match:
             msg = match.groupdict()
@@ -112,7 +112,7 @@ def parse_export(path: Path) -> list[dict]:
                 "text": msg["text"].strip(),
             })
         elif messages:
-            messages[-1]["text"] += "\\n" + source_line
+            messages[-1]["text"] += "\n" + source_line
     if not messages:
         raise RecoveryBlocked("export_has_no_recognized_chat_messages")
     return messages

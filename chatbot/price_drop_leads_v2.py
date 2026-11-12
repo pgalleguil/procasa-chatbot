@@ -315,6 +315,29 @@ def qa_completed_search_response_allowed(lead: dict | None, context: dict | None
     return _contact_suppression_reasons(lead) == {"completed_search"}
 
 
+def direct_inbound_reengagement_allowed(lead: dict | None, message: str) -> bool:
+    """Answer a *new customer-initiated* inquiry after a completed property search.
+
+    A completed search revokes unsolicited follow-ups and campaigns, but is not
+    equivalent to an explicit WhatsApp opt-out when the customer writes back.
+    Never override any STOP, unsubscribe, contact block or a new message that
+    itself says the customer has already found a property. This is a reply-only
+    exception: it does not modify stored consent or campaign send eligibility.
+    """
+    if not isinstance(lead, dict):
+        return False
+    text = str(message or "").strip()
+    if not text or len(text) > 8000:
+        return False
+    if _contact_suppression_reasons(lead) != {"completed_search"}:
+        return False
+    # Explicit STOP or repeated completed-search notices must not trigger AI.
+    classification = classify_price_drop_reply(text)
+    if classification.label == "BAJA":
+        return False
+    return True
+
+
 def authorize_test_qa_reauthorization(db, *, lead_id: str, campaign_id: str,
                                       phone: str, operator: str,
                                       evidence_reference: str, now=None) -> dict:

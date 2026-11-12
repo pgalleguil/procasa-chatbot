@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
 from pymongo import ReturnDocument
@@ -630,7 +631,8 @@ def _property_price(db, code: str, old: int, new: int,
         {"codigo": 1, "disponible_prop360": 1, "estado.oficina": 1,
          "tipo_operacion.venta": 1, "tipo_operacion.precio_venta.precio_uf": 1,
          "tipo_operacion.precio_venta.precio_publicado": 1,
-         "tipo_operacion.precio_venta.moneda_publicada": 1},
+         "tipo_operacion.precio_venta.moneda_publicada": 1,
+         "historial_cambios": 1},
     ) or {}
     sale = prop.get("tipo_operacion") or {}
     pricing = sale.get("precio_venta") or {}
@@ -651,13 +653,43 @@ def _property_price(db, code: str, old: int, new: int,
         {"fecha": 1},
         sort=[("fecha", -1)],
     )
-    if not change:
+    if change:
+        try:
+            when = datetime.fromisoformat(str(change["fecha"]).replace("Z", "+00:00"))
+        except (ValueError, KeyError, TypeError) as exc:
+            raise PilotBlocked("audited_price_date_invalid") from exc
+        return utc(when)
+
+    # Real reductions can be recorded in Prop360's own timestamped change
+    # history without having been backfilled into the separate history
+    # collection. Never synthesize an approval or infer a reduction from a
+    # currency conversion or request to change price.
+    expected_field = "precio_uf" if currency == "UF" else "precio_clp"
+    verified = []
+    for row in prop.get("historial_cambios") or []:
+        if not isinstance(row, dict) or row.get("campo") != expected_field:
+            continue
+        try:
+            prior = Decimal(str(row.get("valor_anterior")))
+            reduced = Decimal(str(row.get("valor_nuevo")))
+        except (TypeError, ValueError, InvalidOperation):
+            continue
+        if not (prior.is_finite() and reduced.is_finite()
+                and prior == old and reduced == new):
+            continue
+        try:
+            stamp = datetime.fromisoformat(str(row.get("fecha") or "").replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if stamp.tzinfo is None or stamp.utcoffset() is None:
+            continue
+        stamp = utc(stamp)
+        if stamp > datetime.now(timezone.utc):
+            continue
+        verified.append(stamp)
+    if not verified:
         raise PilotBlocked("audited_price_change_missing")
-    try:
-        when = datetime.fromisoformat(str(change["fecha"]).replace("Z", "+00:00"))
-    except (ValueError, KeyError, TypeError) as exc:
-        raise PilotBlocked("audited_price_date_invalid") from exc
-    return utc(when)
+    return max(verified)
 
 
 def _verified_listing_ids(db, code: str) -> set[str]:

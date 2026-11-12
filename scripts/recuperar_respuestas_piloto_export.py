@@ -182,6 +182,11 @@ def prepare_recovery(db, *, code: str, chat_phone: str,
     if now.tzinfo is None:
         raise RecoveryBlocked("now_must_be_timezone_aware")
     raw = parse_export(export)
+    distinct_senders = {_sender_key(m["sender"]) for m in raw}
+    if _sender_key(customer_sender) not in distinct_senders:
+        raise RecoveryBlocked("customer_sender_not_found_in_export")
+    if len(distinct_senders) > 2:
+        raise RecoveryBlocked("export_has_more_than_two_senders_check_not_group_chat")
     selected = []
     for m in raw:
         if _sender_key(m["sender"]) != _sender_key(customer_sender):
@@ -268,12 +273,14 @@ def apply_recovery(db, plan: dict, *, confirm: str, backup_root: Path) -> dict:
     if not campaign.get("first_response_at"):
         update["$set"][f"{field}.first_response_at"] = events[0]["received_at"]
     if status == "OPTED_OUT":
+        stop_event = next(e for e in events if e["classification"]["label"] == "BAJA")
         update["$set"].update({
             "price_drop_v2.opted_out": True,
-            "price_drop_v2.opted_out_at": last["received_at"],
+            "price_drop_v2.opted_out_at": stop_event["received_at"],
             "price_drop_campaign_v1.opted_out": True,
             "conversation_status": "STOPPED_BY_CLIENT",
-            "conversation_status_reason": final_label.get("reason", "customer_stop"),
+            "conversation_status_reason": stop_event["classification"].get(
+                "reason", "customer_stop"),
         })
     backup_root.mkdir(parents=True, exist_ok=True)
     backup_path = backup_root / (f"pre_recovery_{code}_" +

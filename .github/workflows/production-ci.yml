@@ -39,6 +39,7 @@ jobs:
         run: >-
           python -m py_compile chatbot/price_drop_campaign_discovery.py
           chatbot/price_drop_reconciliation.py scripts/enviar_piloto_rebajas.py
+          scripts/auditar_recepcion_piloto.py
 
   critical-tests:
     name: Critical suites
@@ -51,6 +52,7 @@ jobs:
           - suite: Manual price-drop campaign CLI
             tests: >-
               tests/test_price_drop_campaign_cli.py
+              tests/test_price_drop_inbound_readiness_audit.py
           - suite: Chatbot snapshot delivery fence
             tests: >-
               tests/test_chatbot_snapshot_delivery_fence.py

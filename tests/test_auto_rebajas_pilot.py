@@ -82,3 +82,33 @@ def test_automatic_batch_calls_existing_approved_sender_without_per_lead_prompt(
     outcome = automatic.run({}, execute=True, max_messages=1)
     assert outcome["attempts"] == 1
     assert operations == ["prepare", "approve", "sender"]
+
+def test_original_local_cli_routes_new_batch_without_touching_old_pilot(monkeypatch, capsys):
+    import scripts.enviar_piloto_rebajas as cli
+    calls = []
+    monkeypatch.setattr(cli, "_get_db", lambda: object())
+    monkeypatch.setattr(automatic, "run", lambda db, **kwargs: (
+        calls.append(kwargs) or {"status": "COMPLETED", "attempts": 3}))
+    result = cli.main(["--auto", "--execute", "--max-messages", "3"])
+    assert result == 0
+    assert len(calls) == 1
+    assert calls[0]["execute"] is True
+    assert calls[0]["max_messages"] == 3
+    assert "COMPLETED" in capsys.readouterr().out
+
+
+def test_original_local_cli_auto_preview_does_not_send(monkeypatch):
+    import scripts.enviar_piloto_rebajas as cli
+    monkeypatch.setattr(cli, "_get_db", lambda: object())
+    called = []
+    monkeypatch.setattr(automatic, "run", lambda db, **kwargs: (
+        called.append(kwargs) or {"status": "CANDIDATES_SELECTED", "attempts": 0}))
+    assert cli.main(["--auto", "--dry-run", "--max-messages", "3"]) == 0
+    assert called[0]["execute"] is False
+
+
+def test_original_local_cli_rejects_auto_with_original_three_pilot(monkeypatch):
+    import scripts.enviar_piloto_rebajas as cli
+    monkeypatch.setattr(cli, "_get_db", lambda: (_ for _ in ()).throw(
+        AssertionError("must be rejected before DB or sender use")))
+    assert cli.main(["--auto", "--pilot", "--execute", "--max-messages", "3"]) == 2

@@ -1556,6 +1556,10 @@ def send_one(db, *, lead_id: str, campaign_id: str,
         receipt = sender(c["phone_normalized"], c["outbound_message"])
     except Exception:
         receipt = {"success": False, "provider_call_uncertain": True}
+    if not isinstance(receipt, dict):
+        # Malformed provider result must never crash after the SENDING claim.
+        # Status remains DELIVERY_UNKNOWN; reconciliation prevents a blind retry.
+        receipt = {"success": False, "provider_call_uncertain": True}
     accepted = bool(receipt.get("success") and receipt.get("provider_message_id")
                     and not receipt.get("provider_call_uncertain"))
     explicit_failure = bool(

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import scripts.enviar_rebajas_automatico as automatic
 
 
-def test_completed_search_and_missing_authorization_exclude_recipient(monkeypatch):
+def test_historical_inquiry_eligible_without_separate_optin_but_stop_excludes(monkeypatch):
     event = SimpleNamespace(event_id="price_event_123", dropped_at=datetime.now(timezone.utc))
     candidate = {"eligible": True, "lead_id": "a" * 24}
     lead = {"_id": candidate["lead_id"], "phone": "+56911111111"}
@@ -20,13 +20,9 @@ def test_completed_search_and_missing_authorization_exclude_recipient(monkeypatc
     monkeypatch.setattr(automatic, "find_candidates_for_event",
                         lambda *args, **kwargs: [candidate])
     monkeypatch.setattr(automatic, "lead_must_not_be_contacted", lambda lead: False)
-    monkeypatch.setattr(automatic.v2, "reusable_whatsapp_contact_authorization",
-                        lambda *args, **kwargs: None)
     rows, _ = automatic.choose_new_recipients(db, max_messages=3, max_age_days=120,
                                                now=datetime.now(timezone.utc))
-    assert rows == []
-    monkeypatch.setattr(automatic.v2, "reusable_whatsapp_contact_authorization",
-                        lambda *args, **kwargs: {"scope": "PRICE_DROP_UPDATES"})
+    assert len(rows) == 1
     monkeypatch.setattr(automatic, "lead_must_not_be_contacted", lambda lead: True)
     rows, _ = automatic.choose_new_recipients(db, max_messages=3, max_age_days=120,
                                                now=datetime.now(timezone.utc))
@@ -54,7 +50,7 @@ def test_execution_never_sends_partial_three_lead_pilot(monkeypatch):
                         lambda *args, **kwargs: (_ for _ in ()).throw(
                             AssertionError("must not perform live verification or writes")))
     outcome = automatic.run({}, execute=True, max_messages=3)
-    assert outcome["status"] == "NOT_ENOUGH_VERIFIED_AUTHORIZED_RECIPIENTS"
+    assert outcome["status"] == "NOT_ENOUGH_ELIGIBLE_RECIPIENTS"
     assert outcome["attempts"] == 0
 
 

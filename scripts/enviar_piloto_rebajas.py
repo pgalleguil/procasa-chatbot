@@ -2444,7 +2444,9 @@ def _parser() -> argparse.ArgumentParser:
                  "review-whatsapp-contact", "restore-false-pilot-supersession", "report", "summary"):
         actions.add_argument("--" + flag, dest="action", action="store_const", const=flag)
     parser.add_argument("--status", action="store_true", help="consulta estado sin escritura")
-    parser.add_argument("--pilot", action="store_true", help="restringe al piloto aprobado de tres propiedades")
+    parser.add_argument("--pilot", action="store_true", help="SOLO los tres destinatarios originales; nunca reutilizar para nuevos leads")
+    parser.add_argument("--auto", action="store_true",
+                        help="nuevas rebajas a nuevos leads: selecciona, prepara, aprueba y ejecuta el lote localmente sin aprobacion por mensaje")
     parser.add_argument("--campaign-id")
     parser.add_argument("--event-id")
     parser.add_argument("--lead-id", action="append", default=[])
@@ -2491,6 +2493,10 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _validate_cli(args: argparse.Namespace) -> datetime | None:
+    if args.auto and (args.pilot or args.campaign_id or args.event_id or args.lead_id):
+        raise CliError("auto_batch_cannot_reuse_fixed_pilot_or_approved_campaign")
+    if args.auto and (args.status or args.action not in {"dry-run", "execute"}):
+        raise CliError("auto_only_supports_dry_run_or_execute")
     if args.status and args.action:
         raise CliError("status_cannot_be_combined_with_another_action")
     if not args.status and not args.action:
@@ -2522,7 +2528,7 @@ def _validate_cli(args: argparse.Namespace) -> datetime | None:
     if (args.action in {"prepare", "approve", "review-whatsapp-contact"}
             and not args.lead_id and not (args.pilot and args.action == "review-whatsapp-contact")):
         raise CliError("lead_id_required")
-    if args.action == "execute" and not args.pilot and not args.campaign_id:
+    if args.action == "execute" and not args.pilot and not args.campaign_id and not args.auto:
         raise CliError("campaign_id_required_for_execution")
     if args.campaign_id == PILOT_CAMPAIGN_ID and not args.pilot:
         raise CliError("approved_three_recipient_campaign_requires_pilot_selector")
@@ -2557,6 +2563,29 @@ def main(argv: list[str] | None = None) -> int:
         if args.pilot:
             args.campaign_id = PILOT_CAMPAIGN_ID
         db = _get_db()
+
+        # Reuse the original office-computer entrypoint. --pilot remains pinned
+        # to the *already contacted* three customers; --auto is the separate
+        # new-recipient path with the same local CLI and sender.
+        if args.auto:
+            from scripts.enviar_rebajas_automatico import run as automatic_batch
+            result = automatic_batch(
+                db, execute=args.action == "execute",
+                max_messages=args.max_messages,
+                max_age_days=(args.lead_max_age_days
+                              if args.lead_max_age_days is not None
+                              else DEFAULT_LEAD_MAX_AGE_DAYS),
+                property_code=args.property_code,
+                max_events=args.limit or 1000,
+                provider_plan=args.provider_plan,
+                min_delay=args.min_delay_seconds,
+                max_delay=args.max_delay_seconds,
+            )
+            print(json.dumps(result, ensure_ascii=False, default=str))
+            blocked = {"BLOCKED", "ERROR", "NOT_ENOUGH_ELIGIBLE_RECIPIENTS",
+                       "BLOCKED_MANUAL_CLI_ON_RENDER", "BLOCKED_SEND_RUNTIME_GATE",
+                       "BLOCKED_CONTEXT_RUNTIME_GATE", "BLOCKED_PUBLICATION_VERIFICATION"}
+            return 1 if result.get("status") in blocked else 0
 
         if args.status:
             if args.pilot:

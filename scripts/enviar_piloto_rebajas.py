@@ -1442,11 +1442,13 @@ def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
             raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
         if missing_authorization:
             evidence_by_lead[missing_authorization[0]] = evidence
-    if missing_authorization and not whatsapp_contact_reviewed:
-        raise CliError("whatsapp_contact_authorization_review_required")
-    if any(len(evidence_by_lead.get(value, "")) < 8
-           for value in missing_authorization):
-        raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
+    # Separate WhatsApp opt-in review is optional for all present and future
+    # price-drop campaigns. The property-specific prior inquiry is checked by
+    # find_candidates_for_event and by the sender before dispatch.
+    if whatsapp_contact_reviewed and any(
+            len(evidence_by_lead.get(value, "")) < 8
+            for value in missing_authorization):
+        raise CliError("whatsapp_contact_review_evidence_required_if_requested")
     output = []
     reused_count = 0
     reviewed_count = 0
@@ -1509,7 +1511,7 @@ def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
         prepared = v2.prepare_one(db, **data)
         if plan["reusable_authorization"] is not None:
             reused_count += 1
-        else:
+        elif whatsapp_contact_reviewed:
             v2.review_whatsapp_contact(
                 db, lead_id=lead_id, campaign_id=event.campaign_id,
                 operator=operator, evidence=evidence_by_lead[lead_id], now=stamp,
@@ -2121,45 +2123,11 @@ def interactive_workflow(
     operator = input_fn("Operador responsable: ").strip()
     if not operator:
         raise CliError("operator_required")
-    evidence_by_lead = {}
-    reusable_authorizations = set()
-    for event, rows in selected_by_event.values():
-        for candidate in rows:
-            lead = db[LEADS_COLLECTION].find_one(
-                {"_id": _lead_id(candidate["lead_id"])},
-                {"_id": 1, "phone": 1, "contact_phone_normalized": 1,
-                 "price_drop_v2.whatsapp_contact_authorization": 1,
-                 "price_drop_v2.opted_out": 1, "price_drop_v2.campaigns": 1,
-                 "messages": 1, "conversation_status": 1,
-                 "conversation_status_reason": 1, "conversation_status_evidence": 1},
-            ) or {}
-            authorization = v2.reusable_whatsapp_contact_authorization(
-                lead,
-                phone=str(lead.get("contact_phone_normalized") or lead.get("phone") or ""),
-                now=now,
-            )
-            if authorization is not None:
-                reusable_authorizations.add(candidate["lead_id"])
-                output_fn(
-                    f"Autorización WhatsApp reutilizable verificada para "
-                    f"propiedad {event.property_code}, teléfono ***{candidate['phone_last4']}."
-                )
-                continue
-            evidence_by_lead[candidate["lead_id"]] = input_fn(
-                f"Referencia CRM de autorización WhatsApp para avisos de rebaja "
-                f"(propiedad {event.property_code}, teléfono ***{candidate['phone_last4']}): "
-            ).strip()
-    missing_authorizations = [
-        row["lead_id"] for _, rows in selected_by_event.values() for row in rows
-        if row["lead_id"] not in reusable_authorizations
-    ]
-    if any(len(evidence_by_lead.get(value, "")) < 8 for value in missing_authorizations):
-        raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
+    # Contact evidence is derived from a real prior property inquiry. No
+    # separate marketing authorization or per-lead permission prompt.
     if input_fn(
-        f"Escribe PREPARAR {selected_count} para crear campañas PREPARED. "
-        "Confirmas los permisos CRM indicados y el uso de los permisos reutilizables: "
-    ).strip() \
-            != f"PREPARAR {selected_count}":
+        f"Escribe PREPARAR {selected_count} para crear el lote seleccionado: "
+    ).strip() != f"PREPARAR {selected_count}":
         return {"status": "CANCELLED", "phase": "prepare", "prepared": 0, "attempts": 0}
 
     selected_lead_ids = [row["lead_id"] for _, rows in selected_by_event.values() for row in rows]
@@ -2173,8 +2141,8 @@ def interactive_workflow(
         prepare_selected(
             db, event=event, lead_ids=ids, operator=operator,
             contact_basis_reviewed=True,
-            whatsapp_contact_reviewed=any(value in evidence_by_lead for value in ids),
-            whatsapp_contact_evidence=evidence_by_lead,
+            whatsapp_contact_reviewed=False,
+            whatsapp_contact_evidence=None,
             temperature_filter=temperature_filter,
             lead_max_age_days=lead_max_age_days,
             temperature_reviews={
@@ -2190,12 +2158,8 @@ def interactive_workflow(
             return {"status": "BLOCKED_PREPARE_READBACK_MISMATCH", "attempts": 0}
         for row in rows:
             output_fn(f"\n[{row['campaign'].get('property_code')}] {row['campaign']['outbound_message']}")
-    if input_fn(f"Escribe APROBAR {selected_count} para aprobar individualmente estas campañas: ").strip() \
-            != f"APROBAR {selected_count}":
-        return {"status": "PREPARED_PENDING_APPROVAL", "prepared": selected_count,
-                "attempts": 0, "campaign_ids": list(lead_ids_by_event),
-                "backup": str(prepare_backup)}
-
+    # Approval is an internal, auditable state transition, not an operator prompt.
+    # Sending still requires the final batch ENVIAR action in interactive mode.
     approval_backup = backup_fn(db, [_lead_id(value) for value in selected_lead_ids])
     for event_id, ids in lead_ids_by_event.items():
         approve_selected(db, campaign_id=event_id, lead_ids=ids, operator=operator)
@@ -2555,8 +2519,6 @@ def _validate_cli(args: argparse.Namespace) -> datetime | None:
         raise CliError("campaign_id_required")
     if args.action == "review-whatsapp-contact" and len(args.lead_id) != 1:
         raise CliError("whatsapp_authorization_review_requires_one_lead_id")
-    if args.action == "prepare" and not args.contact_basis_reviewed:
-        raise CliError("contact_basis_review_required")
     if (args.action in {"prepare", "approve", "review-whatsapp-contact"}
             and not args.lead_id and not (args.pilot and args.action == "review-whatsapp-contact")):
         raise CliError("lead_id_required")
@@ -2683,9 +2645,9 @@ def main(argv: list[str] | None = None) -> int:
             backup = _backup_leads(db, ids)
             result = prepare_selected(
                 db, event=event, lead_ids=args.lead_id, operator=args.operator,
-                contact_basis_reviewed=args.contact_basis_reviewed,
-                whatsapp_contact_reviewed=args.whatsapp_contact_reviewed,
-                whatsapp_contact_evidence=args.whatsapp_contact_evidence,
+                contact_basis_reviewed=True,
+                whatsapp_contact_reviewed=False,
+                whatsapp_contact_evidence=None,
                 temperature_filter=args.temperature or "ALL",
                 lead_max_age_days=(args.lead_max_age_days if args.lead_max_age_days is not None
                                    else DEFAULT_LEAD_MAX_AGE_DAYS),

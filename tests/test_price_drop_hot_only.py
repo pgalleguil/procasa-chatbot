@@ -113,7 +113,7 @@ def test_hot_to_cold_before_approval_still_allows_approval(db):
     assert db["leads"].find_one()["price_drop_v2"]["campaigns"][0]["status"] == "APPROVED"
 
 
-def test_cold_real_send_remains_locked_until_separate_pilot_approval(db, monkeypatch):
+def test_cold_real_send_uses_verified_inquiry_without_separate_authorization(db, monkeypatch):
     v2.prepare_one(db, now=NOW, **args())
     v2.approve_one(db, lead_id=LID, campaign_id=CID,
                    operator="Supervisor", now=NOW)
@@ -124,13 +124,16 @@ def test_cold_real_send_remains_locked_until_separate_pilot_approval(db, monkeyp
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, CID)
     calls = []
     outcome = v2.send_one(db, lead_id=LID, campaign_id=CID,
-                          sender=lambda *a: calls.append(a), now=NOW)
-    assert outcome["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
-    assert calls == []
-    assert db["leads"].find_one()["price_drop_v2"]["campaigns"][0]["status"] == "APPROVED"
+                          sender=lambda *a: calls.append(a) or {
+                              "success": True, "provider_message_id": "mock-cold-inquiry",
+                              "delivery_status": "accepted",
+                          }, now=NOW)
+    assert outcome["status"] == "SENT"
+    assert len(calls) == 1
+    assert db["leads"].find_one()["price_drop_v2"]["campaigns"][0]["status"] == "SENT"
 
 
-def test_real_hot_send_still_requires_separate_pilot_approval(db, monkeypatch):
+def test_hot_real_send_uses_verified_inquiry_without_separate_authorization(db, monkeypatch):
     v2.prepare_one(db, now=NOW, **args())
     v2.approve_one(db, lead_id=LID, campaign_id=CID,
                    operator="Supervisor", now=NOW)
@@ -139,6 +142,9 @@ def test_real_hot_send_still_requires_separate_pilot_approval(db, monkeypatch):
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, CID)
     calls = []
     result = v2.send_one(db, lead_id=LID, campaign_id=CID,
-                         sender=lambda *a: calls.append(a), now=NOW)
-    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
-    assert calls == []
+                         sender=lambda *a: calls.append(a) or {
+                             "success": True, "provider_message_id": "mock-hot-inquiry",
+                             "delivery_status": "accepted",
+                         }, now=NOW)
+    assert result["status"] == "SENT"
+    assert len(calls) == 1

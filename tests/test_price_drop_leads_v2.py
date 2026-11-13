@@ -548,7 +548,7 @@ def test_fixed_three_recipient_pilot_allows_verified_prior_inquiry_direct_follow
     assert len(sender_calls) == 1
 
 
-def test_fixed_pilot_exception_does_not_apply_to_other_campaigns(db, monkeypatch):
+def test_any_real_campaign_with_verified_prior_inquiry_can_send_without_separate_optin(db, monkeypatch):
     lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
     _clear_campaign_contact_permission(db, lead_id)
     db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
@@ -558,10 +558,13 @@ def test_fixed_pilot_exception_does_not_apply_to_other_campaigns(db, monkeypatch
     calls = []
     result = v2.send_one(
         db, lead_id=lead_id, campaign_id="another-price-drop-campaign",
-        sender=lambda *args: calls.append(args), now=NOW,
+        sender=lambda *args: calls.append(args) or {
+            "success": True, "provider_message_id": "mock-other-price-drop",
+            "delivery_status": "accepted",
+        }, now=NOW,
     )
-    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
-    assert calls == []
+    assert result["status"] == "SENT"
+    assert len(calls) == 1
 
 
 def test_fixed_pilot_still_blocks_optout_without_contact_permission(db, monkeypatch):

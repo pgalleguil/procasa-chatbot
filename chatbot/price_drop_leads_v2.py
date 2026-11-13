@@ -570,36 +570,22 @@ def _fixed_prior_inquiry_pilot(campaign: dict) -> bool:
 
 def whatsapp_contact_authorization_blocker(
         lead: dict, campaign: dict, *, now=None) -> str | None:
-    """Return the same contact-permission blocker for CLI and send_one.
+    """Legacy compatibility gate for price-drop follow-ups.
 
-    No campaign is authorized merely because the customer inquired about a
-    property. A revoked/invalid lead-level record takes precedence over a
-    campaign-level snapshot, including when the snapshot was once valid.
+    A separate opt-in review is NOT a prerequisite for future campaigns:
+    the sender independently validates the historical *same-property* inquiry,
+    verified price reduction, unique phone and all suppression rules.
+
+    Explicit consent REVOCATION is still treated as a contact suppression.
+    Never turn a revoked permission into implicit permission to send.
     """
-    campaign_authorization = (
-        campaign.get("whatsapp_contact_reviewed") is True
-        and bool(str(campaign.get("whatsapp_contact_evidence") or "").strip())
-    )
-    reusable_authorization = reusable_whatsapp_contact_authorization(
-        lead, phone=str(campaign.get("phone_normalized") or ""), now=now,
-    )
-    price_drop = lead.get("price_drop_v2") or {}
-    contact_authorization_record = (
-        price_drop.get("whatsapp_contact_authorization")
-        if isinstance(price_drop, dict) else None
-    )
-    if contact_authorization_record is not None and reusable_authorization is None:
+    record = ((lead.get("price_drop_v2") or {})
+              .get("whatsapp_contact_authorization"))
+    if isinstance(record, dict) and (
+            record.get("status") in {"REVOKED", "OPTED_OUT", "DECLINED"}
+            or record.get("revoked_at") is not None):
         return "WHATSAPP_CONTACT_AUTHORIZATION_INVALID_OR_REVOKED"
-    if not campaign_authorization and reusable_authorization is None:
-        # The customer initiated the exact property inquiry before the price
-        # reduction and a supervisor approved this individual direct follow-up.
-        # Never manufacture an opt-in record; the full sender independently
-        # verifies the inbound evidence and exclusions before dispatch.
-        if _fixed_prior_inquiry_pilot(campaign) and not lead_must_not_be_contacted(lead):
-            return None
-        return "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
     return None
-
 
 def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
     """Shared fail-closed contact and event checks for every real campaign."""
@@ -1569,6 +1555,10 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     try:
         receipt = sender(c["phone_normalized"], c["outbound_message"])
     except Exception:
+        receipt = {"success": False, "provider_call_uncertain": True}
+    if not isinstance(receipt, dict):
+        # Malformed provider result must never crash after the SENDING claim.
+        # Status remains DELIVERY_UNKNOWN; reconciliation prevents a blind retry.
         receipt = {"success": False, "provider_call_uncertain": True}
     accepted = bool(receipt.get("success") and receipt.get("provider_message_id")
                     and not receipt.get("provider_call_uncertain"))

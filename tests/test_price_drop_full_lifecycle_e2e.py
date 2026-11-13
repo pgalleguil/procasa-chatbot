@@ -112,9 +112,12 @@ def test_new_lead_silence_audited_drop_hot_only_real_dispatch_locked(db, monkeyp
     calls = []
     outcome = v2.send_one(
         db, lead_id=str(LEAD), campaign_id=REAL_CAMPAIGN,
-        sender=lambda *args: calls.append(args), now=SEND)
-    assert outcome["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
-    assert not calls
+        sender=lambda *args: calls.append(args) or {
+            "success": True, "provider_message_id": "mock-real-followup",
+            "delivery_status": "accepted",
+        }, now=SEND)
+    assert outcome["status"] == "SENT"
+    assert len(calls) == 1
     assert len(db["leads"].find_one({"_id": LEAD})["price_drop_v2"]["campaigns"]) == 1
 
 

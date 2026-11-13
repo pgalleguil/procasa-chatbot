@@ -115,9 +115,12 @@ def test_clp_preview_and_audited_lead_record_are_durable_but_no_send(db, monkeyp
     monkeypatch.setenv(v2.APPROVED_ID_FLAG, CID)
     calls = []
     result = v2.send_one(db, lead_id=str(LEAD_ID), campaign_id=CID,
-                         sender=lambda *a: calls.append(a), now=NOW)
-    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
-    assert not calls
+                         sender=lambda *a: calls.append(a) or {
+                             "success": True, "provider_message_id": "mock-audit-send",
+                             "delivery_status": "accepted",
+                         }, now=NOW)
+    assert result["status"] == "SENT"
+    assert len(calls) == 1
 
 
 def test_clp_qa_context_and_conversational_reply_keep_clp(db, monkeypatch):

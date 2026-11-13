@@ -1,12 +1,14 @@
-"""Batch price-drop pilot: no per-message approval when authorization is already verified.
+"""Automatic price-drop batches from the office computer, without per-lead approval.
 
 DRY RUN (no writes/sends):
     python scripts/enviar_rebajas_automatico.py
 SEND UP TO THREE NEW LEADS:
     python scripts/enviar_rebajas_automatico.py --execute
 
-Every lead needs an existing, valid PRICE_DROP_UPDATES WhatsApp authorization.
-An old property inquiry alone is never treated as consent. No executive sends.
+Only leads with a prior inquiry about the same property before its verified
+price reduction are eligible. Separate WhatsApp opt-in reviews and per-message
+approvals are not required. STOP, revocation, completed-search, duplicate and
+delivery protections remain active. No executive sends.
 This runs ONCE, when invoked; it is not a scheduled/background campaign.
 """
 from __future__ import annotations
@@ -57,7 +59,7 @@ def recent_outreach_or_pending(lead, *, now, cooldown_days=30):
 
 def choose_new_recipients(db, *, max_messages, max_age_days, now,
                           property_code=None, max_events=1000):
-    """Only consent-verified leads with real pre-reduction inquiries."""
+    """Only leads with a verified pre-reduction inquiry about this property."""
     events = cli._events(db, property_code=property_code, limit=max_events)
     events = sorted(events, key=lambda event: (event.dropped_at, event.event_id), reverse=True)
     chosen, seen = [], set()
@@ -75,11 +77,11 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
             lead = db["leads"].find_one({"_id": cli._lead_id(identity)})
             if not lead or lead_must_not_be_contacted(lead):
                 continue
-            phone = str(lead.get("contact_phone_normalized") or lead.get("phone") or "")
-            if v2.reusable_whatsapp_contact_authorization(
-                lead, phone=phone, now=now
-            ) is None:
+            # Explicit revocation/STOP remains binding even without an opt-in
+            # prerequisite. Exclude before writing a PREPARED campaign.
+            if v2.whatsapp_contact_authorization_blocker(lead, {}) is not None:
                 continue
+            phone = str(lead.get("contact_phone_normalized") or lead.get("phone") or "")
             if recent_outreach_or_pending(lead, now=now):
                 continue
             # Preserve exactly one candidate per person across all properties.
@@ -114,8 +116,8 @@ def verify_publications(db, chosen, *, now):
 def run(db, *, execute=False, max_messages=3, max_age_days=120,
         property_code=None, max_events=1000, now=None,
         provider_plan="trial", min_delay=60.0, max_delay=90.0):
-    if not 1 <= max_messages <= 3:
-        raise ValueError("pilot_max_messages_must_be_between_1_and_3")
+    if not 1 <= max_messages <= cli.MAX_MESSAGES_PER_RUN:
+        raise ValueError("max_messages_must_be_within_provider_run_limit")
     cli.validate_limits(max_messages, min_delay, max_delay, provider_plan=provider_plan)
     stamp = now or datetime.now(timezone.utc)
     selected, counters = choose_new_recipients(
@@ -127,18 +129,18 @@ def run(db, *, execute=False, max_messages=3, max_age_days=120,
         "lead_last6": item["lead_id"][-6:],
         "phone_last4": item["last4"],
         "event_id": item["event"].event_id,
-        "authorization": "VERIFIED_REUSABLE",
+        "contact_basis": "VERIFIED_PRE_REDUCTION_INQUIRY",
     } for item in selected]
     report = {"mode": "EXECUTE" if execute else "DRY_RUN",
-              "status": "CANDIDATES_SELECTED" if selected else "NO_VERIFIED_AUTHORIZED_RECIPIENTS",
+              "status": "CANDIDATES_SELECTED" if selected else "NO_ELIGIBLE_RECIPIENTS",
               "selected": len(selected), "required": max_messages,
               "recipients": preview, **counters,
-              "approval": "AUTOMATIC_AFTER_VERIFICATION",
+              "approval": "AUTOMATIC_AFTER_PROPERTY_INQUIRY_VERIFICATION",
               "manual_approval_per_message": False, "attempts": 0}
     if not execute:
         return report
     if len(selected) != max_messages:
-        return {**report, "status": "NOT_ENOUGH_VERIFIED_AUTHORIZED_RECIPIENTS"}
+        return {**report, "status": "NOT_ENOUGH_ELIGIBLE_RECIPIENTS"}
     if os.getenv("RENDER", "").lower() == "true" or os.getenv("RENDER_SERVICE_ID"):
         return {**report, "status": "BLOCKED_MANUAL_CLI_ON_RENDER"}
     if os.getenv(v2.SEND_FLAG, "").lower() not in {"1", "true", "yes"}:
@@ -162,8 +164,8 @@ def run(db, *, execute=False, max_messages=3, max_age_days=120,
             whatsapp_contact_reviewed=False, whatsapp_contact_evidence=None,
             temperature_filter="ALL", lead_max_age_days=max_age_days, now=stamp,
         )
-        # The mandatory contact authorization and eligibility are rechecked
-        # by prepare_one and approve_one. No human per-message approval.
+        # Prior-property inquiry, STOP and duplicate-send protections are
+        # rechecked before actual delivery; no human per-message approval.
         v2.approve_one(db, lead_id=item["lead_id"],
                        campaign_id=event.campaign_id, operator=AUTOMATIC_OPERATOR)
         batches.setdefault(event.campaign_id, set()).add(item["lead_id"])

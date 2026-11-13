@@ -77,6 +77,10 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
             lead = db["leads"].find_one({"_id": cli._lead_id(identity)})
             if not lead or lead_must_not_be_contacted(lead):
                 continue
+            # Explicit revocation/STOP remains binding even without an opt-in
+            # prerequisite. Exclude before writing a PREPARED campaign.
+            if v2.whatsapp_contact_authorization_blocker(lead, {}) is not None:
+                continue
             phone = str(lead.get("contact_phone_normalized") or lead.get("phone") or "")
             if recent_outreach_or_pending(lead, now=now):
                 continue

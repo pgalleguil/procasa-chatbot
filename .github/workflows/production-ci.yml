@@ -41,6 +41,8 @@ jobs:
           chatbot/price_drop_reconciliation.py scripts/enviar_piloto_rebajas.py chatbot/webhook_event_policy.py
           scripts/auditar_recepcion_piloto.py
           scripts/recuperar_respuestas_piloto_export.py
+          scripts/recuperar_respuestas_reportadas_procasa.py
+          scripts/enviar_rebajas_automatico.py
 
   critical-tests:
     name: Critical suites
@@ -55,6 +57,7 @@ jobs:
               tests/test_price_drop_campaign_cli.py
               tests/test_price_drop_inbound_readiness_audit.py
               tests/test_price_drop_export_recovery.py
+              tests/test_auto_rebajas_pilot.py
               tests/test_price_drop_inbound_reengagement.py
               tests/test_wasender_webhook_signature_compat.py
               tests/test_wasender_webhook_unauthorized_response.py

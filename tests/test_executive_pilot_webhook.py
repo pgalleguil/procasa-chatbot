@@ -151,3 +151,94 @@ def test_owner_changed_refuses_to_write(monkeypatch):
               "timestamp_source": "provider"}
     assert pilot._save_authorized_message(cfg, parsed) == "not_authorized"
     assert len(leads.doc["messages"]) == 1
+
+
+
+def test_fictitious_lead_end_to_end_signed_webhook(monkeypatch):
+    """Simulate a full two-way session without sending WhatsApps or touching MongoDB."""
+    import json
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from chatbot import storage, crm_metrics
+
+    leads = FakeLeads()
+    current_cycle = {
+        "assignment_cycle_id": "cycle-A",
+        "assigned_to_user_id": ACTOR_ID,
+        "assigned_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+    }
+    monkeypatch.setattr(storage, "get_db", lambda: {"leads": leads})
+    monkeypatch.setattr(crm_metrics, "active_assignment_cycle",
+                        lambda _db, _lid: current_cycle)
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_WEBHOOK_SECRET", "secret-fictitious-2026")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_LEAD_ID", LEAD_ID)
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_CONTACT_PHONE", PHONE)
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_ACTOR_USER_ID", ACTOR_ID)
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_SESSION_LABEL", "Procasa-Piloto-Pablo")
+
+    app = FastAPI()
+    app.include_router(pilot.router)
+    client = TestClient(app)
+    path = "/webhook/ejecutivos-piloto"
+    headers = {"X-Webhook-Signature": "secret-fictitious-2026"}
+
+    # No valid webhook signature -> no access to contents.
+    outgoing = event(from_me=True, msg_id="test-send-001",
+                     text="Hola, soy el ejecutivo de prueba")
+    response = client.post(path, json=outgoing,
+                           headers={"X-Webhook-Signature": "wrong-secret"})
+    assert response.status_code == 401
+    assert len(leads.doc["messages"]) == 1
+
+    # Only authorized lead's manual outgoing messages are persisted.
+    response = client.post(path, json=outgoing, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "stored"
+    assert leads.doc["messages"][-1]["role"] == "agent"
+    assert leads.doc["messages"][-1]["actor_type"] == "human_agent"
+    assert leads.doc["messages"][-1]["actor_id"] == ACTOR_ID
+
+    # A customer reply is attributed to the same original lead and cycle.
+    reply = event(from_me=False, msg_id="test-reply-002",
+                  text="¿Podemos visitar la propiedad?")
+    response = client.post(path, json=reply, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "stored"
+    assert leads.doc["messages"][-1]["role"] == "user"
+    assert leads.doc["messages"][-1]["actor_type"] == "customer"
+    assert leads.doc["messages"][-1]["assignment_cycle_id"] == "cycle-A"
+
+    # Retry of the original event must never create duplicates.
+    response = client.post(path, json=reply, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "duplicate_or_cycle_changed"
+    assert len(leads.doc["messages"]) == 3
+    assert leads.doc["messages"][0]["content"] == "Original bot message"
+
+    # Completely unrelated private conversation must be discarded.
+    unrelated = event(from_me=False, jid="56999998888@s.whatsapp.net",
+                      msg_id="private-003", text="Mensaje personal privado")
+    response = client.post(path, json=unrelated, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "ignored"
+    assert len(leads.doc["messages"]) == 3
+    assert "Mensaje personal privado" not in json.dumps(leads.doc, default=str)
+
+    # Upon reassignment, the old executive session can no longer save.
+    current_cycle.update(assignment_cycle_id="cycle-B",
+                         assigned_to_user_id="other-actor")
+    leads.doc["lifecycle"]["current_assignment_cycle_id"] = "cycle-B"
+    leads.doc["lifecycle"]["assigned_to_user_id"] = "other-actor"
+    late = event(from_me=True, msg_id="late-004",
+                 text="Mensaje del anterior ejecutivo")
+    response = client.post(path, json=late, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "not_authorized"
+    assert len(leads.doc["messages"]) == 3
+
+    # The pilot gate is fail-closed, independent of the office bot.
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_ENABLED", "0")
+    response = client.post(path, json=outgoing, headers=headers)
+    assert response.status_code == 503
+    assert len(leads.doc["messages"]) == 3

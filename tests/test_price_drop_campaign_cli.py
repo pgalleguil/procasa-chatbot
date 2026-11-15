@@ -703,22 +703,22 @@ def test_candidate_selection_prioritizes_all_temperatures_and_verifies_alias_dat
     assert [row["temperature"] for row in rows[:3]] == ["HOT", "NORMAL", "COLD"]
 
 
-def test_unknown_temperature_is_pending_review_but_does_not_discard_verified_inquiry():
+def test_all_temperatures_includes_unknown_classification_without_manual_review():
     db = _event_db()
     event = discover_price_drops(db, now=NOW)[0]
     lead_id = _candidate(db, phone="+56983219801", temperature="",
                          extra={"lead_temperature_effective": "SIN_CLASIFICAR"})
     row = find_candidates_for_event(db, event)[0]
     assert row["lead_id"] == str(lead_id)
-    assert row["eligible"] is False
+    assert row["eligible"] is True
     assert row["temperature"] == "REVISIÓN_PENDIENTE"
-    assert row["reason"] == "temperature_review_pending"
+    assert row["reason"] == "eligible_after_manual_temperature_review"
 
 
 @pytest.mark.parametrize("temperature,selected,eligible", [
     ("HOT", "HOT", True), ("NORMAL", "HOT,NORMAL", True),
     ("COLD", "HOT,NORMAL", False), ("COLD", "COLD", True),
-    ("SIN_CLASIFICAR", "ALL", False),
+    ("SIN_CLASIFICAR", "ALL", True),
 ])
 def test_temperature_filters_and_manual_unknown_review(temperature, selected, eligible):
     db = _event_db()
@@ -772,11 +772,17 @@ def test_missing_or_invalid_created_at_is_review_pending(created_at, reason):
     db = _event_db()
     event = discover_price_drops(db, now=NOW)[0]
     lead_id = _candidate(db, phone="+56983219801", extra={"created_at": created_at})
+    # No age filter was requested, so original inquiry evidence is sufficient.
     row = find_candidates_for_event(db, event, now=NOW)[0]
     assert row["lead_id"] == str(lead_id)
-    assert not row["eligible"]
-    assert row["reason"] == reason
-    assert row["age_review_required"] is True
+    assert row["eligible"] is True
+    assert row["age_review_required"] is False
+    assert row["lead_age_status"] == reason
+    # An explicit age filter must still fail closed without a dated created_at.
+    limited = find_candidates_for_event(db, event, lead_max_age_days=90, now=NOW)[0]
+    assert limited["eligible"] is False
+    assert limited["reason"] == reason
+    assert limited["age_review_required"] is True
 
 
 def test_message_personalization_and_deterministic_variants_include_verified_facts():
@@ -1950,13 +1956,13 @@ def test_portfolio_audit_flags_revoked_whatsapp_authorization_without_any_writes
     assert list(db["leads"].find()) == before
 
 
-def test_full_portfolio_audit_reports_missing_temperature_review_without_approving_it():
+def test_full_portfolio_audit_includes_unknown_temperature_when_all_selected():
     db = _event_db()
     _candidate(db, phone="+56983219801", temperature="UNKNOWN")
     report = cli.audit_full_portfolio(db, now=NOW, lead_max_age_days=None)
-    assert report["totals"]["eligible_event_matches"] == 0
-    assert report["totals"]["requires_temperature_review"] == 1
-    assert report["totals"]["excluded_or_review_needed"] == 1
+    assert report["totals"]["eligible_event_matches"] == 1
+    assert report["totals"]["requires_temperature_review"] == 0
+    assert report["totals"]["excluded_or_review_needed"] == 0
     assert report["send_approved"] is False
 
 
@@ -2055,3 +2061,20 @@ def test_valid_reusable_consent_replaces_campaign_specific_review(monkeypatch, t
     assert result["status"] == "COMPLETED"
     assert result["attempts"] == 1
     assert result["accepted"] == 1
+
+
+def test_full_portfolio_bitacora_only_executed_price_drop_is_discovered():
+    db = _db()
+    _seed_property(db, code="6370", currency="UF", current=1654)
+    db["universo_cartera_prop360"].update_one({"codigo": "6370"}, {"$set": {
+        "bitacora": [{"fecha": "20/10/2026 10:38:34",
+                      "valor": "Baja el precio de venta, de UF 1.690 a UF 1.654"},
+                     {"fecha": "19/10/2026 18:35:36",
+                      "valor": "Solicita bajar el precio de venta, de UF 1.690 a UF 1.654."}],
+    }})
+    events = discover_price_drops(db, now=NOW)
+    assert len(events) == 1
+    assert events[0].property_code == "6370"
+    assert (events[0].old_price, events[0].new_price) == (1690, 1654)
+    assert events[0].dropped_at == datetime(
+        2026, 10, 20, 13, 38, 34, tzinfo=timezone.utc)

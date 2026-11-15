@@ -197,18 +197,6 @@ def test_exact_prior_inquiry_pilot_preflight_never_grants_general_marketing_perm
         }
         lead = {"phone": "+56983219801", "price_drop_v2": {"campaigns": [campaign]}}
         entry = {"lead": lead, "campaign": campaign}
-        assert cli._whatsapp_contact_authorization_blocker(
-            entry, now=NOW,
-        ) == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
-        lead["price_drop_v2"]["whatsapp_contact_authorization"] = {
-            "status": "ACTIVE", "channel": "WHATSAPP",
-            "scope": v2.WHATSAPP_CONTACT_SCOPE,
-            "phone_normalized": "+56983219801",
-            "evidence_reference": "CRM consent record 2026-10-01",
-            "reviewed_by": "CRM reviewer",
-            "reviewed_at": NOW - timedelta(days=3),
-            "source_campaign_id": "prior-price-drop-event",
-        }
         assert cli._whatsapp_contact_authorization_blocker(entry, now=NOW) is None
 
         other = dict(campaign, campaign_id="another-marketing-campaign")
@@ -341,17 +329,8 @@ def test_rental_preparation_stores_operation_and_requires_exact_permission():
     )
     assert preview["operation"] == "arriendo"
     assert "arriendo" in preview["message"].lower()
-    lead = db["leads"].find_one({"_id": lead_id})
-    lead["price_drop_v2"] = {"whatsapp_contact_authorization": {
-        "status": "ACTIVE", "channel": "WHATSAPP",
-        "scope": v2.WHATSAPP_CONTACT_SCOPE,
-        "phone_normalized": "+56983219890",
-        "evidence_reference": "CRM consent record for rental updates",
-        "reviewed_by": "CRM reviewer", "reviewed_at": NOW - timedelta(days=3),
-        "source_campaign_id": "prior-rental-event",
-    }}
     assert v2.whatsapp_contact_authorization_blocker(
-        lead,
+        db["leads"].find_one({"_id":lead_id}),
         {"operation":"arriendo","status":"APPROVED","campaign_id":event.campaign_id},
     ) is None
 
@@ -1018,7 +997,7 @@ def test_prepare_selected_recovers_scoped_authorization_from_campaign_history():
     assert campaign["whatsapp_contact_authorization_source_campaign_id"] == "prior-event"
 
 
-def test_property_inquiry_allows_preparation_but_not_sending_without_consent():
+def test_prepare_selected_without_reusable_consent_uses_verified_prior_inquiry():
     db = _event_db()
     event = discover_price_drops(db, now=NOW)[0]
     lead_id = _candidate(db, phone="+56983219822", temperature="COLD",
@@ -1033,9 +1012,6 @@ def test_property_inquiry_allows_preparation_but_not_sending_without_consent():
     assert result["whatsapp_authorizations_reviewed"] == 0
     assert after["price_drop_v2"]["campaigns"][0]["status"] == "PREPARED"
     assert after["price_drop_v2"].get("whatsapp_contact_authorization") is None
-    assert v2.whatsapp_contact_authorization_blocker(
-        after, after["price_drop_v2"]["campaigns"][0], now=NOW,
-    ) == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
 
 
 def test_event_and_message_history_dedupe_prevents_a_second_same_event():
@@ -1765,17 +1741,6 @@ def test_account_usage_does_not_fall_back_to_session_key_when_pat_missing(monkey
 def test_interactive_menu_previews_then_prepares_approves_and_sends_mock_only(tmp_path, monkeypatch):
     db = _event_db()
     lead_id = _candidate(db, phone="+56983219801", temperature="NORMAL")
-    db["leads"].update_one({"_id": lead_id}, {"$set": {
-        "price_drop_v2.whatsapp_contact_authorization": {
-            "status": "ACTIVE", "channel": "WHATSAPP",
-            "scope": v2.WHATSAPP_CONTACT_SCOPE,
-            "phone_normalized": "+56983219801",
-            "evidence_reference": "CRM consent record 2026-10-01",
-            "reviewed_by": "CRM reviewer",
-            "reviewed_at": NOW - timedelta(days=5),
-            "source_campaign_id": "prior-price-drop-event",
-        },
-    }})
     monkeypatch.setenv(v2.SEND_FLAG, "true")
     monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
     answers = iter([
@@ -2045,7 +2010,7 @@ def test_preapproved_campaign_does_not_need_redundant_global_release_toggle(monk
     assert result["accepted"] == 1
 
 
-def test_missing_reusable_consent_blocks_before_provider_attempt(monkeypatch, tmp_path):
+def test_missing_separate_optin_does_not_block_verified_price_drop_followup(monkeypatch, tmp_path):
     db, _, _ = _dispatch_db(monkeypatch, count=1)
     monkeypatch.delenv(v2.WHATSAPP_CONTACT_REVIEWED_FLAG, raising=False)
     db["leads"].update_one({}, {"$unset": {
@@ -2053,15 +2018,9 @@ def test_missing_reusable_consent_blocks_before_provider_attempt(monkeypatch, tm
         "price_drop_v2.campaigns.0.whatsapp_contact_evidence": "",
         "price_drop_v2.whatsapp_contact_authorization": "",
     }})
-    sent = []
-    result = _run(
-        db, journal_path=tmp_path / "missing-contact-evidence.json",
-        sender=lambda *args: sent.append(args),
-    )
-    assert result["status"] == "BLOCKED"
-    assert result["reason"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
-    assert result["attempts"] == 0
-    assert sent == []
+    result = _run(db, journal_path=tmp_path / "missing-contact-evidence.json")
+    assert result["status"] == "COMPLETED"
+    assert result["attempts"] == 1
 
 
 def test_revoked_contact_authorization_reports_precise_blocker_before_sending(

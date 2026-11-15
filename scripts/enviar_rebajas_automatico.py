@@ -6,11 +6,9 @@ SEND UP TO THREE NEW LEADS:
     python scripts/enviar_rebajas_automatico.py --execute
 
 Only leads with a prior inquiry about the same property before its verified
-price reduction and a valid reusable WhatsApp authorization are eligible.
-Authorization is reused across covered price-drop events; no new consent or
-administrative approval is requested per campaign/message. STOP, revocation,
-completed-search, duplicate and delivery protections remain active. No
-executive sends.
+price reduction are eligible. Separate WhatsApp opt-in reviews and per-message
+approvals are not required. STOP, revocation, completed-search, duplicate and
+delivery protections remain active. No executive sends.
 This runs ONCE, when invoked; it is not a scheduled/background campaign.
 """
 from __future__ import annotations
@@ -79,9 +77,8 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
             lead = db["leads"].find_one({"_id": cli._lead_id(identity)})
             if not lead or lead_must_not_be_contacted(lead):
                 continue
-            # Require existing reusable permission without asking for it again
-            # per event. Explicit revocation/STOP remains binding. Exclude
-            # before writing a PREPARED campaign.
+            # Explicit revocation/STOP remains binding even without an opt-in
+            # prerequisite. Exclude before writing a PREPARED campaign.
             if v2.whatsapp_contact_authorization_blocker(lead, {}) is not None:
                 continue
             phone = str(lead.get("contact_phone_normalized") or lead.get("phone") or "")
@@ -138,7 +135,7 @@ def run(db, *, execute=False, max_messages=3, max_age_days=120,
               "status": "CANDIDATES_SELECTED" if selected else "NO_ELIGIBLE_RECIPIENTS",
               "selected": len(selected), "required": max_messages,
               "recipients": preview, **counters,
-              "approval": "AUTOMATIC_BATCH_AFTER_ELIGIBILITY_AND_CONSENT_CHECKS",
+              "approval": "AUTOMATIC_AFTER_PROPERTY_INQUIRY_VERIFICATION",
               "manual_approval_per_message": False, "attempts": 0}
     if not execute:
         return report

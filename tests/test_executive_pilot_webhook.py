@@ -319,3 +319,24 @@ def test_probe_does_not_override_disabled_gate(monkeypatch):
     )
     assert response.status_code == 503
     assert response.json()["detail"] == "pilot_disabled"
+
+
+
+def test_incomplete_config_logs_only_missing_field_names(monkeypatch, caplog):
+    """Sensitive values must never leak to app logs on 503 configuration failures."""
+    import logging
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_PROBE_ONLY", "1")
+    monkeypatch.delenv("PROCASA_EXEC_PILOT_WEBHOOK_SECRET", raising=False)
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_CONTACT_PHONE", PHONE)
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_SESSION_LABEL", "Procasa-Piloto-Pablo")
+    with caplog.at_level(logging.WARNING, logger="chatbot.executive_pilot_webhook"):
+        with pytest.raises(HTTPException) as exc:
+            pilot._pilot_config()
+    assert exc.value.status_code == 503
+    assert "missing_fields=webhook_secret" in caplog.text
+    assert PHONE not in caplog.text
+    assert "Procasa-Piloto-Pablo" not in caplog.text
+    assert "secret_value" not in caplog.text

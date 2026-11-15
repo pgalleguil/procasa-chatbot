@@ -865,10 +865,25 @@ def _inquiry_before(lead: dict, code: str, drop_at: datetime,
                 if len(listing_id) < 7:
                     continue
                 normalized_id = re.sub(r"[^a-z0-9]", "", listing_id.casefold())
-                if (re.search(r"(?<![a-z0-9])" + re.escape(listing_id.casefold())
-                              + r"(?![a-z0-9])", lowered)
+                mlc = re.fullmatch(r"mlc-?(\d{7,12})", listing_id.casefold())
+                if mlc:
+                    # A real portal link may contain MLC-4514084654 while the
+                    # verified Prop360 publication stores MLC4514084654.
+                    # Verify the complete ID with boundaries, never the
+                    # surrounding, unverified message alone.
+                    matched_listing = bool(re.search(
+                        r"(?<![a-z0-9])mlc-?" + re.escape(mlc.group(1))
+                        + r"(?![a-z0-9])", lowered,
+                    ))
+                else:
+                    matched_listing = bool(
+                        re.search(r"(?<![a-z0-9])" +
+                                  re.escape(listing_id.casefold()) +
+                                  r"(?![a-z0-9])", lowered)
                         or re.search(r"(?<![a-z0-9])" + re.escape(normalized_id)
-                                     + r"(?![a-z0-9])", normalized_text)):
+                                     + r"(?![a-z0-9])", normalized_text)
+                    )
+                if matched_listing:
                     has_explicit_code = True
                     reference = f"listing_id:{listing_id}"
                     break

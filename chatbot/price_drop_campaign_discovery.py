@@ -251,6 +251,77 @@ def _embedded_current_price_drop(prop: dict[str, Any], *,
     ))
 
 
+
+def _bitacora_current_price_drop(prop: dict[str, Any], *,
+                                 now: datetime | None = None,
+                                 since: datetime | None = None,
+                                 currency: str | None = None,
+                                 operation: str = "venta") -> PriceDropEvent | None:
+    """Confirm executed price decreases from the source property's own log.
+
+    Reject requests ("Solicita bajar"), rises, exchange conversions,
+    ambiguous amounts and entries without a verifiable timestamp. The
+    normalization still requires the *currently published* price to match.
+    """
+    pattern = re.compile(
+        r"^\s*Baja\s+el\s+precio\s+de\s+(venta|arriendo),?\s+de\s+"
+        r"(UF|CLP|\$)\s*([\d.,]+)\s+a\s+(UF|CLP|\$)\s*([\d.,]+)\s*$",
+        re.IGNORECASE,
+    )
+    def amount(raw: str, denomination: str) -> Decimal | None:
+        value = str(raw or "").strip().rstrip(".")
+        if not value or not re.fullmatch(r"[\d.,]+", value):
+            return None
+        # Prop360's Chilean thousands separator is ".", decimal is ",".
+        # A period followed by exactly three digits is a thousands separator.
+        if "," in value:
+            value = value.replace(".", "").replace(",", ".")
+        elif "." in value:
+            groups = value.split(".")
+            if len(groups) > 2 or len(groups[-1]) == 3:
+                value = value.replace(".", "")
+            elif denomination == "CLP":
+                return None
+        return _decimal(value)
+
+    matches: list[PriceDropEvent] = []
+    code = str(prop.get("codigo") or "")
+    for row in prop.get("bitacora") or []:
+        if not isinstance(row, dict):
+            continue
+        message = str(row.get("valor") or "").strip().rstrip(".")
+        result = pattern.match(message)
+        if not result or result.group(1).lower() != operation:
+            continue
+        old_curr = "CLP" if result.group(2) == "$" else result.group(2).upper()
+        new_curr = "CLP" if result.group(4) == "$" else result.group(4).upper()
+        if old_curr != new_curr or (currency and old_curr != currency):
+            continue
+        old = amount(result.group(3), old_curr)
+        new = amount(result.group(5), new_curr)
+        if old is None or new is None or not old > new > 0:
+            continue
+        try:
+            local_at = datetime.strptime(
+                str(row.get("fecha") or "").strip(), "%d/%m/%Y %H:%M:%S"
+            ).replace(tzinfo=CHILE_TZ)
+        except ValueError:
+            continue
+        event = normalize_price_event({
+            "campo": "precio_publicado", "codigo": code,
+            "operacion": operation, "fecha": local_at.isoformat(),
+            "moneda_anterior": old_curr, "moneda_nueva": new_curr,
+            "monto_anterior": _number(old), "monto_nuevo": _number(new),
+            "_id": f"bitacora:{code}:{operation}:{local_at.isoformat()}",
+        }, prop, now=now)
+        if event and (since is None or event.dropped_at >= since):
+            matches.append(event)
+    return max(matches, key=lambda event: (
+        event.dropped_at, event.event_id,
+    )) if matches else None
+
+
+
 def discover_price_drops(db: Any, *, since: datetime | None = None,
                          limit: int | None = None, now: datetime | None = None,
                          property_code: str | None = None,
@@ -344,6 +415,7 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
     # property's historial_cambios array. Include those missing property
     # windows without altering identities of centrally recorded campaigns.
     # A diagnostic --limit intentionally examines only central history rows.
+    # An unbounded scan also checks executed decreases in Prop360 bitacora.
     if limit is None:
         embedded_query: dict[str, Any] = {
             "estado.oficina": "PROCASA SUCRE",
@@ -359,7 +431,7 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
         if property_code:
             embedded_query["codigo"] = str(property_code)
         embedded_projection = {
-            **property_projection, "historial_cambios": 1,
+            **property_projection, "historial_cambios": 1, "bitacora": 1,
         }
         properties_with_event = {
             (event.property_code, event.operation.casefold())
@@ -373,14 +445,31 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
         for prop in cursor:
             code = str(prop.get("codigo") or "")
             for selected_operation in ([operation] if operation else ["venta", "arriendo"]):
-                if (code, selected_operation) in properties_with_event:
-                    continue
-                extra = _embedded_current_price_drop(
+                embedded = _embedded_current_price_drop(
                     prop, now=now, since=since_utc,
                     currency=currency_filter or None, operation=selected_operation,
                 )
+                bitacora = _bitacora_current_price_drop(
+                    prop, now=now, since=since_utc,
+                    currency=currency_filter or None, operation=selected_operation,
+                )
+                extra = max(
+                    (event for event in (embedded, bitacora) if event is not None),
+                    key=lambda event: (event.dropped_at, event.event_id),
+                    default=None,
+                )
                 if extra is None:
                     continue
+                # A central-history snapshot can be dated later than the
+                # executed change in Prop360. Replace only the identical price
+                # decrease, preserving other historical price windows.
+                for old_id, existing in list(events.items()):
+                    if (existing.property_code == code
+                            and existing.operation.casefold() == selected_operation
+                            and existing.currency == extra.currency
+                            and existing.old_price == extra.old_price
+                            and existing.new_price == extra.new_price):
+                        del events[old_id]
                 events[extra.event_id] = extra
                 properties_with_event.add((code, selected_operation))
     return sorted(events.values(), key=lambda item: (item.dropped_at, item.property_code, item.event_id))
@@ -566,8 +655,12 @@ def find_candidates_for_event(
         effective_temp = effective_temperature(lead, review)
         age = lead_age_details(lead, now=stamp, max_age_days=age_limit)
         temp_matches = temperature_filter_matches(effective_temp, selected_temperatures)
-        review_required = effective_temp == "REVISIÓN_PENDIENTE"
-        age_review_required = age["lead_age_status"] != "valid"
+        # ALL is not a temperature restriction. Explicit age=0/None is not
+        # a request to reconstruct or impose an absent lead creation date.
+        review_required = (selected_temperatures != "ALL"
+                           and effective_temp == "REVISIÓN_PENDIENTE")
+        age_review_required = (age_limit is not None
+                               and age["lead_age_status"] != "valid")
         too_old = age["excluded_by_age"]
         eligible = bool(base_eligible and not age_review_required and not too_old
                         and not review_required and temp_matches)

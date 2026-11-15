@@ -2,8 +2,8 @@
 
 DRY RUN (no writes/sends):
     python scripts/enviar_rebajas_automatico.py
-SEND UP TO THREE NEW LEADS:
-    python scripts/enviar_rebajas_automatico.py --execute
+SEND UP TO THE OPERATOR-SELECTED LIMIT OF NEW LEADS:
+    python scripts/enviar_rebajas_automatico.py --execute --max-messages 20 --lead-max-age-days 0
 
 Only leads with a prior inquiry about the same property before its verified
 price reduction are eligible. Separate WhatsApp opt-in reviews and per-message
@@ -58,7 +58,7 @@ def recent_outreach_or_pending(lead, *, now, cooldown_days=30):
 
 
 def choose_new_recipients(db, *, max_messages, max_age_days, now,
-                          property_code=None, max_events=1000):
+                          property_code=None, max_events=None):
     """Only leads with a verified pre-reduction inquiry about this property."""
     events = cli._events(db, property_code=property_code, limit=max_events)
     events = sorted(events, key=lambda event: (event.dropped_at, event.event_id), reverse=True)
@@ -113,12 +113,14 @@ def verify_publications(db, chosen, *, now):
     return results
 
 
-def run(db, *, execute=False, max_messages=3, max_age_days=120,
-        property_code=None, max_events=1000, now=None,
-        provider_plan="trial", min_delay=60.0, max_delay=90.0):
+def run(db, *, execute=False, max_messages=20, max_age_days=0,
+        property_code=None, max_events=None, now=None,
+        provider_plan="trial", min_delay=60.0, max_delay=90.0,
+        daily_provider_cap=50):
     if not 1 <= max_messages <= cli.MAX_MESSAGES_PER_RUN:
         raise ValueError("max_messages_must_be_within_provider_run_limit")
-    cli.validate_limits(max_messages, min_delay, max_delay, provider_plan=provider_plan)
+    cli.validate_limits(max_messages, min_delay, max_delay,
+                        provider_plan=provider_plan, daily_cap=daily_provider_cap)
     stamp = now or datetime.now(timezone.utc)
     selected, counters = choose_new_recipients(
         db, max_messages=max_messages, max_age_days=max_age_days,
@@ -133,14 +135,15 @@ def run(db, *, execute=False, max_messages=3, max_age_days=120,
     } for item in selected]
     report = {"mode": "EXECUTE" if execute else "DRY_RUN",
               "status": "CANDIDATES_SELECTED" if selected else "NO_ELIGIBLE_RECIPIENTS",
-              "selected": len(selected), "required": max_messages,
+              "selected": len(selected), "requested_limit": max_messages,
+              "required": max_messages,  # legacy report key, not an exact-batch requirement
               "recipients": preview, **counters,
               "approval": "AUTOMATIC_AFTER_PROPERTY_INQUIRY_VERIFICATION",
               "manual_approval_per_message": False, "attempts": 0}
     if not execute:
         return report
-    if len(selected) != max_messages:
-        return {**report, "status": "NOT_ENOUGH_ELIGIBLE_RECIPIENTS"}
+    if not selected:
+        return report  # A smaller eligible audience is not a blocked batch.
     if os.getenv("RENDER", "").lower() == "true" or os.getenv("RENDER_SERVICE_ID"):
         return {**report, "status": "BLOCKED_MANUAL_CLI_ON_RENDER"}
     if os.getenv(v2.SEND_FLAG, "").lower() not in {"1", "true", "yes"}:
@@ -149,8 +152,18 @@ def run(db, *, execute=False, max_messages=3, max_age_days=120,
         return {**report, "status": "BLOCKED_CONTEXT_RUNTIME_GATE"}
 
     checks = verify_publications(db, selected, now=stamp)
-    if not checks or any(not row.get("sendable") for row in checks.values()):
+    # A stale or unpublished property must not block other verified recipients.
+    excluded = [{"code": row["event"].property_code,
+                 "lead_last6": row["lead_id"][-6:],
+                 "reason": str((checks.get(row["event"].event_id) or {}).get("status")
+                               or "publication_not_verified")}
+                for row in selected
+                if not (checks.get(row["event"].event_id) or {}).get("sendable")]
+    selected = [row for row in selected
+                if (checks.get(row["event"].event_id) or {}).get("sendable")]
+    if not selected:
         return {**report, "status": "BLOCKED_PUBLICATION_VERIFICATION",
+                "publication_exclusions": excluded,
                 "publication_checks": checks}
 
     # This preserves the existing backups and V2 prepare/approve audit ledger.
@@ -174,10 +187,13 @@ def run(db, *, execute=False, max_messages=3, max_age_days=120,
         db, campaigns=batches, include_pilot=False,
         max_messages=max_messages, min_delay_seconds=min_delay,
         max_delay_seconds=max_delay, provider_plan=provider_plan,
+        daily_provider_cap=daily_provider_cap,
         temperature_filter="ALL", lead_max_age_days=max_age_days,
         enforce_campaign_filters=True, already_confirmed=True,
     )
     return {**report, "status": outcome.get("status"),
+            "sending_selected": len(selected),
+            "publication_exclusions": excluded,
             "attempts": outcome.get("attempts", 0),
             "batch_result": outcome, "backup": str(backup)}
 
@@ -185,22 +201,26 @@ def run(db, *, execute=False, max_messages=3, max_age_days=120,
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--execute", action="store_true")
-    parser.add_argument("--max-messages", type=int, default=3)
-    parser.add_argument("--lead-max-age-days", type=int, default=120)
+    parser.add_argument("--max-messages", type=int, default=20)
+    parser.add_argument("--lead-max-age-days", type=int, default=0,
+                        help="0 = sin restriccion de antiguedad")
     parser.add_argument("--property")
-    parser.add_argument("--max-events", type=int, default=1000)
+    parser.add_argument("--max-events", type=int, default=None,
+                        help="opcional; sin valor se revisa todo el historial")
+    parser.add_argument("--daily-provider-cap", type=int, default=50)
     parser.add_argument("--provider-plan", choices=("trial", "paid"), default="trial")
     parser.add_argument("--min-delay-seconds", type=float, default=60)
     parser.add_argument("--max-delay-seconds", type=float, default=90)
     args = parser.parse_args()
-    if args.lead_max_age_days < 1 or args.max_events < 1:
-        parser.error("lead age and event limit must be positive")
+    if args.lead_max_age_days < 0 or (args.max_events is not None and args.max_events < 1):
+        parser.error("lead age must be non-negative and optional event limit positive")
     try:
         outcome = run(
             cli._get_db(), execute=args.execute, max_messages=args.max_messages,
             max_age_days=args.lead_max_age_days, property_code=args.property,
             max_events=args.max_events, provider_plan=args.provider_plan,
             min_delay=args.min_delay_seconds, max_delay=args.max_delay_seconds,
+            daily_provider_cap=args.daily_provider_cap,
         )
     except (ValueError, cli.CliError, v2.PilotBlocked) as exc:
         outcome = {"status": "BLOCKED", "reason": str(exc)[:180], "attempts": 0}

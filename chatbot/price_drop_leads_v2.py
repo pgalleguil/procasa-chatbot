@@ -1022,9 +1022,8 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
     clean_temperature_filter = normalize_temperature_filter(temperature_filter)
     if campaign_filters_enabled:
         selected_temperature = effective_temperature(lead, temperature_review)
-        if selected_temperature == "REVISIÓN_PENDIENTE":
-            raise PilotBlocked("temperature_review_required")
-        if temperature_review_is_required(lead, temperature_review):
+        if (clean_temperature_filter != "ALL"
+                and temperature_review_is_required(lead, temperature_review)):
             raise PilotBlocked("temperature_review_required")
         if not temperature_filter_matches(selected_temperature, clean_temperature_filter):
             raise PilotBlocked("temperature_filter_mismatch")
@@ -1032,7 +1031,8 @@ def preview_one(db, *, lead_id: str, phone: str, campaign_id: str,
             lead, now=utc(now or datetime.now(timezone.utc)),
             max_age_days=lead_max_age_days,
         )
-        if age["lead_age_status"] != "valid":
+        if (normalize_lead_max_age_days(lead_max_age_days) is not None
+                and age["lead_age_status"] != "valid"):
             raise PilotBlocked(str(age["lead_age_status"]))
         if age["excluded_by_age"]:
             raise PilotBlocked("lead_age_exceeded")
@@ -1463,8 +1463,6 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     if filters_enabled:
         review = c.get("temperature_review") or {}
         temperature = effective_temperature(lead, review)
-        if temperature == "REVISIÓN_PENDIENTE":
-            return {"status": "BLOCKED_TEMPERATURE_REVIEW_REQUIRED"}
         try:
             selected_filter = normalize_temperature_filter(
                 temperature_filter_override if temperature_filter_override is not None
@@ -1482,7 +1480,8 @@ def send_one(db, *, lead_id: str, campaign_id: str,
             return {"status": "BLOCKED_TEMPERATURE_FILTER_WIDENED"}
         if not temperature_filter_matches(temperature, selected_filter):
             return {"status": "BLOCKED_TEMPERATURE_FILTER_MISMATCH"}
-        if temperature_review_is_required(lead, review):
+        if (selected_filter != "ALL"
+                and temperature_review_is_required(lead, review)):
             return {"status": "BLOCKED_TEMPERATURE_REVIEW_REQUIRED"}
         current_temperature = str(lead.get("lead_temperature_effective") or
                                   lead.get("lead_temperature") or "").strip().upper()
@@ -1499,7 +1498,8 @@ def send_one(db, *, lead_id: str, campaign_id: str,
                 and (selected_age is None or selected_age > stored_age)):
             return {"status": "BLOCKED_LEAD_AGE_FILTER_WIDENED"}
         age = lead_age_details(lead, now=stamp, max_age_days=selected_age)
-        if age["lead_age_status"] not in {"valid", "lead_age_exceeded"}:
+        if (selected_age is not None
+                and age["lead_age_status"] not in {"valid", "lead_age_exceeded"}):
             return {"status": "BLOCKED_LEAD_AGE_REVIEW_REQUIRED",
                     "reason": age["lead_age_status"]}
         if age["excluded_by_age"]:

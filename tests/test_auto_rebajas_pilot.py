@@ -41,17 +41,96 @@ def test_recent_sent_campaign_blocks_repeated_outreach():
     assert automatic.recent_outreach_or_pending(lead, now=now)
 
 
-def test_execution_never_sends_partial_three_lead_pilot(monkeypatch):
-    event = SimpleNamespace(event_id="evt_1", property_code="6436")
+def test_execution_sends_available_recipients_below_operator_limit(monkeypatch):
+    event = SimpleNamespace(event_id="evt_1", campaign_id="evt_1",
+                            property_code="6436")
+    recipient = {"event": event, "lead_id": "a" * 24, "last4": "1111"}
     monkeypatch.setattr(automatic, "choose_new_recipients",
-                        lambda *args, **kwargs: ([{"event": event, "lead_id": "a" * 24, "last4": "1111"}],
+                        lambda *args, **kwargs: ([recipient],
                                                   {"events_examined": 1, "events_discovered": 1}))
     monkeypatch.setattr(automatic, "verify_publications",
+                        lambda *args, **kwargs: {"evt_1": {"sendable": True}})
+    monkeypatch.setattr(automatic.cli, "_lead_id", lambda v: v)
+    monkeypatch.setattr(automatic.cli, "_backup_leads",
+                        lambda *args: "/tmp/mock_backup")
+    operations = []
+    monkeypatch.setattr(automatic.cli, "prepare_selected",
+                        lambda *args, **kwargs: operations.append("prepare"))
+    monkeypatch.setattr(automatic.v2, "approve_one",
+                        lambda *args, **kwargs: operations.append("approve"))
+    def fake_dispatch(*args, **kwargs):
+        assert kwargs["max_messages"] == 20
+        assert kwargs["daily_provider_cap"] == 20
+        operations.append("send")
+        return {"status": "COMPLETED", "attempts": 1}
+    monkeypatch.setattr(automatic.cli, "execute_approved_batch", fake_dispatch)
+    monkeypatch.setenv(automatic.v2.SEND_FLAG, "1")
+    monkeypatch.setenv(automatic.v2.CONTEXT_FLAG, "1")
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
+    result = automatic.run({}, execute=True, max_messages=20,
+                           daily_provider_cap=20)
+    assert result["status"] == "COMPLETED"
+    assert result["selected"] == 1
+    assert result["attempts"] == 1
+    assert operations == ["prepare", "approve", "send"]
+
+
+def test_zero_recipients_is_a_clean_noop(monkeypatch):
+    monkeypatch.setattr(automatic, "choose_new_recipients",
+                        lambda *args, **kwargs: ([], {"events_examined": 3,
+                                                        "events_discovered": 3}))
+    monkeypatch.setattr(automatic, "verify_publications",
                         lambda *args, **kwargs: (_ for _ in ()).throw(
-                            AssertionError("must not perform live verification or writes")))
-    outcome = automatic.run({}, execute=True, max_messages=3)
-    assert outcome["status"] == "NOT_ENOUGH_ELIGIBLE_RECIPIENTS"
-    assert outcome["attempts"] == 0
+                            AssertionError("no publication checks when there are no leads")))
+    result = automatic.run({}, execute=True, max_messages=20)
+    assert result["status"] == "NO_ELIGIBLE_RECIPIENTS"
+    assert result["attempts"] == 0
+
+
+def test_full_history_is_default_and_no_hidden_event_limit(monkeypatch):
+    inspected = []
+    def events(*args, **kwargs):
+        inspected.append(kwargs.get("limit"))
+        return []
+    monkeypatch.setattr(automatic.cli, "_events", events)
+    selected, _ = automatic.choose_new_recipients(
+        {}, max_messages=20, max_age_days=0,
+        now=datetime.now(timezone.utc))
+    assert selected == []
+    assert inspected == [None]
+
+
+def test_unpublished_recipient_does_not_hold_up_other_campaigns(monkeypatch):
+    good = SimpleNamespace(event_id="good", campaign_id="good", property_code="6436")
+    stale = SimpleNamespace(event_id="stale", campaign_id="stale", property_code="6377")
+    rows = [{"event": good, "lead_id": "a" * 24, "last4": "1111"},
+            {"event": stale, "lead_id": "b" * 24, "last4": "2222"}]
+    monkeypatch.setattr(automatic, "choose_new_recipients",
+                        lambda *args, **kwargs: (rows,
+                                                  {"events_examined": 2, "events_discovered": 2}))
+    monkeypatch.setattr(automatic, "verify_publications",
+                        lambda *args, **kwargs: {"good": {"sendable": True},
+                                                "stale": {"sendable": False,
+                                                          "status": "inactive"}})
+    monkeypatch.setattr(automatic.cli, "_lead_id", lambda v: v)
+    monkeypatch.setattr(automatic.cli, "_backup_leads",
+                        lambda *args: "/tmp/mock_backup")
+    prepared = []
+    monkeypatch.setattr(automatic.cli, "prepare_selected",
+                        lambda *args, **kwargs: prepared.append(kwargs["event"].event_id))
+    monkeypatch.setattr(automatic.v2, "approve_one", lambda *args, **kwargs: None)
+    monkeypatch.setattr(automatic.cli, "execute_approved_batch",
+                        lambda *args, **kwargs: {"status": "COMPLETED", "attempts": 1})
+    monkeypatch.setenv(automatic.v2.SEND_FLAG, "1")
+    monkeypatch.setenv(automatic.v2.CONTEXT_FLAG, "1")
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
+    result = automatic.run({}, execute=True, max_messages=20)
+    assert result["attempts"] == 1
+    assert prepared == ["good"]
+    assert len(result["publication_exclusions"]) == 1
+    assert result["publication_exclusions"][0]["code"] == "6377"
 
 
 def test_automatic_batch_calls_existing_approved_sender_without_per_lead_prompt(monkeypatch):

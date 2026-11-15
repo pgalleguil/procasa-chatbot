@@ -519,9 +519,9 @@ def _clear_campaign_contact_permission(db, lead_id):
     }})
 
 
-def test_real_campaign_blocks_prior_inquiry_without_reusable_authorization(
+def test_fixed_three_recipient_pilot_allows_verified_prior_inquiry_direct_followup(
         db, monkeypatch):
-    lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    lead_id, campaign_id, phone = _approved_real_pilot_sample(db, monkeypatch)
     _clear_campaign_contact_permission(db, lead_id)
     before = db["leads"].find_one({"_id": ObjectId(lead_id)})
     assert before["price_drop_v2"].get("whatsapp_contact_authorization") is None
@@ -535,13 +535,20 @@ def test_real_campaign_blocks_prior_inquiry_without_reusable_authorization(
             },
         now=NOW,
     )
-    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
-    assert sender_calls == []
-    unchanged = db["leads"].find_one({"_id": ObjectId(lead_id)})
-    assert unchanged["price_drop_v2"]["campaigns"][0]["status"] == "APPROVED"
+    assert result["status"] == "SENT"
+    assert len(sender_calls) == 1
+    assert sender_calls[0][0] == phone
+    sent = db["leads"].find_one({"_id": ObjectId(lead_id)})
+    assert sent["price_drop_v2"].get("whatsapp_contact_authorization") is None
+    assert sent["price_drop_v2"]["campaigns"][0]["status"] == "SENT"
+    assert v2.send_one(
+        db, lead_id=lead_id, campaign_id=campaign_id,
+        sender=lambda *_: sender_calls.append(("DUPLICATE",)), now=NOW,
+    )["status"] == "NOT_APPROVED"
+    assert len(sender_calls) == 1
 
 
-def test_another_price_drop_still_requires_reusable_authorization(db, monkeypatch):
+def test_any_real_campaign_with_verified_prior_inquiry_can_send_without_separate_optin(db, monkeypatch):
     lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
     _clear_campaign_contact_permission(db, lead_id)
     db["leads"].update_one({"_id": ObjectId(lead_id)}, {"$set": {
@@ -556,8 +563,8 @@ def test_another_price_drop_still_requires_reusable_authorization(db, monkeypatc
             "delivery_status": "accepted",
         }, now=NOW,
     )
-    assert result["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
-    assert calls == []
+    assert result["status"] == "SENT"
+    assert len(calls) == 1
 
 
 def test_fixed_pilot_still_blocks_optout_without_contact_permission(db, monkeypatch):
@@ -577,6 +584,7 @@ def test_fixed_pilot_still_blocks_optout_without_contact_permission(db, monkeypa
 
 def test_fixed_pilot_still_requires_original_property_inquiry(db, monkeypatch):
     lead_id, campaign_id, _ = _approved_real_pilot_sample(db, monkeypatch)
+    _clear_campaign_contact_permission(db, lead_id)
     lead = db["leads"].find_one({"_id": ObjectId(lead_id)})
     messages = [dict(message, content="Consulto por otra propiedad codigo 9999")
                 for message in lead["messages"]]

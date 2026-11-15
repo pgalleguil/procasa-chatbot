@@ -570,27 +570,21 @@ def _fixed_prior_inquiry_pilot(campaign: dict) -> bool:
 
 def whatsapp_contact_authorization_blocker(
         lead: dict, campaign: dict, *, now=None) -> str | None:
-    """Require prior, explicit, reusable WhatsApp permission for price drops.
+    """Legacy compatibility gate for price-drop follow-ups.
 
-    A valid contact-level authorization covers later price-drop events within
-    its recorded scope; it is not reviewed or requested again per campaign.
-    A property inquiry alone is not authorization. STOP and other suppression
-    checks remain independent and cannot be overridden by this record.
+    A separate opt-in review is NOT a prerequisite for future campaigns:
+    the sender independently validates the historical *same-property* inquiry,
+    verified price reduction, unique phone and all suppression rules.
+
+    Explicit consent REVOCATION is still treated as a contact suppression.
+    Never turn a revoked permission into implicit permission to send.
     """
-    lead = lead if isinstance(lead, dict) else {}
-    campaign = campaign if isinstance(campaign, dict) else {}
-    price_drop = lead.get("price_drop_v2") or {}
-    record = (price_drop.get("whatsapp_contact_authorization")
-              if isinstance(price_drop, dict) else None)
+    record = ((lead.get("price_drop_v2") or {})
+              .get("whatsapp_contact_authorization"))
     if isinstance(record, dict) and (
             record.get("status") in {"REVOKED", "OPTED_OUT", "DECLINED"}
             or record.get("revoked_at") is not None):
         return "WHATSAPP_CONTACT_AUTHORIZATION_INVALID_OR_REVOKED"
-    phone = (campaign.get("phone_normalized")
-             or lead.get("contact_phone_normalized") or lead.get("phone") or "")
-    if reusable_whatsapp_contact_authorization(
-            lead, phone=str(phone), now=now) is None:
-        return "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
     return None
 
 def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:

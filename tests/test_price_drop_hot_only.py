@@ -113,17 +113,7 @@ def test_hot_to_cold_before_approval_still_allows_approval(db):
     assert db["leads"].find_one()["price_drop_v2"]["campaigns"][0]["status"] == "APPROVED"
 
 
-def test_cold_real_send_reuses_verified_contact_authorization(db, monkeypatch):
-    db["leads"].update_one({"_id": ObjectId(LID)}, {"$set": {
-        "price_drop_v2.whatsapp_contact_authorization": {
-            "status": "ACTIVE", "channel": "WHATSAPP",
-            "scope": v2.WHATSAPP_CONTACT_SCOPE,
-            "phone_normalized": PHONE,
-            "evidence_reference": "CRM consent record 2026-10-01",
-            "reviewed_by": "CRM reviewer", "reviewed_at": NOW,
-            "source_campaign_id": "prior-price-drop-event",
-        },
-    }})
+def test_cold_real_send_uses_verified_inquiry_without_separate_authorization(db, monkeypatch):
     v2.prepare_one(db, now=NOW, **args())
     v2.approve_one(db, lead_id=LID, campaign_id=CID,
                    operator="Supervisor", now=NOW)
@@ -143,17 +133,7 @@ def test_cold_real_send_reuses_verified_contact_authorization(db, monkeypatch):
     assert db["leads"].find_one()["price_drop_v2"]["campaigns"][0]["status"] == "SENT"
 
 
-def test_hot_real_send_reuses_verified_contact_authorization(db, monkeypatch):
-    db["leads"].update_one({"_id": ObjectId(LID)}, {"$set": {
-        "price_drop_v2.whatsapp_contact_authorization": {
-            "status": "ACTIVE", "channel": "WHATSAPP",
-            "scope": v2.WHATSAPP_CONTACT_SCOPE,
-            "phone_normalized": PHONE,
-            "evidence_reference": "CRM consent record 2026-10-01",
-            "reviewed_by": "CRM reviewer", "reviewed_at": NOW,
-            "source_campaign_id": "prior-price-drop-event",
-        },
-    }})
+def test_hot_real_send_uses_verified_inquiry_without_separate_authorization(db, monkeypatch):
     v2.prepare_one(db, now=NOW, **args())
     v2.approve_one(db, lead_id=LID, campaign_id=CID,
                    operator="Supervisor", now=NOW)

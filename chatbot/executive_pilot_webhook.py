@@ -250,3 +250,22 @@ async def executive_pilot_webhook(
         # Do not log request body, message text, contact number, or secrets.
         raise HTTPException(status_code=503, detail="pilot_storage_unavailable")
     return JSONResponse({"ok": True, "status": status})
+
+# Startup-only readiness check for operators. Never log payload, phone,
+# session, provider IDs, secret values or message content.
+if os.getenv("PROCASA_EXEC_PILOT_ENABLED", "").strip() == "1":
+    try:
+        _ready_configuration = _pilot_config()
+    except HTTPException as _readiness_error:
+        logging.getLogger(__name__).warning(
+            "EXEC_PILOT_STARTUP ready=false reason=%s", _readiness_error.detail,
+        )
+    else:
+        logging.getLogger(__name__).info(
+            "EXEC_PILOT_STARTUP ready=true probe_only=%s",
+            _ready_configuration["probe_only"],
+        )
+    finally:
+        # Do not keep a secret copy in a module global.
+        if "_ready_configuration" in globals():
+            del _ready_configuration

@@ -242,3 +242,80 @@ def test_fictitious_lead_end_to_end_signed_webhook(monkeypatch):
     response = client.post(path, json=outgoing, headers=headers)
     assert response.status_code == 503
     assert len(leads.doc["messages"]) == 3
+
+
+
+def test_probe_only_real_route_never_uses_db_or_stores_personal_text(monkeypatch, caplog):
+    """The office-owned contact can be used in a webhook probe with no test lead."""
+    import logging
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from chatbot import storage
+
+    office_number = "+56983219804"  # Explicitly authorized PROCASA office test peer.
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_PROBE_ONLY", "1")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_WEBHOOK_SECRET", "synthetic-only-test-secret-2026")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_CONTACT_PHONE", office_number)
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_SESSION_LABEL", "Procasa-Piloto-Pablo")
+    # The probe must not require a lead, cycle or actor ID.
+    monkeypatch.delenv("PROCASA_EXEC_PILOT_LEAD_ID", raising=False)
+    monkeypatch.delenv("PROCASA_EXEC_PILOT_ACTOR_USER_ID", raising=False)
+
+    def forbidden_db():
+        raise AssertionError("probe must not open Mongo")
+    monkeypatch.setattr(storage, "get_db", forbidden_db)
+    app = FastAPI()
+    app.include_router(pilot.router)
+    client = TestClient(app)
+    url = "/webhook/ejecutivos-piloto"
+    headers = {"X-Webhook-Signature": "synthetic-only-test-secret-2026"}
+
+    outgoing = event(jid="56983219804@s.whatsapp.net",
+                     from_me=True, msg_id="probe-out-1",
+                     text="Texto confidencial del ejecutivo")
+    incoming = event(jid="56983219804@s.whatsapp.net",
+                     from_me=False, msg_id="probe-in-1",
+                     text="Texto confidencial de un cliente")
+    with caplog.at_level(logging.INFO, logger="chatbot.executive_pilot_webhook"):
+        response_out = client.post(url, json=outgoing, headers=headers)
+        response_in = client.post(url, json=incoming, headers=headers)
+
+    assert response_out.status_code == 200
+    assert response_in.status_code == 200
+    assert response_out.json()["direction"] == "manual_outgoing"
+    assert response_in.json()["direction"] == "customer_incoming"
+    for response in (response_out, response_in):
+        assert response.json()["payload_contents_stored"] is False
+        assert response.json()["mongo_connections"] == 0
+        assert response.json()["outbound_messages_sent"] == 0
+        assert "Texto confidencial" not in response.text
+        assert office_number not in response.text
+
+    # No other contacts are probed, even with a valid signature.
+    private_chat = event(jid="56999998888@s.whatsapp.net",
+                         from_me=False, msg_id="private-1",
+                         text="Conversación privada no autorizada")
+    rejected = client.post(url, json=private_chat, headers=headers)
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "ignored"
+    assert "Texto confidencial" not in caplog.text
+    assert "Conversación privada" not in caplog.text
+    assert office_number not in caplog.text
+    assert "probe-out-1" not in caplog.text
+
+
+def test_probe_does_not_override_disabled_gate(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_ENABLED", "0")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_PROBE_ONLY", "1")
+    app = FastAPI()
+    app.include_router(pilot.router)
+    response = TestClient(app).post(
+        "/webhook/ejecutivos-piloto",
+        json=event(), headers={"X-Webhook-Signature": "fake"},
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"] == "pilot_disabled"

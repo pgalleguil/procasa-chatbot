@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import logging
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -34,12 +35,14 @@ def _pilot_config() -> dict[str, str]:
         "actor_user_id": os.getenv("PROCASA_EXEC_PILOT_ACTOR_USER_ID", "").strip(),
         "session": os.getenv("PROCASA_EXEC_PILOT_SESSION_LABEL", "").strip(),
     }
+    cfg["probe_only"] = os.getenv("PROCASA_EXEC_PILOT_PROBE_ONLY", "").strip() == "1"
     expected = normalize_phone_strict(cfg["contact_phone"])
+    identity_valid = (ObjectId.is_valid(cfg["lead_id"])
+                      and ObjectId.is_valid(cfg["actor_user_id"]))
     if not (len(cfg["secret"]) >= 12
-            and ObjectId.is_valid(cfg["lead_id"])
-            and ObjectId.is_valid(cfg["actor_user_id"])
             and expected and has_real_phone(expected)
-            and cfg["session"]):
+            and cfg["session"]
+            and (cfg["probe_only"] or identity_valid)):
         raise HTTPException(status_code=503, detail="pilot_configuration_incomplete")
     cfg["contact_phone"] = expected
     return cfg
@@ -218,6 +221,16 @@ async def executive_pilot_webhook(
     parsed = _parse_message(payload, cfg["contact_phone"])
     if parsed is None:
         return JSONResponse({"ok": True, "status": "ignored"})
+    if cfg["probe_only"]:
+        # The first live test must prove the provider can report both directions
+        # without opening a MongoDB connection, storing content, or invoking AI.
+        direction = "manual_outgoing" if parsed["from_me"] else "customer_incoming"
+        logging.getLogger(__name__).info("[EXEC_PILOT_PROBE] direction=%s", direction)
+        return JSONResponse({
+            "ok": True, "status": "probe_received", "direction": direction,
+            "payload_contents_stored": False, "mongo_connections": 0,
+            "outbound_messages_sent": 0,
+        })
     try:
         status = await asyncio.to_thread(_save_authorized_message, cfg, parsed)
     except Exception:

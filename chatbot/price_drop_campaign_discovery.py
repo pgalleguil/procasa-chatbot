@@ -655,8 +655,12 @@ def find_candidates_for_event(
         effective_temp = effective_temperature(lead, review)
         age = lead_age_details(lead, now=stamp, max_age_days=age_limit)
         temp_matches = temperature_filter_matches(effective_temp, selected_temperatures)
-        review_required = effective_temp == "REVISIÓN_PENDIENTE"
-        age_review_required = age["lead_age_status"] != "valid"
+        # ALL is not a temperature restriction. Explicit age=0/None is not
+        # a request to reconstruct or impose an absent lead creation date.
+        review_required = (selected_temperatures != "ALL"
+                           and effective_temp == "REVISIÓN_PENDIENTE")
+        age_review_required = (age_limit is not None
+                               and age["lead_age_status"] != "valid")
         too_old = age["excluded_by_age"]
         eligible = bool(base_eligible and not age_review_required and not too_old
                         and not review_required and temp_matches)

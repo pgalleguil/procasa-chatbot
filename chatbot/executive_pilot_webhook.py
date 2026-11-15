@@ -27,6 +27,7 @@ router = APIRouter()
 
 def _pilot_config() -> dict[str, str]:
     if os.getenv("PROCASA_EXEC_PILOT_ENABLED", "").strip() != "1":
+        logging.getLogger(__name__).warning("EXEC_PILOT_GATE rejected=disabled")
         raise HTTPException(status_code=503, detail="pilot_disabled")
     cfg = {
         "secret": os.getenv("PROCASA_EXEC_PILOT_WEBHOOK_SECRET", "").strip(),
@@ -39,10 +40,22 @@ def _pilot_config() -> dict[str, str]:
     expected = normalize_phone_strict(cfg["contact_phone"])
     identity_valid = (ObjectId.is_valid(cfg["lead_id"])
                       and ObjectId.is_valid(cfg["actor_user_id"]))
-    if not (len(cfg["secret"]) >= 12
-            and expected and has_real_phone(expected)
-            and cfg["session"]
-            and (cfg["probe_only"] or identity_valid)):
+    missing = []
+    if len(cfg["secret"]) < 12:
+        missing.append("webhook_secret")
+    if not (expected and has_real_phone(expected)):
+        missing.append("allowed_contact")
+    if not cfg["session"]:
+        missing.append("session_label")
+    if not (cfg["probe_only"] or identity_valid):
+        missing.append("lead_or_actor_ids")
+    if missing:
+        # Log ONLY configuration field names. Never log secret values,
+        # phone numbers, message bodies, IDs, request payload or signature.
+        logging.getLogger(__name__).warning(
+            "EXEC_PILOT_GATE rejected=incomplete missing_fields=%s probe_only=%s",
+            ",".join(missing), cfg["probe_only"],
+        )
         raise HTTPException(status_code=503, detail="pilot_configuration_incomplete")
     cfg["contact_phone"] = expected
     return cfg

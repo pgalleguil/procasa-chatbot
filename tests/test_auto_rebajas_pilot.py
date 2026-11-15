@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import scripts.enviar_rebajas_automatico as automatic
 
 
-def test_historical_inquiry_eligible_without_separate_optin_but_stop_excludes(monkeypatch):
+def test_automatic_selection_requires_reusable_consent_and_still_blocks_stop(monkeypatch):
     event = SimpleNamespace(event_id="price_event_123", dropped_at=datetime.now(timezone.utc))
     candidate = {"eligible": True, "lead_id": "a" * 24}
     lead = {"_id": candidate["lead_id"], "phone": "+56911111111"}
@@ -20,6 +20,18 @@ def test_historical_inquiry_eligible_without_separate_optin_but_stop_excludes(mo
     monkeypatch.setattr(automatic, "find_candidates_for_event",
                         lambda *args, **kwargs: [candidate])
     monkeypatch.setattr(automatic, "lead_must_not_be_contacted", lambda lead: False)
+    rows, _ = automatic.choose_new_recipients(db, max_messages=3, max_age_days=120,
+                                               now=datetime.now(timezone.utc))
+    assert rows == []
+    lead["price_drop_v2"] = {"whatsapp_contact_authorization": {
+        "status": "ACTIVE", "channel": "WHATSAPP",
+        "scope": automatic.v2.WHATSAPP_CONTACT_SCOPE,
+        "phone_normalized": "+56911111111",
+        "evidence_reference": "CRM consent record 2026-10-01",
+        "reviewed_by": "CRM reviewer",
+        "reviewed_at": datetime.now(timezone.utc) - timedelta(days=3),
+        "source_campaign_id": "prior-price-drop-event",
+    }}
     rows, _ = automatic.choose_new_recipients(db, max_messages=3, max_age_days=120,
                                                now=datetime.now(timezone.utc))
     assert len(rows) == 1

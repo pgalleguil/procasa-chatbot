@@ -476,9 +476,10 @@ def audit_full_portfolio(
         "sending_attempts": 0,
         "reviewed_whatsapp_authorizations": "VERIFIED_STORED_REUSABLE_RECORDS_ONLY",
         "contact_readiness_explanation": (
-            "Verifica registros CRM reutilizables, no permisos externos ni consentimiento "
-            "supuesto por consulta histórica. Cada destinatario sigue necesitando revisión "
-            "individual y aprobación antes de enviar."
+            "Solo acepta una autorización comercial explícita, vigente y reutilizable ya "
+            "registrada en CRM; una consulta de propiedad no es consentimiento. No requiere "
+            "una nueva revisión administrativa por cada rebaja. Los controles STOP, duplicados "
+            "y requisitos del proveedor se verifican por separado al ejecutar."
         ),
         "whatsapp_review_queue_preview": review_queue_preview,
         "whatsapp_review_queue_preview_limit": 50,
@@ -493,7 +494,10 @@ def audit_full_portfolio(
         "events": sorted(rows_by_event, key=lambda x: (
             -x["eligible"], x["property_code"], x["event_id"]
         )),
-        "next_step": "Review permission evidence per lead; no recipient is approved by this audit",
+        "next_step": (
+            "Enviar solo a destinatarios con autorización comercial reutilizable verificada; "
+            "sin ese registro, excluir al destinatario."
+        ),
     }
 
 
@@ -1442,9 +1446,9 @@ def prepare_selected(db: Any, *, event: PriceDropEvent, lead_ids: list[str],
             raise CliError("whatsapp_contact_authorization_evidence_required_per_lead")
         if missing_authorization:
             evidence_by_lead[missing_authorization[0]] = evidence
-    # Separate WhatsApp opt-in review is optional for all present and future
-    # price-drop campaigns. The property-specific prior inquiry is checked by
-    # find_candidates_for_event and by the sender before dispatch.
+    # Preparation may include leads whose authorization still needs evidence
+    # reconciliation. The execution gate requires an explicit reusable record;
+    # the property inquiry is a separate campaign-eligibility condition.
     if whatsapp_contact_reviewed and any(
             len(evidence_by_lead.get(value, "")) < 8
             for value in missing_authorization):
@@ -1874,7 +1878,7 @@ def interactive_workflow(
     timezone_name: str = "America/Santiago",
     journal_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Guide an operator through read-only selection, individual approval and send."""
+    """Guide batch selection, automatic internal approval and one send confirmation."""
     if temperature_filter is None:
         raw_temperature_filter = input_fn(
             "Temperatura [1 HOT | 2 NORMAL | 3 COLD | 4 HOT+NORMAL | 5 TODOS] (Enter = 5): "
@@ -2123,8 +2127,9 @@ def interactive_workflow(
     operator = input_fn("Operador responsable: ").strip()
     if not operator:
         raise CliError("operator_required")
-    # Contact evidence is derived from a real prior property inquiry. No
-    # separate marketing authorization or per-lead permission prompt.
+    # A prior property inquiry establishes relevance only. Reusable commercial
+    # authorization is checked separately before any provider call; no new
+    # approval or consent is requested per price-drop event.
     if input_fn(
         f"Escribe PREPARAR {selected_count} para crear el lote seleccionado: "
     ).strip() != f"PREPARAR {selected_count}":
@@ -2437,7 +2442,7 @@ def _summary_report(db: Any, *, since: datetime | None = None,
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Descubre rebajas Prop360 y opera campañas V2 aprobadas de forma manual."
+        description="Descubre rebajas Prop360 y opera campañas V2 con controles de elegibilidad y consentimiento reutilizable."
     )
     actions = parser.add_mutually_exclusive_group()
     for flag in ("discover", "dry-run", "audience-audit", "provider-audit", "interactive", "execute", "resume", "prepare", "approve",
@@ -2446,7 +2451,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--status", action="store_true", help="consulta estado sin escritura")
     parser.add_argument("--pilot", action="store_true", help="SOLO los tres destinatarios originales; nunca reutilizar para nuevos leads")
     parser.add_argument("--auto", action="store_true",
-                        help="nuevas rebajas a nuevos leads: selecciona, prepara, aprueba y ejecuta el lote localmente sin aprobacion por mensaje")
+                        help="nuevas rebajas: selecciona, prepara y aprueba el lote sin aprobación individual; solo envía con consentimiento reutilizable verificado")
     parser.add_argument("--campaign-id")
     parser.add_argument("--event-id")
     parser.add_argument("--lead-id", action="append", default=[])

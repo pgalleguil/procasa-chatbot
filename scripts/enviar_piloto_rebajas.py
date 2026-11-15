@@ -59,7 +59,7 @@ _CAMPAIGN_REPORT_STATES = (
     "RESPONDED", "DECLINED", "OPTED_OUT", "BLOCKED", "SUPERSEDED",
 )
 DEFAULT_LEAD_MAX_AGE_DAYS = 120
-MAX_MESSAGES_PER_RUN = 50
+MAX_MESSAGES_PER_RUN = 1000  # provider/plan caps still apply; operator selects each run
 MAX_DELAY_SECONDS = 3600
 WEEKDAYS = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
 
@@ -2574,15 +2574,16 @@ def main(argv: list[str] | None = None) -> int:
                 max_messages=args.max_messages,
                 max_age_days=(args.lead_max_age_days
                               if args.lead_max_age_days is not None
-                              else DEFAULT_LEAD_MAX_AGE_DAYS),
+                              else 0),
                 property_code=args.property_code,
-                max_events=args.limit or 1000,
+                max_events=args.limit,  # None means scan all verified history
                 provider_plan=args.provider_plan,
                 min_delay=args.min_delay_seconds,
                 max_delay=args.max_delay_seconds,
+                daily_provider_cap=args.daily_provider_cap,
             )
             print(json.dumps(result, ensure_ascii=False, default=str))
-            blocked = {"BLOCKED", "ERROR", "NOT_ENOUGH_ELIGIBLE_RECIPIENTS",
+            blocked = {"BLOCKED", "ERROR",
                        "BLOCKED_MANUAL_CLI_ON_RENDER", "BLOCKED_SEND_RUNTIME_GATE",
                        "BLOCKED_CONTEXT_RUNTIME_GATE", "BLOCKED_PUBLICATION_VERIFICATION"}
             return 1 if result.get("status") in blocked else 0

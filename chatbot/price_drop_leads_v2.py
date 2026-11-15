@@ -625,7 +625,8 @@ def _real_campaign_send_blocker(db, lead: dict, campaign: dict) -> str | None:
     code = str(campaign.get("property_code") or "")
     evidence = _inquiry_before(
         lead, code, utc(campaign["price_drop_at"]),
-        _verified_listing_ids(db, code), return_evidence=True,
+        _verified_listing_ids(db, code, operation=str(campaign.get("operation") or "venta").lower()),
+        return_evidence=True,
     )
     # MongoDB BSON dates have millisecond precision. The original inbound
     # timestamp can retain microseconds in the message payload, while the
@@ -743,23 +744,65 @@ def _verified_campaign_price(db, code: str, old: int | float,
     return _property_price(db, code, old, new)
 
 
-def _verified_listing_ids(db, code: str) -> set[str]:
-    """Read current and historic publication IDs linked to this exact Prop360 property."""
+def _verified_listing_ids(db, code: str, *,
+                          operation: str | None = None) -> set[str]:
+    """Return verified property listing IDs, scoped to sale or rental if set.
+
+    A dual-operation listing must never qualify a rental inquiry as evidence
+    for an unrelated sale price-drop (or vice versa). Historical aliases without
+    operation attribution are included only for single-operation properties.
+    """
     prop = db["universo_cartera_prop360"].find_one(
-        {"codigo": code}, {"publicaciones": 1},
+        {"codigo": code}, {"publicaciones": 1, "tipo_operacion": 1},
     ) or {}
     pub = prop.get("publicaciones") or {}
+    op_info = prop.get("tipo_operacion") or {}
+    normalized_op = str(operation or "").strip().casefold()
+    if normalized_op not in {"", "venta", "arriendo"}:
+        return set()
+    both_operations = (
+        op_info.get("venta") is True and op_info.get("arriendo") is True
+    )
+
+    def matching_operation(value: object) -> bool:
+        if not normalized_op:
+            return True
+        token = str(value or "").strip().casefold()
+        return token in (
+            {"venta", "v", "sell", "sale"} if normalized_op == "venta"
+            else {"arriendo", "a", "rent", "rental", "alquiler"}
+        )
+
     values: set[str] = set()
     for alias in pub.get("aliases") or []:
-        if isinstance(alias, dict) and alias.get("resolvable") is True:
-            ext = str(alias.get("external_id") or "").strip()
-            if len(ext) >= 7:
-                values.add(ext.casefold())
+        if not isinstance(alias, dict) or alias.get("resolvable") is not True:
+            continue
+        alias_op = (alias.get("operacion") or alias.get("operation") or
+                    alias.get("operation_type"))
+        if normalized_op and alias_op and not matching_operation(alias_op):
+            continue
+        if normalized_op and not alias_op and both_operations:
+            continue
+        ext = str(alias.get("external_id") or "").strip()
+        if len(ext) >= 7:
+            values.add(ext.casefold())
+
     for key in ("portal_inmobiliario", "yapo", "toctoc", "procasa"):
         portal = pub.get(key) or {}
-        for publication in (portal.get("publicaciones") or {}).values():
+        for publication_key, publication in (
+            (portal.get("publicaciones") or {}).items()
+        ):
             if not isinstance(publication, dict):
                 continue
+            row_op = (publication.get("operacion") or
+                      publication.get("operation"))
+            if not row_op and str(publication_key).upper() in {"V", "A"}:
+                row_op = publication_key
+            if normalized_op:
+                if row_op and not matching_operation(row_op):
+                    continue
+                if not row_op and both_operations:
+                    continue
             for attr in ("external_id", "code", "code_unique"):
                 raw = publication.get(attr)
                 entries = raw if isinstance(raw, list) else [raw]
@@ -768,7 +811,6 @@ def _verified_listing_ids(db, code: str) -> set[str]:
                     if len(external) >= 7:
                         values.add(external.casefold())
     return values
-
 
 def _inquiry_before(lead: dict, code: str, drop_at: datetime,
                     listing_ids: set[str] | None = None, *,

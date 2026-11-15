@@ -891,7 +891,7 @@ def _campaign_filter_blocker(entry: dict[str, Any], *, temperature_filter: str |
         return "temperature_filter_would_widen_approved_campaign"
     lead = entry["lead"]
     effective = effective_temperature(lead, review)
-    if effective == "REVISIÓN_PENDIENTE" or temperature_review_is_required(lead, review):
+    if selected_filter != "ALL" and temperature_review_is_required(lead, review):
         return "temperature_review_pending"
     current = str(lead.get("lead_temperature_effective") or lead.get("lead_temperature") or "").strip().upper()
     if review and current in {"HOT", "NORMAL", "COLD"}:
@@ -910,7 +910,7 @@ def _campaign_filter_blocker(entry: dict[str, Any], *, temperature_filter: str |
             and (selected_age is None or selected_age > stored_age)):
         return "lead_age_filter_would_widen_approved_campaign"
     age = lead_age_details(lead, now=now, max_age_days=selected_age)
-    if age["lead_age_status"] != "valid":
+    if selected_age is not None and age["lead_age_status"] != "valid":
         return str(age["lead_age_status"])
     if age["excluded_by_age"]:
         return "lead_age_exceeded"

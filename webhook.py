@@ -1744,6 +1744,10 @@ app.include_router(crm_weekly_router)
 from owner_portal.router import router as owner_portal_router
 app.include_router(owner_portal_router)
 
+# Isolated opt-in pilot: never reuse the office chatbot webhook.
+from chatbot.executive_pilot_webhook import router as executive_pilot_router
+app.include_router(executive_pilot_router)
+
 from chatbot.lead_router import should_send_now, format_whatsapp_template
 from chatbot.storage import (
     get_db,

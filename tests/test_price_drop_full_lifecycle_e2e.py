@@ -96,7 +96,8 @@ def test_new_lead_silence_audited_drop_hot_only_real_dispatch_locked(db, monkeyp
     with pytest.raises(v2.PilotBlocked, match="property_price_or_availability_changed"):
         v2.preview_one(db, **_request(REAL_CAMPAIGN, False))
     _drop_price(db)
-    # Audited lower price; prior inquiry and its direct-response basis pass.
+    # Audited lower price; prior inquiry makes the event relevant, but is not
+    # WhatsApp consent by itself.
     preview = v2.preview_one(db, **_request(REAL_CAMPAIGN, False))
     assert preview["simulated_prior_inquiry"] is False
     assert "UF 2.790" in preview["message"]
@@ -116,8 +117,12 @@ def test_new_lead_silence_audited_drop_hot_only_real_dispatch_locked(db, monkeyp
             "success": True, "provider_message_id": "mock-real-followup",
             "delivery_status": "accepted",
         }, now=SEND)
-    assert outcome["status"] == "SENT"
-    assert len(calls) == 1
+    assert outcome["status"] == "WHATSAPP_CONTACT_AUTHORIZATION_UNVERIFIED"
+    assert calls == []
+    campaign = db["leads"].find_one({"_id": LEAD})["price_drop_v2"]["campaigns"][0]
+    assert campaign["status"] == "APPROVED"
+    assert not any(message.get("metadata", {}).get("tipo") == "price_drop_outreach"
+                   for message in db["leads"].find_one({"_id": LEAD})["messages"])
     assert len(db["leads"].find_one({"_id": LEAD})["price_drop_v2"]["campaigns"]) == 1
 
 

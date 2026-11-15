@@ -85,7 +85,18 @@ def test_campaign_intent_matrix(text, label):
     assert classify_price_drop_reply(text).label == label
 
 
-def test_clp_preview_and_audited_lead_record_are_durable_but_no_send(db, monkeypatch):
+def test_clp_preview_and_audited_lead_record_send_with_reusable_consent(db, monkeypatch):
+    db["leads"].update_one({"_id": LEAD_ID}, {"$set": {
+        "price_drop_v2.whatsapp_contact_authorization": {
+            "status": "ACTIVE", "channel": "WHATSAPP",
+            "scope": v2.WHATSAPP_CONTACT_SCOPE,
+            "phone_normalized": PHONE,
+            "evidence_reference": "CRM consent record 2026-10-01",
+            "reviewed_by": "CRM reviewer",
+            "reviewed_at": NOW - timedelta(days=5),
+            "source_campaign_id": "prior-price-drop-event",
+        },
+    }})
     preview = v2.preview_one(db, **params())
     assert preview["currency"] == "CLP"
     assert preview["inquiry_evidence_at"] < preview["price_drop_at"]

@@ -2078,3 +2078,86 @@ def test_full_portfolio_bitacora_only_executed_price_drop_is_discovered():
     assert (events[0].old_price, events[0].new_price) == (1690, 1654)
     assert events[0].dropped_at == datetime(
         2026, 10, 20, 13, 38, 34, tzinfo=timezone.utc)
+
+
+def test_prefilter_accepts_both_mlc_spellings_from_portal_customer_link():
+    """CRM often stores MLC451... but the incoming customer link has MLC-451..."""
+    db = _event_db(code="17252", currency="CLP", current=400000,
+                   old=435000, new=400000)
+    db["universo_cartera_prop360"].update_one(
+        {"codigo": "17252"}, {"$set": {
+            "publicaciones.portal_inmobiliario.publicaciones.V": {
+                "publicada": True, "estado": "ACTIVA", "operacion": "Venta",
+                "code": "MLC4514084654",
+                "url": "https://departamento.mercadolibre.cl/MLC-4514084654",
+            },
+        }})
+    who = _candidate(
+        db, phone="+56983219801",
+        content="Hola, tengo preguntas sobre https://departamento.mercadolibre.cl/MLC-4514084654",
+        timestamp=DROP - timedelta(days=5),
+    )
+    event = discover_price_drops(db, now=NOW)[0]
+    found = find_candidates_for_event(db, event, now=NOW)
+    assert len(found) == 1
+    assert found[0]["lead_id"] == str(who)
+    assert found[0]["eligible"] is True
+    assert found[0]["inquiry_reference"].startswith("listing_id:")
+
+
+def test_dual_operation_rental_inquiry_not_used_for_sale_reduction():
+    db = _event_db(code="16704", currency="UF", current=2690,
+                   old=2790, new=2690)
+    db["universo_cartera_prop360"].update_one(
+        {"codigo": "16704"}, {"$set": {
+            "tipo_operacion.arriendo": True,
+            "tipo_operacion.precio_arriendo": {
+                "moneda_publicada": "UF", "precio_publicado": 45,
+            },
+            "publicaciones.portal_inmobiliario.publicaciones.V": {
+                "publicada": True, "estado": "ACTIVA", "operacion": "Venta",
+                "code": "MLC1952293455",
+                "url": "https://casa.mercadolibre.cl/MLC-1952293455",
+            },
+            "publicaciones.portal_inmobiliario.publicaciones.A": {
+                "publicada": True, "estado": "ACTIVA", "operacion": "Arriendo",
+                "code": "MLC4247982034",
+                "url": "https://casa.mercadolibre.cl/MLC-4247982034",
+            },
+        }})
+    sale = _candidate(
+        db, phone="+56983219801",
+        content="Hola, consulto https://casa.mercadolibre.cl/MLC-1952293455",
+        timestamp=DROP - timedelta(days=7),
+    )
+    rental = _candidate(
+        db, phone="+56983219802",
+        content="Hola, consulto https://casa.mercadolibre.cl/MLC-4247982034",
+        timestamp=DROP - timedelta(days=7),
+    )
+    event = discover_price_drops(db, now=NOW)[0]
+    found = find_candidates_for_event(db, event, now=NOW)
+    assert {x["lead_id"] for x in found if x["eligible"]} == {str(sale)}
+    assert str(rental) not in {x["lead_id"] for x in found}
+
+
+def test_old_sent_pilot_is_not_reselected_when_event_date_id_changes():
+    db = _event_db(code="6377", currency="UF", current=5074,
+                   old=5123, new=5074)
+    customer = _candidate(
+        db, phone="+56983219801",
+        content="Hola, consulté la propiedad código 6377.",
+        timestamp=DROP - timedelta(days=5),
+        campaigns=[{
+            "campaign_id": "pilot_real_rebajas_20261109_v2",
+            "property_code": "6377", "status": "SENT",
+            "currency": "UF", "old_price_uf": 5123, "new_price_uf": 5074,
+            "sent_at": NOW - timedelta(days=1),
+        }],
+    )
+    event = discover_price_drops(db, now=NOW)[0]
+    found = find_candidates_for_event(db, event, now=NOW)
+    assert len(found) == 1
+    assert found[0]["lead_id"] == str(customer)
+    assert found[0]["eligible"] is False
+    assert found[0]["reason"] == "event_already_attempted"

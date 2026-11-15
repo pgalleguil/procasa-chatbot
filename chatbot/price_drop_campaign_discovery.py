@@ -481,8 +481,11 @@ def _candidate_query(event: PriceDropEvent, listing_ids: set[str]) -> dict[str, 
         ref = str(ref or "").strip()
         if not ref:
             continue
-        if ref.upper().startswith("MLC-"):
-            pattern = r"(?<![A-Za-z0-9])MLC-?" + re.escape(ref[4:]) + r"(?![A-Za-z0-9])"
+        # Prop360 identifiers can be saved as MLC1234567 while the original
+        # customer link is MLC-1234567 (and vice versa). Both are identical.
+        mlc = re.fullmatch(r"MLC-?(\d{7,12})", ref, re.IGNORECASE)
+        if mlc:
+            pattern = r"(?<![A-Za-z0-9])MLC-?" + re.escape(mlc.group(1)) + r"(?![A-Za-z0-9])"
         else:
             pattern = r"(?<![A-Za-z0-9])" + re.escape(ref) + r"(?![A-Za-z0-9])"
         patterns.append(pattern)
@@ -492,6 +495,7 @@ def _candidate_query(event: PriceDropEvent, listing_ids: set[str]) -> dict[str, 
         "$or": [{"metadata.property_code": event.property_code},
                 {"metadata.codigo_propiedad": event.property_code},
                 {"metadata.codigo": event.property_code},
+                {"metadata.listing_code": event.property_code},
                 {"content": {"$regex": regex, "$options": "i"}}],
     }}}
 
@@ -636,7 +640,9 @@ def find_candidates_for_event(
     age_limit = normalize_lead_max_age_days(lead_max_age_days)
     stamp = now or datetime.now(timezone.utc)
     reviews = temperature_reviews or {}
-    listing_ids = v2._verified_listing_ids(db, event.property_code)
+    listing_ids = v2._verified_listing_ids(
+        db, event.property_code, operation=event.operation.lower(),
+    )
     leads = db[LEADS_COLLECTION].find(
         _candidate_query(event, listing_ids),
         {"_id": 1, "phone": 1, "contact_phone_normalized": 1,

@@ -207,3 +207,8 @@ def test_shared_contact_guard_excludes_executive_capture():
     assert not lead_must_not_be_contacted({"messages": [message]})
     message.pop("channel")
     assert lead_must_not_be_contacted({"messages": [message]})
+
+
+@pytest.mark.parametrize("text", ["Mi esposa quiere agendar una visita", "Mi hermano quiere vender su casa", "Si quisiera visitar, ¿con quién tendría que hablar?"])
+def test_shared_rules_do_not_promote_hypothetical_or_third_party(text):
+    assert rule_intent(text) == "NO_SIGNAL"

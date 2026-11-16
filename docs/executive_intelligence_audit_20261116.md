@@ -83,3 +83,14 @@ Fuentes técnicas contrastadas: [DeepSeek JSON Output](https://api-docs.deepseek
 | PROPERTY_DECLINED | 5 | 2 | 0 | 0.714 | 1.000 | 0.833 |
 | SEARCH_COMPLETED | 5 | 0 | 0 | 1.000 | 1.000 | 1.000 |
 | SEARCH_UPDATED | 5 | 1 | 0 | 0.833 | 1.000 | 0.909 |
+
+
+## Continuación solicitada: evidencia contextual y cobertura
+
+Se incorporó v2_1: el modelo debe identificar el último mensaje del cliente y aportar una cita literal verificable. Las intenciones informativas de bajo impacto pueden enriquecer el resumen bajo revisión; nunca conceden consentimiento ni promueven por sí solas visitas, ofertas, llamadas, bajas o cierres. Se reutiliza vocabulario del clasificador comercial existente con guardas de negación, hipótesis y atribución a terceros. También se aisló el lector compartido lead_must_not_be_contacted, que aún consumía captura ejecutiva pasiva.
+
+Regresión ampliada: 240 aprobadas, 1 omitida por el defecto previo de phase3; posteriormente 48 pruebas adversariales aprobadas incluyendo tres casos nuevos de atribución/hipótesis. Las cifras se superponen. Main se incorporó sin conflictos; no hubo despliegue.
+
+En los mismos 70 casos reutilizados: F1 de reglas 0,423; salida híbrida protegida 0,607 (antes 0,304); modelo real 0,947 (antes 0,912). Hubo una respuesta rechazada por validación. La salida protegida tuvo cero FP observados en OPT_OUT, SEARCH_COMPLETED, ASK_VISIT, ASK_CONTACT y GIVE_OFFER. Persisten omisiones. Los JSON followup_rules y followup_live incluyen matrices completas. Este conjunto ya fue observado y NO se presenta como nueva evidencia independiente de generalización.
+
+Sigue REQUIERE CORRECCIONES. Esta iteración mejora cobertura y trazabilidad, pero no resuelve todos los pendientes operativos ni alcanza el objetivo global. Quedan ampliación de necesidades/roles, validación independiente, privacidad de texto libre, gestión de revisiones, archivo de historial y prueba autorizada real de Pablo. No se debe desplegar ni escalar basándose en estas métricas.

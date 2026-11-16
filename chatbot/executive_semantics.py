@@ -23,7 +23,9 @@ def ambiguous(text):
         r'nunca dije|no es cierto|mentira|sarcasmo|ironia|era broma|en broma|me equivoque|'
         r'me arrepenti|retiro lo|era un ejemplo|eso era antes|si me aprueban|si consigo|cuando tenga|si quisiera|si pudiera|'
         r'me dijo|dijo que|dice que|segun|ignora|instrucciones|clasifica|'
-        r'responde json|system prompt)\b|\bno,? mejor\b|["“”«»]', plain(text)))
+        r'responde json|system prompt)\b|\bno,? mejor\b|'
+        r'\bmi (?:esposa|esposo|hijo|hija|amigo|amiga|hermano|hermana|vecino|vecina) '
+        r'(?:quiere|busca|necesita|compro|arrendo)\b|["“”«»]', plain(text)))
 
 
 def clauses(text):

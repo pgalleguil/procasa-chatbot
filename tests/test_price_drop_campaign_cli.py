@@ -1881,7 +1881,7 @@ def test_audience_audit_phone_index_matches_database_duplicate_guard_without_wri
     result = cli.audit_full_portfolio(db, now=NOW, lead_max_age_days=None)
     assert result["totals"]["candidate_event_matches"] == 2
     assert result["totals"]["unique_eligible_leads"] == 0
-    assert result["reason_counts"]["duplicate_phone"] == 2
+    assert result["exclusion_reasons"]["duplicate_phone"] == 2
     assert result["send_approved"] is False
     assert result["sending_attempts"] == 0
     assert list(db["leads"].find()) == before

@@ -1571,6 +1571,156 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         # Los archivos ya fueron subidos a GDrive y enviados por email antes de llegar aquí
         shutil.rmtree(tmp_dir, ignore_errors=True)
     
+@router.post("/api/{contract_code}/repair-signature")
+async def repair_incomplete_contract_signature(contract_code: str, request: Request, background_tasks: BackgroundTasks):
+    """Reconstruir evidencia PDF sin una nueva aceptación; solo administración.
+
+    Nunca sustituir el original: SHA-256 debe coincidir con el PDF de Drive.
+    La fecha original de aceptación se conserva y la reparación se audita por separado.
+    """
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    operator, role = await _get_request_user(adb, request)
+    if not operator or role not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="Solo administración puede reparar convenios")
+
+    db = get_db()
+    contract = await _db_call(db["contracts"].find_one, {"contract_code": contract_code})
+    if not contract or contract.get("status") == "deleted":
+        raise HTTPException(status_code=404, detail="Convenio no encontrado")
+    if _signature_evidence_complete(contract):
+        return {"status": "already_finalized", "contract_code": contract_code}
+
+    security = contract.get("security") or {}
+    timeline = contract.get("timeline") or []
+    otp_verified = any(e.get("action") == "otp_verified" for e in timeline)
+    accepted_index = next((i for i, e in enumerate(timeline) if e.get("action") == "accepted"), None)
+    if not security.get("token_used") or not otp_verified or accepted_index is None:
+        raise HTTPException(status_code=409, detail="No hay evidencia suficiente de OTP y aceptación")
+    accepted = timeline[accepted_index]
+    accepted_timestamp = accepted.get("server_timestamp")
+    if not accepted_timestamp:
+        raise HTTPException(status_code=409, detail="Falta la fecha original de aceptación")
+
+    original_id = security.get("original_pdf_drive_id")
+    expected_hash = security.get("original_hash")
+    folder_id = security.get("gdrive_folder_id")
+    if not original_id or not expected_hash or not folder_id:
+        raise HTTPException(status_code=409, detail="PDF original archivado no verificable")
+    original = await run_in_threadpool(gdrive_sync.download_file, original_id)
+    if not original:
+        raise HTTPException(status_code=503, detail="No se pudo descargar PDF original de Drive")
+    original_hash = SecurityContracts.hash_document(original)
+    if not hmac.compare_digest(original_hash, expected_hash):
+        raise HTTPException(status_code=409, detail="El original archivado no coincide con su hash")
+
+    secret = getattr(Config, "SECRET_KEY", "")
+    if not secret or secret == "default_secret":
+        raise HTTPException(status_code=503, detail="Clave HMAC no configurada")
+    evidence_timeline = timeline[:accepted_index + 1]
+    timeline_hash = SecurityContracts.hash_timeline(evidence_timeline)
+    server_hmac = SecurityContracts.generate_server_hmac(contract_code, original_hash, accepted_timestamp, secret)
+    transaction_uuid = security.get("transaction_uuid") or str(uuid.uuid4())
+    verify_token = security.get("verify_token") or uuid.uuid4().hex
+    evidence = {
+        "contract_code": contract_code,
+        "transaction_uuid": transaction_uuid,
+        "verify_token": verify_token,
+        "server_timestamp": accepted_timestamp,
+        "ip": accepted.get("ip", ""),
+        "geo_info": accepted.get("geo_location", "Localización no disponible"),
+        "timezone": accepted.get("timezone", "America/Santiago (CLT)"),
+        "user_agent": accepted.get("user_agent", ""),
+        "original_hash": original_hash,
+        "server_hmac": server_hmac,
+        "timeline_hash": timeline_hash,
+        "read_time_seconds": accepted.get("read_time_seconds", 0),
+        "scrolled_to_bottom": "Sí" if accepted.get("scrolled_to_bottom") else "No",
+        "read_method": accepted.get("read_method", "scroll"),
+    }
+    base_url = (getattr(Config, "CRM_BASE_URL", "") or str(request.base_url)).rstrip("/")
+    verify_url = f"{base_url}/contracts/verify/{verify_token}"
+
+    # Bloqueo atómico del intento para evitar reparaciones concurrentes.
+    claim = await _db_call(
+        db["contracts"].update_one,
+        {
+            "contract_code": contract_code,
+            "status": {"$in": ["signed", "signature_finalizing", "signature_processing_failed"]},
+            "security.token_used": True,
+            "security.signed_hash": None,
+            "security.signature_repair_claimed_at": {"$exists": False},
+        },
+        {"$set": {"security.signature_repair_claimed_at": datetime.now(timezone.utc)}},
+    )
+    if claim.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Reparación ya iniciada o documento modificado")
+
+    try:
+        signed_pdf = await run_in_threadpool(
+            PDFGenerator.generate_signed_contract, original, contract, evidence, verify_url
+        )
+        signed_hash = SecurityContracts.hash_document(signed_pdf)
+        signed_file_id = await run_in_threadpool(
+            gdrive_sync.upload_file, folder_id, "contrato_firmado.pdf", signed_pdf, "application/pdf"
+        )
+        if not signed_file_id or signed_file_id == "mock_file_id":
+            raise RuntimeError("No fue posible guardar PDF firmado")
+        repaired_at = datetime.now(timezone.utc)
+        result = await _db_call(
+            db["contracts"].update_one,
+            {
+                "contract_code": contract_code,
+                "security.signature_repair_claimed_at": {"$exists": True},
+                "security.signed_hash": None,
+            },
+            {
+                "$set": {
+                    "status": "signed",
+                    "locked": True,
+                    "security.signed_hash": signed_hash,
+                    "security.server_hmac": server_hmac,
+                    "security.timeline_hash": timeline_hash,
+                    "security.hmac_timestamp": accepted_timestamp,
+                    "security.hmac_generated_at": repaired_at,
+                    "security.signed_pdf_drive_id": signed_file_id,
+                    "security.transaction_uuid": transaction_uuid,
+                    "security.verify_token": verify_token,
+                    "security.signature_recovered_at": repaired_at,
+                    "security.signature_finalized_at": repaired_at,
+                },
+                "$unset": {"security.signature_repair_claimed_at": ""},
+                "$push": {"timeline": {
+                    "action": "signature_document_recovered",
+                    "server_timestamp": repaired_at.isoformat(),
+                    "operator": operator,
+                    "original_acceptance_timestamp": accepted_timestamp,
+                    "original_hash": original_hash,
+                    "signed_hash": signed_hash,
+                }},
+            },
+        )
+        if result.modified_count != 1:
+            raise RuntimeError("La orden cambió durante la reparación")
+    except Exception:
+        logger.exception("[CONTRACT_REPAIR] Falló reparación de convenio %s", contract_code)
+        await _db_call(
+            db["contracts"].update_one,
+            {"contract_code": contract_code, "security.signed_hash": None},
+            {"$unset": {"security.signature_repair_claimed_at": ""}},
+        )
+        raise HTTPException(status_code=503, detail="No se pudo reconstruir el convenio firmado")
+
+    background_tasks.add_task(
+        notify_client_bg, contract_code, contract.get("phone", ""),
+        (contract.get("client_data") or {}).get("email", ""),
+        (contract.get("client_data") or {}).get("nombre", ""),
+        signed_pdf, contract.get("property_code", ""),
+    )
+    logger.info("[CONTRACT_REPAIR] Firma recuperada con evidencia original code=%s", contract_code)
+    return {"status": "recovered", "contract_code": contract_code, "email_queued": bool((contract.get("client_data") or {}).get("email"))}
+
+
 def _get_or_create_expedition_folder(db, collection, code_field, code, client_name, property_code):
     """
     Estructura limpia de 1 nivel para Convenios:

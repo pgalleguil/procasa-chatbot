@@ -268,7 +268,19 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
                 "provider_message_id": provider_id,
             }}}],
         },
-        {"$push": {"messages": entry}},
+        {
+            "$push": {"messages": entry},
+            # The same CAS as the canonical message append durably marks this
+            # lead for hybrid classification; no LLM runs in the webhook.
+            "$set": {
+                "commercial_intelligence.pending": True,
+                "commercial_intelligence.pending_message_id": entry["message_id"],
+                "commercial_intelligence.pending_cycle_id": cycle_id,
+                "commercial_intelligence.pending_source": "executive_whatsapp",
+                "commercial_intelligence.pending_session_id": session["session_id"],
+                "commercial_intelligence.pending_at": datetime.now(timezone.utc),
+            },
+        },
     )
     return "stored" if result.modified_count == 1 else "duplicate_or_reassigned"
 

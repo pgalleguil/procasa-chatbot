@@ -67,6 +67,7 @@ class Leads:
         }
         self.update_calls = 0
         self.raise_on_update = False
+        self.last_mutation = None
 
     def find(self, query, projection):
         return Cursor([self.lead] if self.lead["phone"] in query["phone"]["$in"] else [])
@@ -86,6 +87,7 @@ class Leads:
                for m in self.lead["messages"]):
             return SimpleNamespace(modified_count=0)
         self.lead["messages"].append(entry)
+        self.last_mutation = mutation
         return SimpleNamespace(modified_count=1)
 
 
@@ -358,3 +360,16 @@ def test_outgoing_unknown_lid_with_own_from_never_enters_lead(rig, monkeypatch):
     monkeypatch.setattr(audit, "_pn_from_lid", lambda lid, token: None)
     assert post(client, outgoing).json()["status"] == "ignored"
     assert db["leads"].update_calls == 0
+
+
+def test_authorized_append_atomically_queues_hybrid_classification(rig):
+    db, cycle, client = rig
+    assert post(client, event(from_me=True, msg_id="queued-out")).json()["status"] == "stored"
+    mutation = db["leads"].last_mutation
+    assert mutation["$set"]["commercial_intelligence.pending"] is True
+    assert mutation["$set"]["commercial_intelligence.pending_cycle_id"] == "cycle-A"
+    assert mutation["$set"]["commercial_intelligence.pending_session_id"] == SESSION
+    assert mutation["$set"]["commercial_intelligence.pending_message_id"] == mutation["$push"]["messages"]["message_id"]
+    prior = db["leads"].last_mutation
+    assert post(client, event(from_me=True, msg_id="queued-out")).json()["status"] == "duplicate_or_reassigned"
+    assert db["leads"].last_mutation is prior

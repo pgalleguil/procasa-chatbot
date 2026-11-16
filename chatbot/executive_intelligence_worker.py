@@ -1,0 +1,176 @@
+"""Durable, guarded processing of executive conversation intelligence.
+
+The signed webhook atomically queues a lead by marking its canonical document.
+A bounded worker claims pending leads, checks the current owner/cycle again,
+then classifies the business-only messages. No WhatsApp sends, CRM actions,
+SLA transitions, campaign sends, or personal chat reads occur in this module.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from datetime import datetime, timedelta, timezone
+
+from pymongo import ReturnDocument
+
+from .crm_metrics import active_assignment_cycle
+from .executive_conversation_intelligence import VERSION, classify_hybrid
+
+logger = logging.getLogger(__name__)
+
+
+def _is_authorized(db, doc: dict) -> bool:
+    lifecycle = doc.get("lifecycle") or {}
+    marker = doc.get("commercial_intelligence") or {}
+    if marker.get("pending_source") != "executive_whatsapp":
+        return False
+    owner = str(lifecycle.get("assigned_to_user_id") or "")
+    cycle_id = str(lifecycle.get("current_assignment_cycle_id") or "")
+    if not owner or not cycle_id or cycle_id != str(marker.get("pending_cycle_id") or ""):
+        return False
+    cycle = active_assignment_cycle(db, doc["_id"])
+    if not cycle or str(cycle.get("assignment_cycle_id") or "") != cycle_id:
+        return False
+    if str(cycle.get("assigned_to_user_id") or "") != owner:
+        return False
+    if cycle.get("cycle_status") not in (None, "active") or cycle.get("unassigned_at") is not None:
+        return False
+    from bson import ObjectId
+    oid = ObjectId(owner) if ObjectId.is_valid(owner) else owner
+    sid = marker.get("pending_session_id")
+    if not sid:
+        return False
+    return db["usuarios"].find_one({
+        "_id": oid, "rol": "agente", "is_active": True,
+        "wasender.session_id": {"$in": [int(sid), str(sid)] if str(sid).isdigit() else [sid]},
+    }, {"_id": 1}) is not None
+
+
+def _claim(db, lead_id, *, now: datetime):
+    # Multiple application instances may run; claim is an atomic lease.
+    return db["leads"].find_one_and_update(
+        {
+            "_id": lead_id,
+            "commercial_intelligence.pending": True,
+            "$or": [
+                {"commercial_intelligence.lease_expires_at": {"$exists": False}},
+                {"commercial_intelligence.lease_expires_at": {"$lt": now}},
+            ],
+        },
+        {"$set": {"commercial_intelligence.lease_expires_at": now + timedelta(seconds=90)}},
+        return_document=ReturnDocument.AFTER,
+    )
+
+
+def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
+    marker = doc.get("commercial_intelligence") or {}
+    lifecycle = doc.get("lifecycle") or {}
+    # Compare-and-swap prevents a slow model result from hiding a newer message
+    # or writing into a new assignment cycle after reassignment.
+    match = {
+        "_id": doc["_id"],
+        "commercial_intelligence.pending": True,
+        "commercial_intelligence.pending_message_id": marker.get("pending_message_id"),
+        "commercial_intelligence.pending_cycle_id": marker.get("pending_cycle_id"),
+    }
+    if status != "stale_assignment":
+        match.update({
+            "lifecycle.current_assignment_cycle_id": marker.get("pending_cycle_id"),
+            "lifecycle.assigned_to_user_id": lifecycle.get("assigned_to_user_id"),
+        })
+    # A stale job may only be cleared, never interpreted or persisted as an
+    # outcome. Its message/cycle CAS still prevents clearing newer work.
+    values = {
+        "commercial_intelligence.pending": False,
+        "commercial_intelligence.status": status,
+        "commercial_intelligence.last_processed_message_id": marker.get("pending_message_id"),
+        "commercial_intelligence.last_processed_cycle_id": marker.get("pending_cycle_id"),
+    }
+    if summary is not None:
+        values["commercial_intelligence.summary"] = summary
+        values["commercial_intelligence.version"] = VERSION
+    changed = db["leads"].update_one(
+        match,
+        {"$set": values, "$unset": {"commercial_intelligence.lease_expires_at": ""}},
+    )
+    return status if changed.modified_count == 1 else "superseded"
+
+
+def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) -> str:
+    marker = doc.get("commercial_intelligence") or {}
+    if not _is_authorized(db, doc):
+        # On reassignment, do not interpret the previous owner's conversation.
+        return _finish(db, doc, summary=None, status="stale_assignment")
+    owner = str(doc["lifecycle"]["assigned_to_user_id"])
+    cycle_id = str(doc["lifecycle"]["current_assignment_cycle_id"])
+    session_id = str(marker["pending_session_id"])
+    turns = [
+        m for m in (doc.get("messages") or [])
+        if isinstance(m, dict)
+        and m.get("channel") == "executive_whatsapp"
+        and str(m.get("assignment_cycle_id") or "") == cycle_id
+        and str(m.get("assigned_executive_id") or "") == owner
+        and str(m.get("wasender_session_id") or "") == session_id
+        and m.get("actor_type") in ("customer", "human_agent")
+    ]
+    if not turns:
+        return _finish(db, doc, summary=None, status="no_eligible_turns")
+    # No ad-hoc outreach, no automatic CRM results, no opt-out side effects.
+    # Previous commercial evidence is valid only within this assignment cycle.
+    prior = marker if str(marker.get("last_processed_cycle_id") or "") == cycle_id else {}
+    summary = classify_hybrid(
+        turns, prior, llm_enabled=llm_enabled, propose=propose,
+    )
+    return _finish(db, doc, summary=summary, status="ready")
+
+
+def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propose=None) -> dict:
+    examined = 0
+    processed = 0
+    failures = 0
+    now = datetime.now(timezone.utc)
+    # Bounded scan; only pointer fields leave Mongo until a claim is obtained.
+    cursor = db["leads"].find(
+        {"commercial_intelligence.pending": True},
+        {"_id": 1},
+    ).limit(max(1, min(limit * 3, 30)))
+    for row in cursor:
+        if processed >= limit:
+            break
+        examined += 1
+        doc = _claim(db, row["_id"], now=now)
+        if not doc:
+            continue
+        try:
+            outcome = process_claimed(db, doc, llm_enabled=llm_enabled, propose=propose)
+            if outcome in ("ready", "stale_assignment", "no_eligible_turns"):
+                processed += 1
+        except Exception as exc:
+            failures += 1
+            # Fail closed. Preserve pending flag for a later retry after lease.
+            # Never log transcripts, phone numbers or provider IDs.
+            logger.warning("EXEC_INTELLIGENCE processing_failure=%s", type(exc).__name__)
+    return {"examined": examined, "processed": processed, "failures": failures}
+
+
+async def executive_intelligence_worker_loop() -> None:
+    while True:
+        try:
+            if os.getenv("PROCASA_EXEC_INTELLIGENCE_ENABLED", "0") == "1":
+                from .storage import get_db
+                llm_enabled = os.getenv("PROCASA_EXEC_INTELLIGENCE_LLM_ENABLED", "0") == "1"
+                result = await asyncio.to_thread(
+                    process_pending_batch, get_db(),
+                    limit=3, llm_enabled=llm_enabled,
+                )
+                if result["processed"] or result["failures"]:
+                    logger.info(
+                        "EXEC_INTELLIGENCE processed=%s failures=%s",
+                        result["processed"], result["failures"],
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("EXEC_INTELLIGENCE worker_error=%s", type(exc).__name__)
+        await asyncio.sleep(20)

@@ -1417,6 +1417,11 @@ async def lifespan(app: FastAPI):
     from chatbot.chatbot_queue import chatbot_response_worker_loop as _crwl
     cb_task = asyncio.create_task(_crwl())
 
+    # Passive executive intelligence: processes only durable, already-authorized
+    # messages and never sends WhatsApp or changes CRM SLA/ownership.
+    from chatbot.executive_intelligence_worker import executive_intelligence_worker_loop
+    exec_intelligence_task = asyncio.create_task(executive_intelligence_worker_loop())
+
     # Prop360 (Convecta) periodic ingestion — feature-flagged, self-contained
     prop360_task = None
     try:
@@ -1582,6 +1587,7 @@ async def lifespan(app: FastAPI):
     c1_task.cancel()
     c2_task.cancel()
     cb_task.cancel()
+    exec_intelligence_task.cancel()
     if sla_orch_task is not None:
         sla_orch_task.cancel()
     if sla_reassignment_task is not None:
@@ -1602,7 +1608,7 @@ async def lifespan(app: FastAPI):
         captacion_indexes_task.cancel()
     try:
         await asyncio.gather(
-            n_task, t_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task,
+            n_task, t_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task, exec_intelligence_task,
             *([sla_orch_task] if sla_orch_task is not None else []),
             *([sla_reassignment_task] if sla_reassignment_task is not None else []),
             *([non_hot_digest_task] if non_hot_digest_task is not None else []),

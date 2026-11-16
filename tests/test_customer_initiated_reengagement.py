@@ -29,6 +29,9 @@ def stopped_lead():
     "Quiero agendar visita para el departamento 6436",
     "¿Tienen casas en venta en Peñaflor?",
     "Me pueden asesorar con mi casa?",
+    "¿Me podrías ayudar?",
+    "Quisiera que ustedes administren mi departamento",
+    "¿Podrían orientarme para vender mi casa?",
 ])
 def test_explicit_customer_initiated_requests_can_be_answered_without_restoring_marketing(message):
     lead = stopped_lead()
@@ -76,3 +79,24 @@ def test_inbound_core_and_commercial_queue_use_same_explicit_request_gate():
     assert "customer_initiated_service_request_allowed(lead_doc_full, original_message)" in core
     assert "customer_initiated_service_request_allowed(lead, item.get(\"text\") or \"\")" in queue
     assert "for item in allowed_snapshots:" in queue
+
+
+def test_reengaged_owner_request_never_reuses_old_property_to_assign():
+    from chatbot.commercial_intake import _candidate
+
+    lead = {"prospecto": {"codigo": "6436"}}
+    assert _candidate("Quiero vender mi casa", lead) == "6436"  # legacy default
+    assert _candidate(
+        "Quiero vender mi casa", lead, allow_stored_property_fallback=False
+    ) is None
+    assert _candidate(
+        "Ahora me interesa la propiedad 17252", lead,
+        allow_stored_property_fallback=False,
+    ) == "17252"
+
+
+def test_suppressed_commercial_intake_disables_old_property_fallback():
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[1] /
+           "chatbot/chatbot_queue.py").read_text(encoding="utf-8")
+    assert "allow_stored_property_fallback=not globally_suppressed" in src

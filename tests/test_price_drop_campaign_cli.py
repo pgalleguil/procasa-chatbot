@@ -1957,6 +1957,72 @@ def test_audience_audit_mongo_failure_reports_safe_phase(monkeypatch, capsys):
     assert "[AUDIENCE_AUDIT] discovering_price_drops" in output.err
 
 
+def test_full_history_stream_skips_global_sort_and_reports_checkpoints(monkeypatch):
+    """Unbounded history scanning must not sort Mongo cursor on the server."""
+    db = _event_db()
+    _seed_property(db, code="6377", current=5074)
+    _history(db, "6377", DROP - timedelta(days=1), 5123, 5074)
+    history = db["universo_cartera_prop360_historial"]
+    original_find = history.find
+    sorts = []
+
+    class CursorSpy:
+        def __init__(self, cursor):
+            self.cursor = cursor
+
+        def sort(self, *args, **kwargs):
+            sorts.append((args, kwargs))
+            self.cursor = self.cursor.sort(*args, **kwargs)
+            return self
+
+        def limit(self, *args, **kwargs):
+            self.cursor = self.cursor.limit(*args, **kwargs)
+            return self
+
+        def batch_size(self, *args, **kwargs):
+            self.cursor = self.cursor.batch_size(*args, **kwargs)
+            return self
+
+        def __iter__(self):
+            return iter(self.cursor)
+
+    monkeypatch.setattr(history, "find", lambda *args, **kwargs: CursorSpy(original_find(*args, **kwargs)))
+    checkpoints = []
+    events = discover_price_drops(db, now=NOW, progress=checkpoints.append)
+    assert len(events) == 2
+    assert {event.property_code for event in events} == {"6436", "6377"}
+    assert events[0].dropped_at <= events[1].dropped_at
+    assert sorts == []
+    assert "history_page_1_property_lookup" in checkpoints
+    assert "embedded_property_cursor_read_start" in checkpoints
+    assert checkpoints[-1] == "discovery_completed_events_2"
+
+    # Diagnostic limits retain newest-first semantics.
+    limited = discover_price_drops(db, now=NOW, limit=1)
+    assert len(limited) == 1
+    assert limited[0].property_code == "6436"
+    assert len(sorts) == 1
+
+
+def test_discovery_timeout_reports_precise_subphase(monkeypatch, capsys):
+    """Exception output must contain the last safe checkpoint, not its details."""
+    import json
+
+    db = _event_db()
+    monkeypatch.setattr(cli, "_get_db", lambda: db)
+
+    def fail_in_property_lookup(*args, progress=None, **kwargs):
+        progress("history_page_3_property_lookup")
+        raise TimeoutError("confidential uri")
+
+    monkeypatch.setattr(cli, "_events", fail_in_property_lookup)
+    assert cli.main(["--audience-audit", "--full-scan"]) == 1
+    out = capsys.readouterr()
+    assert json.loads(out.out)["phase"] == "history_page_3_property_lookup"
+    assert json.loads(out.out)["reason"] == "TimeoutError"
+    assert "confidential" not in out.out + out.err
+
+
 def test_full_portfolio_audit_counts_all_events_without_writes_or_provider_calls(monkeypatch, capsys):
     """Two price drops, one lead interested in both: report overlap not bulk send."""
     import json

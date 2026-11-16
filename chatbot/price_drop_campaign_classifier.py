@@ -70,7 +70,10 @@ def _clauses(text: str) -> list[str]:
 
 
 _STOP = re.compile(
-    r"\b(?:stop|baja|cancel(?:a|en|ar)\s+(?:mi\s+)?suscripci[oó]n|"
+    r"\b(?:stop|(?:quiero\s+)?darme\s+de\s+baja|"
+    r"(?:dame|denme|me\s+doy)\s+de\s+baja|"
+    r"baja\s+de\s+(?:la\s+)?(?:lista|avisos?|mensajes?)|"
+    r"cancel(?:a|en|ar)\s+(?:mi\s+)?suscripci[oó]n|"
     r"s[aá]came\s+de\s+la\s+lista|s[aá]quenme\s+de\s+la\s+lista|"
     r"elimina(?:r|n)?\s+(?:mi\s+)?(?:n[uú]mero|contacto|datos)|"
     r"borra(?:r|n)?\s+(?:mi\s+)?(?:n[uú]mero|contacto|datos)|"

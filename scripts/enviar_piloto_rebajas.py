@@ -338,6 +338,22 @@ def audit_full_portfolio(
     reasons: Counter[str] = Counter()
     properties: set[str] = set()
     rows_by_event: list[dict[str, Any]] = []
+    # One bounded read for exact-value phone ownership prevents the N+1
+    # duplicate-check queries that previously repeated for every event/lead.
+    # Keep raw stored spellings: Mongo's $in query matches raw values, not
+    # arbitrary phone numbers after rewriting their formatting.
+    phone_owner_index: dict[str, set[str]] = {}
+    for identity_row in db[LEADS_COLLECTION].find(
+        {}, {"_id": 1, "phone": 1, "contact_phone_normalized": 1},
+    ).batch_size(batch_size):
+        identity = str(identity_row["_id"])
+        for field in ("phone", "contact_phone_normalized"):
+            raw = identity_row.get(field)
+            values = raw if isinstance(raw, list) else [raw]
+            for value in values:
+                if isinstance(value, str) and value:
+                    phone_owner_index.setdefault(value, set()).add(identity)
+
     totals = {
         "events_found": len(events),
         "property_codes": 0,
@@ -357,6 +373,7 @@ def audit_full_portfolio(
         candidates = find_candidates_for_event(
             db, event, temperature_filter=normalized_temperature,
             lead_max_age_days=max_age, now=stamp,
+            phone_owner_index=phone_owner_index,
         )
         count = 0
         for row in candidates:

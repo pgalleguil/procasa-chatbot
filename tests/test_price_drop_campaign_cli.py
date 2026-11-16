@@ -2023,6 +2023,79 @@ def test_discovery_timeout_reports_precise_subphase(monkeypatch, capsys):
     assert "confidential" not in out.out + out.err
 
 
+def test_auto_selector_reuses_phone_index_without_per_lead_duplicate_lookups(monkeypatch):
+    """The successful full audit's phone-index optimization also applies to --auto."""
+    from scripts import enviar_rebajas_automatico as automatic
+
+    db = _event_db()
+    first_id = _candidate(db, phone="+56983219801")
+    duplicate_id = _candidate(db, phone="56983219801")
+    eligible_id = _candidate(db, phone="+56983219802")
+    other_id = _candidate(db, phone="+56983219803")
+    # Prior attempted same-event campaign is excluded even before cooldown.
+    event = discover_price_drops(db, now=NOW)[0]
+    db["leads"].update_one({"_id": other_id}, {"$set": {
+        "price_drop_v2.campaigns": [{
+            "campaign_id": event.campaign_id,
+            "event_id": event.event_id,
+            "property_code": event.property_code,
+            "status": "SENT",
+            "sent_at": NOW - timedelta(days=1),
+        }],
+    }})
+    leads = db["leads"]
+    original_find = leads.find
+    phone_queries = []
+
+    def tracking_find(query=None, *args, **kwargs):
+        if isinstance(query, dict) and "$or" in query and any(
+            isinstance(item, dict) and ("phone" in item or "contact_phone_normalized" in item)
+            for item in query["$or"]
+        ):
+            phone_queries.append(query)
+        return original_find(query, *args, **kwargs)
+
+    monkeypatch.setattr(leads, "find", tracking_find)
+    before = list(leads.find())
+    checkpoints = []
+    selected, totals = automatic.choose_new_recipients(
+        db, max_messages=5, max_age_days=90, now=NOW,
+        progress=checkpoints.append,
+    )
+    assert [row["lead_id"] for row in selected] == [str(eligible_id)]
+    assert all(row["lead_id"] not in {str(first_id), str(duplicate_id), str(other_id)}
+               for row in selected)
+    assert phone_queries == []
+    assert totals["events_examined"] == 1
+    assert "loading_phone_index_events_1" in checkpoints
+    assert checkpoints[-1] == "selection_completed_recipients_1"
+    assert list(leads.find()) == before
+
+
+def test_auto_dry_run_timeout_reports_phase_without_secrets(monkeypatch, capsys):
+    """Read-only simulation failure exposes stage, never Mongo URI or phone."""
+    import json
+    from scripts import enviar_rebajas_automatico as automatic
+
+    monkeypatch.setattr(cli, "_get_db", lambda: _event_db())
+
+    def timeout(*args, progress=None, **kwargs):
+        progress("matching_event_3_of_62_property_17252")
+        raise TimeoutError("private Mongo credentials")
+
+    monkeypatch.setattr(automatic, "choose_new_recipients", timeout)
+    assert cli.main([
+        "--auto", "--dry-run", "--lead-max-age-days", "90", "--max-messages", "5",
+    ]) == 1
+    output = capsys.readouterr()
+    assert json.loads(output.out) == {
+        "status": "ERROR", "reason": "TimeoutError",
+        "phase": "matching_event_3_of_62_property_17252", "attempts": 0,
+    }
+    assert "private Mongo credentials" not in output.out + output.err
+    assert "matching_event_3_of_62_property_17252" in output.err
+
+
 def test_full_portfolio_audit_counts_all_events_without_writes_or_provider_calls(monkeypatch, capsys):
     """Two price drops, one lead interested in both: report overlap not bulk send."""
     import json

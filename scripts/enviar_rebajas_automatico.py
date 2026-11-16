@@ -19,6 +19,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 if os.getenv("PRICE_DROP_ENV_FILE"):
@@ -58,17 +59,51 @@ def recent_outreach_or_pending(lead, *, now, cooldown_days=30):
 
 
 def choose_new_recipients(db, *, max_messages, max_age_days, now,
-                          property_code=None, max_events=None):
-    """Only leads with a verified pre-reduction inquiry about this property."""
-    events = cli._events(db, property_code=property_code, limit=max_events)
+                          property_code=None, max_events=None,
+                          progress: Callable[[str], None] | None = None):
+    """Only leads with a verified pre-reduction inquiry about this property.
+
+    Share the read-only audit's one-time raw-phone ownership index during
+    selection. The actual send path still checks phone uniqueness against
+    MongoDB immediately before sending each message.
+    """
+    if progress:
+        progress("discovering_price_drops")
+    events = cli._events(
+        db, property_code=property_code, limit=max_events, progress=progress,
+    )
     events = sorted(events, key=lambda event: (event.dropped_at, event.event_id), reverse=True)
+    if not events:
+        if progress:
+            progress("selection_completed_recipients_0")
+        return [], {"events_examined": 0, "events_discovered": 0}
+    if progress:
+        progress(f"loading_phone_index_events_{len(events)}")
+    phone_owner_index: dict[str, set[str]] = {}
+    cursor = db["leads"].find(
+        {}, {"_id": 1, "phone": 1, "contact_phone_normalized": 1},
+    ).batch_size(200)
+    for row in cursor:
+        lead_id = str(row["_id"])
+        for field in ("phone", "contact_phone_normalized"):
+            value = row.get(field)
+            values = value if isinstance(value, list) else [value]
+            for raw_phone in values:
+                if isinstance(raw_phone, str) and raw_phone:
+                    phone_owner_index.setdefault(raw_phone, set()).add(lead_id)
     chosen, seen = [], set()
     event_count = 0
     for event in events:
         event_count += 1
-        for candidate in find_candidates_for_event(
-            db, event, temperature_filter="ALL", lead_max_age_days=max_age_days, now=now
-        ):
+        if progress:
+            progress(f"matching_event_{event_count}_of_{len(events)}_property_{event.property_code}")
+        candidates = find_candidates_for_event(
+            db, event, temperature_filter="ALL", lead_max_age_days=max_age_days,
+            now=now, phone_owner_index=phone_owner_index,
+        )
+        if progress:
+            progress(f"matched_event_{event_count}_candidates_{len(candidates)}")
+        for candidate in candidates:
             if not candidate.get("eligible"):
                 continue
             identity = str(candidate["lead_id"])
@@ -92,6 +127,8 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
                 break
         if len(chosen) >= max_messages:
             break
+    if progress:
+        progress(f"selection_completed_recipients_{len(chosen)}")
     return chosen, {"events_examined": event_count,
                     "events_discovered": len(events)}
 
@@ -116,7 +153,8 @@ def verify_publications(db, chosen, *, now):
 def run(db, *, execute=False, max_messages=20, max_age_days=0,
         property_code=None, max_events=None, now=None,
         provider_plan="trial", min_delay=60.0, max_delay=90.0,
-        daily_provider_cap=50):
+        daily_provider_cap=50,
+        progress: Callable[[str], None] | None = None):
     if not 1 <= max_messages <= cli.MAX_MESSAGES_PER_RUN:
         raise ValueError("max_messages_must_be_within_provider_run_limit")
     cli.validate_limits(max_messages, min_delay, max_delay,
@@ -125,6 +163,7 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
     selected, counters = choose_new_recipients(
         db, max_messages=max_messages, max_age_days=max_age_days,
         now=stamp, property_code=property_code, max_events=max_events,
+        progress=progress,
     )
     preview = [{
         "code": item["event"].property_code,
@@ -151,6 +190,8 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
     if os.getenv(v2.CONTEXT_FLAG, "").lower() not in {"1", "true", "yes"}:
         return {**report, "status": "BLOCKED_CONTEXT_RUNTIME_GATE"}
 
+    if progress:
+        progress("verifying_publications_before_send")
     checks = verify_publications(db, selected, now=stamp)
     # A stale or unpublished property must not block other verified recipients.
     excluded = [{"code": row["event"].property_code,
@@ -167,8 +208,12 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
                 "publication_checks": checks}
 
     # This preserves the existing backups and V2 prepare/approve audit ledger.
+    if progress:
+        progress("creating_pre_send_backup")
     backup = cli._backup_leads(db, [cli._lead_id(row["lead_id"]) for row in selected])
     batches = {}
+    if progress:
+        progress("preparing_and_approving_campaigns")
     for item in selected:
         event = item["event"]
         cli.prepare_selected(
@@ -183,6 +228,8 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
                        campaign_id=event.campaign_id, operator=AUTOMATIC_OPERATOR)
         batches.setdefault(event.campaign_id, set()).add(item["lead_id"])
 
+    if progress:
+        progress("executing_approved_batch")
     outcome = cli.execute_approved_batch(
         db, campaigns=batches, include_pilot=False,
         max_messages=max_messages, min_delay_seconds=min_delay,

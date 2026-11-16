@@ -11,9 +11,17 @@ def test_historical_inquiry_eligible_without_separate_optin_but_stop_excludes(mo
     event = SimpleNamespace(event_id="price_event_123", dropped_at=datetime.now(timezone.utc))
     candidate = {"eligible": True, "lead_id": "a" * 24}
     lead = {"_id": candidate["lead_id"], "phone": "+56911111111"}
+    class FakeCursor(list):
+        def batch_size(self, size):
+            return self
+
     class Collection:
         def find_one(self, query):
             return lead
+
+        def find(self, query, projection=None):
+            return FakeCursor([lead])
+
     db = {"leads": Collection()}
     monkeypatch.setattr(automatic.cli, "_events", lambda *args, **kwargs: [event])
     monkeypatch.setattr(automatic.cli, "_lead_id", lambda value: value)

@@ -5,7 +5,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -327,7 +327,8 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
                          property_code: str | None = None,
                          operation: str | None = None,
                          currency: str | None = None,
-                         batch_size: int = 500) -> list[PriceDropEvent]:
+                         batch_size: int = 500,
+                         progress: Callable[[str], None] | None = None) -> list[PriceDropEvent]:
     """Read price history in bounded batches; ``limit=None`` means full scan.
 
     A complete scan must not stop at an arbitrary number of Mongo documents.
@@ -362,14 +363,20 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
             {"$or": [{"moneda_nueva": currency_filter},
                      {"valor_nuevo.moneda": currency_filter}]},
         ]
+    if progress is not None:
+        progress("history_cursor_open")
     histories = db[HISTORY_COLLECTION].find(
         query,
         {"_id": 1, "codigo": 1, "campo": 1, "fecha": 1, "moneda_anterior": 1,
          "moneda_nueva": 1, "monto_anterior": 1, "monto_nuevo": 1,
          "valor_anterior": 1, "valor_nuevo": 1},
-    ).sort([("fecha", -1), ("_id", -1)])
+    )
     if limit is not None:
-        histories = histories.limit(limit)
+        # Diagnostic --limit still means the most recent N history records.
+        histories = histories.sort([("fecha", -1), ("_id", -1)]).limit(limit)
+    # With limit=None every matching row must be visited, and events are
+    # sorted by dropped_at before return. A global MongoDB sort provides no
+    # value on full scans and can spill or time out on large history feeds.
     if hasattr(histories, "batch_size"):
         histories = histories.batch_size(batch_size)
 
@@ -379,9 +386,15 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
         "direccion.comuna": 1, "comuna": 1, "resumen.comuna": 1,
     }
     events, seen = {}, set()
+    if progress is not None:
+        progress("history_cursor_read_start")
     history_iter = iter(histories)
+    history_page = 0
     while True:
         batch = []
+        history_page += 1
+        if progress is not None:
+            progress(f"history_page_{history_page}_read")
         for _ in range(batch_size):
             try:
                 batch.append(next(history_iter))
@@ -390,6 +403,8 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
         if not batch:
             break
         codes = {str(row.get("codigo") or "") for row in batch}
+        if progress is not None:
+            progress(f"history_page_{history_page}_property_lookup")
         # Resolve property codes in one bounded database query per history page
         # instead of one roundtrip per property (N+1 on large audits).
         # Preserve first-match semantics if legacy duplicate codes exist.
@@ -403,6 +418,8 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
                 code = str(prop.get("codigo") or "")
                 if code in codes:
                     properties.setdefault(code, prop)
+        if progress is not None:
+            progress(f"history_page_{history_page}_normalize")
         for history in batch:
             code = str(history.get("codigo") or "")
             prop = properties.get(code, {})
@@ -419,6 +436,8 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
                 continue
             seen.add(key)
             events[event.event_id] = event
+    if progress is not None:
+        progress(f"central_history_complete_pages_{history_page - 1}_events_{len(events)}")
     # The central price-history collection is not a complete historic
     # backfill. Prop360 also stores genuine, dated price changes in each
     # property's historial_cambios array. Include those missing property
@@ -446,12 +465,18 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
             (event.property_code, event.operation.casefold())
             for event in events.values()
         }
+        if progress is not None:
+            progress("embedded_property_cursor_open")
         cursor = db[PROPERTY_COLLECTION].find(
             embedded_query, embedded_projection,
         )
         if hasattr(cursor, "batch_size"):
             cursor = cursor.batch_size(batch_size)
-        for prop in cursor:
+        if progress is not None:
+            progress("embedded_property_cursor_read_start")
+        for property_number, prop in enumerate(cursor, 1):
+            if progress is not None and (property_number == 1 or property_number % batch_size == 0):
+                progress(f"embedded_property_{property_number}_read")
             code = str(prop.get("codigo") or "")
             for selected_operation in ([operation] if operation else ["venta", "arriendo"]):
                 embedded = _embedded_current_price_drop(
@@ -481,6 +506,8 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
                         del events[old_id]
                 events[extra.event_id] = extra
                 properties_with_event.add((code, selected_operation))
+    if progress is not None:
+        progress(f"discovery_completed_events_{len(events)}")
     return sorted(events.values(), key=lambda item: (item.dropped_at, item.property_code, item.event_id))
 
 

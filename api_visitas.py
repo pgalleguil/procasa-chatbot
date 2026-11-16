@@ -1,4 +1,6 @@
 import os
+import hmac
+import re
 import uuid
 import logging
 import threading
@@ -1361,6 +1363,20 @@ async def accept_terms(token: str, request: Request):
     )
     return {"status": "ok"}
 
+def _signature_evidence_complete(contract: dict) -> bool:
+    """Firma completa exige PDF archivado y tres evidencias SHA-256 no vacías."""
+    security = contract.get("security") or {}
+    return (
+        contract.get("status") == "signed"
+        and bool(security.get("signed_pdf_drive_id"))
+        and all(
+            isinstance(security.get(field), str)
+            and re.fullmatch(r"[0-9a-fA-F]{64}", security[field])
+            for field in ("original_hash", "signed_hash", "timeline_hash", "server_hmac")
+        )
+    )
+
+
 @router.post("/api/{token}/accept", dependencies=[Depends(signature_concurrency)])
 async def accept_contract(token: str, request: Request, background_tasks: BackgroundTasks):
     import shutil
@@ -1372,10 +1388,14 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
 
     ensure_document_valid(contract)
 
-    # Idempotencia: si ya fue firmado, retornar éxito sin reprocessar
+    # Una aceptación OTP ya registrada nunca vuelve a solicitarse al cliente.
     if contract.get("status") == "signed" or contract["security"].get("token_used"):
-        logger.info(f"[CONTRACT_SIGNED] Idempotente — orden de visita {contract['visita_code']} ya firmado.")
-        return JSONResponse(status_code=200, content={"status": "already_signed", "visita_code": contract["visita_code"]})
+        if _signature_evidence_complete(contract):
+            return JSONResponse(status_code=200, content={"status": "already_signed", "visita_code": contract["visita_code"]})
+        return JSONResponse(status_code=202, content={
+            "status": "acceptance_recorded_pending_document",
+            "visita_code": contract["visita_code"],
+        })
 
     if contract["status"] != "otp_verified":
         raise HTTPException(status_code=403, detail="Orden de Visita no válido para aceptación")
@@ -1420,7 +1440,7 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         {"visita_code": visita_code},
         {
             "$set": {
-                "status": "signed", 
+                "status": "signature_finalizing",
                 "security.token_used": True,
                 "security.signature_timestamp": datetime.now(timezone.utc),
                 "locked": True
@@ -1449,47 +1469,30 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     timeline_hash = SecurityContracts.hash_timeline(timeline)
     tmp_dir = BASE_DIR / "tmp" / "visitas" / visita_code
     try:
-        # PRIORIDAD 1: PDF permanente actualizado (siempre regenerado al editar)
-        # Esto evita usar el tmp obsoleto cuando la orden fue editada antes de firmar.
-        perm_original_path = BASE_DIR / "visitas_pdf" / f"{visita_code}_original.pdf"
-        perm_path_from_db = contract.get("security", {}).get("original_pdf_path", "")
-
-        if perm_path_from_db and os.path.exists(perm_path_from_db):
-            with open(perm_path_from_db, "rb") as f:
-                original_bytes = f.read()
-            logger.info(f"[SIGN] PDF original leído desde ruta DB permanente: {perm_path_from_db}")
-        elif perm_original_path.exists():
-            with open(perm_original_path, "rb") as f:
-                original_bytes = f.read()
-            logger.info(f"[SIGN] PDF original leído desde visitas_pdf permanente: {perm_original_path}")
-        else:
-            # PRIORIDAD 3: Regenerar desde los datos actualizados de la DB
-            # (nunca usar el tmp ya que puede estar desactualizado respecto a ediciones)
-            logger.info(f"[SIGN] PDF original no encontrado en disco, regenerando desde DB para {visita_code}")
-            data_payload = {
-                "visita_code": contract.get("visita_code"),
-                "origen": contract.get("origen", ""),
-                "property_code": contract.get("property_code", ""),
-                "phone": contract.get("phone", ""),
-                "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
-                "cliente_rut": contract.get("client_data", {}).get("rut", ""),
-                "email": contract.get("client_data", {}).get("email", ""),
-                "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
-                "property_comuna": contract.get("property_data", {}).get("comuna", ""),
-                "property_region": contract.get("property_data", {}).get("region", ""),
-                "property_tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
-                "rol": contract.get("property_data", {}).get("rol", ""),
-                "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
-                "precio": contract.get("property_data", {}).get("precio", ""),
-                "comision": contract.get("property_data", {}).get("comision", ""),
-                "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
-                "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
-                "ejecutivo_telefono": contract.get("executive_data", {}).get("telefono", "")
-            }
-            original_bytes = await run_in_threadpool(PDFGenerator.generate_original_contract, data_payload)
-
+        # El PDF debe corresponder exactamente al original enviado al firmante.
+        security = contract.get("security", {})
+        original_bytes = None
+        original_drive_id = security.get("original_pdf_drive_id")
+        if original_drive_id:
+            original_bytes = await run_in_threadpool(gdrive_sync.download_file, original_drive_id)
+        if not original_bytes:
+            for original_path in (
+                security.get("original_pdf_path"),
+                str(BASE_DIR / "visitas_pdf" / f"{visita_code}_original.pdf"),
+            ):
+                if original_path and os.path.isfile(original_path):
+                    with open(original_path, "rb") as original_file:
+                        original_bytes = original_file.read()
+                    break
+        expected_original_hash = security.get("original_hash")
+        if not original_bytes or not expected_original_hash:
+            raise RuntimeError("PDF original archivado no disponible o sin hash")
         original_hash = SecurityContracts.hash_document(original_bytes)
-        secret_key = getattr(Config, "SECRET_KEY", "default_secret")
+        if not hmac.compare_digest(original_hash, expected_original_hash):
+            raise RuntimeError("El PDF original difiere del documento aceptado")
+        secret_key = getattr(Config, "SECRET_KEY", "")
+        if not secret_key or secret_key == "default_secret":
+            raise RuntimeError("SECRET_KEY de firma documental no configurada")
         server_hmac = SecurityContracts.generate_server_hmac(visita_code, original_hash, server_timestamp, secret_key)
         base_url = str(request.base_url).rstrip('/')
         verify_token = str(uuid.uuid4()).replace("-", "")
@@ -1535,13 +1538,29 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         with open(tmp_dir / "timeline.json", "w") as f:
             json.dump(timeline, f, indent=4)
 
-        # 5. Guardar Hashes finales y ruta local en DB
+        # Archivar el PDF firmado ANTES de declarar éxito.
+        folder_id = security.get("gdrive_folder_id")
+        if not folder_id or folder_id == "mock_folder_id":
+            raise RuntimeError("Expediente Drive no disponible")
+        signed_drive_id = await run_in_threadpool(
+            gdrive_sync.upload_file, folder_id,
+            "orden de visita_firmado.pdf", signed_pdf_bytes, "application/pdf"
+        )
+        if not signed_drive_id or signed_drive_id == "mock_file_id":
+            raise RuntimeError("No se pudo archivar el PDF firmado en Drive")
+
+        # 5. Confirmar estado firmado y guardar evidencia final.
         await _db_call(
             db["visitas"].update_one,
             {"visita_code": visita_code},
             {"$set": {
+                "status": "signed",
+                "security.original_hash": original_hash,
                 "security.signed_hash": signed_hash,
                 "security.server_hmac": server_hmac,
+                "security.hmac_timestamp": server_timestamp,
+                "security.signature_finalized_at": datetime.now(timezone.utc),
+                "security.signed_pdf_drive_id": signed_drive_id,
                 "security.timeline_hash": timeline_hash,
                 "security.signed_pdf_path": str(local_pdf_path),
                 "security.verify_token": verify_token,
@@ -1568,7 +1587,6 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 upload_to_gdrive_bg(
                     c_code,
                     {
-                        "orden de visita_firmado.pdf": s_pdf_bytes,
                         "informe_legal.pdf": l_report_bytes,
                         "hash.txt": f"Original Hash: {o_hash}\nSigned Hash: {s_hash}\nTimeline Hash: {t_hash}\nHMAC: {s_hmac}".encode(),
                     }
@@ -1607,6 +1625,15 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         )
 
         return {"status": "ok", "visita_code": visita_code}
+
+    except Exception:
+        logger.exception("[SIGN] Falló finalización de orden %s; se conserva aceptación OTP", visita_code)
+        await _db_call(
+            db["visitas"].update_one,
+            {"visita_code": visita_code, "status": "signature_finalizing"},
+            {"$set": {"status": "signature_processing_failed"}}
+        )
+        raise HTTPException(status_code=500, detail="Aceptación registrada; documento pendiente de finalización administrativa")
 
     finally:
         # Limpieza del directorio temporal (siempre, incluso en caso de error)

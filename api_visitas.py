@@ -1458,9 +1458,13 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     timezone_info = "America/Santiago (CLT)"
     
     # 1. Registrar aceptaci\u00f3n
-    await _db_call(
+    claim = await _db_call(
         db["visitas"].update_one,
-        {"visita_code": visita_code},
+        {
+            "visita_code": visita_code,
+            "status": "otp_verified",
+            "security.token_used": {"$ne": True},
+        },
         {
             "$set": {
                 "status": "signature_finalizing",
@@ -1482,7 +1486,13 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         }
     )
     
-    logger.info(f"[METRIC] visitas_signed: {visita_code}")
+    if claim.modified_count != 1:
+        return JSONResponse(status_code=202, content={
+            "status": "acceptance_recorded_pending_document",
+            "visita_code": visita_code,
+        })
+
+    logger.info(f"[METRIC] visitas_acceptance_recorded: {visita_code}")
     
     # Refrescar documento para tener el timeline completo
     contract = await _db_call(db["visitas"].find_one, {"visita_code": visita_code})

@@ -314,8 +314,9 @@ Ley 19.799."""
             overlay.drawCentredString(page_w / 2.0, 0.42 * inch, f"Página {idx} de {total_pages}")
             overlay.save()
             overlay_pdf = pypdf.PdfReader(io.BytesIO(overlay_buffer.getvalue()))
-            page.merge_page(overlay_pdf.pages[0])
+            # pypdf >= 7 exige que la página pertenezca al escritor antes de fusionarla.
             writer.add_page(page)
+            writer.pages[-1].merge_page(overlay_pdf.pages[0])
 
         final_buffer = io.BytesIO()
         writer.write(final_buffer)

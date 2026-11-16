@@ -38,6 +38,8 @@ import random
 import re
 import sys
 import time
+import uuid
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 
 import httpx
@@ -590,6 +592,7 @@ def build_history_event(
     monto_anterior=None,
     moneda_nueva: str | None = None,
     monto_nuevo=None,
+    operacion: str | None = None,
 ) -> dict:
     """Build one compact, idempotent event for the permanent history collection."""
     event = {
@@ -612,6 +615,8 @@ def build_history_event(
     if moneda_nueva is not None or monto_nuevo is not None:
         event["moneda_nueva"] = moneda_nueva
         event["monto_nuevo"] = monto_nuevo
+    if operacion:
+        event["operacion"] = operacion
 
     identity = {
         key: value
@@ -2203,6 +2208,59 @@ def upsert_ficha(
                 fecha=event_date,
             )
         )
+
+    # Only the real, manually executed full-scrape (never a dry-run or an
+    # unverified price conversion) may add new canonical published-price
+    # reductions.  Both operation and currency are explicit, so sale/rental
+    # reductions never get mixed. The permanent event is transactional with
+    # the property update and drives exactly one post-scrape discovery run.
+    if (existing and audit_uf_ok and verified_operations and
+            isinstance(sync_run_id, str) and sync_run_id.startswith("manual_scrape_")):
+        for price_key, operation in (("precio_venta", "venta"), ("precio_arriendo", "arriendo")):
+            if price_key not in verified_operations:
+                continue
+            current = (doc.get("tipo_operacion") or {})
+            if current.get(operation) is not True:
+                continue
+            before = ((existing.get("tipo_operacion") or {}).get(price_key) or {})
+            after = (current.get(price_key) or {})
+            currency_before = str(
+                before.get("moneda_precio_base") or before.get("moneda_publicada")
+                or before.get("moneda_publicacion") or ""
+            ).upper()
+            currency_after = str(
+                after.get("moneda_precio_base") or after.get("moneda_publicada")
+                or after.get("moneda_publicacion") or ""
+            ).upper()
+            if currency_before not in {"UF", "CLP"} or currency_before != currency_after:
+                continue
+            old_raw = before.get("precio_base_actual", before.get(
+                "precio_publicado_original", before.get("precio_publicado")))
+            new_raw = after.get("precio_base_actual", after.get(
+                "precio_publicado_original", after.get("precio_publicado")))
+            try:
+                old = Decimal(str(old_raw))
+                new = Decimal(str(new_raw))
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+            if not old.is_finite() or not new.is_finite() or not old > new > 0:
+                continue
+            if currency_after == "CLP" and (old != int(old) or new != int(new)):
+                continue
+            old_amount = int(old) if currency_after == "CLP" else float(old)
+            new_amount = int(new) if currency_after == "CLP" else float(new)
+            history_events.append(build_history_event(
+                codigo=str(doc["codigo"]), oficina_id=oficina_id,
+                oficina=oficina, campo="precio_publicado",
+                valor_anterior={"moneda": currency_after, "monto": old_amount},
+                valor_nuevo={"moneda": currency_after, "monto": new_amount},
+                tipo_evento="rebaja_confirmada",
+                hash_anterior=previous_hash, hash_nuevo=current_hash,
+                sync_run_id=sync_run_id, fuente=source, fecha=event_date,
+                moneda_anterior=currency_after, monto_anterior=old_amount,
+                moneda_nueva=currency_after, monto_nuevo=new_amount,
+                operacion=operation,
+            ))
 
     if history_coll is not None and history_events:
         ensure_history_indexes(history_coll)

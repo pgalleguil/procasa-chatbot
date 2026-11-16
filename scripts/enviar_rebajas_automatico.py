@@ -73,6 +73,10 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
         db, property_code=property_code, limit=max_events, progress=progress,
     )
     events = sorted(events, key=lambda event: (event.dropped_at, event.event_id), reverse=True)
+    if not events:
+        if progress:
+            progress("selection_completed_recipients_0")
+        return [], {"events_examined": 0, "events_discovered": 0}
     if progress:
         progress(f"loading_phone_index_events_{len(events)}")
     phone_owner_index: dict[str, set[str]] = {}

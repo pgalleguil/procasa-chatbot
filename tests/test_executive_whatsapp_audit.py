@@ -15,9 +15,16 @@ LEAD = ObjectId("690e13577fb5678251136b01")
 PHONE = "+56912345678"
 PRIVATE = "+56955554444"
 SESSION = "133286"
-SECRET_VAR = "WASENDER_PABLO_GALLEGUILLOS_WEBHOOK_SECRET"
-TOKEN_VAR = "WASENDER_PABLO_GALLEGUILLOS_API_TOKEN"
+SESSIONS_ENV = "PROCASA_EXEC_WASENDER_SESSIONS_JSON"
 SECRET = "audit-test-secret-value-2026"
+TOKEN = "session-api-test-only-token"
+
+
+def session_config(*, capture_enabled=True, secret=SECRET, token=TOKEN):
+    return json.dumps({SESSION: {
+        "webhook_secret": secret, "api_token": token,
+        "capture_enabled": capture_enabled,
+    }})
 
 
 class Cursor(list):
@@ -30,8 +37,7 @@ class Users:
         self.user = {
             "_id": USER, "nombre": "Pablo Galleguillos", "rol": "agente",
             "is_active": True, "telefono": "+56983219804",
-            "wasender": {"session_id": 133286, "webhook_secret_env": SECRET_VAR,
-                        "api_token_env": TOKEN_VAR},
+            "wasender": {"session_id": 133286},
         }
     def find(self, query, projection):
         allowed = self.user["wasender"]["session_id"] in query["wasender.session_id"]["$in"]
@@ -102,8 +108,7 @@ def rig(monkeypatch):
     monkeypatch.setattr(storage, "get_db", lambda: db)
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_ENABLED", "1")
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "1")
-    monkeypatch.setenv(SECRET_VAR, SECRET)
-    monkeypatch.setenv(TOKEN_VAR, "session-api-test-only-token")
+    monkeypatch.setenv(SESSIONS_ENV, session_config())
     app = FastAPI()
     app.include_router(audit.router)
     client = TestClient(app)
@@ -115,15 +120,61 @@ def post(client, payload, *, signature=SECRET, session_id=SESSION):
                        headers={"X-Webhook-Signature": signature})
 
 
-def test_session_uses_env_name_not_plaintext_and_rejects_duplicate(rig, monkeypatch):
+def test_only_session_id_is_required_in_mongodb(rig, monkeypatch):
     db, cycle, client = rig
     cfg = audit._session(db, SESSION)
+    assert db["usuarios"].user["wasender"] == {"session_id": 133286}
     assert cfg["secret"] == SECRET
-    assert cfg["session_id"] == SESSION
-    db["usuarios"].user["wasender"]["webhook_secret_env"] = SECRET
-    assert audit._session(db, SESSION) is None
-    # Not connected elsewhere when session ID differs.
+    assert cfg["token"] == TOKEN
+    assert cfg["capture_enabled"] is True
+    # Legacy secret fields left in MongoDB are ignored (but should be cleaned).
+    db["usuarios"].user["wasender"]["webhook_secret_env"] = "plaintext-wrong"
+    db["usuarios"].user["wasender"]["api_token_env"] = "plaintext-wrong"
+    assert audit._session(db, SESSION)["secret"] == SECRET
+    # Unknown sessions are not silently mapped to another user's token.
     assert audit._session(db, "133287") is None
+    # A duplicated session cannot be attributed ambiguously.
+    original_find = db["usuarios"].find
+    def duplicates(query, projection):
+        return Cursor([db["usuarios"].user, db["usuarios"].user])
+    db["usuarios"].find = duplicates
+    assert audit._session(db, SESSION) is None
+    db["usuarios"].find = original_find
+
+
+def test_central_credentials_must_be_valid_and_never_fallback_to_mongo(rig, monkeypatch):
+    db, cycle, client = rig
+    for value in (
+        "", "not json", "[]", "{}", "{bad",
+        json.dumps({SESSION: {"webhook_secret": SECRET}}),
+        session_config(secret="short"),
+        session_config(token="short"),
+        json.dumps({SESSION: {"webhook_secret": SECRET, "api_token": TOKEN,
+                               "capture_enabled": "true"}}),
+    ):
+        monkeypatch.setenv(SESSIONS_ENV, value)
+        cfg = audit._session(db, SESSION)
+        if '"capture_enabled": "true"' in value:
+            assert cfg is not None and cfg["capture_enabled"] is False
+        else:
+            assert cfg is None
+    monkeypatch.setenv(SESSIONS_ENV, "a" * 33000)
+    assert audit._session(db, SESSION) is None
+
+
+def test_per_session_capture_guard_blocks_global_write(rig, monkeypatch):
+    db, cycle, client = rig
+    monkeypatch.setenv(SESSIONS_ENV, session_config(capture_enabled=False))
+    assert post(client, event(from_me=True)).json()["status"] == "dry_run"
+    assert db["leads"].update_calls == 0
+    # Unregistered session cannot capture content even with global write on.
+    config = json.dumps({"133287": {
+        "webhook_secret": SECRET, "api_token": TOKEN,
+        "capture_enabled": True,
+    }})
+    monkeypatch.setenv(SESSIONS_ENV, config)
+    assert post(client, event(from_me=True)).status_code == 401
+    assert db["leads"].update_calls == 0
 
 
 def test_manual_outgoing_and_incoming_are_separately_attributed_and_deduped(rig):

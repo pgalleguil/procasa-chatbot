@@ -3,10 +3,13 @@
 This endpoint NEVER sends WhatsApp messages, calls the chatbot/LLM or writes
 unassigned/private chat content. Disabled by default; persistence is a
 separate opt-in flag. Each executive has an independent signed webhook URL.
+Only the existing usuarios.wasender.session_id is needed in MongoDB; all
+credentials and the per-session capture allowlist live in ONE Render variable.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -28,48 +31,67 @@ from .webhook_event_policy import verify_wasender_webhook_signature
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-_ENV_KEY = re.compile(r"^[A-Z][A-Z0-9_]{5,119}$")
+_SESSIONS_ENV = "PROCASA_EXEC_WASENDER_SESSIONS_JSON"
 _SESSION_ID = re.compile(r"^[1-9][0-9]{0,17}$")
 _LID = re.compile(r"^[0-9]{8,25}@lid$")
 _ALLOWED_EVENTS = frozenset({"messages.upsert", "messages.received"})
 
 
-def _env_secret(name: object) -> str | None:
-    """DB stores the NAME of a Render environment variable, never its value."""
-    if not isinstance(name, str) or not _ENV_KEY.fullmatch(name):
+def _central_session_config(session_id: str) -> dict | None:
+    """One Render secret for all sessions; never read credentials from MongoDB.
+
+    JSON structure:
+      {"133286": {"webhook_secret": "...", "api_token": "...",
+                  "capture_enabled": false}}
+    The per-session capture flag protects other executives even when the
+    global write switch is enabled for a controlled pilot.
+    """
+    raw = os.getenv(_SESSIONS_ENV, "")
+    if not raw or len(raw) > 32768:
         return None
-    value = os.getenv(name, "").strip()
-    return value if len(value) >= 12 else None
+    try:
+        values = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(values, dict):
+        return None
+    entry = values.get(session_id)
+    if not isinstance(entry, dict):
+        return None
+    secret = entry.get("webhook_secret")
+    token = entry.get("api_token")
+    if (not isinstance(secret, str) or len(secret.strip()) < 12
+            or not isinstance(token, str) or len(token.strip()) < 12):
+        return None
+    return {
+        "secret": secret.strip(),
+        "token": token.strip(),
+        # Only literal JSON true can enable persistence for this session.
+        "capture_enabled": entry.get("capture_enabled") is True,
+    }
 
 
 def _session(db, session_id: str) -> dict | None:
     if not _SESSION_ID.fullmatch(session_id):
+        return None
+    config = _central_session_config(session_id)
+    if config is None:
         return None
     matches = list(db["usuarios"].find(
         {
             "rol": "agente", "is_active": True,
             "wasender.session_id": {"$in": [int(session_id), session_id]},
         },
-        {"_id": 1, "nombre": 1, "rol": 1, "is_active": 1,
-         "telefono": 1, "wasender": 1},
+        {"_id": 1, "wasender.session_id": 1},
     ).limit(2))
     if len(matches) != 1:
         return None  # A duplicate session must never be attributed to either user.
     user = matches[0]
-    config = user.get("wasender")
-    if not isinstance(config, dict):
-        return None
-    secret = _env_secret(config.get("webhook_secret_env"))
-    if not secret:
-        return None
-    # Token is optional for phone-number JIDs; required for resolving @lid.
-    token = _env_secret(config.get("api_token_env"))
     return {
         "user_id": str(user["_id"]),
         "user_oid": user["_id"],
         "session_id": session_id,
-        "secret": secret,
-        "token": token,
+        **config,
     }
 
 
@@ -290,7 +312,10 @@ async def executive_session_audit(
         raise HTTPException(status_code=400, detail="invalid_json")
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="invalid_payload")
-    write = os.getenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0") == "1"
+    write = (
+        os.getenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0") == "1"
+        and session["capture_enabled"] is True
+    )
     try:
         status = await asyncio.to_thread(
             _handle_from_storage, session, payload, write,

@@ -95,7 +95,7 @@ def rule_intent(text: str) -> str:
         if not _match(r"\b(?:no (?:puedo|quiero) visitar|cancelar la visita)\b", msg):
             return "ASK_VISIT"
     if _match(r"\b(?:me (?:puedes|pueden|podrias) llamar|"
-              r"(?:llamame|llamenme)|quiero (?:hablar|conversar) con (?:un |una )?(?:ejecutiv|asesor|corredor)|"
+              r"(?:llamame|llamenme)|quiero (?:hablar|conversar) con (?:un |una )?(?:ejecutiv[oa]|asesor[ae]?|corredor[ae]?)|"
               r"contacteme(?:n)? por telefono)\b", msg):
         if "no me llam" not in msg:
             return "ASK_CONTACT"

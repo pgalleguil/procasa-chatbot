@@ -900,6 +900,7 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
                             inbound_provider_id=item.get("provider_id"),
                             phone=claimed["phone"], text=item.get("text") or "",
                             received_at=job.get("received_at"), is_test=bool(job.get("is_test")),
+                            allow_stored_property_fallback=not globally_suppressed,
                         )
     except Exception:
         logger.exception("[COMMERCIAL_INTAKE] durable commercial processing failed")

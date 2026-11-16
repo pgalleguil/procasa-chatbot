@@ -33,7 +33,7 @@ COMPLETED = "completed"
 def _now():
     return datetime.now(timezone.utc)
 
-def _candidate(text, lead):
+def _candidate(text, lead, *, allow_stored_property_fallback: bool = True):
     # Prefer a concrete property reference in this inbound message.  A
     # previously assigned property's code is only the fallback; otherwise a
     # second-property inquiry is silently folded into the old opportunity.
@@ -44,6 +44,11 @@ def _candidate(text, lead):
     match = re.search(r"\b\d{4,12}\b", str(text or ""))
     if match:
         return match.group(0)
+    # A newly reengaged customer may now be selling their own home or
+    # searching in another area. Never reuse an old campaign property's code
+    # to create a false new commercial assignment.
+    if not allow_stored_property_fallback:
+        return None
     code = (lead.get("prospecto") or {}).get("codigo")
     if code: return str(code).strip()
     return None
@@ -163,7 +168,8 @@ def _state(db, event_id, state, reason, now):
         "commercial_processing_state": state, "updated_at": now},
         "$push": {"history": {"at": now, "state": state, "reason": reason}}})
 
-def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, is_test=False):
+def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None,
+                    is_test=False, allow_stored_property_fallback: bool = True):
     """Persist one commercial event; property-less inbound never gets assigned."""
     from .phone_utils import has_real_phone, normalize_phone_strict, phone_identity_variants
     source_id = str(inbound_provider_id)
@@ -239,7 +245,9 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None, i
         # resuming that event, rather than replacing the MLC URL with 7733.
         raw = str(stored_reference).strip()
     else:
-        raw = _candidate(text, lead)
+        raw = _candidate(
+            text, lead, allow_stored_property_fallback=allow_stored_property_fallback,
+        )
     if not raw:
         db["leads"].update_one({"_id": lead["_id"]}, {"$set": {
             "commercial_processing_state": WAITING_PROPERTY, "assignment_type": "NO_PROPERTY",

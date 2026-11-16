@@ -186,6 +186,8 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
     if os.getenv(v2.CONTEXT_FLAG, "").lower() not in {"1", "true", "yes"}:
         return {**report, "status": "BLOCKED_CONTEXT_RUNTIME_GATE"}
 
+    if progress:
+        progress("verifying_publications_before_send")
     checks = verify_publications(db, selected, now=stamp)
     # A stale or unpublished property must not block other verified recipients.
     excluded = [{"code": row["event"].property_code,
@@ -202,8 +204,12 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
                 "publication_checks": checks}
 
     # This preserves the existing backups and V2 prepare/approve audit ledger.
+    if progress:
+        progress("creating_pre_send_backup")
     backup = cli._backup_leads(db, [cli._lead_id(row["lead_id"]) for row in selected])
     batches = {}
+    if progress:
+        progress("preparing_and_approving_campaigns")
     for item in selected:
         event = item["event"]
         cli.prepare_selected(
@@ -218,6 +224,8 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
                        campaign_id=event.campaign_id, operator=AUTOMATIC_OPERATOR)
         batches.setdefault(event.campaign_id, set()).add(item["lead_id"])
 
+    if progress:
+        progress("executing_approved_batch")
     outcome = cli.execute_approved_batch(
         db, campaigns=batches, include_pilot=False,
         max_messages=max_messages, min_delay_seconds=min_delay,

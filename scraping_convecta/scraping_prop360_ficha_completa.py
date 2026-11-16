@@ -50,6 +50,14 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
+# This cloned repository contains no copied secrets. Reuse the operator's
+# existing .env before importing Config or post-scrape campaign controls.
+# Explicit process environment always wins over the external file.
+from dotenv import load_dotenv
+_external_env = os.getenv("PRICE_DROP_ENV_FILE", "").strip()
+if _external_env:
+    load_dotenv(dotenv_path=_external_env, override=False)
+
 from config import Config
 
 for _stream in (sys.stdout, sys.stderr):

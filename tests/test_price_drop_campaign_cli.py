@@ -2292,6 +2292,69 @@ def test_valid_reusable_consent_replaces_campaign_specific_review(monkeypatch, t
     assert result["accepted"] == 1
 
 
+def test_full_embedded_scan_reads_complete_small_pages_and_retries_timeout(monkeypatch):
+    """Large embedded logs arrive in small complete pages; retry cannot lose events."""
+    from pymongo.errors import NetworkTimeout
+    import chatbot.price_drop_campaign_discovery as discovery
+
+    db = _event_db()
+    for index in range(30):
+        code = str(17500 + index)
+        _seed_property(db, code=code, currency="UF", current=2690)
+        db["universo_cartera_prop360"].update_one({"codigo": code}, {"$set": {
+            "bitacora": [{
+                "fecha": "20/10/2026 10:38:34",
+                "valor": "Baja el precio de venta, de UF 2.790 a UF 2.690",
+            }],
+        }})
+    collection = db["universo_cartera_prop360"]
+    original_find = collection.find
+    page_sizes = []
+    first_failure = [True]
+
+    def tracking_find(query=None, *args, **kwargs):
+        ids_query = query.get("_id") if isinstance(query, dict) else None
+        if isinstance(ids_query, dict) and "$in" in ids_query:
+            page_sizes.append(len(ids_query["$in"]))
+            assert len(ids_query["$in"]) <= 25
+            if first_failure[0]:
+                first_failure[0] = False
+                raise NetworkTimeout("simulated transient")
+        return original_find(query, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "find", tracking_find)
+    monkeypatch.setattr(discovery, "sleep", lambda _seconds: None)
+    checkpoints = []
+    events = discover_price_drops(db, now=NOW, batch_size=500,
+                                  progress=checkpoints.append)
+    assert len(events) == 31
+    assert {str(17500 + index) for index in range(30)} <= {
+        e.property_code for e in events
+    }
+    assert page_sizes == [25, 25, 6]
+    assert "embedded_property_page_1_fetch_retry_1" in checkpoints
+    assert checkpoints[-1] == "discovery_completed_events_31"
+
+
+def test_full_embedded_scan_fails_closed_if_page_is_missing_a_document(monkeypatch):
+    """Never return a silently incomplete event list on concurrent property loss."""
+    from chatbot.price_drop_campaign_discovery import DiscoveryError
+
+    db = _event_db()
+    collection = db["universo_cartera_prop360"]
+    original_find = collection.find
+
+    def missing_find(query=None, *args, **kwargs):
+        ids_query = query.get("_id") if isinstance(query, dict) else None
+        if isinstance(ids_query, dict) and "$in" in ids_query:
+            return []
+        return original_find(query, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "find", missing_find)
+    with pytest.raises(DiscoveryError, match="embedded_property_page_changed_during_scan"):
+        discover_price_drops(db, now=NOW)
+
+
 def test_full_portfolio_bitacora_only_executed_price_drop_is_discovered():
     db = _db()
     _seed_property(db, code="6370", currency="UF", current=1654)

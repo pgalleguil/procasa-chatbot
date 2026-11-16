@@ -132,7 +132,8 @@ def _authorized_contact_lid(expected_phone: str, session_token: str) -> str | No
 
 def _get_allowed_lid(payload: dict, expected_phone: str) -> str | None:
     """Resolve fixed approved contact only when the event has an unresolved LID."""
-    if payload.get("event") != "messages.upsert":
+    event_type = payload.get("event")
+    if event_type not in ("messages.upsert", "messages.received"):
         return None
     data = payload.get("data")
     if not isinstance(data, dict):
@@ -172,7 +173,8 @@ def _message_timestamp(msg: dict, payload: dict) -> tuple[str, str]:
 
 
 def _parse_message(payload: dict, expected_phone: str, expected_lid: str | None = None) -> dict | None:
-    if payload.get("event") != "messages.upsert":
+    event_type = payload.get("event")
+    if event_type not in ("messages.upsert", "messages.received"):
         return None
     data = payload.get("data")
     if not isinstance(data, dict):
@@ -194,6 +196,10 @@ def _parse_message(payload: dict, expected_phone: str, expected_lid: str | None 
            for v in (key.get("remoteJid"), key.get("remoteJidAlt"))):
         return None
     from_me = key["fromMe"]
+    # WaSender messages.received is strictly inbound. Reject an outgoing
+    # event mislabeled as incoming, independent of contact matching.
+    if event_type == "messages.received" and from_me:
+        return None
     peer = _remote_contact(key, messages, from_me=from_me)
     # Fail closed. A remote @lid is trusted only if WaSender independently
     # resolved the APPROVED office number to exactly that identifier.
@@ -228,7 +234,8 @@ def _parse_message(payload: dict, expected_phone: str, expected_lid: str | None 
 
 def _probe_skip_reason(payload: dict, expected_phone: str, expected_lid: str | None = None) -> str:
     """Only reason codes, never identifiers, text or metadata of private chats."""
-    if payload.get("event") != "messages.upsert":
+    event_type = payload.get("event")
+    if event_type not in ("messages.upsert", "messages.received"):
         return "wrong_event_type"
     data = payload.get("data")
     if not isinstance(data, dict):
@@ -245,6 +252,8 @@ def _probe_skip_reason(payload: dict, expected_phone: str, expected_lid: str | N
     key = messages.get("key")
     if not isinstance(key, dict) or not isinstance(key.get("fromMe"), bool):
         return "missing_direction"
+    if event_type == "messages.received" and key["fromMe"]:
+        return "misclassified_outgoing"
     if any("@g.us" in str(v or "") or "@newsletter" in str(v or "")
            for v in (key.get("remoteJid"), key.get("remoteJidAlt"))):
         return "group_or_channel"

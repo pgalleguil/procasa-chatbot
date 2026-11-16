@@ -300,12 +300,15 @@ async def process_user_message(phone: str, message: str, is_from_me: bool = Fals
         # Inbound customer replies are not unsolicited campaigns. A historical
         # completed property search by itself must never permanently silence
         # a fresh customer-initiated conversation; explicit STOP still blocks.
+        from .customer_initiated_reengagement import customer_initiated_service_request_allowed
         if qa_completed_search_response_allowed(lead_doc_full, pilot_context):
             logger.info("[PRICE_DROP_QA] verified admin QA reply allowed despite prior completed search")
         elif direct_inbound_reengagement_allowed(lead_doc_full, original_message):
             logger.info("[INBOUND_REENGAGEMENT] customer_initiated_reply_after_completed_search")
+        elif customer_initiated_service_request_allowed(lead_doc_full, original_message):
+            logger.info("[INBOUND_REENGAGEMENT] new_customer_service_request; campaign_opt_out_unchanged")
         else:
-            logger.info("[DO_NOT_CONTACT] explicit opt-out/contact block; inbound persisted, no bot reply")
+            logger.info("[DO_NOT_CONTACT] opted out; inbound persisted, no bot reply")
             return ""
     if any(phrase in msg_lower for phrase in ("no me escriban", "dejen de escribir", "no quiero mensajes", "stop")):
         await _run_sync(db["leads"].update_one, {"phone": phone}, {"$set": {

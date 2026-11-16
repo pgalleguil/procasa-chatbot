@@ -38,6 +38,8 @@ import random
 import re
 import sys
 import time
+import uuid
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 
 import httpx
@@ -590,6 +592,7 @@ def build_history_event(
     monto_anterior=None,
     moneda_nueva: str | None = None,
     monto_nuevo=None,
+    operacion: str | None = None,
 ) -> dict:
     """Build one compact, idempotent event for the permanent history collection."""
     event = {
@@ -612,6 +615,8 @@ def build_history_event(
     if moneda_nueva is not None or monto_nuevo is not None:
         event["moneda_nueva"] = moneda_nueva
         event["monto_nuevo"] = monto_nuevo
+    if operacion:
+        event["operacion"] = operacion
 
     identity = {
         key: value
@@ -2204,6 +2209,59 @@ def upsert_ficha(
             )
         )
 
+    # Only the real, manually executed full-scrape (never a dry-run or an
+    # unverified price conversion) may add new canonical published-price
+    # reductions.  Both operation and currency are explicit, so sale/rental
+    # reductions never get mixed. The permanent event is transactional with
+    # the property update and drives exactly one post-scrape discovery run.
+    if (existing and audit_uf_ok and verified_operations and
+            isinstance(sync_run_id, str) and sync_run_id.startswith("manual_scrape_")):
+        for price_key, operation in (("precio_venta", "venta"), ("precio_arriendo", "arriendo")):
+            if price_key not in verified_operations:
+                continue
+            current = (doc.get("tipo_operacion") or {})
+            if current.get(operation) is not True:
+                continue
+            before = ((existing.get("tipo_operacion") or {}).get(price_key) or {})
+            after = (current.get(price_key) or {})
+            currency_before = str(
+                before.get("moneda_precio_base") or before.get("moneda_publicada")
+                or before.get("moneda_publicacion") or ""
+            ).upper()
+            currency_after = str(
+                after.get("moneda_precio_base") or after.get("moneda_publicada")
+                or after.get("moneda_publicacion") or ""
+            ).upper()
+            if currency_before not in {"UF", "CLP"} or currency_before != currency_after:
+                continue
+            old_raw = before.get("precio_base_actual", before.get(
+                "precio_publicado_original", before.get("precio_publicado")))
+            new_raw = after.get("precio_base_actual", after.get(
+                "precio_publicado_original", after.get("precio_publicado")))
+            try:
+                old = Decimal(str(old_raw))
+                new = Decimal(str(new_raw))
+            except (InvalidOperation, TypeError, ValueError):
+                continue
+            if not old.is_finite() or not new.is_finite() or not old > new > 0:
+                continue
+            if currency_after == "CLP" and (old != int(old) or new != int(new)):
+                continue
+            old_amount = int(old) if currency_after == "CLP" else float(old)
+            new_amount = int(new) if currency_after == "CLP" else float(new)
+            history_events.append(build_history_event(
+                codigo=str(doc["codigo"]), oficina_id=oficina_id,
+                oficina=oficina, campo="precio_publicado",
+                valor_anterior={"moneda": currency_after, "monto": old_amount},
+                valor_nuevo={"moneda": currency_after, "monto": new_amount},
+                tipo_evento="rebaja_confirmada",
+                hash_anterior=previous_hash, hash_nuevo=current_hash,
+                sync_run_id=sync_run_id, fuente=source, fecha=event_date,
+                moneda_anterior=currency_after, monto_anterior=old_amount,
+                moneda_nueva=currency_after, monto_nuevo=new_amount,
+                operacion=operation,
+            ))
+
     if history_coll is not None and history_events:
         ensure_history_indexes(history_coll)
     result = _write_with_history(
@@ -2495,7 +2553,7 @@ def run_all_offices(args, offices: list[int] | None = None) -> int:
                 OFFICE_ID = staged["office_id"]
                 OFICINA_NOMBRE = staged["office_name"]
                 for doc in staged["docs"]:
-                    upsert_ficha(write_coll, doc)
+                    upsert_ficha(write_coll, doc, sync_run_id=getattr(args, "_manual_run_id", None))
                 for codigo in staged["errors"]:
                     upsert_error(write_coll, codigo, "scrape_error")
                 if staged["bajas_enabled"]:
@@ -2713,7 +2771,7 @@ def scrape_list_batch(client, coll, scrape_list, activa: dict, args, mongo_clien
     else:
         # The explicit --execute flag is the sole path to cartera writes.
         for doc in scraped_docs:
-            upsert_ficha(coll, doc)
+            upsert_ficha(coll, doc, sync_run_id=getattr(args, "_manual_run_id", None))
         for codigo in errores:
             upsert_error(coll, codigo, "scrape_error")
         if getattr(args, "_bajas_enabled", False):
@@ -2764,10 +2822,22 @@ def main():
     parser = build_arg_parser()
     args = parser.parse_args()
     args.dry_run = not args.execute
+    # A run-scoped identity links *only newly committed* verified reductions
+    # to the post-scrape campaign. Historic reductions are never replayed.
+    args._manual_run_id = "manual_scrape_" + uuid.uuid4().hex
+    args._manual_scrape_started_at = datetime.now(timezone.utc)
 
-    if args.all_offices:
-        sys.exit(run_all_offices(args))
-    sys.exit(run(args))
+    outcome = run_all_offices(args) if args.all_offices else run(args)
+    if args.execute and outcome == 0:
+        from scripts.price_drop_after_scrape import dispatch_after_scrape
+        report = dispatch_after_scrape(
+            sync_run_id=args._manual_run_id,
+            started_at=args._manual_scrape_started_at,
+        )
+        log.info("[PRICE_DROP_AFTER_SCRAPE] %s", json.dumps(report, ensure_ascii=False, default=str))
+    elif args.execute:
+        log.warning("[PRICE_DROP_AFTER_SCRAPE] skipped: scraper failed or incomplete")
+    sys.exit(outcome)
 
 
 if __name__ == "__main__":

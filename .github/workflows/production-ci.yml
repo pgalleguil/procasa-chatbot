@@ -56,6 +56,8 @@ jobs:
             tests: >-
               tests/test_price_drop_campaign_cli.py
               tests/test_reconcile_price_drop_opt_out.py
+              tests/test_price_drop_after_scrape.py
+              tests/test_customer_initiated_reengagement.py
               tests/test_price_drop_inbound_readiness_audit.py
               tests/test_price_drop_export_recovery.py
               tests/test_auto_rebajas_pilot.py

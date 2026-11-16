@@ -1748,6 +1748,11 @@ app.include_router(owner_portal_router)
 from chatbot.executive_pilot_webhook import router as executive_pilot_router
 app.include_router(executive_pilot_router)
 
+# Passive executive WhatsApp audit: separate signed URL per WaSender session.
+# Disabled by default; never attach the executive sessions to the office bot.
+from chatbot.executive_whatsapp_audit import router as executive_audit_router
+app.include_router(executive_audit_router)
+
 from chatbot.lead_router import should_send_now, format_whatsapp_template
 from chatbot.storage import (
     get_db,

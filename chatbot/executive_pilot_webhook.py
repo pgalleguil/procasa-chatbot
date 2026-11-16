@@ -82,10 +82,15 @@ def _remote_contact(key: dict, msg: dict, *, from_me: bool) -> str | None:
         key.get("remoteJidAlt"),
         key.get("remoteJid"),
         msg.get("chatId"),
-        msg.get("from"),
     ]
     if not from_me:
-        candidates.extend([key.get("senderPn"), key.get("cleanedSenderPn")])
+        # Incoming senderPn identifies the customer; outgoing senderPn and
+        # "from" may identify the linked executive instead. Never attribute
+        # an outbound @lid chat to the executive's own phone by accident.
+        candidates.extend([
+            key.get("senderPn"), key.get("cleanedSenderPn"),
+            msg.get("from"),
+        ])
     for raw in candidates:
         phone = _phone_number_from_jid(raw)
         if phone:

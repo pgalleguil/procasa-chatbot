@@ -113,6 +113,9 @@ def _parse_message(payload: dict, expected_phone: str) -> dict | None:
     if not isinstance(data, dict):
         return None
     messages = data.get("messages")
+    # Older WaSender webhook examples expose the message directly under data.
+    if messages is None and isinstance(data.get("key"), dict):
+        messages = data
     if isinstance(messages, list):
         if len(messages) != 1:
             return None
@@ -149,6 +152,48 @@ def _parse_message(payload: dict, expected_phone: str) -> dict | None:
         "timestamp": timestamp,
         "timestamp_source": timestamp_source,
     }
+
+
+def _probe_skip_reason(payload: dict, expected_phone: str) -> str:
+    """Only reason codes, never identifiers, text or metadata of private chats."""
+    if payload.get("event") != "messages.upsert":
+        return "wrong_event_type"
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return "missing_data"
+    messages = data.get("messages")
+    if messages is None and isinstance(data.get("key"), dict):
+        messages = data
+    if isinstance(messages, list):
+        if len(messages) != 1:
+            return "message_batch_size"
+        messages = messages[0]
+    if not isinstance(messages, dict):
+        return "missing_message_object"
+    key = messages.get("key")
+    if not isinstance(key, dict) or not isinstance(key.get("fromMe"), bool):
+        return "missing_direction"
+    if any("@g.us" in str(v or "") or "@newsletter" in str(v or "")
+           for v in (key.get("remoteJid"), key.get("remoteJidAlt"))):
+        return "group_or_channel"
+    peer = _remote_contact(key, messages, from_me=key["fromMe"])
+    if peer is None:
+        return "unresolved_contact"
+    if peer != expected_phone:
+        return "other_contact"
+    provider_id = str(key.get("id") or messages.get("id") or "").strip()
+    if not provider_id or len(provider_id) > 256:
+        return "missing_message_id"
+    body = messages.get("message")
+    if not isinstance(body, dict):
+        body = {}
+    extended = body.get("extendedTextMessage")
+    if not isinstance(extended, dict):
+        extended = {}
+    content = messages.get("messageBody") or body.get("conversation") or extended.get("text")
+    if not isinstance(content, str) or not content.strip() or len(content) > 8000:
+        return "not_supported_text"
+    return "unclassified"
 
 
 def _save_authorized_message(cfg: dict[str, str], parsed: dict) -> str:
@@ -233,6 +278,13 @@ async def executive_pilot_webhook(
         raise HTTPException(status_code=400, detail="invalid_payload")
     parsed = _parse_message(payload, cfg["contact_phone"])
     if parsed is None:
+        if cfg["probe_only"]:
+            reason = _probe_skip_reason(payload, cfg["contact_phone"])
+            # Never record details or metadata from non-allowed private chats.
+            if reason != "other_contact":
+                logging.getLogger(__name__).info(
+                    "[EXEC_PILOT_DIAGNOSTIC] skipped=%s", reason
+                )
         return JSONResponse({"ok": True, "status": "ignored"})
     if cfg["probe_only"]:
         # The first live test must prove the provider can report both directions

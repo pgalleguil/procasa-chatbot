@@ -380,7 +380,7 @@ def test_pilot_reasons_without_exposing_unrelated_message(monkeypatch, caplog):
     with caplog.at_level(logging.INFO, logger="chatbot.executive_pilot_webhook"):
         response = client.post("/webhook/ejecutivos-piloto", data=json.dumps(wrong_event), headers=headers)
     assert response.status_code == 200
-    assert "skipped=wrong_event_type" in caplog.text
+    assert "skipped=misclassified_outgoing" in caplog.text
     assert PHONE not in caplog.text
 
 
@@ -445,3 +445,27 @@ def test_lid_request_is_read_only_and_does_not_echo_token(monkeypatch):
     finally:
         pilot._authorized_contact_lid.cache_clear()
 
+
+
+
+def test_incoming_received_event_is_accepted_but_outgoing_is_not():
+    """WaSender incoming-specific event complements bidirectional upsert."""
+    incoming = event(from_me=False, event_name="messages.received", msg_id="rec-in")
+    parsed = pilot._parse_message(incoming, PHONE)
+    assert parsed is not None and parsed["from_me"] is False
+    assert pilot._probe_skip_reason(incoming, PHONE) == "unclassified"
+
+    outgoing = event(from_me=True, event_name="messages.received", msg_id="rec-out")
+    assert pilot._parse_message(outgoing, PHONE) is None
+    assert pilot._probe_skip_reason(outgoing, PHONE) == "misclassified_outgoing"
+
+
+def test_incoming_received_lid_requires_authorized_office_mapping():
+    allowed = "123456789012@lid"
+    incoming = event(from_me=False, jid=allowed, event_name="messages.received",
+                     msg_id="incoming-lid")
+    assert pilot._parse_message(incoming, PHONE) is None
+    assert pilot._parse_message(incoming, PHONE, allowed)["from_me"] is False
+    private = event(from_me=False, jid="123456789013@lid",
+                    event_name="messages.received", msg_id="private-lid")
+    assert pilot._parse_message(private, PHONE, allowed) is None

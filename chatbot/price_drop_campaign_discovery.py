@@ -6,6 +6,9 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable, Iterable
+from time import sleep
+
+from pymongo.errors import AutoReconnect, ExecutionTimeout
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -322,6 +325,73 @@ def _bitacora_current_price_drop(prop: dict[str, Any], *,
 
 
 
+
+def _retry_read_only_page(
+    reader: Callable[[], list[dict[str, Any]]], *,
+    progress: Callable[[str], None] | None, phase: str,
+) -> list[dict[str, Any]]:
+    """Retry a complete idempotent Mongo read; never swallow incomplete pages."""
+    for attempt in range(3):
+        try:
+            return reader()
+        except (AutoReconnect, ExecutionTimeout):
+            if attempt == 2:
+                raise
+            if progress is not None:
+                progress(f"{phase}_retry_{attempt + 1}")
+            sleep(0.3 * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
+def _iter_embedded_properties(
+    db: Any, query: dict[str, Any], projection: dict[str, Any], *,
+    batch_size: int, progress: Callable[[str], None] | None,
+) -> Iterable[dict[str, Any]]:
+    """Read all matching Prop360 properties without huge history-array batches.
+
+    Scan matching IDs with a tiny projection, then fetch full documents in
+    25-document pages. Each page is fetched atomically for retry purposes:
+    if any lookup is incomplete, abort instead of approving partial audiences.
+    """
+    collection = db[PROPERTY_COLLECTION]
+    if progress is not None:
+        progress("embedded_property_ids_read")
+
+    def load_ids() -> list[dict[str, Any]]:
+        cursor = collection.find(query, {"_id": 1})
+        if hasattr(cursor, "batch_size"):
+            cursor = cursor.batch_size(min(batch_size, 100))
+        return list(cursor)
+
+    identifiers = [
+        row["_id"] for row in _retry_read_only_page(
+            load_ids, progress=progress, phase="embedded_property_ids_read",
+        )
+    ]
+    if len(identifiers) != len(set(identifiers)):
+        raise DiscoveryError("duplicate_embedded_property_ids")
+    page_size = min(batch_size, 25)
+    for start in range(0, len(identifiers), page_size):
+        number = start // page_size + 1
+        page_ids = identifiers[start:start + page_size]
+        phase = f"embedded_property_page_{number}_fetch"
+        if progress is not None:
+            progress(phase)
+
+        def load_page() -> list[dict[str, Any]]:
+            cursor = collection.find({"_id": {"$in": page_ids}}, {
+                **projection, "_id": 1,
+            })
+            if hasattr(cursor, "batch_size"):
+                cursor = cursor.batch_size(page_size)
+            return list(cursor)
+
+        rows = _retry_read_only_page(load_page, progress=progress, phase=phase)
+        if {row.get("_id") for row in rows} != set(page_ids) or len(rows) != len(page_ids):
+            raise DiscoveryError("embedded_property_page_changed_during_scan")
+        yield from rows
+
+
 def discover_price_drops(db: Any, *, since: datetime | None = None,
                          limit: int | None = None, now: datetime | None = None,
                          property_code: str | None = None,
@@ -467,14 +537,12 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
         }
         if progress is not None:
             progress("embedded_property_cursor_open")
-        cursor = db[PROPERTY_COLLECTION].find(
-            embedded_query, embedded_projection,
-        )
-        if hasattr(cursor, "batch_size"):
-            cursor = cursor.batch_size(batch_size)
         if progress is not None:
             progress("embedded_property_cursor_read_start")
-        for property_number, prop in enumerate(cursor, 1):
+        for property_number, prop in enumerate(_iter_embedded_properties(
+            db, embedded_query, embedded_projection,
+            batch_size=batch_size, progress=progress,
+        ), 1):
             if progress is not None and (property_number == 1 or property_number % batch_size == 0):
                 progress(f"embedded_property_{property_number}_read")
             code = str(prop.get("codigo") or "")

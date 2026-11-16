@@ -1834,7 +1834,9 @@ async def slide_session_middleware(request: Request, call_next):
     if process_time > 1.0:
         logger.warning(f"[LATENCY_ALERT] {request.method} {request.url.path} tardo {process_time:.3f}s")
 
-    if request.url.path.startswith("/static") or request.url.path in ["/logout", "/webhook", "/auth/google/callback"]:
+    if (request.url.path.startswith("/static")
+            or request.url.path in ["/logout", "/webhook", "/webhook/ejecutivos-piloto", "/auth/google/callback"]
+            or request.url.path.startswith("/webhook/ejecutivos/")):
         return response
 
     token = request.cookies.get("access_token")
@@ -6827,7 +6829,14 @@ async def unauthorized_exception_handler(request: Request, exc: HTTPException):
     # Machine-to-machine callbacks must never redirect to interactive login.
     # WaSender retries and logs the 401; a 307 causes its POST to become a
     # misleading 405 and prevents reliable diagnosis of signature mismatch.
-    if request.url.path == "/webhook":
+    machine_webhook = (
+        request.url.path in {"/webhook", "/webhook/ejecutivos-piloto"}
+        or (
+            request.url.path.startswith("/webhook/ejecutivos/")
+            and request.url.path.count("/") == 3
+        )
+    )
+    if machine_webhook:
         logger.warning("[WASENDER_WEBHOOK] auth_failed http=401 redirect=false")
         return JSONResponse(
             {"status": "unauthorized", "reason": "webhook_authentication_failed"},

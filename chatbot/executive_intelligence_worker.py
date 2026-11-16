@@ -73,9 +73,14 @@ def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
         "commercial_intelligence.pending": True,
         "commercial_intelligence.pending_message_id": marker.get("pending_message_id"),
         "commercial_intelligence.pending_cycle_id": marker.get("pending_cycle_id"),
-        "lifecycle.current_assignment_cycle_id": marker.get("pending_cycle_id"),
-        "lifecycle.assigned_to_user_id": lifecycle.get("assigned_to_user_id"),
     }
+    if status != "stale_assignment":
+        match.update({
+            "lifecycle.current_assignment_cycle_id": marker.get("pending_cycle_id"),
+            "lifecycle.assigned_to_user_id": lifecycle.get("assigned_to_user_id"),
+        })
+    # A stale job may only be cleared, never interpreted or persisted as an
+    # outcome. Its message/cycle CAS still prevents clearing newer work.
     values = {
         "commercial_intelligence.pending": False,
         "commercial_intelligence.status": status,

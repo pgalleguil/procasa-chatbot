@@ -1910,6 +1910,53 @@ def test_audience_audit_does_not_query_duplicate_phones_for_each_event(monkeypat
     assert phone_queries == []
 
 
+def test_price_drop_discovery_fetches_history_properties_in_batches(monkeypatch):
+    """Two historical properties in one batch must not require N+1 find_one calls."""
+    db = _event_db()
+    _seed_property(db, code="6377", current=5074)
+    _history(db, "6377", DROP, 5123, 5074)
+    collection = db["universo_cartera_prop360"]
+    original_find = collection.find
+    batched_queries = []
+
+    def tracking_find(query=None, *args, **kwargs):
+        if isinstance(query, dict) and isinstance(query.get("codigo"), dict):
+            batched_queries.append(query)
+        return original_find(query, *args, **kwargs)
+
+    monkeypatch.setattr(collection, "find", tracking_find)
+    monkeypatch.setattr(
+        collection, "find_one",
+        lambda *args, **kwargs: pytest.fail("N+1 find_one during price discovery"),
+    )
+    events = discover_price_drops(db, now=NOW, limit=2)
+    assert {event.property_code for event in events} == {"6436", "6377"}
+    assert len(batched_queries) == 1
+    assert set(batched_queries[0]["codigo"]["$in"]) == {"6436", "6377"}
+
+
+def test_audience_audit_mongo_failure_reports_safe_phase(monkeypatch, capsys):
+    """A timeout must reveal the phase without leaking an exception message."""
+    import json
+
+    db = _event_db()
+    monkeypatch.setattr(cli, "_get_db", lambda: db)
+
+    def timeout(*args, **kwargs):
+        raise TimeoutError("private connection information")
+
+    monkeypatch.setattr(cli, "_events", timeout)
+    assert cli.main(["--audience-audit", "--limit", "1"]) == 1
+    output = capsys.readouterr()
+    assert json.loads(output.out) == {
+        "status": "ERROR",
+        "reason": "TimeoutError",
+        "phase": "discovering_price_drops",
+    }
+    assert "private connection information" not in output.out + output.err
+    assert "[AUDIENCE_AUDIT] discovering_price_drops" in output.err
+
+
 def test_full_portfolio_audit_counts_all_events_without_writes_or_provider_calls(monkeypatch, capsys):
     """Two price drops, one lead interested in both: report overlap not bulk send."""
     import json

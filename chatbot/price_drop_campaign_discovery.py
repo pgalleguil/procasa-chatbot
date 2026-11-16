@@ -390,10 +390,19 @@ def discover_price_drops(db: Any, *, since: datetime | None = None,
         if not batch:
             break
         codes = {str(row.get("codigo") or "") for row in batch}
-        properties = {
-            code: db[PROPERTY_COLLECTION].find_one({"codigo": code}, property_projection) or {}
-            for code in codes if code
-        }
+        # Resolve property codes in one bounded database query per history page
+        # instead of one roundtrip per property (N+1 on large audits).
+        # Preserve first-match semantics if legacy duplicate codes exist.
+        properties: dict[str, dict[str, Any]] = {}
+        if codes:
+            property_cursor = db[PROPERTY_COLLECTION].find(
+                {"codigo": {"$in": [code for code in codes if code]}},
+                property_projection,
+            )
+            for prop in property_cursor:
+                code = str(prop.get("codigo") or "")
+                if code in codes:
+                    properties.setdefault(code, prop)
         for history in batch:
             code = str(history.get("codigo") or "")
             prop = properties.get(code, {})

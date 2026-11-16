@@ -748,7 +748,7 @@
                     </thead>
                     <tbody>
                         {% for c in contracts %}
-                        <tr data-contract-code="{{ c.contract_code }}" data-contract-status="{{ c.status }}">
+                        <tr data-contract-code="{{ c.contract_code }}" data-contract-status="{{ c.status }}" data-contract-complete="{{ 'true' if c.signature_complete else 'false' }}">
                             <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---' }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at else '' }} hrs</small></td>
                             {% if user_role in ['supervisor', 'admin', 'jefatura'] %}
                             <td data-label="Ejecutivo">{{ c.executive_display or '---' }}</td>
@@ -767,7 +767,8 @@
                                 {% elif c.status == 'opened' %}<span class="status-badge status-opened">Abierto</span>
                                 {% elif c.status == 'otp_requested' %}<span class="status-badge status-otp_requested">Código Pedido</span>
                                 {% elif c.status == 'otp_verified' %}<span class="status-badge status-otp_verified">RUT Validado</span>
-                                {% elif c.status in ['signed','accepted'] %}<span class="status-badge status-signed">Firmado ✓</span>
+                                {% elif c.status in ['signed','accepted'] and c.signature_complete %}<span class="status-badge status-signed">Firmado ✓</span>
+                                {% elif c.status in ['signed','accepted','signature_finalizing','signature_processing_failed'] %}<span class="status-badge status-otp_verified">Aceptación registrada — PDF pendiente</span>
                                 {% else %}<span class="status-badge status-created">{{ c.status }}</span>{% endif %}
                             </td>
                             <td data-label="Acciones">
@@ -800,7 +801,7 @@
                                         <i class="fa-solid fa-rotate-right"></i>
                                     </button>
                                     {% endif %}
-                                    {% elif c.status in ['signed','accepted'] %}
+                                    {% elif c.status in ['signed','accepted'] and c.signature_complete %}
                                     <a href="/contracts/api/view_signed/{{ c.contract_code }}" target="_blank"
                                         class="btn btn-sm btn-outline-secondary" title="Ver Firmado">
                                         <i class="fa-solid fa-eye"></i>
@@ -813,9 +814,20 @@
                                         class="btn btn-sm btn-outline-info" title="Verificar Evidencia">
                                         <i class="fa-solid fa-shield-halved"></i>
                                     </a>
+                                    {% elif c.status in ['signed','accepted','signature_finalizing','signature_processing_failed'] %}
+                                    <a href="/contracts/verify/{{ c.contract_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-warning" title="Ver evidencia">
+                                        <i class="fa-solid fa-shield-halved"></i>
+                                    </a>
+                                    {% if user_role in ['admin','supervisor'] %}
+                                    <button class="btn btn-sm btn-warning"
+                                        onclick="repairContract('{{ c.contract_code }}', this)" title="Reparar PDF y enviar confirmación">
+                                        <i class="fa-solid fa-wrench"></i> Reparar firma
+                                    </button>
+                                    {% endif %}
                                     {% endif %}
                                     {# Eliminar: siempre visible excepto firmados #}
-                                    {% if c.status not in ['signed','accepted'] %}
+                                    {% if c.status not in ['signed','accepted','signature_finalizing','signature_processing_failed'] %}
                                     <button class="btn btn-sm btn-outline-secondary btn-hover-danger"
                                         title="Eliminar"
                                         onclick="deleteContract('{{ c.contract_code }}', this)">
@@ -1646,6 +1658,27 @@
             }
         }
 
+        async function repairContract(contractCode, btn) {
+            if (!confirm('Se reconstruirá el certificado con OTP y aceptación originales, sin pedir otra firma. ¿Continuar?')) return;
+            btn.disabled = true;
+            try {
+                const response = await fetch(`/contracts/api/${encodeURIComponent(contractCode)}/repair-signature`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.detail || 'No fue posible reconstruir el PDF');
+                alert(data.status === 'already_finalized'
+                    ? 'El convenio ya estaba finalizado.'
+                    : 'PDF firmado recuperado y archivado. El correo de confirmación quedó programado.');
+                location.reload();
+            } catch (error) {
+                alert('Error: ' + error.message);
+                btn.disabled = false;
+            }
+        }
+
         async function deleteContract(contractCode, btn) {
             if (btn.disabled) return;
             const ok = confirm('¿Eliminar este convenio? Esta acción no se puede deshacer.');
@@ -1765,41 +1798,29 @@
                 if (!res.ok) return;
                 const data = await res.json();
                 const map = {};
-                (data.items || []).forEach(i => map[i.contract_code] = i.status);
-                
+                (data.items || []).forEach(item => map[item.contract_code] = item);
+
                 let hasPending = false;
                 document.querySelectorAll('tr[data-contract-code]').forEach(tr => {
                     const code = tr.getAttribute('data-contract-code');
                     const current = tr.getAttribute('data-contract-status');
-                    const next = map[code];
-                    if (next) {
-                        if (next !== current) {
-                            tr.setAttribute('data-contract-status', next);
-                            const td = tr.querySelector('.contract-status-cell');
-                            if (td) {
-                                let html = `<span class="status-badge status-created">${next}</span>`;
-                                if (next === 'created') html = '<span class="status-badge status-created">Creado</span>';
-                                else if (next === 'sent') html = '<span class="status-badge status-sent">Enviado</span>';
-                                else if (next === 'opened') html = '<span class="status-badge status-opened">Abierto</span>';
-                                else if (next === 'otp_requested') html = '<span class="status-badge status-otp_requested">Código Pedido</span>';
-                                else if (next === 'otp_verified') html = '<span class="status-badge status-otp_verified">RUT Validado</span>';
-                                else if (next === 'signed' || next === 'accepted') html = '<span class="status-badge status-signed">Firmado ✓</span>';
-                                td.innerHTML = html;
+                    const currentComplete = tr.getAttribute('data-contract-complete') === 'true';
+                    const item = map[code];
+                    if (!item) return;
+                    const next = item.status;
+                    const nextComplete = Boolean(item.signature_complete);
 
-                                // Dynamically reload page to update actions buttons for signed contracts
-                                if (['signed', 'accepted'].includes(next)) {
-                                    setTimeout(() => window.location.reload(), 1200);
-                                }
-                            }
-                        }
-                        if (!['signed', 'accepted', 'deleted'].includes(next)) {
-                            hasPending = true;
-                        }
+                    if (next !== current || nextComplete !== currentComplete) {
+                        // Recargar para sincronizar tanto estado como acciones administrativas.
+                        setTimeout(() => window.location.reload(), 1200);
+                        return;
+                    }
+                    if (!['signed', 'accepted', 'deleted'].includes(next) || !nextComplete) {
+                        hasPending = true;
                     }
                 });
 
                 if (!hasPending) {
-                    console.log('[contracts] All contracts are in a final state. Stopping polling.');
                     stopStatusSync();
                 }
             } catch (_) { }

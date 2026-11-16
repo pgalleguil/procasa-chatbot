@@ -456,7 +456,16 @@
         const tokenExpiryIso = "{{ token_expiry_iso }}";
 
         const isSigned = {{ 'true' if is_signed else 'false' }};
+        const documentFinalized = {{ 'true' if document_finalized else 'false' }};
         const CONTRACT_CODE = "{{ contract.contract_code }}";
+
+        function showPendingFinalization() {
+            document.querySelector('#step-5 h2').textContent = 'Aceptación registrada';
+            document.querySelector('#step-5 p').textContent =
+                'Tu identidad y aceptación se registraron correctamente. El PDF requiere finalización técnica; no vuelvas a firmar.';
+            document.getElementById('btn-download-signed').style.display = 'none';
+            document.getElementById('progress-label').textContent = 'Aceptación registrada — PDF pendiente';
+        }
 
         if (isSigned) {
             document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
@@ -466,6 +475,7 @@
             document.getElementById('progress-fraction').textContent = '3 / 3';
             document.getElementById('progress-fill').style.width = '100%';
             document.getElementById('progress-fill').classList.replace('bg-blue-600', 'bg-green-500');
+            if (!documentFinalized) showPendingFinalization();
             // No PDF on signed view
             document.body.classList.remove('pdf-step');
         } else {
@@ -1009,8 +1019,12 @@
                     const bannerEl = document.getElementById('expiry-countdown-banner');
                     if (bannerEl) bannerEl.style.display = 'none';
 
-                    document.getElementById('btn-download-signed').href =
-                        `/contracts/api/download_signed/${d.contract_code}`;
+                    if (d.status === 'acceptance_recorded_pending_document') {
+                        showPendingFinalization();
+                    } else {
+                        document.getElementById('btn-download-signed').href =
+                            `/contracts/api/download_signed/${d.contract_code}`;
+                    }
                 } else {
                     const data = await resAccept.json().catch(() => ({}));
                     const detail = data.detail || '';
@@ -1026,7 +1040,12 @@
                         return;
                     }
 
-                    errorDiv.textContent = 'Error al generar el contrato firmado. Por favor intenta nuevamente en unos segundos.';
+                    if (detail.includes('Aceptación registrada')) {
+                        showStep('step-5');
+                        showPendingFinalization();
+                        return;
+                    }
+                    errorDiv.textContent = 'No fue posible generar el PDF. Contacta a administración antes de volver a firmar.';
                     errorDiv.classList.remove('hidden');
                     btnVerify.disabled = false;
                     btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Contrato Definitivamente';

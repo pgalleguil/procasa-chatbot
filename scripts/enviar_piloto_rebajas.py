@@ -249,10 +249,12 @@ def _status_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _events(db: Any, property_code: str | None = None, *, since=None,
             currency: str | None = None, operation: str | None = None,
-            limit: int | None = None, batch_size: int = 500) -> list[PriceDropEvent]:
+            limit: int | None = None, batch_size: int = 500,
+            progress: Callable[[str], None] | None = None) -> list[PriceDropEvent]:
     return discover_price_drops(
         db, since=since, property_code=property_code, currency=currency,
         operation=operation, limit=limit, batch_size=batch_size,
+        progress=progress,
     )
 
 
@@ -334,7 +336,8 @@ def audit_full_portfolio(
     if progress is not None:
         progress("discovering_price_drops")
     events = _events(db, property_code, since=since, currency=currency,
-                     operation=operation, limit=limit, batch_size=batch_size)
+                     operation=operation, limit=limit, batch_size=batch_size,
+                     progress=progress)
     if progress is not None:
         progress(f"loading_phone_index_events_{len(events)}")
     unique_eligible_leads: set[str] = set()

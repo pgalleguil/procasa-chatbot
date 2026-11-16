@@ -1,4 +1,6 @@
 import os
+import hmac
+import re
 import uuid
 import logging
 import threading
@@ -1290,6 +1292,19 @@ async def accept_terms(token: str, request: Request):
     )
     return {"status": "ok"}
 
+def _signature_evidence_complete(contract: dict) -> bool:
+    security = contract.get("security") or {}
+    return (
+        contract.get("status") == "signed"
+        and bool(security.get("signed_pdf_drive_id"))
+        and all(
+            isinstance(security.get(field), str)
+            and re.fullmatch(r"[0-9a-fA-F]{64}", security[field])
+            for field in ("original_hash", "signed_hash", "timeline_hash", "server_hmac")
+        )
+    )
+
+
 @router.post("/api/{token}/accept", dependencies=[Depends(signature_concurrency)])
 async def accept_contract(token: str, request: Request, background_tasks: BackgroundTasks):
     import shutil
@@ -1301,10 +1316,13 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
 
     ensure_document_valid(contract)
 
-    # Idempotencia: si ya fue firmado, retornar éxito sin reprocessar
     if contract.get("status") == "signed" or contract["security"].get("token_used"):
-        logger.info(f"[CONTRACT_SIGNED] Idempotente — contrato {contract['contract_code']} ya firmado.")
-        return JSONResponse(status_code=200, content={"status": "already_signed", "contract_code": contract["contract_code"]})
+        if _signature_evidence_complete(contract):
+            return JSONResponse(status_code=200, content={"status": "already_signed", "contract_code": contract["contract_code"]})
+        return JSONResponse(status_code=202, content={
+            "status": "acceptance_recorded_pending_document",
+            "contract_code": contract["contract_code"],
+        })
 
     if contract["status"] != "otp_verified":
         raise HTTPException(status_code=403, detail="Contrato no válido para aceptación")
@@ -1344,13 +1362,14 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     timezone_info = "America/Santiago (CLT)"
     
     # 1. Registrar aceptaci\u00f3n
-    await _db_call(
+    claim = await _db_call(
         db["contracts"].update_one,
-        {"contract_code": contract_code},
+        {"contract_code": contract_code, "status": "otp_verified", "security.token_used": {"$ne": True}},
         {
             "$set": {
-                "status": "signed", 
+                "status": "signature_finalizing",
                 "security.token_used": True,
+                "security.signature_timestamp": datetime.now(timezone.utc),
                 "locked": True
             },
             "$push": {"timeline": {
@@ -1367,7 +1386,12 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         }
     )
     
-    logger.info(f"[METRIC] contracts_signed: {contract_code}")
+    if claim.modified_count != 1:
+        return JSONResponse(status_code=202, content={
+            "status": "acceptance_recorded_pending_document",
+            "contract_code": contract_code,
+        })
+    logger.info(f"[METRIC] contracts_acceptance_recorded: {contract_code}")
     
     # Refrescar documento para tener el timeline completo
     contract = await _db_call(db["contracts"].find_one, {"contract_code": contract_code})
@@ -1377,31 +1401,30 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     timeline_hash = SecurityContracts.hash_timeline(timeline)
     tmp_dir = BASE_DIR / "tmp" / "contracts" / contract_code
     try:
-        original_pdf_path = tmp_dir / "contrato_original.pdf"
-        if original_pdf_path.exists():
-            with open(original_pdf_path, "rb") as f:
-                original_bytes = f.read()
-        else:
-            data_payload = {
-                "contract_code": contract.get("contract_code"),
-                "origen": contract.get("origen", ""),
-                "property_code": contract.get("property_code", ""),
-                "phone": contract.get("phone", ""),
-                "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
-                "cliente_rut": contract.get("client_data", {}).get("rut", ""),
-                "email": contract.get("client_data", {}).get("email", ""),
-                "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
-                "comuna": contract.get("property_data", {}).get("comuna", ""),
-                "tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
-                "rol": contract.get("property_data", {}).get("rol", ""),
-                "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
-                "precio": contract.get("property_data", {}).get("precio", ""),
-                "comision": contract.get("property_data", {}).get("comision", "")
-            }
-            original_bytes = PDFGenerator.generate_original_contract(data_payload)
-
+        # Usar solo el PDF archivado que coincide con el hash original del convenio.
+        security = contract.get("security") or {}
+        original_bytes = None
+        original_drive_id = security.get("original_pdf_drive_id")
+        if original_drive_id:
+            original_bytes = await run_in_threadpool(gdrive_sync.download_file, original_drive_id)
+        if not original_bytes:
+            for original_path in (
+                security.get("original_pdf_path"),
+                str(BASE_DIR / "contracts_pdf" / f"{contract_code}_original.pdf"),
+            ):
+                if original_path and os.path.isfile(original_path):
+                    with open(original_path, "rb") as f:
+                        original_bytes = f.read()
+                    break
+        expected_original_hash = security.get("original_hash")
+        if not original_bytes or not expected_original_hash:
+            raise RuntimeError("PDF original archivado no disponible o sin hash")
         original_hash = SecurityContracts.hash_document(original_bytes)
-        secret_key = getattr(Config, "SECRET_KEY", "default_secret")
+        if not hmac.compare_digest(original_hash, expected_original_hash):
+            raise RuntimeError("El PDF original difiere del documento aceptado")
+        secret_key = getattr(Config, "SECRET_KEY", "")
+        if not secret_key or secret_key == "default_secret":
+            raise RuntimeError("SECRET_KEY documental no configurada")
         server_hmac = SecurityContracts.generate_server_hmac(contract_code, original_hash, server_timestamp, secret_key)
         base_url = str(request.base_url).rstrip('/')
         verify_token = str(uuid.uuid4()).replace("-", "")
@@ -1447,13 +1470,29 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         with open(tmp_dir / "timeline.json", "w") as f:
             json.dump(timeline, f, indent=4)
 
-        # 5. Guardar Hashes finales y ruta local en DB
+        # Archivar PDF antes de declarar el convenio firmado.
+        folder_id = security.get("gdrive_folder_id")
+        if not folder_id or folder_id == "mock_folder_id":
+            raise RuntimeError("Expediente del convenio no disponible")
+        signed_drive_id = await run_in_threadpool(
+            gdrive_sync.upload_file, folder_id,
+            "contrato_firmado.pdf", signed_pdf_bytes, "application/pdf"
+        )
+        if not signed_drive_id or signed_drive_id == "mock_file_id":
+            raise RuntimeError("No se pudo archivar PDF firmado en Drive")
+
+        # 5. Guardar hashes y estado final.
         await _db_call(
             db["contracts"].update_one,
             {"contract_code": contract_code},
             {"$set": {
+                "status": "signed",
+                "security.original_hash": original_hash,
                 "security.signed_hash": signed_hash,
                 "security.server_hmac": server_hmac,
+                "security.hmac_timestamp": server_timestamp,
+                "security.signature_finalized_at": datetime.now(timezone.utc),
+                "security.signed_pdf_drive_id": signed_drive_id,
                 "security.timeline_hash": timeline_hash,
                 "security.signed_pdf_path": str(local_pdf_path),
                 "security.verify_token": verify_token
@@ -1479,7 +1518,6 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 upload_to_gdrive_bg(
                     c_code,
                     {
-                        "contrato_firmado.pdf": s_pdf_bytes,
                         "informe_legal.pdf": l_report_bytes,
                         "hash.txt": f"Original Hash: {o_hash}\nSigned Hash: {s_hash}\nTimeline Hash: {t_hash}\nHMAC: {s_hmac}".encode(),
                     }
@@ -1518,6 +1556,15 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         )
 
         return {"status": "ok", "contract_code": contract_code}
+
+    except Exception:
+        logger.exception("[CONTRACT_SIGN] Error finalizando %s; se conserva la aceptacion OTP", contract_code)
+        await _db_call(
+            db["contracts"].update_one,
+            {"contract_code": contract_code, "status": "signature_finalizing"},
+            {"$set": {"status": "signature_processing_failed"}}
+        )
+        raise HTTPException(status_code=500, detail="Aceptación registrada; documento pendiente de finalización administrativa")
 
     finally:
         # Limpieza del directorio temporal (siempre, incluso en caso de error)

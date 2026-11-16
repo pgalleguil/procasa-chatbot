@@ -1475,6 +1475,33 @@ def test_property_codes_and_price_questions_are_not_false_offer_intents(message)
     assert result.intent == "ASK_INFO"
 
 
+@pytest.mark.parametrize("text", [
+    "No quiero más avisos, gracias",
+    "No quiero mas avisos, gracias",
+    "No quiero recibir avisos",
+    "No deseo recibir notificaciones",
+    "No necesito más alertas",
+    "No quiero seguir recibiendo avisos",
+    "no quiero mas abisos porfa",
+])
+def test_opt_out_avisos_is_baja_and_blocks_future_campaigns(text):
+    classified = classify_price_drop_reply(text)
+    assert classified.label == "BAJA"
+    assert classified.intent == "UNSUBSCRIBE"
+    assert classified.reason == "explicit_opt_out"
+
+
+@pytest.mark.parametrize("text", [
+    "¿Me pueden avisar si baja el precio?",
+    "¿Qué avisos tienes disponibles?",
+    "Me interesan los avisos sobre esta propiedad",
+    "No quiero que me llamen por teléfono, pero sí recibir avisos",
+    "Quiero recibir notificaciones de otros arriendos",
+])
+def test_price_drop_avisos_mentions_without_stop_do_not_mark_baja(text):
+    assert classify_price_drop_reply(text).label != "BAJA"
+
+
 def test_call_preference_is_not_global_opt_out_or_call_request():
     result = classify_price_drop_reply(
         "Sí me interesa, pero prefiero que no me contacten por teléfono."

@@ -602,6 +602,9 @@ async def download_signed_pdf(contract_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
+    if not _signature_evidence_complete(contract):
+        raise HTTPException(status_code=409, detail="Convenio sin certificado criptográfico completo")
+
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
     tipo = tipo_raw.replace(" ", "_")
@@ -637,7 +640,10 @@ async def download_signed_pdf(contract_code: str):
         except Exception as e:
             logger.error(f"Error downloading from GDrive: {e}")
 
-    # Si llegamos aquí, no está en local ni en Drive (o Drive falló/no configurado).
+    # No regenerar PDFs firmados sin el original archivado y validado.
+    raise HTTPException(status_code=503, detail="PDF firmado archivado no disponible; contacte administración")
+
+    # Regeneración histórica desactivada.
     # REGENERAMOS el PDF firmado dinámicamente:
     logger.info(f"Regenerando PDF firmado para {contract_code} dinámicamente...")
     
@@ -709,6 +715,9 @@ async def view_signed_pdf(contract_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
 
+    if not _signature_evidence_complete(contract):
+        raise HTTPException(status_code=409, detail="Convenio sin certificado criptográfico completo")
+
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
     tipo = tipo_raw.replace(" ", "_")
@@ -744,7 +753,10 @@ async def view_signed_pdf(contract_code: str):
         except Exception as e:
             logger.error(f"Error downloading from GDrive: {e}")
             
-    # Si llegamos aquí, no está en local ni en Drive (o Drive falló/no configurado).
+    # No regenerar PDFs firmados sin el original archivado y validado.
+    raise HTTPException(status_code=503, detail="PDF firmado archivado no disponible; contacte administración")
+
+    # Regeneración histórica desactivada.
     # REGENERAMOS el PDF firmado dinámicamente:
     logger.info(f"Regenerando PDF firmado para {contract_code} dinámicamente...")
     
@@ -819,6 +831,9 @@ async def send_contract(contract_code: str, request: Request):
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
     # Después del primer envío, solo supervisor/admin puede reenviar
+    # Convenio ya aceptado: prohibir reenvío para segunda firma.
+    if contract.get("security", {}).get("token_used") or contract.get("status") in ("signature_finalizing", "signature_processing_failed", "signed"):
+        raise HTTPException(status_code=409, detail="Convenio aceptado: no se debe solicitar segunda firma")
     if contract.get("status") in ["sent", "opened", "otp_requested", "otp_verified", "signed", "accepted"]:
         if user_role not in ["supervisor", "admin"]:
             raise HTTPException(status_code=403, detail="Solo supervisor/admin puede reenviar convenios ya enviados.")
@@ -929,8 +944,12 @@ async def contracts_statuses(request: Request):
         query = {"status": {"$ne": "deleted"}}
     else:
         query = {"status": {"$ne": "deleted"}, "created_by": username}
-    rows = await adb["contracts"].find(query, {"contract_code": 1, "status": 1}).to_list(length=300)
-    return {"items": [{"contract_code": r.get("contract_code"), "status": r.get("status", "created")} for r in rows]}
+    rows = await adb["contracts"].find(query, {"contract_code": 1, "status": 1, "security": 1}).to_list(length=300)
+    return {"items": [{
+        "contract_code": r.get("contract_code"),
+        "status": r.get("status", "created"),
+        "signature_complete": _signature_evidence_complete(r),
+    } for r in rows]}
 
 def ensure_document_valid(contract: dict):
     """Verifica la expiración real del documento (120 horas) en todos los endpoints"""
@@ -961,6 +980,7 @@ async def view_contract_public(token: str, request: Request):
         return HTMLResponse("<h1>Enlace inválido o expirado.</h1>", status_code=404)
         
     is_signed = contract["security"].get("token_used", False)
+    document_finalized = _signature_evidence_complete(contract)
     
     # Solo expira a las 120h si NO está firmado. Si ya se firmó, el acceso es permanente.
     if not is_signed:
@@ -1022,7 +1042,8 @@ async def view_contract_public(token: str, request: Request):
         "contract": contract,
         "token": token,
         "token_expiry_iso": token_expiry_iso,
-        "is_signed": is_signed
+        "is_signed": is_signed,
+        "document_finalized": document_finalized
     })
 
 @router.post("/api/{token}/validate-rut")
@@ -2029,6 +2050,7 @@ async def contract_dashboard(request: Request):
     contracts = await contracts_cursor.to_list(length=100)
 
     for c in contracts:
+        c["signature_complete"] = _signature_evidence_complete(c)
         # Normalizar property_data y client_data para renderizado seguro en template
         c["property_data"] = c.get("property_data") or {}
         c["client_data"] = c.get("client_data") or {}

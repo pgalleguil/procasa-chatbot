@@ -20,7 +20,7 @@
             <p class="text-sm text-gray-500">Sistema de Integridad Documental Procasa Sucre</p>
         </div>
 
-        {% if contract.status in ["accepted", "signed"] or contract.security.token_used %}
+        {% if verification_valid %}
         <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
             <div class="flex">
                 <div class="flex-shrink-0">
@@ -32,7 +32,7 @@
                 </div>
                 <div class="ml-3">
                     <p class="text-sm text-green-700 font-bold">
-                        ✅ Contrato Válido — Firmado Electrónicamente (Ley 19.799)
+                        Firma registrada — Integridad criptográfica verificada
                     </p>
                 </div>
             </div>
@@ -56,15 +56,26 @@
                 <span class="font-medium text-gray-900">Autorización de {{ contract.property_data.tipo }}</span>
             </div>
             <div class="flex justify-between border-b pb-2">
+                <span class="text-gray-500">Hash SHA-256 PDF firmado:</span>
+                <span class="font-mono text-xs text-gray-900 break-all">{{ contract.security.signed_hash or 'No disponible' }}</span>
+            </div>
+            {% if recovery_date_clt %}
+            <div class="border-b pb-2">
+                <span class="text-gray-500">Certificado reconstruido el:</span>
+                <span class="font-medium text-gray-900">{{ recovery_date_clt }}</span>
+                <p class="text-xs text-gray-500">La aceptación original permanece registrada por separado; este es el momento real de reconstrucción.</p>
+            </div>
+            {% endif %}
+            <div class="flex justify-between border-b pb-2">
                 <span class="text-gray-500">Firma del Servidor (HMAC):</span>
                 <span class="font-mono text-xs text-gray-900 truncate w-32"
-                    title="{{ contract.security.server_hmac }}">{{ contract.security.server_hmac }}</span>
+                    title="{{ contract.security.server_hmac or 'No disponible' }}">{{ contract.security.server_hmac or 'No disponible' }}</span>
             </div>
         </div>
         {% else %}
         <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-6">
             <p class="text-sm text-yellow-700 font-bold">
-                Este contrato aún se encuentra en proceso o pendiente de firma.
+                Integridad documental no confirmada. Si el cliente ya aceptó con OTP, no debe firmar nuevamente: administración debe finalizar el certificado.
             </p>
         </div>
         {% endif %}

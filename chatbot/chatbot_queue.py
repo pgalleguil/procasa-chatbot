@@ -850,7 +850,7 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
     try:
         lead = await asyncio.to_thread(
             db["leads"].find_one, {"phone": claimed["phone"]},
-            {"conversation_status": 1,
+            {"conversation_status": 1, "conversation_status_reason": 1,
              "price_drop_v2.opted_out": 1,
              "price_drop_campaign_v1.opted_out": 1},
         )
@@ -862,7 +862,16 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
             or (lead.get("price_drop_v2") or {}).get("opted_out") is True
             or (lead.get("price_drop_campaign_v1") or {}).get("opted_out") is True
         )
-        if globally_suppressed:
+        # A new, explicit customer service request is not unsolicited outreach.
+        # Process only those permitted inbound turns; marketing opt-outs stay
+        # persisted and still exclude the customer from future campaigns.
+        from .customer_initiated_reengagement import customer_initiated_service_request_allowed
+        allowed_snapshots = [
+            item for item in (claimed.get("snapshot") or [])
+            if not globally_suppressed
+            or customer_initiated_service_request_allowed(lead, item.get("text") or "")
+        ]
+        if globally_suppressed and not allowed_snapshots:
             logger.info("[COMMERCIAL_INTAKE] skipped for globally suppressed lead")
         else:
             # Replies to an already SENT V2 campaign are *follow-up* on an
@@ -881,7 +890,7 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
             else:
                 from .commercial_intake import ensure_indexes, process_inbound
                 await asyncio.to_thread(ensure_indexes, db)
-                for item in claimed.get("snapshot") or []:
+                for item in allowed_snapshots:
                     job = await asyncio.to_thread(
                         db[JOB_COLLECTION].find_one, {"_id": item["job_id"]}
                     )

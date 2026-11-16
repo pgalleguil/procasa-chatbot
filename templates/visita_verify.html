@@ -23,7 +23,7 @@
             <p class="text-[10px] text-gray-400 font-medium mt-1">Inmobiliaria Sucre SpA &mdash; Procasa Sucre</p>
         </div>
 
-        {% if contract.status in ["accepted", "signed"] or contract.security.token_used %}
+        {% if verification_valid %}
         <div class="bg-green-50 border-l-4 border-green-500 p-5 mb-8 rounded-r-lg">
             <div class="flex">
                 <div class="flex-shrink-0">
@@ -35,10 +35,10 @@
                 </div>
                 <div class="ml-4">
                     <p class="text-sm text-green-800 font-bold leading-tight">
-                        Orden de Visita Válida y Vigente
+                        Firma registrada e integridad comprobada
                     </p>
                     <p class="text-xs text-green-600 mt-1">
-                        Documento verificado correctamente conforme a la Ley 19.799.
+                        Se comprobó la integridad del PDF archivado y su sello HMAC del servidor.
                     </p>
                 </div>
             </div>
@@ -67,19 +67,26 @@
                 <span class="font-bold text-gray-900">Orden de Visita Electrónica</span>
             </div>
             <div class="flex flex-col pt-2">
-                <span class="text-gray-400 text-[10px] uppercase font-bold tracking-widest mb-1">Hash SHA256 del Documento</span>
+                <span class="text-gray-400 text-[10px] uppercase font-bold tracking-widest mb-1">Hash SHA-256 del PDF firmado</span>
                 <span
                     class="font-mono text-[10px] text-gray-500 break-all leading-relaxed tracking-widest bg-gray-50 p-3 rounded border border-gray-100 shadow-inner"
-                    title="{{ (contract.security or {}).timeline_hash | default('No disponible') }}">
-                    {{ (contract.security or {}).timeline_hash | default('---') }}
+                    title="{{ (contract.security or {}).signed_hash or 'No disponible' }}">
+                    {{ (contract.security or {}).signed_hash or 'No disponible' }}
                 </span>
             </div>
+            {% if recovery_date_clt %}
+            <div class="border-b border-gray-100 pb-3">
+                <span class="text-gray-500 font-medium">Certificado reconstruido el:</span>
+                <span class="font-bold text-gray-900">{{ recovery_date_clt }}</span>
+                <p class="text-xs text-gray-500">La aceptación del cliente se conserva con su fecha original. El certificado fue generado posteriormente.</p>
+            </div>
+            {% endif %}
             <div class="flex flex-col pt-2 mt-2">
                 <span class="text-gray-400 text-[10px] uppercase font-bold tracking-widest mb-1">Firma HMAC del Servidor (SHA-256)</span>
                 <span
                     class="font-mono text-[10px] text-gray-500 break-all leading-relaxed tracking-widest bg-gray-50 p-3 rounded border border-gray-100 shadow-inner"
-                    title="{{ (contract.security or {}).server_hmac | default('No disponible') }}">
-                    {{ (contract.security or {}).server_hmac | default('---') }}
+                    title="{{ (contract.security or {}).server_hmac or 'No disponible' }}">
+                    {{ (contract.security or {}).server_hmac or 'No disponible' }}
                 </span>
             </div>
         </div>
@@ -94,13 +101,19 @@
                 </div>
                 <div class="ml-4">
                     <p class="text-sm text-amber-800 font-bold">
-                        Documento Pendiente
+                        Integridad documental no confirmada
                     </p>
                     <p class="text-xs text-amber-600 mt-1">
-                        Esta orden de visita aún se encuentra en proceso de firma.
+                        No es posible acreditar la integridad del PDF firmado con los registros actuales. Si el cliente ya validó su identidad y aceptó, no debe repetir la firma: administración debe finalizar el documento.
                     </p>
                 </div>
             </div>
+        </div>
+        <div class="space-y-2 text-sm mt-4">
+            <p><strong>Código:</strong> {{ contract.visita_code or '---' }}</p>
+            <p><strong>Propiedad:</strong> {{ contract.property_code or '---' }}</p>
+            <p><strong>Aceptación registrada:</strong> {{ signature_date_clt }}</p>
+            <p><strong>Hash del PDF firmado:</strong> No disponible o no comprobado</p>
         </div>
         {% endif %}
 

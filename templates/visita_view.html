@@ -459,7 +459,16 @@
         const tokenExpiryIso = "{{ token_expiry_iso }}";
 
         const isSigned = {{ 'true' if is_signed else 'false' }};
+        const documentFinalized = {{ 'true' if document_finalized else 'false' }};
         const CONTRACT_CODE = "{{ contract.visita_code }}";
+
+        function showPendingDocumentFinalization() {
+            document.querySelector('#step-5 h2').textContent = 'Aceptación registrada';
+            document.querySelector('#step-5 p').textContent =
+                'Tu identidad y aceptación quedaron registradas. El documento está pendiente de finalización técnica. No debes firmar nuevamente.';
+            document.getElementById('btn-download-signed').style.display = 'none';
+            document.getElementById('progress-label').textContent = 'Aceptación recibida — pendiente de documento';
+        }
 
         if (isSigned) {
             document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
@@ -469,6 +478,7 @@
             document.getElementById('progress-fraction').textContent = '3 / 3';
             document.getElementById('progress-fill').style.width = '100%';
             document.getElementById('progress-fill').classList.replace('bg-blue-600', 'bg-green-500');
+            if (!documentFinalized) showPendingDocumentFinalization();
             // No PDF on signed view
             document.body.classList.remove('pdf-step');
         } else {
@@ -1012,8 +1022,12 @@
                     const bannerEl = document.getElementById('expiry-countdown-banner');
                     if (bannerEl) bannerEl.style.display = 'none';
 
-                    document.getElementById('btn-download-signed').href =
-                        `/visitas/api/download_signed/${d.visita_code}`;
+                    if (d.status === 'acceptance_recorded_pending_document') {
+                        showPendingDocumentFinalization();
+                    } else {
+                        document.getElementById('btn-download-signed').href =
+                            `/visitas/api/download_signed/${d.visita_code}`;
+                    }
                 } else {
                     const data = await resAccept.json().catch(() => ({}));
                     const detail = data.detail || '';
@@ -1029,7 +1043,12 @@
                         return;
                     }
 
-                    errorDiv.textContent = 'Error al generar la orden de visita firmada. Por favor intenta nuevamente en unos segundos.';
+                    if (detail.includes('Aceptación registrada')) {
+                        showStep('step-5');
+                        showPendingDocumentFinalization();
+                        return;
+                    }
+                    errorDiv.textContent = 'No fue posible completar el proceso. Contacta a administración antes de volver a intentar.';
                     errorDiv.classList.remove('hidden');
                     btnVerify.disabled = false;
                     btnVerify.innerHTML = '<i class="fa-solid fa-file-signature mr-2"></i> Firmar Orden de Visita Definitivamente';

@@ -283,7 +283,8 @@ arbitrador designado por Centro Nacional de Arbitrajes S.A.("CNA"), de acuerdo a
             ["M\u00e9todo de lectura:", evidence_data.get('read_method', 'scroll')],
             ["Tiempo de lectura del documento:", f"{evidence_data.get('read_time_seconds', 0)} segundos"],
             ["Confirmaci\u00f3n de visualizaci\u00f3n completa:", evidence_data.get('scrolled_to_bottom', 'S\u00ed')],
-            ["Hash SHA256 del documento:", str(evidence_data.get('timeline_hash', ''))]
+            ["Hash SHA-256 del PDF original:", str(evidence_data.get('original_hash', ''))],
+            ["Hash SHA-256 de evidencia de aceptación:", str(evidence_data.get('timeline_hash', ''))]
         ]
         
         t = Table(data, colWidths=[2.5*inch, 4*inch])
@@ -354,8 +355,9 @@ Ley 19.799."""
             overlay.drawCentredString(page_w / 2.0, 0.42 * inch, f"Página {idx} de {total_pages}")
             overlay.save()
             overlay_pdf = pypdf.PdfReader(io.BytesIO(overlay_buffer.getvalue()))
-            page.merge_page(overlay_pdf.pages[0])
+            # pypdf >= 7: merge only after the page belongs to PdfWriter.
             writer.add_page(page)
+            writer.pages[-1].merge_page(overlay_pdf.pages[0])
 
         final_buffer = io.BytesIO()
         writer.write(final_buffer)

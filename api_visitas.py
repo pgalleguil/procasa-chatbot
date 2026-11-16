@@ -1,4 +1,6 @@
 import os
+import hmac
+import re
 import uuid
 import logging
 import threading
@@ -540,6 +542,9 @@ async def download_signed_pdf(visita_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrado")
 
+    if not _signature_evidence_complete(contract):
+        raise HTTPException(status_code=409, detail="Documento con firma pendiente de verificación")
+
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
     tipo = tipo_raw.replace(" ", "_")
@@ -575,7 +580,10 @@ async def download_signed_pdf(visita_code: str):
         except Exception as e:
             logger.error(f"Error downloading from GDrive: {e}")
 
-    # Si llegamos aquí, no está en local ni en Drive (o Drive falló/no configurado).
+    # Nunca fabricar un nuevo 'PDF firmado' sin evidencia criptográfica.
+    raise HTTPException(status_code=503, detail="PDF firmado original no disponible; contacte a administración")
+
+    # Regeneración histórica desactivada para preservar integridad documental.
     # REGENERAMOS el PDF firmado dinámicamente:
     logger.info(f"Regenerando PDF firmado para {visita_code} dinámicamente...")
     
@@ -656,6 +664,9 @@ async def view_signed_pdf(visita_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrado")
 
+    if not _signature_evidence_complete(contract):
+        raise HTTPException(status_code=409, detail="Documento con firma pendiente de verificación")
+
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
     tipo = tipo_raw.replace(" ", "_")
@@ -691,7 +702,10 @@ async def view_signed_pdf(visita_code: str):
         except Exception as e:
             logger.error(f"Error downloading from GDrive: {e}")
             
-    # Si llegamos aquí, no está en local ni en Drive (o Drive falló/no configurado).
+    # Nunca fabricar un nuevo 'PDF firmado' sin evidencia criptográfica.
+    raise HTTPException(status_code=503, detail="PDF firmado original no disponible; contacte a administración")
+
+    # Regeneración histórica desactivada para preservar integridad documental.
     # REGENERAMOS el PDF firmado dinámicamente:
     logger.info(f"Regenerando PDF firmado para {visita_code} dinámicamente...")
     
@@ -900,6 +914,9 @@ async def send_contract(visita_code: str, request: Request):
     contract = await adb["visitas"].find_one({"visita_code": visita_code})
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrado")
+    # Una aceptación registrada no se puede degradar a 'sent'.
+    if contract.get("security", {}).get("token_used") or contract.get("status") in ("signature_finalizing", "signature_processing_failed", "signed"):
+        raise HTTPException(status_code=409, detail="Aceptación ya registrada; no es posible reenviar una orden para nueva firma")
     # Después del primer envío, solo supervisor/admin puede reenviar
     if contract.get("status") in ["sent", "opened", "otp_requested", "otp_verified", "signed", "accepted"]:
         if user_role not in ["supervisor", "admin"]:
@@ -1009,8 +1026,14 @@ async def visitas_statuses(request: Request):
         query = {"status": {"$ne": "deleted"}}
     else:
         query = {"status": {"$ne": "deleted"}, "created_by": username}
-    rows = await adb["visitas"].find(query, {"visita_code": 1, "status": 1}).to_list(length=300)
-    return {"items": [{"visita_code": r.get("visita_code"), "status": r.get("status", "created")} for r in rows]}
+    rows = await adb["visitas"].find(
+        query, {"visita_code": 1, "status": 1, "security": 1}
+    ).to_list(length=300)
+    return {"items": [{
+        "visita_code": r.get("visita_code"),
+        "status": r.get("status", "created"),
+        "signature_complete": _signature_evidence_complete(r),
+    } for r in rows]}
 
 def ensure_document_valid(contract: dict):
     """Verifica la expiración real del documento (120 horas) en todos los endpoints"""
@@ -1041,6 +1064,7 @@ async def view_visita_public(token: str, request: Request):
         return HTMLResponse("<h1>Enlace inválido o expirado.</h1>", status_code=404)
         
     is_signed = contract["security"].get("token_used", False)
+    document_finalized = _signature_evidence_complete(contract)
     
     # Solo expira a las 120h si NO está firmado. Si ya se firmó, el acceso es permanente.
     if not is_signed:
@@ -1098,7 +1122,8 @@ async def view_visita_public(token: str, request: Request):
         "contract": contract,
         "token": token,
         "token_expiry_iso": token_expiry_iso,
-        "is_signed": is_signed
+        "is_signed": is_signed,
+        "document_finalized": document_finalized
     })
 
 @router.post("/api/{token}/validate-rut")
@@ -1361,6 +1386,20 @@ async def accept_terms(token: str, request: Request):
     )
     return {"status": "ok"}
 
+def _signature_evidence_complete(contract: dict) -> bool:
+    """Firma completa exige PDF archivado y tres evidencias SHA-256 no vacías."""
+    security = contract.get("security") or {}
+    return (
+        contract.get("status") == "signed"
+        and bool(security.get("signed_pdf_drive_id"))
+        and all(
+            isinstance(security.get(field), str)
+            and re.fullmatch(r"[0-9a-fA-F]{64}", security[field])
+            for field in ("original_hash", "signed_hash", "timeline_hash", "server_hmac")
+        )
+    )
+
+
 @router.post("/api/{token}/accept", dependencies=[Depends(signature_concurrency)])
 async def accept_contract(token: str, request: Request, background_tasks: BackgroundTasks):
     import shutil
@@ -1372,10 +1411,14 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
 
     ensure_document_valid(contract)
 
-    # Idempotencia: si ya fue firmado, retornar éxito sin reprocessar
+    # Una aceptación OTP ya registrada nunca vuelve a solicitarse al cliente.
     if contract.get("status") == "signed" or contract["security"].get("token_used"):
-        logger.info(f"[CONTRACT_SIGNED] Idempotente — orden de visita {contract['visita_code']} ya firmado.")
-        return JSONResponse(status_code=200, content={"status": "already_signed", "visita_code": contract["visita_code"]})
+        if _signature_evidence_complete(contract):
+            return JSONResponse(status_code=200, content={"status": "already_signed", "visita_code": contract["visita_code"]})
+        return JSONResponse(status_code=202, content={
+            "status": "acceptance_recorded_pending_document",
+            "visita_code": contract["visita_code"],
+        })
 
     if contract["status"] != "otp_verified":
         raise HTTPException(status_code=403, detail="Orden de Visita no válido para aceptación")
@@ -1415,12 +1458,16 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     timezone_info = "America/Santiago (CLT)"
     
     # 1. Registrar aceptaci\u00f3n
-    await _db_call(
+    claim = await _db_call(
         db["visitas"].update_one,
-        {"visita_code": visita_code},
+        {
+            "visita_code": visita_code,
+            "status": "otp_verified",
+            "security.token_used": {"$ne": True},
+        },
         {
             "$set": {
-                "status": "signed", 
+                "status": "signature_finalizing",
                 "security.token_used": True,
                 "security.signature_timestamp": datetime.now(timezone.utc),
                 "locked": True
@@ -1439,7 +1486,13 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         }
     )
     
-    logger.info(f"[METRIC] visitas_signed: {visita_code}")
+    if claim.modified_count != 1:
+        return JSONResponse(status_code=202, content={
+            "status": "acceptance_recorded_pending_document",
+            "visita_code": visita_code,
+        })
+
+    logger.info(f"[METRIC] visitas_acceptance_recorded: {visita_code}")
     
     # Refrescar documento para tener el timeline completo
     contract = await _db_call(db["visitas"].find_one, {"visita_code": visita_code})
@@ -1449,47 +1502,30 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
     timeline_hash = SecurityContracts.hash_timeline(timeline)
     tmp_dir = BASE_DIR / "tmp" / "visitas" / visita_code
     try:
-        # PRIORIDAD 1: PDF permanente actualizado (siempre regenerado al editar)
-        # Esto evita usar el tmp obsoleto cuando la orden fue editada antes de firmar.
-        perm_original_path = BASE_DIR / "visitas_pdf" / f"{visita_code}_original.pdf"
-        perm_path_from_db = contract.get("security", {}).get("original_pdf_path", "")
-
-        if perm_path_from_db and os.path.exists(perm_path_from_db):
-            with open(perm_path_from_db, "rb") as f:
-                original_bytes = f.read()
-            logger.info(f"[SIGN] PDF original leído desde ruta DB permanente: {perm_path_from_db}")
-        elif perm_original_path.exists():
-            with open(perm_original_path, "rb") as f:
-                original_bytes = f.read()
-            logger.info(f"[SIGN] PDF original leído desde visitas_pdf permanente: {perm_original_path}")
-        else:
-            # PRIORIDAD 3: Regenerar desde los datos actualizados de la DB
-            # (nunca usar el tmp ya que puede estar desactualizado respecto a ediciones)
-            logger.info(f"[SIGN] PDF original no encontrado en disco, regenerando desde DB para {visita_code}")
-            data_payload = {
-                "visita_code": contract.get("visita_code"),
-                "origen": contract.get("origen", ""),
-                "property_code": contract.get("property_code", ""),
-                "phone": contract.get("phone", ""),
-                "cliente_nombre": contract.get("client_data", {}).get("nombre", ""),
-                "cliente_rut": contract.get("client_data", {}).get("rut", ""),
-                "email": contract.get("client_data", {}).get("email", ""),
-                "propiedad_direccion": contract.get("property_data", {}).get("direccion", ""),
-                "property_comuna": contract.get("property_data", {}).get("comuna", ""),
-                "property_region": contract.get("property_data", {}).get("region", ""),
-                "property_tipo": contract.get("property_data", {}).get("tipo", "Arriendo"),
-                "rol": contract.get("property_data", {}).get("rol", ""),
-                "vigencia": contract.get("property_data", {}).get("vigencia", "30"),
-                "precio": contract.get("property_data", {}).get("precio", ""),
-                "comision": contract.get("property_data", {}).get("comision", ""),
-                "ejecutivo_nombre": contract.get("executive_data", {}).get("nombre", ""),
-                "ejecutivo_email": contract.get("executive_data", {}).get("email", ""),
-                "ejecutivo_telefono": contract.get("executive_data", {}).get("telefono", "")
-            }
-            original_bytes = await run_in_threadpool(PDFGenerator.generate_original_contract, data_payload)
-
+        # El PDF debe corresponder exactamente al original enviado al firmante.
+        security = contract.get("security", {})
+        original_bytes = None
+        original_drive_id = security.get("original_pdf_drive_id")
+        if original_drive_id:
+            original_bytes = await run_in_threadpool(gdrive_sync.download_file, original_drive_id)
+        if not original_bytes:
+            for original_path in (
+                security.get("original_pdf_path"),
+                str(BASE_DIR / "visitas_pdf" / f"{visita_code}_original.pdf"),
+            ):
+                if original_path and os.path.isfile(original_path):
+                    with open(original_path, "rb") as original_file:
+                        original_bytes = original_file.read()
+                    break
+        expected_original_hash = security.get("original_hash")
+        if not original_bytes or not expected_original_hash:
+            raise RuntimeError("PDF original archivado no disponible o sin hash")
         original_hash = SecurityContracts.hash_document(original_bytes)
-        secret_key = getattr(Config, "SECRET_KEY", "default_secret")
+        if not hmac.compare_digest(original_hash, expected_original_hash):
+            raise RuntimeError("El PDF original difiere del documento aceptado")
+        secret_key = getattr(Config, "SECRET_KEY", "")
+        if not secret_key or secret_key == "default_secret":
+            raise RuntimeError("SECRET_KEY de firma documental no configurada")
         server_hmac = SecurityContracts.generate_server_hmac(visita_code, original_hash, server_timestamp, secret_key)
         base_url = str(request.base_url).rstrip('/')
         verify_token = str(uuid.uuid4()).replace("-", "")
@@ -1535,13 +1571,29 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
         with open(tmp_dir / "timeline.json", "w") as f:
             json.dump(timeline, f, indent=4)
 
-        # 5. Guardar Hashes finales y ruta local en DB
+        # Archivar el PDF firmado ANTES de declarar éxito.
+        folder_id = security.get("gdrive_folder_id")
+        if not folder_id or folder_id == "mock_folder_id":
+            raise RuntimeError("Expediente Drive no disponible")
+        signed_drive_id = await run_in_threadpool(
+            gdrive_sync.upload_file, folder_id,
+            "orden de visita_firmado.pdf", signed_pdf_bytes, "application/pdf"
+        )
+        if not signed_drive_id or signed_drive_id == "mock_file_id":
+            raise RuntimeError("No se pudo archivar el PDF firmado en Drive")
+
+        # 5. Confirmar estado firmado y guardar evidencia final.
         await _db_call(
             db["visitas"].update_one,
             {"visita_code": visita_code},
             {"$set": {
+                "status": "signed",
+                "security.original_hash": original_hash,
                 "security.signed_hash": signed_hash,
                 "security.server_hmac": server_hmac,
+                "security.hmac_timestamp": server_timestamp,
+                "security.signature_finalized_at": datetime.now(timezone.utc),
+                "security.signed_pdf_drive_id": signed_drive_id,
                 "security.timeline_hash": timeline_hash,
                 "security.signed_pdf_path": str(local_pdf_path),
                 "security.verify_token": verify_token,
@@ -1568,7 +1620,6 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
                 upload_to_gdrive_bg(
                     c_code,
                     {
-                        "orden de visita_firmado.pdf": s_pdf_bytes,
                         "informe_legal.pdf": l_report_bytes,
                         "hash.txt": f"Original Hash: {o_hash}\nSigned Hash: {s_hash}\nTimeline Hash: {t_hash}\nHMAC: {s_hmac}".encode(),
                     }
@@ -1608,11 +1659,157 @@ async def accept_contract(token: str, request: Request, background_tasks: Backgr
 
         return {"status": "ok", "visita_code": visita_code}
 
+    except Exception:
+        logger.exception("[SIGN] Falló finalización de orden %s; se conserva aceptación OTP", visita_code)
+        await _db_call(
+            db["visitas"].update_one,
+            {"visita_code": visita_code, "status": "signature_finalizing"},
+            {"$set": {"status": "signature_processing_failed"}}
+        )
+        raise HTTPException(status_code=500, detail="Aceptación registrada; documento pendiente de finalización administrativa")
+
     finally:
         # Limpieza del directorio temporal (siempre, incluso en caso de error)
         # Los archivos ya fueron subidos a GDrive y enviados por email antes de llegar aquí
         shutil.rmtree(tmp_dir, ignore_errors=True)
     
+@router.post("/api/{visita_code}/repair-signature")
+async def repair_incomplete_visit_signature(visita_code: str, request: Request, background_tasks: BackgroundTasks):
+    """Finalizar un PDF fallido sin repetir el consentimiento del cliente.
+
+    Operación administrativa auditada. Solo usa PDF archivado cuyo SHA-256
+    coincide con el original, y OTP + aceptación registrados anteriormente.
+    La fecha de aceptación permanece intacta; se registra la recuperación real.
+    """
+    from chatbot.storage import get_async_db
+    adb = get_async_db()
+    operator, role = await _get_request_user(adb, request)
+    if not operator or role not in ("admin", "supervisor"):
+        raise HTTPException(status_code=403, detail="Reparación reservada a administración")
+
+    db = get_db()
+    contract = await _db_call(db["visitas"].find_one, {"visita_code": visita_code})
+    if not contract or contract.get("status") == "deleted":
+        raise HTTPException(status_code=404, detail="Orden no encontrada")
+    if _signature_evidence_complete(contract):
+        return {"status": "already_finalized", "visita_code": visita_code}
+
+    security = contract.get("security") or {}
+    timeline = contract.get("timeline") or []
+    otp_verified = any(e.get("action") == "otp_verified" for e in timeline)
+    accepted_index = next((i for i, e in enumerate(timeline) if e.get("action") == "accepted"), None)
+    if not security.get("token_used") or not otp_verified or accepted_index is None:
+        raise HTTPException(status_code=409, detail="No existe evidencia suficiente de OTP y aceptación")
+    accepted_event = timeline[accepted_index]
+    accepted_timestamp = accepted_event.get("server_timestamp")
+    if not accepted_timestamp:
+        raise HTTPException(status_code=409, detail="Falta la fecha original de aceptación")
+
+    original_id = security.get("original_pdf_drive_id")
+    expected_original_hash = security.get("original_hash")
+    folder_id = security.get("gdrive_folder_id")
+    if not original_id or not expected_original_hash or not folder_id:
+        raise HTTPException(status_code=409, detail="No existe original archivado verificable")
+    original_bytes = await run_in_threadpool(gdrive_sync.download_file, original_id)
+    if not original_bytes:
+        raise HTTPException(status_code=503, detail="No fue posible recuperar el PDF original de Drive")
+    original_hash = SecurityContracts.hash_document(original_bytes)
+    if not hmac.compare_digest(original_hash, expected_original_hash):
+        raise HTTPException(status_code=409, detail="El original archivado no coincide con su hash")
+
+    secret = getattr(Config, "SECRET_KEY", "")
+    if not secret or secret == "default_secret":
+        raise HTTPException(status_code=503, detail="Clave de integridad no configurada")
+    # Solo eventos existentes al momento de la aceptación; visitas posteriores
+    # no deben modificar retroactivamente la evidencia.
+    evidence_timeline = timeline[:accepted_index + 1]
+    timeline_hash = SecurityContracts.hash_timeline(evidence_timeline)
+    server_hmac = SecurityContracts.generate_server_hmac(
+        visita_code, original_hash, accepted_timestamp, secret
+    )
+    transaction_uuid = security.get("transaction_uuid") or str(uuid.uuid4())
+    verify_token = security.get("verify_token") or uuid.uuid4().hex
+    evidence = {
+        "visita_code": transaction_uuid,
+        "contract_code": visita_code,
+        "verify_token": verify_token,
+        "server_timestamp": accepted_timestamp,
+        "ip": accepted_event.get("ip", ""),
+        "geo_info": accepted_event.get("geo_location", "Localización no disponible"),
+        "timezone": accepted_event.get("timezone", "America/Santiago (CLT)"),
+        "user_agent": accepted_event.get("user_agent", ""),
+        "original_hash": original_hash,
+        "server_hmac": server_hmac,
+        "timeline_hash": timeline_hash,
+        "read_time_seconds": accepted_event.get("read_time_seconds", 0),
+        "scrolled_to_bottom": "Sí" if accepted_event.get("scrolled_to_bottom") else "No",
+        "read_method": accepted_event.get("read_method", "scroll"),
+    }
+    base_url = getattr(Config, "CRM_BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+    verify_url = f"{base_url}/visitas/verify/{visita_code}"
+    try:
+        signed_pdf = await run_in_threadpool(
+            PDFGenerator.generate_signed_contract, original_bytes, contract, evidence, verify_url
+        )
+        signed_hash = SecurityContracts.hash_document(signed_pdf)
+        drive_file_id = await run_in_threadpool(
+            gdrive_sync.upload_file, folder_id,
+            "orden de visita_firmado.pdf", signed_pdf, "application/pdf"
+        )
+        if not drive_file_id or drive_file_id == "mock_file_id":
+            raise RuntimeError("Fallo de archivo del PDF firmado en Google Drive")
+    except Exception:
+        logger.exception("[VISIT_REPAIR] Falló reparación de %s", visita_code)
+        raise HTTPException(status_code=503, detail="No se pudo finalizar el documento")
+
+    repaired_at = datetime.now(timezone.utc)
+    update = await _db_call(
+        db["visitas"].update_one,
+        {
+            "visita_code": visita_code,
+            "status": {"$in": ["signed", "signature_processing_failed", "signature_finalizing"]},
+            "security.token_used": True,
+            "security.signed_hash": None,
+        },
+        {
+            "$set": {
+                "status": "signed",
+                "locked": True,
+                "security.signed_hash": signed_hash,
+                "security.server_hmac": server_hmac,
+                "security.timeline_hash": timeline_hash,
+                "security.hmac_timestamp": accepted_timestamp,
+                "security.hmac_generated_at": repaired_at,
+                "security.signed_pdf_drive_id": drive_file_id,
+                "security.transaction_uuid": transaction_uuid,
+                "security.verify_token": verify_token,
+                "security.signature_finalized_at": repaired_at,
+                "security.signature_recovered_at": repaired_at,
+            },
+            "$push": {"timeline": {
+                "action": "signature_document_recovered",
+                "server_timestamp": repaired_at.isoformat(),
+                "operator": operator,
+                "original_acceptance_timestamp": accepted_timestamp,
+                "original_hash": original_hash,
+                "signed_hash": signed_hash,
+            }},
+        },
+    )
+    if update.modified_count != 1:
+        raise HTTPException(status_code=409, detail="La orden cambió durante la reparación")
+
+    # Enviar correo solamente después de guardar el archivo firmado válido.
+    background_tasks.add_task(
+        notify_client_bg, visita_code, contract.get("phone", ""),
+        (contract.get("client_data") or {}).get("email", ""),
+        (contract.get("client_data") or {}).get("nombre", ""),
+        signed_pdf, contract.get("property_code", "")
+    )
+    logger.info("[VISIT_REPAIR] Reparación documentada y archivada code=%s", visita_code)
+    return {"status": "recovered", "visita_code": visita_code, "email_queued": bool((contract.get("client_data") or {}).get("email"))}
+
+
 def _get_or_create_expedition_folder(db, collection, code_field, code, client_name, property_code):
     """
     Estructura jerárquica de 2 niveles en Drive:
@@ -1692,50 +1889,47 @@ def upload_to_gdrive_bg(visita_code: str, files: dict):
         logger.error(f"[GDRIVE] Error subiendo expediente {visita_code}: {e}")
 
 def notify_client_bg(visita_code: str, phone: str, client_email: str, nombre: str, signed_pdf_bytes: bytes, property_code: str = ""):
-    """Background task: sends WhatsApp confirmation + email. Runs after response is returned."""
+    """Notificar una firma completa; conservar estado por canal para reintentos."""
     import asyncio
     db = get_db()
     contract = db["visitas"].find_one({"visita_code": visita_code})
-    if not contract:
-        logger.error(f"[NOTIFY_BG] Contract {visita_code} not found for notification")
+    if not contract or not _signature_evidence_complete(contract):
+        logger.error("[NOTIFY_BG] Documento no finalizado: %s", visita_code)
         return
 
-    # Exactly-once guard
-    if contract.get("notifications_sent"):
-        logger.info(f"[NOTIFY_BG] Notifications already sent for {visita_code} — skipping")
-        return
-
-    # Mark as sent immediately to prevent duplicates
-    db["visitas"].update_one(
-        {"visita_code": visita_code},
-        {"$set": {"notifications_sent": True}}
-    )
-
-    # WhatsApp confirmation
+    notifications = contract.get("notifications") or {}
     mensaje_conf = """✅ ¡Proceso completado con éxito!
 
 Tu Orden de Visita fue firmada electrónicamente y registrada de forma segura conforme a la Ley N° 19.799.
 
 📄 En breve recibirás una copia del documento firmado en tu correo o medio de contacto registrado."""
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(send_whatsapp_message(phone, mensaje_conf))
-        loop.close()
-        db["visitas"].update_one(
-            {"visita_code": visita_code},
-            {"$push": {"messages": {
-                "phone": phone,
-                "message_content": mensaje_conf,
-                "message_type": "confirmation_sent",
-                "timestamp_utc": datetime.now(timezone.utc)
-            }}}
-        )
-    except Exception as e:
-        logger.error(f"[NOTIFY_BG] WhatsApp error for {visita_code}: {e}")
 
-    # Email delivery
-    if client_email and signed_pdf_bytes:
+    if phone and not notifications.get("whatsapp_sent_at"):
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                success = loop.run_until_complete(send_whatsapp_message(phone, mensaje_conf))
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
+            if success is False:
+                raise RuntimeError("Proveedor WhatsApp rechazó confirmación")
+            now = datetime.now(timezone.utc)
+            db["visitas"].update_one(
+                {"visita_code": visita_code},
+                {
+                    "$set": {"notifications.whatsapp_sent_at": now},
+                    "$push": {"messages": {
+                        "phone": phone, "message_content": mensaje_conf,
+                        "message_type": "confirmation_sent", "timestamp_utc": now,
+                    }},
+                },
+            )
+        except Exception as exc:
+            logger.error("[NOTIFY_BG] WhatsApp error %s: %s", visita_code, exc)
+
+    if client_email and signed_pdf_bytes and not notifications.get("email_sent_at"):
         send_signed_email_task(visita_code, client_email, nombre, signed_pdf_bytes, property_code)
 
 def send_signed_email_task(visita_code: str, email_to: str, nombre: str, pdf_bytes: bytes, property_code: str = "", cc_email: str = ""):
@@ -1751,7 +1945,7 @@ def send_signed_email_task(visita_code: str, email_to: str, nombre: str, pdf_byt
         gmail_pass = Config.GMAIL_PASSWORD
         if not gmail_user or not gmail_pass:
             logger.warning("[EMAIL] Credenciales Gmail no configuradas, omitiendo envío.")
-            return
+            return False
 
         prop_label = property_code if property_code else visita_code
         asunto = f"Orden de Visita Firmada – Propiedad {prop_label} – {nombre}"
@@ -1817,6 +2011,10 @@ Equipo Procasa Sucre"""
         db = get_db()
         db["visitas"].update_one(
             {"visita_code": visita_code},
+            {"$set": {"notifications.email_sent_at": datetime.now(timezone.utc), "notifications.email_status": "sent"}}
+        )
+        db["visitas"].update_one(
+            {"visita_code": visita_code},
             {"$push": {"messages": {
                 "email": email_to,
                 "cc": cc_recipients,
@@ -1824,8 +2022,17 @@ Equipo Procasa Sucre"""
                 "timestamp_utc": datetime.now(timezone.utc)
             }}}
         )
+        return True
     except Exception as e:
         logger.error(f"[EMAIL] Error enviando correo firmado a {email_to}: {e}")
+        try:
+            get_db()["visitas"].update_one(
+                {"visita_code": visita_code},
+                {"$set": {"notifications.email_status": "failed", "notifications.email_last_attempt_at": datetime.now(timezone.utc)}}
+            )
+        except Exception:
+            logger.exception("[EMAIL] Error registrando fallo de envío para %s", visita_code)
+        return False
 
 @router.delete("/api/delete/{visita_code}")
 @router.delete("/api/{visita_code}/delete")
@@ -1877,30 +2084,72 @@ async def verify_contract(visita_code: str, request: Request):
     if not contract:
         return HTMLResponse("<h1>Orden de Visita no encontrado</h1>", status_code=404)
     
-    # Limpiar datos para evitar error 500 de serialización
+    # La verificación pública no depende solo de status='signed'.
+    security = contract.get("security") or {}
+    verification_valid = False
+    if _signature_evidence_complete(contract):
+        try:
+            timeline = contract.get("timeline") or []
+            accepted_index = next((i for i, e in enumerate(timeline) if e.get("action") == "accepted"), None)
+            otp_verified = any(e.get("action") == "otp_verified" for e in timeline)
+            if accepted_index is not None and otp_verified:
+                accepted = timeline[accepted_index]
+                hmac_timestamp = security.get("hmac_timestamp") or accepted.get("server_timestamp")
+                timeline_hash = SecurityContracts.hash_timeline(timeline[:accepted_index + 1])
+                secret = getattr(Config, "SECRET_KEY", "")
+                if secret and hmac_timestamp and hmac_timestamp == accepted.get("server_timestamp"):
+                    expected_hmac = SecurityContracts.generate_server_hmac(
+                        visita_code, security["original_hash"], hmac_timestamp, secret
+                    )
+                    hashes_match = (
+                        hmac.compare_digest(security["timeline_hash"], timeline_hash)
+                        and hmac.compare_digest(security["server_hmac"], expected_hmac)
+                    )
+                    if hashes_match:
+                        original_id = security.get("original_pdf_drive_id")
+                        signed_id = security.get("signed_pdf_drive_id")
+                        original_pdf = await run_in_threadpool(gdrive_sync.download_file, original_id) if original_id else None
+                        signed_pdf = await run_in_threadpool(gdrive_sync.download_file, signed_id) if signed_id else None
+                        verification_valid = bool(
+                            original_pdf and signed_pdf
+                            and hmac.compare_digest(SecurityContracts.hash_document(original_pdf), security["original_hash"])
+                            and hmac.compare_digest(SecurityContracts.hash_document(signed_pdf), security["signed_hash"])
+                        )
+        except Exception:
+            logger.exception("[VISIT_VERIFY] No fue posible comprobar integridad de %s", visita_code)
+            verification_valid = False
+
+    # Limpiar datos para evitar errores de serialización y preservar UTC real.
     safe_contract = _json_safe(contract)
-    
-    # Formatear fecha de firma para visualización humana
-    signature_date_raw = contract.get("security", {}).get("signature_timestamp")
+    signature_date_raw = security.get("signature_timestamp")
     formatted_date = "---"
     if signature_date_raw:
         try:
-            if isinstance(signature_date_raw, datetime):
-                dt = signature_date_raw
-            else:
-                dt = datetime.fromisoformat(signature_date_raw)
-            
-            if dt.tzinfo is None: 
+            dt = signature_date_raw if isinstance(signature_date_raw, datetime) else datetime.fromisoformat(signature_date_raw)
+            if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
-            dt_cl = dt.astimezone(CHILE_TZ)
-            formatted_date = dt_cl.strftime("%d-%m-%Y %H:%M CLT")
-        except Exception as e:
+            formatted_date = dt.astimezone(CHILE_TZ).strftime("%d-%m-%Y %H:%M CLT")
+        except (ValueError, TypeError):
             pass
-        
+
+    recovered_at = security.get("signature_recovered_at")
+    recovery_date = None
+    if recovered_at:
+        try:
+            if isinstance(recovered_at, str):
+                recovered_at = datetime.fromisoformat(recovered_at)
+            if recovered_at.tzinfo is None:
+                recovered_at = recovered_at.replace(tzinfo=timezone.utc)
+            recovery_date = recovered_at.astimezone(CHILE_TZ).strftime("%d-%m-%Y %H:%M CLT")
+        except (ValueError, TypeError):
+            pass
+
     return templates.TemplateResponse(request, "visita_verify.html", {
         "request": request,
         "contract": safe_contract,
-        "signature_date_clt": formatted_date
+        "signature_date_clt": formatted_date,
+        "verification_valid": verification_valid,
+        "recovery_date_clt": recovery_date,
     })
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -1949,6 +2198,7 @@ async def visita_dashboard(request: Request):
     contracts = await visitas_cursor.to_list(length=100)
 
     for c in contracts:
+        c["signature_complete"] = _signature_evidence_complete(c)
         if "_id" in c:
             c["_id"] = str(c["_id"])
         if c.get("created_at"):

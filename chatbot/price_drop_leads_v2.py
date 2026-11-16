@@ -1724,9 +1724,15 @@ def send_one(db, *, lead_id: str, campaign_id: str,
             "provider_call_uncertain": bool(receipt.get("provider_call_uncertain"))}
 
 
-def active_context(db, *, phone: str, message: str = "", now=None) -> dict | None:
-    """Resolve a verified SENT campaign from the canonical lead, no campaign table."""
-    if os.getenv(CONTEXT_FLAG, "").lower() not in {"1", "true", "yes"}:
+def active_context(db, *, phone: str, message: str = "", now=None,
+                   for_tracking: bool = False) -> dict | None:
+    """Resolve a SENT campaign; persistence never depends on chatbot context flag.
+
+    for_tracking is read-only and only for attributing real inbound replies or
+    suppressing duplicate commercial intake. It does NOT enable the chatbot's
+    price-drop context or alter send/approval permissions.
+    """
+    if not for_tracking and os.getenv(CONTEXT_FLAG, "").lower() not in {"1", "true", "yes"}:
         return None
     canonical = normalize_phone_strict(phone)
     if not canonical:
@@ -1792,11 +1798,15 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
     currency = campaign.get("currency") or "UF"
     old = campaign.get("old_price_clp") if currency == "CLP" else campaign.get("old_price_uf")
     new = campaign.get("new_price_clp") if currency == "CLP" else campaign.get("new_price_uf")
-    try:
-        _verified_campaign_price(db, code, old, new, currency=currency,
-                                 operation=str(campaign.get("operation") or "venta").lower())
-    except PilotBlocked:
-        return None
+    if not for_tracking:
+        # Customer conversational context must refer to a currently verified
+        # listing. Attribution, on the other hand, records what was actually
+        # SENT even if the property's live price changes after the send.
+        try:
+            _verified_campaign_price(db, code, old, new, currency=currency,
+                                     operation=str(campaign.get("operation") or "venta").lower())
+        except PilotBlocked:
+            return None
     return {
         "version": "price_drop_leads_v2",
         "campaign_id": campaign["campaign_id"],
@@ -1810,7 +1820,7 @@ def active_context(db, *, phone: str, message: str = "", now=None) -> dict | Non
         "new_price_clp": (int(campaign["new_price_clp"])
                           if currency == "CLP" else None),
         "currency": currency,
-        "operation": "Venta",
+        "operation": "Arriendo" if str(campaign.get("operation") or "venta").lower() == "arriendo" else "Venta",
         "outbound_message": campaign["outbound_message"],
         "test_mode": bool(campaign.get("test_mode")),
         "customer_preferences": dict(
@@ -1832,7 +1842,9 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
         {"_id": 1},
     ):
         return {"status": "DUPLICATE_IGNORED"}
-    ctx = active_context(db, phone=phone, message=text, now=now)
+    # A reply to a stored, accepted SENT campaign is an auditable customer
+    # action regardless of the *server's* conversational context toggle.
+    ctx = active_context(db, phone=phone, message=text, now=now, for_tracking=True)
     if not ctx:
         return {"status": "NOT_CAMPAIGN_REPLY"}
     now = utc(now or datetime.now(timezone.utc))

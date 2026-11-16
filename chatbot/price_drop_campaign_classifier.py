@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from .lead_temperature import HOT_INTENTS
 
-CLASSIFIER_VERSION = "price_drop_response_rules_v4"
+CLASSIFIER_VERSION = "price_drop_response_rules_v5"
 PRIORITY = "PRIORIDAD_COMERCIAL"
 INTEREST = "INTERES_DECLARADO"
 INFO = "CONSULTA_INFORMATIVA"

@@ -1483,6 +1483,9 @@ def test_property_codes_and_price_questions_are_not_false_offer_intents(message)
     "No necesito más alertas",
     "No quiero seguir recibiendo avisos",
     "no quiero mas abisos porfa",
+    "Dame de baja, por favor",
+    "Quiero darme de baja",
+    "Me doy de baja de la campaña",
 ])
 def test_opt_out_avisos_is_baja_and_blocks_future_campaigns(text):
     classified = classify_price_drop_reply(text)
@@ -1497,6 +1500,8 @@ def test_opt_out_avisos_is_baja_and_blocks_future_campaigns(text):
     "Me interesan los avisos sobre esta propiedad",
     "No quiero que me llamen por teléfono, pero sí recibir avisos",
     "Quiero recibir notificaciones de otros arriendos",
+    "¿Cuándo baja el precio de esta propiedad?",
+    "¿La baja de precio fue en noviembre?",
 ])
 def test_price_drop_avisos_mentions_without_stop_do_not_mark_baja(text):
     assert classify_price_drop_reply(text).label != "BAJA"

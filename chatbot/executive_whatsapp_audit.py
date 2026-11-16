@@ -253,6 +253,16 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
     )
 
 
+def _session_from_storage(session_id: str) -> dict | None:
+    from .storage import get_db
+    return _session(get_db(), session_id)
+
+
+def _handle_from_storage(session: dict, payload: dict, write: bool) -> str:
+    from .storage import get_db
+    return _handle_authorized(get_db(), session, payload, write=write)
+
+
 @router.post("/webhook/ejecutivos/{session_id}")
 async def executive_session_audit(
     session_id: str,
@@ -265,9 +275,8 @@ async def executive_session_audit(
     if len(raw) > 65536:
         raise HTTPException(status_code=413, detail="payload_too_large")
 
-    from .storage import get_db
-    # Sync MongoDB operations are always delegated away from the event loop.
-    session = await asyncio.to_thread(_session, get_db(), session_id)
+    # Both Mongo client access and queries stay off the event loop.
+    session = await asyncio.to_thread(_session_from_storage, session_id)
     if session is None:
         raise HTTPException(status_code=401, detail="session_not_authorized")
     if not verify_wasender_webhook_signature(
@@ -284,7 +293,7 @@ async def executive_session_audit(
     write = os.getenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0") == "1"
     try:
         status = await asyncio.to_thread(
-            _handle_authorized, get_db(), session, payload, write=write,
+            _handle_from_storage, session, payload, write,
         )
     except Exception:
         # No traceback, raw payload, phone, message body, token, provider ID,

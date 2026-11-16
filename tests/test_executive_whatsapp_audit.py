@@ -336,3 +336,25 @@ def test_duplicated_active_executive_name_is_rejected(rig):
     db["usuarios"].find = ambiguous
     assert post(client, event(from_me=True)).status_code == 401
     assert db["leads"].update_calls == 0
+
+
+def test_outgoing_lid_never_uses_linked_executive_as_remote_contact(rig, monkeypatch):
+    db, cycle, client = rig
+    # In some provider payloads "from" is the sending device, not the
+    # recipient. Trusting it can misattribute a private outgoing chat.
+    outgoing = event(from_me=True, jid="123456789012@lid", msg_id="lid-own-from")
+    outgoing["data"]["messages"]["from"] = "+56983219804"
+    assert audit._peer_phone(audit._event_metadata(outgoing), None)[0] is None
+    # A read-only @lid -> phone lookup may resolve the real remote user.
+    monkeypatch.setattr(audit, "_pn_from_lid", lambda lid, token: PHONE)
+    assert post(client, outgoing).json()["status"] == "stored"
+    assert db["leads"].lead["messages"][-1]["actor_type"] == "human_agent"
+
+
+def test_outgoing_unknown_lid_with_own_from_never_enters_lead(rig, monkeypatch):
+    db, cycle, client = rig
+    outgoing = event(from_me=True, jid="123456789012@lid", msg_id="unknown-lid")
+    outgoing["data"]["messages"]["from"] = "+56983219804"
+    monkeypatch.setattr(audit, "_pn_from_lid", lambda lid, token: None)
+    assert post(client, outgoing).json()["status"] == "ignored"
+    assert db["leads"].update_calls == 0

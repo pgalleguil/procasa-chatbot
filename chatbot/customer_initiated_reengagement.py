@@ -63,7 +63,12 @@ def customer_initiated_service_request_allowed(lead: dict | None, message: str) 
     text = str(message or "").strip()
     if not text or len(text) > 8000:
         return False
-    if classify_price_drop_reply(text).label == "BAJA":
+    classification = classify_price_drop_reply(text)
+    # "Tengo un departamento que quiero vender" contains ownership evidence,
+    # which the campaign classifier can interpret as completed search. A
+    # genuine *new* brokerage request still deserves an answer. Never
+    # override an explicit request to stop contacting the customer.
+    if classification.label == "BAJA" and classification.reason != "already_found_property":
         return False
     folded = _fold(text)
     if _NEGATED_NEW_REQUEST.search(folded):

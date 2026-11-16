@@ -15,16 +15,18 @@ LEAD = ObjectId("690e13577fb5678251136b01")
 PHONE = "+56912345678"
 PRIVATE = "+56955554444"
 SESSION = "133286"
-SESSIONS_ENV = "PROCASA_EXEC_WASENDER_SESSIONS_JSON"
+EXEC_ENV = "PROCASA_WASENDER_PABLO_GALLEGUILLOS"
+LEGACY_ENV = "PROCASA_EXEC_WASENDER_SESSIONS_JSON"
 SECRET = "audit-test-secret-value-2026"
 TOKEN = "session-api-test-only-token"
 
 
 def session_config(*, capture_enabled=True, secret=SECRET, token=TOKEN):
-    return json.dumps({SESSION: {
+    return json.dumps({
+        "session_id": int(SESSION),
         "webhook_secret": secret, "api_token": token,
         "capture_enabled": capture_enabled,
-    }})
+    })
 
 
 class Cursor(list):
@@ -40,10 +42,13 @@ class Users:
             "wasender": {"session_id": 133286},
         }
     def find(self, query, projection):
-        allowed = self.user["wasender"]["session_id"] in query["wasender.session_id"]["$in"]
-        if self.user["is_active"] is False or not allowed:
+        if self.user["is_active"] is False:
             return Cursor([])
-        return Cursor([self.user])
+        if "wasender.session_id" in query:
+            allowed = self.user["wasender"]["session_id"] in query["wasender.session_id"]["$in"]
+        else:
+            allowed = query.get("nombre") == self.user["nombre"]
+        return Cursor([self.user] if allowed else [])
     def find_one(self, query, projection):
         if self.user["is_active"] is not True or query.get("_id") != USER:
             return None
@@ -108,7 +113,7 @@ def rig(monkeypatch):
     monkeypatch.setattr(storage, "get_db", lambda: db)
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_ENABLED", "1")
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "1")
-    monkeypatch.setenv(SESSIONS_ENV, session_config())
+    monkeypatch.setenv(EXEC_ENV, session_config())
     app = FastAPI()
     app.include_router(audit.router)
     client = TestClient(app)
@@ -127,6 +132,7 @@ def test_only_session_id_is_required_in_mongodb(rig, monkeypatch):
     assert cfg["secret"] == SECRET
     assert cfg["token"] == TOKEN
     assert cfg["capture_enabled"] is True
+    assert audit._variable_name_for_executive("Pablo Galleguillos") == EXEC_ENV
     # Legacy secret fields left in MongoDB are ignored (but should be cleaned).
     db["usuarios"].user["wasender"]["webhook_secret_env"] = "plaintext-wrong"
     db["usuarios"].user["wasender"]["api_token_env"] = "plaintext-wrong"
@@ -142,37 +148,40 @@ def test_only_session_id_is_required_in_mongodb(rig, monkeypatch):
     db["usuarios"].find = original_find
 
 
-def test_central_credentials_must_be_valid_and_never_fallback_to_mongo(rig, monkeypatch):
+def test_executive_credentials_must_be_valid_and_never_fallback_to_mongo(rig, monkeypatch):
     db, cycle, client = rig
     for value in (
         "", "not json", "[]", "{}", "{bad",
-        json.dumps({SESSION: {"webhook_secret": SECRET}}),
+        json.dumps({"session_id": int(SESSION), "webhook_secret": SECRET}),
+        json.dumps({"session_id": int(SESSION) + 1,
+                    "webhook_secret": SECRET, "api_token": TOKEN}),
+        json.dumps({"session_id": str(SESSION),
+                    "webhook_secret": SECRET, "api_token": TOKEN}),
         session_config(secret="short"),
         session_config(token="short"),
-        json.dumps({SESSION: {"webhook_secret": SECRET, "api_token": TOKEN,
-                               "capture_enabled": "true"}}),
+        json.dumps({"session_id": int(SESSION), "webhook_secret": SECRET,
+                    "api_token": TOKEN, "capture_enabled": "true"}),
     ):
-        monkeypatch.setenv(SESSIONS_ENV, value)
+        monkeypatch.setenv(EXEC_ENV, value)
         cfg = audit._session(db, SESSION)
         if '"capture_enabled": "true"' in value:
             assert cfg is not None and cfg["capture_enabled"] is False
         else:
             assert cfg is None
-    monkeypatch.setenv(SESSIONS_ENV, "a" * 33000)
+    monkeypatch.setenv(EXEC_ENV, "a" * 5000)
     assert audit._session(db, SESSION) is None
 
 
 def test_per_session_capture_guard_blocks_global_write(rig, monkeypatch):
     db, cycle, client = rig
-    monkeypatch.setenv(SESSIONS_ENV, session_config(capture_enabled=False))
+    monkeypatch.setenv(EXEC_ENV, session_config(capture_enabled=False))
     assert post(client, event(from_me=True)).json()["status"] == "dry_run"
     assert db["leads"].update_calls == 0
-    # Unregistered session cannot capture content even with global write on.
-    config = json.dumps({"133287": {
-        "webhook_secret": SECRET, "api_token": TOKEN,
-        "capture_enabled": True,
-    }})
-    monkeypatch.setenv(SESSIONS_ENV, config)
+    # A credential accidentally copied from another session must fail closed.
+    config = json.dumps({"session_id": 133287,
+                         "webhook_secret": SECRET, "api_token": TOKEN,
+                         "capture_enabled": True})
+    monkeypatch.setenv(EXEC_ENV, config)
     assert post(client, event(from_me=True)).status_code == 401
     assert db["leads"].update_calls == 0
 
@@ -296,3 +305,34 @@ def test_storage_error_does_not_log_any_personal_content(rig, caplog):
     assert resp.status_code == 503
     assert "PRIVATE TEXT MUST NEVER BE LOGGED" not in caplog.text
     assert "sensitive-message-error" not in caplog.text
+
+
+def test_name_and_session_binding_prevent_cross_executive_secret_reuse(rig, monkeypatch):
+    db, cycle, client = rig
+    assert audit._variable_name_for_executive("Mariela Arriagada") == "PROCASA_WASENDER_MARIELA_ARRIAGADA"
+    assert audit._variable_name_for_executive("Rocío Aliaga") == "PROCASA_WASENDER_ROCIO_ALIAGA"
+    assert audit._variable_name_for_executive(None) is None
+    # A renamed executive cannot use the previous name's secret.
+    db["usuarios"].user["nombre"] = "Pablo Nueva Cuenta"
+    assert post(client, event(from_me=True)).status_code == 401
+    db["usuarios"].user["nombre"] = "Pablo Galleguillos"
+    # The old shared JSON variable is never consulted.
+    monkeypatch.setenv(EXEC_ENV, "")
+    monkeypatch.setenv(LEGACY_ENV, json.dumps({
+        SESSION: {"webhook_secret": SECRET, "api_token": TOKEN,
+                  "capture_enabled": True}
+    }))
+    assert post(client, event(from_me=True)).status_code == 401
+    assert db["leads"].update_calls == 0
+
+
+def test_duplicated_active_executive_name_is_rejected(rig):
+    db, cycle, client = rig
+    original_find = db["usuarios"].find
+    def ambiguous(query, projection):
+        if "nombre" in query:
+            return Cursor([db["usuarios"].user, dict(db["usuarios"].user)])
+        return original_find(query, projection)
+    db["usuarios"].find = ambiguous
+    assert post(client, event(from_me=True)).status_code == 401
+    assert db["leads"].update_calls == 0

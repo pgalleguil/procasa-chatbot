@@ -1,48 +1,44 @@
-# WaSender ejecutivos — configuración mínima (PROCASA)
+# WaSender ejecutivos — configuración sencilla y segura
 
-## Objetivo
+## Decisión definitiva
 
-Un solo servicio Render `procasa`, una variable JSON para las credenciales de **todas** las sesiones y un único campo de identificación por usuario. El chatbot permanece exclusivamente en el número de oficina y no envía nada por teléfonos de ejecutivos.
+**Una variable secreta Render por ejecutivo**, identificable por nombre. No hay JSON compartido con todas las sesiones: dar de baja un ejecutivo solo elimina su variable y desactiva su sesión. El servicio Render `procasa` es único para todos.
 
-## MongoDB: `URLS.usuarios`
+El chatbot opera **exclusivamente** desde el número de oficina. Los teléfonos de ejecutivos solo tienen auditoría pasiva y nunca envían ni responden por API.
 
-Cada ejecutivo activo debe tener **solo** el dato público de vinculación:
+## MongoDB (`URLS.usuarios`)
+
+Únicamente se necesita el identificador de sesión WaSender:
 
 ```json
 {"wasender": {"session_id": 133286}}
 ```
 
-No registrar ni consultar credenciales en los documentos `usuarios`. Los campos legados `wasender.webhook_secret_env` y `wasender.api_token_env` pueden eliminarse **después de verificar** la variable nueva. Al eliminar, usar únicamente `$unset` sobre los dos subcampos, nunca sobrescribir todo `wasender`.
+El nombre del ejecutivo se toma del campo existente `nombre`. **No** es necesario agregar un campo para claves o nombres de variables. Los campos antiguos `wasender.webhook_secret_env` y `wasender.api_token_env` (que actualmente pueden contener credenciales en texto claro) ya no se consultan y deben eliminarse mediante un `$unset` limitado a esos campos, una vez comprobada la nueva variable.
 
-## Render: una variable para todas las sesiones
+## Render — ejemplo para Pablo
 
-Nombre de variable: `PROCASA_EXEC_WASENDER_SESSIONS_JSON`.
-
-Ejemplo estructural (marcadores ficticios, **no** copiar como secretos efectivos):
+Crear **una variable de entorno** llamada `PROCASA_WASENDER_PABLO_GALLEGUILLOS` y asignarle este JSON. Las claves mostradas son SOLO marcadores ficticios:
 
 ```json
 {
-  "133286": {
-    "webhook_secret": "PEGAR_VALOR_REAL_EN_RENDER",
-    "api_token": "PEGAR_VALOR_REAL_EN_RENDER",
-    "capture_enabled": false
-  },
-  "222222": {
-    "webhook_secret": "PEGAR_OTRO_SECRET_EN_RENDER",
-    "api_token": "PEGAR_OTRO_TOKEN_EN_RENDER",
-    "capture_enabled": false
-  }
+  "session_id": 133286,
+  "webhook_secret": "PEGA_SECRET_REAL_COMPLETO",
+  "api_token": "PEGA_TOKEN_REAL_COMPLETO",
+  "capture_enabled": false
 }
 ```
 
-Se agrega una entrada al JSON por cada sesión vinculada. El identificador es el número de sesión y **no** el teléfono personal. No poner estos valores en el repositorio, conversaciones, documentos MongoDB ni registros. Todas las sesiones tienen su propio webhook secret y API token. El API token solo se usa para consultas de identidad `@lid`, nunca para enviar mensajes desde el teléfono de un ejecutivo.
+La validación exige que `session_id` coincida con la ruta y la sesión registrada en MongoDB. No basta cambiar el nombre de la variable. Para otro ejecutivo, la variable es `PROCASA_WASENDER_` seguido del nombre completo normalizado en MAYÚSCULAS sin tildes y con guiones bajos, por ejemplo `PROCASA_WASENDER_MARIELA_ARRIAGADA`, `PROCASA_WASENDER_ROCIO_ALIAGA`.
 
-## Controles de activación
+Al añadir o eliminar ejecutivos, gestionar **solo su variable de Render**; no editar credenciales de otra sesión. El documento del ejecutivo debe estar activo (`is_active: true`) y el ID de sesión no debe aparecer en dos ejecutivos. Los nombres idénticos entre usuarios activos se rechazan para evitar identidad ambigua. Si se modifica el nombre de un usuario, se debe renombrar su variable de Render.
 
-- `PROCASA_EXEC_AUDIT_ENABLED=1`: permite leer el webhook de auditoría, siempre exigiendo firma válida y sesión única asociada a un usuario activo.
-- `PROCASA_EXEC_AUDIT_WRITE_ENABLED=0`: valor inicial, no guarda contenido comercial.
-- `capture_enabled=false` en cada entrada JSON: barrera por sesión para evitar que activar la escritura global afecte al resto del equipo. Para una prueba de almacenamiento, habilitar `true` **solo** en la sesión piloto y con `PROCASA_EXEC_AUDIT_WRITE_ENABLED=1`, siempre después de verificar lead canónico único y ciclo/propietario CRM.
+## Activación segura
 
-Ruta: `POST /webhook/ejecutivos/{session_id}`. Para el piloto 133286: `https://procasa-chatbot-yr8d.onrender.com/webhook/ejecutivos/133286`. Mantener activados `messages.upsert` y `messages.received`.
+- `PROCASA_EXEC_AUDIT_ENABLED=1` habilita la recepción del webhook; exige firma y vínculo de usuario único.
+- `PROCASA_EXEC_AUDIT_WRITE_ENABLED=0` impide toda escritura. No cambiar durante la configuración inicial.
+- `capture_enabled=false` en cada variable impide que dicha sesión escriba en `leads.messages` incluso con escritura global habilitada. Solo cambiar a `true` después de validar un lead inequívoco asignado con el mismo ciclo CRM vigente.
 
-El código rechaza eventos de grupos, chats privados no asociados al ejecutivo, leads ambiguos y cambios de ciclo. Deduplica eventos por sesión + `provider_message_id`. La captura comercial de texto debe verificarse en producción con un lead de prueba autorizado antes de habilitar a todo el equipo.
+Ruta para Pablo: `POST https://procasa-chatbot-yr8d.onrender.com/webhook/ejecutivos/133286` y seleccionar `messages.upsert` + `messages.received` en WaSender. Nunca subir secretos reales a GitHub, MongoDB o chats.
+
+Se deduplica por sesión + ID de mensaje, se conserva todo el historial del lead y se descartan grupos, privados, números sin lead y asignaciones obsoletas. La captura real en MongoDB sigue pendiente de validación controlada.

@@ -3,8 +3,8 @@
 This endpoint NEVER sends WhatsApp messages, calls the chatbot/LLM or writes
 unassigned/private chat content. Disabled by default; persistence is a
 separate opt-in flag. Each executive has an independent signed webhook URL.
-Only the existing usuarios.wasender.session_id is needed in MongoDB; all
-credentials and the per-session capture allowlist live in ONE Render variable.
+Only the existing usuarios.wasender.session_id is needed in MongoDB; each
+executive's credentials live in their OWN named Render JSON variable.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import unicodedata
 from datetime import datetime, timezone
 from urllib.parse import quote
 from uuid import uuid4
@@ -31,23 +32,39 @@ from .webhook_event_policy import verify_wasender_webhook_signature
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-_SESSIONS_ENV = "PROCASA_EXEC_WASENDER_SESSIONS_JSON"
 _SESSION_ID = re.compile(r"^[1-9][0-9]{0,17}$")
 _LID = re.compile(r"^[0-9]{8,25}@lid$")
 _ALLOWED_EVENTS = frozenset({"messages.upsert", "messages.received"})
 
 
-def _central_session_config(session_id: str) -> dict | None:
-    """One Render secret for all sessions; never read credentials from MongoDB.
+def _variable_name_for_executive(name: object) -> str | None:
+    """Human-readable, deterministic one-secret-per-executive Render key.
 
-    JSON structure:
-      {"133286": {"webhook_secret": "...", "api_token": "...",
-                  "capture_enabled": false}}
-    The per-session capture flag protects other executives even when the
-    global write switch is enabled for a controlled pilot.
+    The identity comes exclusively from the authenticated MongoDB user,
+    never from the webhook payload, URL or client-supplied identifiers.
     """
-    raw = os.getenv(_SESSIONS_ENV, "")
-    if not raw or len(raw) > 32768:
+    if not isinstance(name, str) or not name.strip():
+        return None
+    normalized = unicodedata.normalize("NFKD", name.strip())
+    ascii_name = normalized.encode("ascii", "ignore").decode("ascii").upper()
+    slug = re.sub(r"[^A-Z0-9]+", "_", ascii_name).strip("_")
+    if not slug or len(slug) > 80:
+        return None
+    return "PROCASA_WASENDER_" + slug
+
+
+def _executive_credentials(name: object, session_id: str) -> dict | None:
+    """Read only the configured executive's dedicated secret from Render.
+
+    Example value:
+      {"session_id": 133286, "webhook_secret": "...", "api_token": "...",
+       "capture_enabled": false}
+    """
+    env_name = _variable_name_for_executive(name)
+    if env_name is None:
+        return None
+    raw = os.getenv(env_name, "")
+    if not raw or len(raw) > 4096:
         return None
     try:
         values = json.loads(raw)
@@ -55,38 +72,48 @@ def _central_session_config(session_id: str) -> dict | None:
         return None
     if not isinstance(values, dict):
         return None
-    entry = values.get(session_id)
-    if not isinstance(entry, dict):
+    # Protect against pasting another executive's JSON into the wrong variable.
+    if type(values.get("session_id")) is not int or str(values["session_id"]) != session_id:
         return None
-    secret = entry.get("webhook_secret")
-    token = entry.get("api_token")
+    secret = values.get("webhook_secret")
+    token = values.get("api_token")
     if (not isinstance(secret, str) or len(secret.strip()) < 12
             or not isinstance(token, str) or len(token.strip()) < 12):
         return None
     return {
         "secret": secret.strip(),
         "token": token.strip(),
-        # Only literal JSON true can enable persistence for this session.
-        "capture_enabled": entry.get("capture_enabled") is True,
+        "capture_enabled": values.get("capture_enabled") is True,
     }
 
 
 def _session(db, session_id: str) -> dict | None:
     if not _SESSION_ID.fullmatch(session_id):
         return None
-    config = _central_session_config(session_id)
-    if config is None:
-        return None
     matches = list(db["usuarios"].find(
         {
             "rol": "agente", "is_active": True,
             "wasender.session_id": {"$in": [int(session_id), session_id]},
         },
-        {"_id": 1, "wasender.session_id": 1},
+        {"_id": 1, "nombre": 1, "wasender.session_id": 1},
     ).limit(2))
     if len(matches) != 1:
-        return None  # A duplicate session must never be attributed to either user.
+        return None  # Duplicate session IDs fail closed.
     user = matches[0]
+    env_name = _variable_name_for_executive(user.get("nombre"))
+    if env_name is None:
+        return None
+    # A second active account with the same name must not reuse its secret.
+    # Read only the smallest fields necessary to reject a naming collision.
+    same_name = list(db["usuarios"].find(
+        {"rol": "agente", "is_active": True, "nombre": user["nombre"]},
+        {"_id": 1},
+    ).limit(2))
+    if len(same_name) != 1 or same_name[0]["_id"] != user["_id"]:
+        return None
+    config = _executive_credentials(user["nombre"], session_id)
+    if config is None:
+        return None
     return {
         "user_id": str(user["_id"]),
         "user_oid": user["_id"],

@@ -320,6 +320,7 @@ def audit_full_portfolio(
     temperature_filter: str = "ALL", lead_max_age_days: int | None = 120,
     limit: int | None = None, batch_size: int = 500,
     now: datetime | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     """Read-only inventory of ALL price drops and prior-property inquiries.
 
@@ -330,8 +331,12 @@ def audit_full_portfolio(
     stamp = now or datetime.now(timezone.utc)
     normalized_temperature = normalize_temperature_filter(temperature_filter)
     max_age = normalize_lead_max_age_days(lead_max_age_days)
+    if progress is not None:
+        progress("discovering_price_drops")
     events = _events(db, property_code, since=since, currency=currency,
                      operation=operation, limit=limit, batch_size=batch_size)
+    if progress is not None:
+        progress(f"loading_phone_index_events_{len(events)}")
     unique_eligible_leads: set[str] = set()
     previously_counted: set[str] = set()
     eligible_by_event: dict[str, set[str]] = {}
@@ -368,7 +373,9 @@ def audit_full_portfolio(
         "requires_temperature_review": 0,
         "requires_age_review": 0,
     }
-    for event in events:
+    for event_number, event in enumerate(events, 1):
+        if progress is not None:
+            progress(f"matching_event_{event_number}_of_{len(events)}_property_{event.property_code}")
         properties.add(event.property_code)
         candidates = find_candidates_for_event(
             db, event, temperature_filter=normalized_temperature,
@@ -420,6 +427,8 @@ def audit_full_portfolio(
     # content, expose contact details, change MongoDB or call the provider.
     contact_readiness: dict[str, str] = {}
     candidate_ids = sorted(unique_eligible_leads)
+    if progress is not None:
+        progress(f"checking_authorizations_for_{len(candidate_ids)}_leads")
     for offset in range(0, len(candidate_ids), 500):
         selected_ids = candidate_ids[offset:offset + 500]
         lead_docs = db[LEADS_COLLECTION].find(
@@ -2634,14 +2643,30 @@ def main(argv: list[str] | None = None) -> int:
             }, ensure_ascii=False, default=str))
             return 0
         if args.action == "audience-audit":
-            report = audit_full_portfolio(
-                db, since=since, property_code=args.property_code,
-                currency=args.currency, operation=args.operation,
-                temperature_filter=args.temperature or "ALL",
-                lead_max_age_days=(args.lead_max_age_days if args.lead_max_age_days is not None
-                                   else DEFAULT_LEAD_MAX_AGE_DAYS),
-                limit=args.limit, batch_size=args.batch_size,
-            )
+            checkpoint = {"phase": "starting_audience_audit"}
+
+            def audit_progress(phase: str) -> None:
+                checkpoint["phase"] = phase
+                # stderr keeps stdout as parseable JSON for PowerShell.
+                # Never log phone numbers, message content or database URIs.
+                print(f"[AUDIENCE_AUDIT] {phase}", file=sys.stderr, flush=True)
+
+            try:
+                report = audit_full_portfolio(
+                    db, since=since, property_code=args.property_code,
+                    currency=args.currency, operation=args.operation,
+                    temperature_filter=args.temperature or "ALL",
+                    lead_max_age_days=(args.lead_max_age_days if args.lead_max_age_days is not None
+                                       else DEFAULT_LEAD_MAX_AGE_DAYS),
+                    limit=args.limit, batch_size=args.batch_size,
+                    progress=audit_progress,
+                )
+            except Exception as exc:
+                print(json.dumps({
+                    "status": "ERROR", "reason": type(exc).__name__,
+                    "phase": checkpoint["phase"],
+                }, ensure_ascii=False))
+                return 1
             print(json.dumps(report, ensure_ascii=False, default=str))
             return 0
         if args.action == "discover":

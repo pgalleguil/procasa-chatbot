@@ -872,6 +872,7 @@ async def process_one_batch(db, *, worker_id, llm, sender, now=None):
             from .price_drop_leads_v2 import active_context as v2_campaign_context
             price_drop_ctx = await asyncio.to_thread(
                 v2_campaign_context, db, phone=claimed["phone"], message=text,
+                for_tracking=True,
             )
             if price_drop_ctx is not None:
                 logger.info(

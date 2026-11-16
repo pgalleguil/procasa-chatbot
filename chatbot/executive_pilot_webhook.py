@@ -11,10 +11,14 @@ import asyncio
 import json
 import os
 import logging
+import re
+from functools import lru_cache
+from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+import httpx
 from bson import ObjectId
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -89,6 +93,67 @@ def _remote_contact(key: dict, msg: dict, *, from_me: bool) -> str | None:
     return None
 
 
+def _remote_lid(key: dict, msg: dict) -> str | None:
+    """LID of the remote chat, never senderLid (can be the linked account)."""
+    for value in (
+        key.get("remoteJidAlt"), key.get("remoteJid"),
+        msg.get("chatId"), msg.get("from"),
+    ):
+        raw = str(value or "").strip()
+        if re.fullmatch(r"[0-9]{8,25}@lid", raw):
+            return raw
+    return None
+
+
+@lru_cache(maxsize=4)
+def _authorized_contact_lid(expected_phone: str, session_token: str) -> str | None:
+    """Look up ONLY the explicitly approved office phone, not any private peer."""
+    pn = expected_phone.lstrip("+") + "@s.whatsapp.net"
+    endpoint = (
+        "https://www.wasenderapi.com/api/lid-from-pn/"
+        + quote(pn, safe="@")
+    )
+    try:
+        with httpx.Client(timeout=4.0, follow_redirects=False) as client:
+            response = client.get(
+                endpoint, headers={"Authorization": "Bearer " + session_token}
+            )
+        if response.status_code != 200:
+            return None
+        payload = response.json()
+        data = payload.get("data") if isinstance(payload, dict) else None
+        lid = data.get("lid") if isinstance(data, dict) else None
+        if isinstance(lid, str) and re.fullmatch(r"[0-9]{8,25}@lid", lid):
+            return lid
+    except (httpx.HTTPError, ValueError, TypeError):
+        pass
+    return None
+
+
+def _get_allowed_lid(payload: dict, expected_phone: str) -> str | None:
+    """Resolve fixed approved contact only when the event has an unresolved LID."""
+    if payload.get("event") != "messages.upsert":
+        return None
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return None
+    msg = data.get("messages")
+    if msg is None and isinstance(data.get("key"), dict):
+        msg = data
+    if isinstance(msg, list):
+        msg = msg[0] if len(msg) == 1 else None
+    if not isinstance(msg, dict) or not isinstance(msg.get("key"), dict):
+        return None
+    key = msg["key"]
+    if _remote_lid(key, msg) is None:
+        return None
+    # This credential belongs to the pilot's own WaSender session.
+    token = os.getenv("WASENDER_PABLO_GALLEGUILLOS_API_TOKEN", "").strip()
+    if not token:
+        return None
+    return _authorized_contact_lid(expected_phone, token)
+
+
 def _message_timestamp(msg: dict, payload: dict) -> tuple[str, str]:
     raw = msg.get("messageTimestamp") or payload.get("timestamp")
     if isinstance(raw, dict):
@@ -106,7 +171,7 @@ def _message_timestamp(msg: dict, payload: dict) -> tuple[str, str]:
     return datetime.now(timezone.utc).isoformat(), "received_at"
 
 
-def _parse_message(payload: dict, expected_phone: str) -> dict | None:
+def _parse_message(payload: dict, expected_phone: str, expected_lid: str | None = None) -> dict | None:
     if payload.get("event") != "messages.upsert":
         return None
     data = payload.get("data")
@@ -130,7 +195,14 @@ def _parse_message(payload: dict, expected_phone: str) -> dict | None:
         return None
     from_me = key["fromMe"]
     peer = _remote_contact(key, messages, from_me=from_me)
-    if peer != expected_phone:
+    # Fail closed. A remote @lid is trusted only if WaSender independently
+    # resolved the APPROVED office number to exactly that identifier.
+    valid_by_lid = (
+        peer is None
+        and expected_lid is not None
+        and _remote_lid(key, messages) == expected_lid
+    )
+    if peer != expected_phone and not valid_by_lid:
         return None
     provider_id = str(key.get("id") or messages.get("id") or "").strip()
     if not provider_id or len(provider_id) > 256:
@@ -154,7 +226,7 @@ def _parse_message(payload: dict, expected_phone: str) -> dict | None:
     }
 
 
-def _probe_skip_reason(payload: dict, expected_phone: str) -> str:
+def _probe_skip_reason(payload: dict, expected_phone: str, expected_lid: str | None = None) -> str:
     """Only reason codes, never identifiers, text or metadata of private chats."""
     if payload.get("event") != "messages.upsert":
         return "wrong_event_type"
@@ -178,8 +250,9 @@ def _probe_skip_reason(payload: dict, expected_phone: str) -> str:
         return "group_or_channel"
     peer = _remote_contact(key, messages, from_me=key["fromMe"])
     if peer is None:
-        return "unresolved_contact"
-    if peer != expected_phone:
+        if expected_lid is None or _remote_lid(key, messages) != expected_lid:
+            return "unresolved_contact"
+    elif peer != expected_phone:
         return "other_contact"
     provider_id = str(key.get("id") or messages.get("id") or "").strip()
     if not provider_id or len(provider_id) > 256:
@@ -276,10 +349,17 @@ async def executive_pilot_webhook(
         raise HTTPException(status_code=400, detail="invalid_json")
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="invalid_payload")
-    parsed = _parse_message(payload, cfg["contact_phone"])
+    # Only the allowed office phone is queried for its WhatsApp LID.
+    # Never resolve arbitrary event contacts or store unmatched payloads.
+    allowed_lid = None
+    if cfg["probe_only"]:
+        allowed_lid = await asyncio.to_thread(
+            _get_allowed_lid, payload, cfg["contact_phone"]
+        )
+    parsed = _parse_message(payload, cfg["contact_phone"], allowed_lid)
     if parsed is None:
         if cfg["probe_only"]:
-            reason = _probe_skip_reason(payload, cfg["contact_phone"])
+            reason = _probe_skip_reason(payload, cfg["contact_phone"], allowed_lid)
             # Never record details or metadata from non-allowed private chats.
             if reason != "other_contact":
                 logging.getLogger(__name__).info(

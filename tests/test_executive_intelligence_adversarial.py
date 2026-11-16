@@ -197,7 +197,7 @@ def test_model_low_impact_requires_current_customer_evidence(quote, actor_id, ex
         propose=lambda *_: dict(intent="ASK_INFO", search={}, confidence=.99,
                                needs_review=False, evidence=dict(message_id=actor_id, quote=quote)))
     assert result["intent"] == expected
-    assert result["needs_review"]
+    assert result["needs_review"] is (expected == "NO_SIGNAL")
     assert result["campaign"]["enforced"] is False
 
 

@@ -94,3 +94,23 @@ Regresión ampliada: 240 aprobadas, 1 omitida por el defecto previo de phase3; p
 En los mismos 70 casos reutilizados: F1 de reglas 0,423; salida híbrida protegida 0,607 (antes 0,304); modelo real 0,947 (antes 0,912). Hubo una respuesta rechazada por validación. La salida protegida tuvo cero FP observados en OPT_OUT, SEARCH_COMPLETED, ASK_VISIT, ASK_CONTACT y GIVE_OFFER. Persisten omisiones. Los JSON followup_rules y followup_live incluyen matrices completas. Este conjunto ya fue observado y NO se presenta como nueva evidencia independiente de generalización.
 
 Sigue REQUIERE CORRECCIONES. Esta iteración mejora cobertura y trazabilidad, pero no resuelve todos los pendientes operativos ni alcanza el objetivo global. Quedan ampliación de necesidades/roles, validación independiente, privacidad de texto libre, gestión de revisiones, archivo de historial y prueba autorizada real de Pablo. No se debe desplegar ni escalar basándose en estas métricas.
+
+
+## v3: intérprete principal con auditoría semántica
+
+Implementado para la siguiente prueba controlada, sin despliegue:
+
+- DeepSeek propone la intención principal. Ya no queda limitado a enriquecer NO_SIGNAL con cuatro etiquetas informativas.
+- Toda promoción exige evidencia literal del último cliente, identidad correcta y ausencia de señales determinísticas de hipótesis/cita ajena.
+- Visita, llamada, oferta, baja y cierre requieren una segunda llamada auditora. También se verifica una contradicción con una regla no vacía. El auditor exige sujeto cliente, afirmación actual y alcance global/búsqueda/acción/comercial según corresponda. No decide por confianza numérica.
+- Un rechazo, fallo o indisponibilidad del auditor impide conservar una decisión crítica como confirmada. El sistema se abstiene, restaura el estado previo a esa intervención y solicita revisión. Si el proveedor principal falla se mantienen reglas de respaldo y revisión.
+- Una respuesta elíptica requiere una pregunta ejecutiva inmediatamente anterior, inequívoca y con antigüedad máxima de 48 horas.
+- La memoria enviada al modelo incluye solo estados enumerados y necesidades tipadas/limitadas, comunas del catálogo y números acotados. No se reenvían nombres ni texto libre guardado en el resumen.
+- La búsqueda y la solicitud pendiente se actualizan después de aceptar la interpretación. Las bajas previas siguen vigentes, no se concede consentimiento y no se ejecutan campañas ni gestiones CRM.
+- Se conservan señales simultáneas de rechazo de propiedad y alternativas. No se ha implementado una extracción arbitraria de atributos por modelo: los campos siguen requiriendo extracción sustentada.
+
+Validación local: 261 pruebas de regresión aprobadas y una omitida por el defecto previo de phase3; 19 pruebas de contrato del verificador; 15 pruebas con MongoDB local real. Los grupos se superponen. Las pruebas del verificador usan respuestas inyectadas y NO prueban precisión de DeepSeek. Las métricas anteriores corresponden a versiones previas; NO atribuirles validez para v3.
+
+El evaluador --live-model ahora ejecuta también la verificación cuando corresponde y registra llamadas y consumo separado del auditor. Hay un máximo de dos llamadas por clasificación, cada una con timeout de 12 s y sin reintentos de SDK. Una segunda llamada no garantiza corrección semántica: hace falta medirla sobre un conjunto nuevo antes de aprobar el piloto. La prueba real de Pablo y cualquier activación siguen pendientes de autorización. No se realizaron llamadas reales adicionales en esta iteración.
+
+Veredicto operativo sin cambios: REQUIERE VALIDACIÓN; no aprobado para producción ni para escalar. Código y pruebas locales preparados para el siguiente ensayo controlado.

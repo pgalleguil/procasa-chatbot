@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
-VERSION = "executive_hybrid_v2_1"
+VERSION = "executive_hybrid_v3"
 INTENTS = frozenset({
     "NO_SIGNAL", "ASK_INFO", "INTERESTED", "ASK_VISIT", "ASK_CONTACT",
     "GIVE_OFFER", "ASK_ALTERNATIVES", "PROPERTY_DECLINED",
@@ -24,6 +24,7 @@ INTENTS = frozenset({
 })
 OPERATIONS = frozenset({"ARRIENDO", "VENTA"})
 PROPERTY_TYPES = frozenset({"DEPARTAMENTO", "CASA", "TERRENO", "OFICINA", "LOCAL_COMERCIAL"})
+from .executive_evidence import CRITICAL, grounded, supported, VERIFY_PROMPT
 from .lead_temperature import HOT_INTENTS
 from .executive_semantics import intent as evidence_intent, extract, ambiguous
 TERMINAL = frozenset({"OPT_OUT", "SEARCH_COMPLETED"})
@@ -60,6 +61,8 @@ Valores de operation: ARRIENDO o VENTA; property_type: DEPARTAMENTO, CASA, TERRE
 Comunas solo si el cliente las mencionó; no uses ubicaciones de propiedades ofrecidas por ejecutivo.
 max_price solo si el cliente expresa un presupuesto máximo en esa moneda.
 La salida es una sugerencia, las reglas determinísticas prevalecen para bajas y cierres.
+previous_state es memoria histórica, NO evidencia de intención actual ni permiso de contacto.
+Clasifica la última intervención del cliente, respetando correcciones y su contexto temporal.
 """
 
 def _plain(text: Any) -> str:
@@ -123,6 +126,63 @@ def _valid_proposal(raw):
     return raw
 
 
+def _prompt_state(prior):
+    """Only bounded typed state; never names, arbitrary text or provider IDs."""
+    result = {}
+    for key, allowed in (("search_status", {"ACTIVE", "COMPLETED", "UNKNOWN"}),
+                         ("contact_permission", {"OPTED_OUT", "UNKNOWN"}),
+                         ("intent", INTENTS)):
+        if isinstance(prior.get(key), str) and prior[key] in allowed:
+            result[key] = prior[key]
+    from .geo_utils import COMMUNE_OFFICIAL_NAMES
+    safe_needs = {}
+    raw_needs = prior.get("needs") if isinstance(prior.get("needs"), dict) else {}
+    for role in ("DEMAND", "OWNER_SELL", "OWNER_RENT"):
+        fields = raw_needs.get(role)
+        if not isinstance(fields, dict):
+            continue
+        safe = {}
+        for key, allowed in (("operation", OPERATIONS), ("property_type", PROPERTY_TYPES)):
+            if isinstance(fields.get(key), str) and fields[key] in allowed:
+                safe[key] = fields[key]
+        for key in ("min_price_uf", "max_price_uf", "min_price_clp", "max_price_clp", "bedrooms", "bathrooms", "parking"):
+            value = fields.get(key)
+            if type(value) in (int, float) and 0 <= value <= 100000000000:
+                safe[key] = value
+        if isinstance(fields.get("comunas"), list):
+            names = [name for name in fields["comunas"] if isinstance(name, str) and _plain(name) in COMMUNE_OFFICIAL_NAMES]
+            if names:
+                safe["comunas"] = names[:5]
+        if safe:
+            safe_needs[role] = safe
+    if safe_needs:
+        result["needs"] = safe_needs
+    return result
+
+
+def _verify_with_deepseek(messages, candidate, *, diagnostics=None):
+    from config import Config
+    from .grok_client import client
+    response = client.with_options(max_retries=0).chat.completions.create(
+        model=Config.DEEPSEEK_MODEL_FAST,
+        messages=[{"role": "system", "content": VERIFY_PROMPT},
+                  {"role": "user", "content": json.dumps({"candidate": candidate,
+                   "messages": [{"message_id": str(m.get("provider_message_id") or ""),
+                                 "actor": m["actor_type"], "text": _safe(m["content"]),
+                                 "timestamp": m["timestamp"]} for m in messages[-8:]]}, ensure_ascii=False)}],
+        temperature=0, max_tokens=400, timeout=12,
+        response_format={"type": "json_object"})
+    if diagnostics is not None:
+        usage = getattr(response, "usage", None)
+        diagnostics.update({"model": response.model,
+                            "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+                            "completion_tokens": getattr(usage, "completion_tokens", 0)})
+    content = response.choices[0].message.content
+    if response.choices[0].finish_reason != "stop" or not isinstance(content, str) or len(content) > 4000:
+        raise ValueError("invalid_verifier_output")
+    return json.loads(content)
+
+
 def _propose_with_deepseek(messages: list[dict], prior: dict, *, diagnostics=None) -> dict:
     # Dedicated short, low-temperature, bounded classification call.
     from config import Config
@@ -130,6 +190,7 @@ def _propose_with_deepseek(messages: list[dict], prior: dict, *, diagnostics=Non
     context = [
         {"message_id": str(m.get("provider_message_id") or ""),
          "actor": "CLIENTE" if m.get("actor_type") == "customer" else "EJECUTIVO",
+         "timestamp": m.get("timestamp"),
          "texto": _safe(m.get("content"))}
         for m in messages[-32:]
     ]
@@ -138,7 +199,7 @@ def _propose_with_deepseek(messages: list[dict], prior: dict, *, diagnostics=Non
         messages=[
             {"role": "system", "content": SYS_PROMPT},
             {"role": "user", "content": json.dumps({
-                "previous_search": {},  # Never forward persisted strings/PII as trusted instructions.
+                "previous_state": _prompt_state(prior),
                 "recent_business_messages": context
             }, ensure_ascii=False)},
         ],
@@ -164,7 +225,7 @@ def _propose_with_deepseek(messages: list[dict], prior: dict, *, diagnostics=Non
 
 
 def classify_hybrid(messages: list[dict], previous: dict | None = None,
-                    *, llm_enabled: bool = True, propose=None) -> dict:
+                    *, llm_enabled: bool = True, propose=None, verify=None) -> dict:
     """Evidence-backed snapshot. Model-only interpretations remain suggestions.
 
     Accepts a complete authorized window or an incremental suffix plus summary.
@@ -197,6 +258,10 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
     latest_evidence = prior.get("intent_evidence_provider_ids", [])
     request = deepcopy(prior.get("latest_important_request"))
     watermark = prior.get("last_customer_at")
+    status_before_latest = search_status
+    transport_review = False
+    opted_out_before_latest = opted_out
+    request_before_latest = deepcopy(request)
     for m in turns:
         if m["actor_type"] == "human_agent":
             previous_agent = m["content"]
@@ -212,12 +277,18 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
         gap = (datetime.fromisoformat(m["timestamp"]) - datetime.fromisoformat(previous_agent_time)).total_seconds() if previous_agent_time else None
         current = evidence_intent(m["content"], previous_agent if gap is not None and 0 < gap <= 48 * 3600 else "")
         previous_agent = ""  # An elliptical answer must immediately follow the agent.
+        if m is last_customer:
+            opted_out_before_latest = opted_out
+            request_before_latest = deepcopy(request)
         if current == "OPT_OUT":
             opted_out = True
         if late:
+            transport_review = True
             uncertain = True
             continue
         new_customer = True
+        if m is last_customer:
+            status_before_latest = search_status
         if search_status == "COMPLETED" and current in ("SEARCH_UPDATED", "ASK_ALTERNATIVES"):
             state = {"needs": {k: v for k, v in state.get("needs", {}).items() if k != "DEMAND"},
                      "field_evidence": {k: v for k, v in state.get("field_evidence", {}).items() if k != "DEMAND"}}
@@ -241,33 +312,71 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
     source, proposal = "rules", {}
     if llm_enabled and new_customer:
         try:
-            proposal = _valid_proposal((propose or _propose_with_deepseek)(turns[-32:], {}))
+            proposal = _valid_proposal((propose or _propose_with_deepseek)(turns[-32:], prior))
             source = "hybrid"
         except Exception as exc:
             logger.warning("EXEC_INTELLIGENCE model_failure=%s", type(exc).__name__)
             source = "rules_fallback"
-    # Model interpretation is explicitly unconfirmed, never promoted to an
-    # observed visit/offer/stop. Confidence is self-reported, not calibrated.
-    model_disagrees = bool(proposal and proposal["intent"] != intent)
-    # Low-impact interpretations can enrich the snapshot only with literal
-    # evidence from the current customer. Terminal/HOT decisions still need
-    # independent deterministic support, never model confidence alone.
-    evidence = proposal.get("evidence") or {}
-    grounded = (isinstance(evidence, dict) and last_customer is not None
-                and evidence.get("message_id") == str(last_customer["provider_message_id"])
-                and isinstance(evidence.get("quote"), str)
-                and 4 <= len(evidence["quote"]) <= 700
-                and evidence["quote"] in last_customer["content"]
-                and not ambiguous(last_customer["content"])
-                and not proposal.get("needs_review"))
-    if (grounded and new_customer and intent == "NO_SIGNAL"
-            and proposal["intent"] in {"ASK_INFO", "INTERESTED", "ASK_ALTERNATIVES", "PROPERTY_DECLINED"}
-            and search_status != "COMPLETED"):
-        intent = proposal["intent"]
-        latest_evidence = [last_customer["provider_message_id"]]
-        model_disagrees = False
-        # An inferred intent remains reviewable and cannot grant consent.
+    rule = intent
+    decision = "rules"
+    verification = "not_required"
+    model_disagrees = bool(proposal and proposal["intent"] != rule)
+    candidate = proposal.get("intent", "NO_SIGNAL")
+    can_use = grounded(proposal, last_customer) and new_customer
+    # Elliptical assent needs a recent, immediately preceding question;
+    # neither model may silently connect a 'sí' to an old/ambiguous proposal.
+    if can_use and re.match(r"^(?:si|dale|perfecto|bueno)\b", _plain(last_customer["content"])):
+        index = turns.index(last_customer)
+        preceding = turns[index - 1] if index else None
+        explicit_action = re.search(r"\b(?:visita|visitar|llamar|llamada|oferta|ofertar)\b", _plain(last_customer["content"]))
+        if candidate in CRITICAL and not explicit_action:
+            can_use = bool(preceding and preceding["actor_type"] == "human_agent"
+                           and "?" in preceding["content"]
+                           and not re.search(r"\b(?:o|no)\b", _plain(preceding["content"]))
+                           and 0 < (datetime.fromisoformat(last_customer["timestamp"]) - datetime.fromisoformat(preceding["timestamp"])).total_seconds() <= 48 * 3600)
+    if can_use and candidate != "NO_SIGNAL":
+        requires_check = candidate in CRITICAL or (rule != "NO_SIGNAL" and candidate != rule)
+        accepted = not requires_check
+        if requires_check:
+            verification = "unavailable"
+            # Injected proposers in unit tests must never trigger a real API.
+            checker = verify or (_verify_with_deepseek if propose is None else None)
+            if checker:
+                try:
+                    accepted = supported(checker(turns[-32:], candidate), candidate, last_customer)
+                    verification = "supported" if accepted else "rejected"
+                except Exception as exc:
+                    logger.warning("EXEC_INTELLIGENCE verifier_failure=%s", type(exc).__name__)
+                    verification = "failed"
+        if accepted:
+            intent = candidate
+            decision = "verified_model" if requires_check else "grounded_model"
+            latest_evidence = [last_customer["provider_message_id"]]
+            model_disagrees = False
+            uncertain = False
+            # Recompute state from before the latest customer decision. The
+            # model cannot reinstate contact consent or mutate campaigns.
+            search_status = status_before_latest
+            if intent == "SEARCH_COMPLETED":
+                search_status = "COMPLETED"
+            elif intent not in ("OPT_OUT", "PROPERTY_DECLINED"):
+                search_status = "ACTIVE"
+            opted_out = opted_out_before_latest or intent == "OPT_OUT"
+            if intent in HOT_INTENTS:
+                request = {"intent": intent, "provider_message_id": last_customer["provider_message_id"],
+                           "timestamp": last_customer["timestamp"], "fulfillment": "UNKNOWN",
+                           "executive_message_after_request": any(m["actor_type"] == "human_agent" and m["timestamp"] > last_customer["timestamp"] for m in turns)}
+        elif candidate in CRITICAL and rule == "NO_SIGNAL":
+            uncertain = True
+    if proposal and (not can_use or verification in {"rejected", "failed", "unavailable"}):
         uncertain = True
+    if verification in {"rejected", "failed", "unavailable"} and rule in CRITICAL:
+        intent = "NO_SIGNAL"
+        search_status = status_before_latest
+        opted_out = opted_out_before_latest
+        request = request_before_latest
+        latest_evidence = []
+        decision = "abstained"
     contacts = prior.get("contact", {})
     agents = [m for m in turns if m["actor_type"] == "human_agent"]
     def stamp(m):
@@ -314,9 +423,11 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
         "suggested_priority": "HOT" if intent in HOT_INTENTS else "NORMAL",
         "campaign": {"eligibility_hint": "SUPPRESS_REVIEW" if reason else "REVIEW", "reason": reason, "enforced": False},
         "source": source, "confidence": None,
+        "decision_basis": decision, "verification": verification,
+        "signals": list(dict.fromkeys([intent] + (["PROPERTY_DECLINED"] if last_customer and evidence_intent(last_customer["content"].split("pero")[0]) == "PROPERTY_DECLINED" else []))),
         "confidence_kind": "not_calibrated",
         "model_suggestion": {"intent": proposal["intent"], "self_reported_confidence": proposal["confidence"]} if proposal else None,
-        "needs_review": bool(uncertain or tied or model_disagrees or source == "rules_fallback" or intent in TERMINAL or proposal.get("needs_review")),
+        "needs_review": bool(uncertain or transport_review or tied or model_disagrees or source == "rules_fallback" or intent in TERMINAL or proposal.get("needs_review")),
         "last_customer_message_id": customer_id,
         "last_customer_at": contact["last_customer_at"],
         "intent_evidence_provider_ids": latest_evidence,

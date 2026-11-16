@@ -134,6 +134,7 @@ jobs:
               tests/test_executive_whatsapp_audit.py
               tests/test_executive_conversation_intelligence.py
               tests/test_executive_intelligence_adversarial.py
+              tests/test_executive_semantic_verifier.py
               tests/test_executive_office_boundary.py
           - suite: CRM sort order
             tests: >-

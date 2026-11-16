@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from chatbot.executive_conversation_intelligence import classify_hybrid, _propose_with_deepseek
+from chatbot.executive_conversation_intelligence import classify_hybrid, _propose_with_deepseek, _verify_with_deepseek
 
 
 def load_cases(holdout=False):
@@ -69,10 +69,21 @@ def main():
             result = _propose_with_deepseek(messages, prior, diagnostics=diagnostics)
             model.update(result)
             return result
-        result = classify_hybrid(case['messages'], llm_enabled=args.live_model, propose=propose)
+        verifier_calls = []
+        verifier_usage = []
+        def verify(messages, candidate):
+            verifier_calls.append(candidate)
+            usage = {}
+            verifier_usage.append(usage)
+            return _verify_with_deepseek(messages, candidate, diagnostics=usage)
+        result = classify_hybrid(case['messages'], llm_enabled=args.live_model, propose=propose,
+                                 verify=verify if args.live_model else None)
         rows.append({'id': case['id'], 'family': case['family'], 'expected': case['intent'],
                      'predicted': result['intent'], 'model_predicted': model.get('intent', 'ERROR') if args.live_model else 'NOT_RUN',
                      'needs_review': result['needs_review'], 'source': result['source'],
+                     'decision_basis': result['decision_basis'], 'verification': result['verification'],
+                     'verifier_calls': len(verifier_calls),
+                     'verifier_usage': verifier_usage,
                      'usage': diagnostics,
                      'latency_ms': round((time.monotonic() - started) * 1000)})
         if args.live_model:

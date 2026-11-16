@@ -383,3 +383,65 @@ def test_pilot_reasons_without_exposing_unrelated_message(monkeypatch, caplog):
     assert "skipped=wrong_event_type" in caplog.text
     assert PHONE not in caplog.text
 
+
+
+def test_allowed_lid_matches_only_known_approved_office():
+    approved_lid = "123456789012@lid"
+    outgoing = event(from_me=True, jid=approved_lid, msg_id="manual-send-1")
+    incoming = event(from_me=False, jid=approved_lid, msg_id="bot-reply-1")
+    assert pilot._parse_message(outgoing, PHONE) is None
+    assert pilot._parse_message(outgoing, PHONE, approved_lid)["from_me"] is True
+    assert pilot._parse_message(incoming, PHONE, approved_lid)["from_me"] is False
+    other = event(from_me=True, jid="900000000012@lid", msg_id="private")
+    assert pilot._parse_message(other, PHONE, approved_lid) is None
+
+
+def test_lid_lookup_never_queries_unapproved_peer(monkeypatch):
+    approved_lid = "123456789012@lid"
+    monkeypatch.setenv("WASENDER_PABLO_GALLEGUILLOS_API_TOKEN", "session-fake-token")
+    calls = []
+
+    def fake_lookup(allowed_phone, token):
+        calls.append((allowed_phone, token))
+        return approved_lid
+
+    monkeypatch.setattr(pilot, "_authorized_contact_lid", fake_lookup)
+    private = event(jid="900000000012@lid", from_me=True)
+    assert pilot._get_allowed_lid(private, PHONE) == approved_lid
+    assert calls == [(PHONE, "session-fake-token")]
+    # The private chat's LID must not be authorized merely because
+    # the approved office LID was resolved successfully.
+    assert pilot._parse_message(private, PHONE, approved_lid) is None
+    assert "900000000012" not in str(calls)
+
+    calls.clear()
+    without_lid = event(jid="56999998888@s.whatsapp.net")
+    assert pilot._get_allowed_lid(without_lid, PHONE) is None
+    assert calls == []
+
+
+def test_lid_request_is_read_only_and_does_not_echo_token(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {"success": True, "data": {"lid": "123456789012@lid"}}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            assert kwargs["follow_redirects"] is False
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def get(self, url, headers):
+            assert url.endswith("56911112222@s.whatsapp.net")
+            assert headers["Authorization"] == "Bearer fake-session-token"
+            return FakeResponse()
+
+    monkeypatch.setattr(pilot.httpx, "Client", FakeClient)
+    pilot._authorized_contact_lid.cache_clear()
+    try:
+        assert pilot._authorized_contact_lid(PHONE, "fake-session-token") == "123456789012@lid"
+    finally:
+        pilot._authorized_contact_lid.cache_clear()
+

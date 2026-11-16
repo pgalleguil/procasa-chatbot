@@ -60,6 +60,7 @@ def recent_outreach_or_pending(lead, *, now, cooldown_days=30):
 
 def choose_new_recipients(db, *, max_messages, max_age_days, now,
                           property_code=None, max_events=None,
+                          since=None, allowed_change_keys=None,
                           progress: Callable[[str], None] | None = None):
     """Only leads with a verified pre-reduction inquiry about this property.
 
@@ -70,8 +71,16 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
     if progress:
         progress("discovering_price_drops")
     events = cli._events(
-        db, property_code=property_code, limit=max_events, progress=progress,
+        db, property_code=property_code, limit=max_events, since=since,
+        progress=progress,
     )
+    if allowed_change_keys is not None:
+        # Post-scrape sends may use ONLY verified decreases committed by the
+        # just-finished scraper run. Never replay the entire old price history.
+        events = [event for event in events if (
+            event.property_code, event.operation.lower(), event.currency,
+            float(event.old_price), float(event.new_price)
+        ) in allowed_change_keys]
     events = sorted(events, key=lambda event: (event.dropped_at, event.event_id), reverse=True)
     if not events:
         if progress:
@@ -151,7 +160,8 @@ def verify_publications(db, chosen, *, now):
 
 
 def run(db, *, execute=False, max_messages=20, max_age_days=0,
-        property_code=None, max_events=None, now=None,
+        property_code=None, max_events=None, since=None,
+        allowed_change_keys=None, now=None,
         provider_plan="trial", min_delay=60.0, max_delay=90.0,
         daily_provider_cap=50,
         progress: Callable[[str], None] | None = None):
@@ -163,6 +173,7 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
     selected, counters = choose_new_recipients(
         db, max_messages=max_messages, max_age_days=max_age_days,
         now=stamp, property_code=property_code, max_events=max_events,
+        since=since, allowed_change_keys=allowed_change_keys,
         progress=progress,
     )
     preview = [{

@@ -1781,52 +1781,50 @@ def upload_to_gdrive_bg(contract_code: str, files: dict):
         logger.error(f"[GDRIVE] Error subiendo expediente {contract_code}: {e}")
 
 def notify_client_bg(contract_code: str, phone: str, client_email: str, nombre: str, signed_pdf_bytes: bytes, property_code: str = ""):
-    """Background task: sends WhatsApp confirmation + email. Runs after response is returned."""
+    """Enviar confirmaciones solo cuando el convenio tiene evidencia completa."""
     import asyncio
     db = get_db()
     contract = db["contracts"].find_one({"contract_code": contract_code})
-    if not contract:
-        logger.error(f"[NOTIFY_BG] Contract {contract_code} not found for notification")
+    if not contract or not _signature_evidence_complete(contract):
+        logger.error("[NOTIFY_BG] Convenio sin evidencia final: %s", contract_code)
         return
 
-    # Exactly-once guard
-    if contract.get("notifications_sent"):
-        logger.info(f"[NOTIFY_BG] Notifications already sent for {contract_code} — skipping")
-        return
-
-    # Mark as sent immediately to prevent duplicates
-    db["contracts"].update_one(
-        {"contract_code": contract_code},
-        {"$set": {"notifications_sent": True}}
-    )
-
-    # WhatsApp confirmation
-    nombre_cliente = contract.get('client_data', {}).get('nombre', '') if contract else ''
+    notifications = contract.get("notifications") or {}
+    nombre_cliente = (contract.get("client_data") or {}).get("nombre", "")
     mensaje_conf = f"""✅ ¡Proceso completado con éxito{',' + ' ' + nombre_cliente.split()[0] if nombre_cliente else ''}!
 
 Tu Convenio de Corretaje fue firmado electrónicamente y registrado de forma segura conforme a la Ley N° 19.799.
 
 📄 En breve recibirás una copia del documento firmado en tu correo electrónico."""
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(send_whatsapp_message(phone, mensaje_conf))
-        loop.close()
-        db["contracts"].update_one(
-            {"contract_code": contract_code},
-            {"$push": {"messages": {
-                "phone": phone,
-                "message_content": mensaje_conf,
-                "message_type": "confirmation_sent",
-                "timestamp_utc": datetime.now(timezone.utc)
-            }}}
-        )
-    except Exception as e:
-        logger.error(f"[NOTIFY_BG] WhatsApp error for {contract_code}: {e}")
 
-    # Email delivery
-    if client_email and signed_pdf_bytes:
+    if phone and not notifications.get("whatsapp_sent_at"):
+        try:
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                success = loop.run_until_complete(send_whatsapp_message(phone, mensaje_conf))
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
+            if success is False:
+                raise RuntimeError("Confirmación WhatsApp rechazada por proveedor")
+            sent_at = datetime.now(timezone.utc)
+            db["contracts"].update_one(
+                {"contract_code": contract_code},
+                {
+                    "$set": {"notifications.whatsapp_sent_at": sent_at},
+                    "$push": {"messages": {
+                        "phone": phone, "message_content": mensaje_conf,
+                        "message_type": "confirmation_sent", "timestamp_utc": sent_at,
+                    }},
+                },
+            )
+        except Exception as exc:
+            logger.error("[NOTIFY_BG] WhatsApp error %s: %s", contract_code, exc)
+
+    if client_email and signed_pdf_bytes and not notifications.get("email_sent_at"):
         send_signed_email_task(contract_code, client_email, nombre, signed_pdf_bytes, property_code)
+
 
 def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_bytes: bytes, property_code: str = "", cc_email: str = ""):
     """Envía el PDF firmado al cliente. Recibe bytes en memoria, sin depender del filesystem."""
@@ -1841,7 +1839,7 @@ def send_signed_email_task(contract_code: str, email_to: str, nombre: str, pdf_b
         gmail_pass = Config.GMAIL_PASSWORD
         if not gmail_user or not gmail_pass:
             logger.warning("[EMAIL] Credenciales Gmail no configuradas, omitiendo envío.")
-            return
+            return False
 
         prop_label = property_code if property_code else contract_code
         asunto = f"Convenio Firmado – Propiedad {prop_label} – {nombre}"
@@ -1912,8 +1910,11 @@ Equipo Procasa Sucre"""
             server.sendmail(gmail_user, all_recipients, msg.as_string())
 
         logger.info(f"[EMAIL] PDF firmado enviado a {email_to} (CC: {cc_str}) para convenio {contract_code}")
-
         db = get_db()
+        db["contracts"].update_one(
+            {"contract_code": contract_code},
+            {"$set": {"notifications.email_sent_at": datetime.now(timezone.utc), "notifications.email_status": "sent"}}
+        )
         db["contracts"].update_one(
             {"contract_code": contract_code},
             {"$push": {"messages": {
@@ -1923,8 +1924,17 @@ Equipo Procasa Sucre"""
                 "timestamp_utc": datetime.now(timezone.utc)
             }}}
         )
+        return True
     except Exception as e:
         logger.error(f"[EMAIL] Error enviando correo firmado a {email_to}: {e}")
+        try:
+            get_db()["contracts"].update_one(
+                {"contract_code": contract_code},
+                {"$set": {"notifications.email_status": "failed", "notifications.email_last_attempt_at": datetime.now(timezone.utc)}}
+            )
+        except Exception:
+            logger.exception("[EMAIL] No fue posible registrar falla de %s", contract_code)
+        return False
 
 @router.delete("/api/delete/{contract_code}")
 @router.delete("/api/{contract_code}/delete")

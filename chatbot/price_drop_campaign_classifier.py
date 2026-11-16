@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from .lead_temperature import HOT_INTENTS
 
-CLASSIFIER_VERSION = "price_drop_response_rules_v4"
+CLASSIFIER_VERSION = "price_drop_response_rules_v5"
 PRIORITY = "PRIORIDAD_COMERCIAL"
 INTEREST = "INTERES_DECLARADO"
 INFO = "CONSULTA_INFORMATIVA"
@@ -39,6 +39,7 @@ _COMMON_TYPOS = {
     "alternatibas": "alternativas", "altrernativas": "alternativas",
     "comnues": "comunes", "comunees": "comunes",
     "gastoscomunes": "gastos comunes",
+    "abisos": "avisos", "notificasiones": "notificaciones",
 }
 
 
@@ -69,17 +70,20 @@ def _clauses(text: str) -> list[str]:
 
 
 _STOP = re.compile(
-    r"\b(?:stop|baja|cancel(?:a|en|ar)\s+(?:mi\s+)?suscripci[oó]n|"
+    r"\b(?:stop|(?:quiero\s+)?darme\s+de\s+baja|"
+    r"(?:dame|denme|me\s+doy)\s+de\s+baja|"
+    r"baja\s+de\s+(?:la\s+)?(?:lista|avisos?|mensajes?)|"
+    r"cancel(?:a|en|ar)\s+(?:mi\s+)?suscripci[oó]n|"
     r"s[aá]came\s+de\s+la\s+lista|s[aá]quenme\s+de\s+la\s+lista|"
     r"elimina(?:r|n)?\s+(?:mi\s+)?(?:n[uú]mero|contacto|datos)|"
     r"borra(?:r|n)?\s+(?:mi\s+)?(?:n[uú]mero|contacto|datos)|"
-    r"no\s+(?:m[aá]s|quiero\s+m[aá]s)\s+(?:mensajes?|informaci[oó]n|contacto|comunicaciones?)|"
+    r"no\s+(?:m[aá]s|quiero\s+m[aá]s)\s+(?:mensajes?|avisos?|alertas?|notificaciones?|informaci[oó]n|contacto|comunicaciones?)|"
     r"no\s+(?:quiero|deseo|necesito)\s+(?:recibir\s+)?(?:m[aá]s\s+)?"
-    r"(?:mensajes?|informaci[oó]n|novedades?|actualizaciones?|comunicaciones?|"
+    r"(?:mensajes?|avisos?|alertas?|notificaciones?|informaci[oó]n|novedades?|actualizaciones?|comunicaciones?|"
     r"promociones?|publicidad|ofertas?)\b|"
     r"no\s+(?:quiero|deseo|necesito|acepto)\s+(?:seguir\s+)?"
     r"(?:recibir|recibiendo|tener|que\s+me\s+informen)\b.{0,55}\b"
-    r"(?:mensajes?|informaci[oó]n|novedades?|noticias|actualizaciones?|comunicaciones?|"
+    r"(?:mensajes?|avisos?|alertas?|notificaciones?|informaci[oó]n|novedades?|noticias|actualizaciones?|comunicaciones?|"
     r"promociones?|publicidad|ofertas?|contacto)\b|"
     r"no\s+(?:me\s+)?(?:interesa|intereso)\s+(?:seguir\s+)?"
     r"(?:recibiendo|recibir|en\s+contacto|saber\s+m[aá]s|"
@@ -98,7 +102,7 @@ _STOP = re.compile(
     r"no\s+(?:quiero|deseo|necesito)\s+(?:seguir\s+)?"
     r"(?:conversando|conversar|en\s+contacto|en\s+(?:esta|la)\s+conversaci[oó]n|"
     r"continu\w*\s+(?:en\s+)?(?:esta\s+|la\s+)?conversaci[oó]n|"
-    r"recibiendo\s+(?:mensajes?|informaci[oó]n))\b|"
+    r"recibiendo\s+(?:mensajes?|avisos?|notificaciones?|informaci[oó]n))\b|"
     r"(?:prefiero\s+que\s+no|por\s+favor\s+no)\s+(?:me|nos)\s+"
     r"(?:escrib\w*|contact\w*|envi\w*|mand\w*)\b|"
     r"no\s+quiero\s+saber\s+nada\s+m[aá]s)\b",
@@ -390,7 +394,7 @@ def _is_global_opt_out(raw: str) -> bool:
         if not _STOP.search(clause):
             continue
         broader_stop = re.search(
-            r"\b(?:mensajes?|informaci[oó]n|novedades?|actualizaciones?|"
+            r"\b(?:mensajes?|avisos?|alertas?|notificaciones?|informaci[oó]n|novedades?|actualizaciones?|"
             r"comunicaciones?|promociones?|publicidad|ofertas?|escrib\w*|"
             r"envi\w*|mand\w*)\b",
             clause,

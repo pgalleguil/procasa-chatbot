@@ -201,3 +201,11 @@ def test_manual_upsert_creates_canonical_event_only_for_verified_real_reduction(
         {("17252", "arriendo", "CLP", 435000.0, 400000.0)}
         if expected_decreases else set()
     )
+
+
+def test_manual_scraper_loads_existing_external_env_before_config_import():
+    src = (Path(__file__).resolve().parents[1] / "scraping_convecta"
+           / "scraping_prop360_ficha_completa.py").read_text(encoding="utf-8")
+    assert 'os.getenv("PRICE_DROP_ENV_FILE"' in src
+    assert "load_dotenv(dotenv_path=_external_env, override=False)" in src
+    assert src.index("load_dotenv(dotenv_path=_external_env") < src.index("from config import Config")

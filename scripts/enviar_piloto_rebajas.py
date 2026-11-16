@@ -2598,19 +2598,36 @@ def main(argv: list[str] | None = None) -> int:
         # new-recipient path with the same local CLI and sender.
         if args.auto:
             from scripts.enviar_rebajas_automatico import run as automatic_batch
-            result = automatic_batch(
-                db, execute=args.action == "execute",
-                max_messages=args.max_messages,
-                max_age_days=(args.lead_max_age_days
-                              if args.lead_max_age_days is not None
-                              else 0),
-                property_code=args.property_code,
-                max_events=args.limit,  # None means scan all verified history
-                provider_plan=args.provider_plan,
-                min_delay=args.min_delay_seconds,
-                max_delay=args.max_delay_seconds,
-                daily_provider_cap=args.daily_provider_cap,
-            )
+            checkpoint = {"phase": "starting_automatic_selection"}
+
+            def auto_progress(phase: str) -> None:
+                checkpoint["phase"] = phase
+                # Do not print any phone, lead identifiers, messages or DB URIs.
+                # stdout must remain machine-readable JSON.
+                print(f"[AUTO_PRICE_DROP] {phase}", file=sys.stderr, flush=True)
+
+            try:
+                result = automatic_batch(
+                    db, execute=args.action == "execute",
+                    max_messages=args.max_messages,
+                    max_age_days=(args.lead_max_age_days
+                                  if args.lead_max_age_days is not None
+                                  else 0),
+                    property_code=args.property_code,
+                    max_events=args.limit,  # None scans all verified history
+                    provider_plan=args.provider_plan,
+                    min_delay=args.min_delay_seconds,
+                    max_delay=args.max_delay_seconds,
+                    daily_provider_cap=args.daily_provider_cap,
+                    progress=auto_progress,
+                )
+            except Exception as exc:
+                print(json.dumps({
+                    "status": "ERROR", "reason": type(exc).__name__,
+                    "phase": checkpoint["phase"], "attempts": 0
+                    if args.action == "dry-run" else None,
+                }, ensure_ascii=False))
+                return 1
             print(json.dumps(result, ensure_ascii=False, default=str))
             blocked = {"BLOCKED", "ERROR",
                        "BLOCKED_MANUAL_CLI_ON_RENDER", "BLOCKED_SEND_RUNTIME_GATE",

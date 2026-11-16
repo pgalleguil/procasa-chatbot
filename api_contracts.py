@@ -1999,9 +1999,57 @@ async def verify_contract(contract_code: str, request: Request):
     if not contract:
         return HTMLResponse("<h1>Contrato no encontrado</h1>", status_code=404)
         
+    # Mostrar autenticidad solo si archivos, SHA-256, timeline y HMAC coinciden.
+    security = contract.get("security") or {}
+    verification_valid = False
+    if _signature_evidence_complete(contract):
+        try:
+            timeline = contract.get("timeline") or []
+            accepted_index = next((i for i, e in enumerate(timeline) if e.get("action") == "accepted"), None)
+            otp_verified = any(e.get("action") == "otp_verified" for e in timeline)
+            if accepted_index is not None and otp_verified:
+                accepted = timeline[accepted_index]
+                timestamp = security.get("hmac_timestamp") or accepted.get("server_timestamp")
+                secret = getattr(Config, "SECRET_KEY", "")
+                if timestamp and timestamp == accepted.get("server_timestamp") and secret:
+                    expected_hmac = SecurityContracts.generate_server_hmac(
+                        contract["contract_code"], security["original_hash"], timestamp, secret
+                    )
+                    timeline_hash = SecurityContracts.hash_timeline(timeline[:accepted_index + 1])
+                    if (
+                        hmac.compare_digest(expected_hmac, security["server_hmac"])
+                        and hmac.compare_digest(timeline_hash, security["timeline_hash"])
+                    ):
+                        original_id = security.get("original_pdf_drive_id")
+                        signed_id = security.get("signed_pdf_drive_id")
+                        original_bytes = await run_in_threadpool(gdrive_sync.download_file, original_id) if original_id else None
+                        signed_bytes = await run_in_threadpool(gdrive_sync.download_file, signed_id) if signed_id else None
+                        verification_valid = bool(
+                            original_bytes and signed_bytes
+                            and hmac.compare_digest(SecurityContracts.hash_document(original_bytes), security["original_hash"])
+                            and hmac.compare_digest(SecurityContracts.hash_document(signed_bytes), security["signed_hash"])
+                        )
+        except Exception:
+            logger.exception("[CONTRACT_VERIFY] Falló validación criptográfica %s", contract.get("contract_code"))
+            verification_valid = False
+
+    recovered_at = security.get("signature_recovered_at")
+    recovery_date_clt = None
+    if recovered_at:
+        try:
+            if isinstance(recovered_at, str):
+                recovered_at = datetime.fromisoformat(recovered_at)
+            if recovered_at.tzinfo is None:
+                recovered_at = recovered_at.replace(tzinfo=timezone.utc)
+            recovery_date_clt = recovered_at.astimezone(CHILE_TZ).strftime("%d-%m-%Y %H:%M CLT")
+        except (ValueError, TypeError):
+            pass
+
     return templates.TemplateResponse(request, "contract_verify.html", {
         "request": request,
-        "contract": contract
+        "contract": contract,
+        "verification_valid": verification_valid,
+        "recovery_date_clt": recovery_date_clt,
     })
 
 @router.get("/dashboard", response_class=HTMLResponse)

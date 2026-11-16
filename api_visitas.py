@@ -1026,8 +1026,14 @@ async def visitas_statuses(request: Request):
         query = {"status": {"$ne": "deleted"}}
     else:
         query = {"status": {"$ne": "deleted"}, "created_by": username}
-    rows = await adb["visitas"].find(query, {"visita_code": 1, "status": 1}).to_list(length=300)
-    return {"items": [{"visita_code": r.get("visita_code"), "status": r.get("status", "created")} for r in rows]}
+    rows = await adb["visitas"].find(
+        query, {"visita_code": 1, "status": 1, "security": 1}
+    ).to_list(length=300)
+    return {"items": [{
+        "visita_code": r.get("visita_code"),
+        "status": r.get("status", "created"),
+        "signature_complete": _signature_evidence_complete(r),
+    } for r in rows]}
 
 def ensure_document_valid(contract: dict):
     """Verifica la expiración real del documento (120 horas) en todos los endpoints"""
@@ -2182,6 +2188,7 @@ async def visita_dashboard(request: Request):
     contracts = await visitas_cursor.to_list(length=100)
 
     for c in contracts:
+        c["signature_complete"] = _signature_evidence_complete(c)
         if "_id" in c:
             c["_id"] = str(c["_id"])
         if c.get("created_at"):

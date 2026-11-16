@@ -1381,6 +1381,65 @@ def test_context_and_reply_classification_use_existing_v2_policy(monkeypatch, tm
     assert classify_price_drop_reply("no me escriban más").label == "BAJA"
 
 
+@pytest.mark.parametrize("reply,expected_status,expected_label", [
+    ("Sí, me interesa, ¿podemos agendar visita?", "RESPONDED", "PRIORIDAD_COMERCIAL"),
+    ("No me escriban más, STOP", "OPTED_OUT", "BAJA"),
+])
+def test_real_campaign_reply_stored_without_render_chatbot_context_flag(
+        monkeypatch, tmp_path, reply, expected_status, expected_label):
+    """The office webhook tracks every accepted-send reply in canonical leads."""
+    db, _, ids = _dispatch_db(monkeypatch, count=1)
+    _run(db, journal_path=tmp_path / "sent.json")
+    lead_id = ObjectId(ids[0])
+    phone = db["leads"].find_one({"_id": lead_id})["phone"]
+    monkeypatch.delenv(v2.CONTEXT_FLAG, raising=False)
+
+    # Live listing changes cannot erase a historical customer reply to the
+    # price actually advertised when the provider accepted the campaign.
+    def forbid_price_verification(*args, **kwargs):
+        raise AssertionError("tracking must not recheck live publication price")
+
+    monkeypatch.setattr(v2, "_verified_campaign_price", forbid_price_verification)
+    assert v2.active_context(db, phone=phone, message=reply,
+                             now=NOW + timedelta(days=1)) is None
+    result = v2.record_inbound(
+        db, phone=phone, provider_message_id="inbound-unique-42",
+        text=reply, now=NOW + timedelta(days=1),
+    )
+    assert result["status"] == "ATTRIBUTED"
+    assert result["campaign_id"] == CAMPAIGN
+    assert result["classification"] == expected_label
+    lead = db["leads"].find_one({"_id": lead_id})
+    campaign = lead["price_drop_v2"]["campaigns"][0]
+    assert campaign["status"] == expected_status
+    assert campaign["reply_count"] == 1
+    assert campaign["last_inbound_provider_id"] == "inbound-unique-42"
+    assert lead["price_drop_v2"]["reply_events"][0]["campaign_id"] == CAMPAIGN
+    assert lead["price_drop_v2"]["reply_events"][0]["provider_message_id"] == "inbound-unique-42"
+    assert v2.record_inbound(
+        db, phone=phone, provider_message_id="inbound-unique-42",
+        text=reply, now=NOW + timedelta(days=1),
+    )["status"] == "DUPLICATE_IGNORED"
+    assert db["leads"].find_one({"_id": lead_id})["price_drop_v2"]["campaigns"][0]["reply_count"] == 1
+
+
+def test_rental_campaign_reply_context_is_arriendo(monkeypatch, tmp_path):
+    db, _, ids = _dispatch_db(monkeypatch, count=1)
+    _run(db, journal_path=tmp_path / "rental.json")
+    lead_id = ObjectId(ids[0])
+    lead = db["leads"].find_one({"_id": lead_id})
+    db["leads"].update_one({"_id": lead_id}, {"$set": {
+        "price_drop_v2.campaigns.0.operation": "arriendo",
+    }})
+    monkeypatch.delenv(v2.CONTEXT_FLAG, raising=False)
+    ctx = v2.active_context(
+        db, phone=lead["phone"], message="Me interesa el arriendo",
+        now=NOW + timedelta(days=1), for_tracking=True,
+    )
+    assert ctx["operation"] == "Arriendo"
+    assert ctx["property_code"] == "6436"
+
+
 @pytest.mark.parametrize("message", [
     "¿Me puedes mostrar otras propiedades en Ñuñoa?",
     "¿Podrías buscar opciones en La Reina?",

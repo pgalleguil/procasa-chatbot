@@ -542,6 +542,9 @@ async def download_signed_pdf(visita_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrado")
 
+    if not _signature_evidence_complete(contract):
+        raise HTTPException(status_code=409, detail="Documento con firma pendiente de verificación")
+
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
     tipo = tipo_raw.replace(" ", "_")
@@ -577,7 +580,10 @@ async def download_signed_pdf(visita_code: str):
         except Exception as e:
             logger.error(f"Error downloading from GDrive: {e}")
 
-    # Si llegamos aquí, no está en local ni en Drive (o Drive falló/no configurado).
+    # Nunca fabricar un nuevo 'PDF firmado' sin evidencia criptográfica.
+    raise HTTPException(status_code=503, detail="PDF firmado original no disponible; contacte a administración")
+
+    # Regeneración histórica desactivada para preservar integridad documental.
     # REGENERAMOS el PDF firmado dinámicamente:
     logger.info(f"Regenerando PDF firmado para {visita_code} dinámicamente...")
     
@@ -658,6 +664,9 @@ async def view_signed_pdf(visita_code: str):
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrado")
 
+    if not _signature_evidence_complete(contract):
+        raise HTTPException(status_code=409, detail="Documento con firma pendiente de verificación")
+
     prop_code = contract.get('property_code', 'SD')
     tipo_raw = contract.get('property_data', {}).get('tipo', 'Arriendo')
     tipo = tipo_raw.replace(" ", "_")
@@ -693,7 +702,10 @@ async def view_signed_pdf(visita_code: str):
         except Exception as e:
             logger.error(f"Error downloading from GDrive: {e}")
             
-    # Si llegamos aquí, no está en local ni en Drive (o Drive falló/no configurado).
+    # Nunca fabricar un nuevo 'PDF firmado' sin evidencia criptográfica.
+    raise HTTPException(status_code=503, detail="PDF firmado original no disponible; contacte a administración")
+
+    # Regeneración histórica desactivada para preservar integridad documental.
     # REGENERAMOS el PDF firmado dinámicamente:
     logger.info(f"Regenerando PDF firmado para {visita_code} dinámicamente...")
     
@@ -902,6 +914,9 @@ async def send_contract(visita_code: str, request: Request):
     contract = await adb["visitas"].find_one({"visita_code": visita_code})
     if not contract:
         raise HTTPException(status_code=404, detail="Orden de Visita no encontrado")
+    # Una aceptación registrada no se puede degradar a 'sent'.
+    if contract.get("security", {}).get("token_used") or contract.get("status") in ("signature_finalizing", "signature_processing_failed", "signed"):
+        raise HTTPException(status_code=409, detail="Aceptación ya registrada; no es posible reenviar una orden para nueva firma")
     # Después del primer envío, solo supervisor/admin puede reenviar
     if contract.get("status") in ["sent", "opened", "otp_requested", "otp_verified", "signed", "accepted"]:
         if user_role not in ["supervisor", "admin"]:
@@ -1043,6 +1058,7 @@ async def view_visita_public(token: str, request: Request):
         return HTMLResponse("<h1>Enlace inválido o expirado.</h1>", status_code=404)
         
     is_signed = contract["security"].get("token_used", False)
+    document_finalized = _signature_evidence_complete(contract)
     
     # Solo expira a las 120h si NO está firmado. Si ya se firmó, el acceso es permanente.
     if not is_signed:
@@ -1100,7 +1116,8 @@ async def view_visita_public(token: str, request: Request):
         "contract": contract,
         "token": token,
         "token_expiry_iso": token_expiry_iso,
-        "is_signed": is_signed
+        "is_signed": is_signed,
+        "document_finalized": document_finalized
     })
 
 @router.post("/api/{token}/validate-rut")
@@ -2051,30 +2068,72 @@ async def verify_contract(visita_code: str, request: Request):
     if not contract:
         return HTMLResponse("<h1>Orden de Visita no encontrado</h1>", status_code=404)
     
-    # Limpiar datos para evitar error 500 de serialización
+    # La verificación pública no depende solo de status='signed'.
+    security = contract.get("security") or {}
+    verification_valid = False
+    if _signature_evidence_complete(contract):
+        try:
+            timeline = contract.get("timeline") or []
+            accepted_index = next((i for i, e in enumerate(timeline) if e.get("action") == "accepted"), None)
+            otp_verified = any(e.get("action") == "otp_verified" for e in timeline)
+            if accepted_index is not None and otp_verified:
+                accepted = timeline[accepted_index]
+                hmac_timestamp = security.get("hmac_timestamp") or accepted.get("server_timestamp")
+                timeline_hash = SecurityContracts.hash_timeline(timeline[:accepted_index + 1])
+                secret = getattr(Config, "SECRET_KEY", "")
+                if secret and hmac_timestamp and hmac_timestamp == accepted.get("server_timestamp"):
+                    expected_hmac = SecurityContracts.generate_server_hmac(
+                        visita_code, security["original_hash"], hmac_timestamp, secret
+                    )
+                    hashes_match = (
+                        hmac.compare_digest(security["timeline_hash"], timeline_hash)
+                        and hmac.compare_digest(security["server_hmac"], expected_hmac)
+                    )
+                    if hashes_match:
+                        original_id = security.get("original_pdf_drive_id")
+                        signed_id = security.get("signed_pdf_drive_id")
+                        original_pdf = await run_in_threadpool(gdrive_sync.download_file, original_id) if original_id else None
+                        signed_pdf = await run_in_threadpool(gdrive_sync.download_file, signed_id) if signed_id else None
+                        verification_valid = bool(
+                            original_pdf and signed_pdf
+                            and hmac.compare_digest(SecurityContracts.hash_document(original_pdf), security["original_hash"])
+                            and hmac.compare_digest(SecurityContracts.hash_document(signed_pdf), security["signed_hash"])
+                        )
+        except Exception:
+            logger.exception("[VISIT_VERIFY] No fue posible comprobar integridad de %s", visita_code)
+            verification_valid = False
+
+    # Limpiar datos para evitar errores de serialización y preservar UTC real.
     safe_contract = _json_safe(contract)
-    
-    # Formatear fecha de firma para visualización humana
-    signature_date_raw = contract.get("security", {}).get("signature_timestamp")
+    signature_date_raw = security.get("signature_timestamp")
     formatted_date = "---"
     if signature_date_raw:
         try:
-            if isinstance(signature_date_raw, datetime):
-                dt = signature_date_raw
-            else:
-                dt = datetime.fromisoformat(signature_date_raw)
-            
-            if dt.tzinfo is None: 
+            dt = signature_date_raw if isinstance(signature_date_raw, datetime) else datetime.fromisoformat(signature_date_raw)
+            if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
-            dt_cl = dt.astimezone(CHILE_TZ)
-            formatted_date = dt_cl.strftime("%d-%m-%Y %H:%M CLT")
-        except Exception as e:
+            formatted_date = dt.astimezone(CHILE_TZ).strftime("%d-%m-%Y %H:%M CLT")
+        except (ValueError, TypeError):
             pass
-        
+
+    recovered_at = security.get("signature_recovered_at")
+    recovery_date = None
+    if recovered_at:
+        try:
+            if isinstance(recovered_at, str):
+                recovered_at = datetime.fromisoformat(recovered_at)
+            if recovered_at.tzinfo is None:
+                recovered_at = recovered_at.replace(tzinfo=timezone.utc)
+            recovery_date = recovered_at.astimezone(CHILE_TZ).strftime("%d-%m-%Y %H:%M CLT")
+        except (ValueError, TypeError):
+            pass
+
     return templates.TemplateResponse(request, "visita_verify.html", {
         "request": request,
         "contract": safe_contract,
-        "signature_date_clt": formatted_date
+        "signature_date_clt": formatted_date,
+        "verification_valid": verification_valid,
+        "recovery_date_clt": recovery_date,
     })
 
 @router.get("/dashboard", response_class=HTMLResponse)

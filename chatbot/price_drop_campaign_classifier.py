@@ -575,7 +575,8 @@ def lead_must_not_be_contacted(lead: dict | None) -> bool:
             return True
         if classify_price_drop_reply(campaign.get("last_customer_text") or "").label == UNSUBSCRIBED:
             return True
-    for msg in lead.get("messages") or []:
+    from .message_scope import office_messages
+    for msg in office_messages(lead.get("messages")):
         if isinstance(msg, dict) and msg.get("role") in ("user", "customer"):
             if classify_price_drop_reply(msg.get("content") or "").label == UNSUBSCRIBED:
                 return True

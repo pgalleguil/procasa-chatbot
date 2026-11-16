@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
-VERSION = "executive_hybrid_v2"
+VERSION = "executive_hybrid_v2_1"
 INTENTS = frozenset({
     "NO_SIGNAL", "ASK_INFO", "INTERESTED", "ASK_VISIT", "ASK_CONTACT",
     "GIVE_OFFER", "ASK_ALTERNATIVES", "PROPERTY_DECLINED",
@@ -50,7 +50,11 @@ Si la intención es ambigua, NO_SIGNAL y needs_review=true.
 JSON: {"intent":"...", "search":{"operation":null,
 "property_type":null,"comunas":[],"max_price_uf":null,
 "max_price_clp":null,"min_bedrooms":null},
-"needs_review":false,"confidence":0.0}
+"needs_review":false,"confidence":0.0,
+"evidence":{"message_id":"id del último CLIENTE","quote":"cita literal de su intención"}}
+La evidencia debe citar el último mensaje del cliente, nunca al ejecutivo.
+Las preguntas hipotéticas, ejemplos, citas ajenas y negaciones no son solicitudes.
+Una oferta presentada como ejemplo no es GIVE_OFFER.
 Solo incluye datos de búsqueda explícitos en turnos CLIENTE.
 Valores de operation: ARRIENDO o VENTA; property_type: DEPARTAMENTO, CASA, TERRENO, OFICINA, LOCAL_COMERCIAL.
 Comunas solo si el cliente las mencionó; no uses ubicaciones de propiedades ofrecidas por ejecutivo.
@@ -124,7 +128,8 @@ def _propose_with_deepseek(messages: list[dict], prior: dict, *, diagnostics=Non
     from config import Config
     from .grok_client import client
     context = [
-        {"actor": "CLIENTE" if m.get("actor_type") == "customer" else "EJECUTIVO",
+        {"message_id": str(m.get("provider_message_id") or ""),
+         "actor": "CLIENTE" if m.get("actor_type") == "customer" else "EJECUTIVO",
          "texto": _safe(m.get("content"))}
         for m in messages[-32:]
     ]
@@ -138,7 +143,7 @@ def _propose_with_deepseek(messages: list[dict], prior: dict, *, diagnostics=Non
             }, ensure_ascii=False)},
         ],
         temperature=0,
-        max_tokens=360,
+        max_tokens=600,
         timeout=12,
         response_format={"type": "json_object"},
     )
@@ -244,6 +249,25 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
     # Model interpretation is explicitly unconfirmed, never promoted to an
     # observed visit/offer/stop. Confidence is self-reported, not calibrated.
     model_disagrees = bool(proposal and proposal["intent"] != intent)
+    # Low-impact interpretations can enrich the snapshot only with literal
+    # evidence from the current customer. Terminal/HOT decisions still need
+    # independent deterministic support, never model confidence alone.
+    evidence = proposal.get("evidence") or {}
+    grounded = (isinstance(evidence, dict) and last_customer is not None
+                and evidence.get("message_id") == str(last_customer["provider_message_id"])
+                and isinstance(evidence.get("quote"), str)
+                and 4 <= len(evidence["quote"]) <= 700
+                and evidence["quote"] in last_customer["content"]
+                and not ambiguous(last_customer["content"])
+                and not proposal.get("needs_review"))
+    if (grounded and new_customer and intent == "NO_SIGNAL"
+            and proposal["intent"] in {"ASK_INFO", "INTERESTED", "ASK_ALTERNATIVES", "PROPERTY_DECLINED"}
+            and search_status != "COMPLETED"):
+        intent = proposal["intent"]
+        latest_evidence = [last_customer["provider_message_id"]]
+        model_disagrees = False
+        # An inferred intent remains reviewable and cannot grant consent.
+        uncertain = True
     contacts = prior.get("contact", {})
     agents = [m for m in turns if m["actor_type"] == "human_agent"]
     def stamp(m):

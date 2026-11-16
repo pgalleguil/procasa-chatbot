@@ -185,3 +185,25 @@ def test_important_request_survives_ack_and_reply_is_not_fulfillment():
     later = classify_hybrid([turn('human_agent', 'Hola', 10)], {'summary': result}, llm_enabled=False)
     assert not later['contact']['important_request_pending']
     assert later['latest_important_request']['fulfillment'] == 'UNKNOWN'
+
+
+@pytest.mark.parametrize("quote,actor_id,expected", [
+    ("Mándame la ficha porfa", "1", "ASK_INFO"),
+    ("texto inventado", "1", "NO_SIGNAL"),
+    ("Mándame la ficha porfa", "agent", "NO_SIGNAL"),
+])
+def test_model_low_impact_requires_current_customer_evidence(quote, actor_id, expected):
+    result = classify_hybrid([turn("customer", "Mándame la ficha porfa", 1)],
+        propose=lambda *_: dict(intent="ASK_INFO", search={}, confidence=.99,
+                               needs_review=False, evidence=dict(message_id=actor_id, quote=quote)))
+    assert result["intent"] == expected
+    assert result["needs_review"]
+    assert result["campaign"]["enforced"] is False
+
+
+def test_shared_contact_guard_excludes_executive_capture():
+    from chatbot.price_drop_campaign_classifier import lead_must_not_be_contacted
+    message = dict(turn("customer", "No me escriban más"), role="user")
+    assert not lead_must_not_be_contacted({"messages": [message]})
+    message.pop("channel")
+    assert lead_must_not_be_contacted({"messages": [message]})

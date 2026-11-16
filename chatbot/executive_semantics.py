@@ -21,7 +21,7 @@ def ambiguous(text):
     return bool(re.search(
         r'\b(?:si acaso|si algun|si ya|supongamos|imagina|no dije|no he dicho|'
         r'nunca dije|no es cierto|mentira|sarcasmo|ironia|era broma|en broma|me equivoque|'
-        r'me arrepenti|retiro lo|era un ejemplo|eso era antes|si me aprueban|si consigo|cuando tenga|'
+        r'me arrepenti|retiro lo|era un ejemplo|eso era antes|si me aprueban|si consigo|cuando tenga|si quisiera|si pudiera|'
         r'me dijo|dijo que|dice que|segun|ignora|instrucciones|clasifica|'
         r'responde json|system prompt)\b|\bno,? mejor\b|["“”«»]', plain(text)))
 
@@ -79,6 +79,17 @@ def intent(text, previous_agent=""):
         return "SEARCH_UPDATED"
     if any(re.match(r'(?:cuanto cuesta|cual es el precio|gastos comunes|donde queda|tiene estacionamiento|me das detalles|quiero informacion|cuantos dormitorios|esta disponible)\b', p) for p in parts):
         return "ASK_INFO"
+    # Reuse the established office/campaign vocabulary, with stricter
+    # executive evidence guards. Do not import its campaign closure policy.
+    from .price_drop_campaign_classifier import classify_price_drop_reply
+    shared = classify_price_drop_reply(text)
+    if not re.search(r'\b(?:no|nunca|tampoco|si|cuando|dijo|dicen)\b', msg):
+        if shared.intent in {'ASK_VISIT', 'ASK_CONTACT', 'GIVE_OFFER'}:
+            return shared.intent
+        if shared.reason == 'explicit_general_interest':
+            return 'INTERESTED'
+        if shared.alternatives_requested:
+            return 'ASK_ALTERNATIVES'
     return "NO_SIGNAL"
 
 

@@ -1,0 +1,1218 @@
+{
+  "mode": "live_deepseek",
+  "cases": 56,
+  "unique_families": 56,
+  "limitations": "Synthetic development set; correlated variants; not held-out, not representative prevalence, no population 99% claim.",
+  "per_category": {
+    "ASK_ALTERNATIVES": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "ASK_CONTACT": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571428571428571
+    },
+    "ASK_INFO": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "ASK_VISIT": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "GIVE_OFFER": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571428571428571
+    },
+    "INTERESTED": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "MIXED_NEEDS": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "NO_SIGNAL": {
+      "tp": 4,
+      "fp": 3,
+      "fn": 0,
+      "precision": 0.5714285714285714,
+      "recall": 1.0,
+      "f1": 0.7272727272727273
+    },
+    "OPT_OUT": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "OWNER_RENT": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "OWNER_SELL": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "PROPERTY_DECLINED": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571428571428571
+    },
+    "SEARCH_COMPLETED": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "SEARCH_UPDATED": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    }
+  },
+  "macro_f1": 0.9499072356215214,
+  "confusion_matrix": {
+    "ASK_ALTERNATIVES": {
+      "ASK_ALTERNATIVES": 4
+    },
+    "ASK_CONTACT": {
+      "ASK_CONTACT": 3,
+      "NO_SIGNAL": 1
+    },
+    "ASK_INFO": {
+      "ASK_INFO": 4
+    },
+    "ASK_VISIT": {
+      "ASK_VISIT": 4
+    },
+    "GIVE_OFFER": {
+      "GIVE_OFFER": 3,
+      "NO_SIGNAL": 1
+    },
+    "INTERESTED": {
+      "INTERESTED": 4
+    },
+    "MIXED_NEEDS": {
+      "MIXED_NEEDS": 4
+    },
+    "NO_SIGNAL": {
+      "NO_SIGNAL": 4
+    },
+    "OPT_OUT": {
+      "OPT_OUT": 4
+    },
+    "OWNER_RENT": {
+      "OWNER_RENT": 4
+    },
+    "OWNER_SELL": {
+      "OWNER_SELL": 4
+    },
+    "PROPERTY_DECLINED": {
+      "PROPERTY_DECLINED": 3,
+      "NO_SIGNAL": 1
+    },
+    "SEARCH_COMPLETED": {
+      "SEARCH_COMPLETED": 4
+    },
+    "SEARCH_UPDATED": {
+      "SEARCH_UPDATED": 4
+    }
+  },
+  "rows": [
+    {
+      "id": "ASK_ALTERNATIVES-0-0",
+      "family": "ASK_ALTERNATIVES-0",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES",
+      "model_predicted": "ASK_ALTERNATIVES",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 176
+      },
+      "latency_ms": 4203
+    },
+    {
+      "id": "ASK_CONTACT-0-0",
+      "family": "ASK_CONTACT-0",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 615,
+        "completion_tokens": 135
+      },
+      "latency_ms": 1500
+    },
+    {
+      "id": "ASK_INFO-0-0",
+      "family": "ASK_INFO-0",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO",
+      "model_predicted": "ASK_INFO",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 101
+      },
+      "latency_ms": 1454
+    },
+    {
+      "id": "ASK_VISIT-0-0",
+      "family": "ASK_VISIT-0",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 120
+      },
+      "latency_ms": 1453
+    },
+    {
+      "id": "GIVE_OFFER-0-0",
+      "family": "GIVE_OFFER-0",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER",
+      "model_predicted": "GIVE_OFFER",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 618,
+        "completion_tokens": 150
+      },
+      "latency_ms": 1812
+    },
+    {
+      "id": "INTERESTED-0-0",
+      "family": "INTERESTED-0",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "INTERESTED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 613,
+        "completion_tokens": 158
+      },
+      "latency_ms": 1797
+    },
+    {
+      "id": "MIXED_NEEDS-0-0",
+      "family": "MIXED_NEEDS-0",
+      "expected": "MIXED_NEEDS",
+      "predicted": "MIXED_NEEDS",
+      "model_predicted": "MIXED_NEEDS",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 632,
+        "completion_tokens": 246
+      },
+      "latency_ms": 1984
+    },
+    {
+      "id": "NO_SIGNAL-0-0",
+      "family": "NO_SIGNAL-0",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NO_SIGNAL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 231
+      },
+      "latency_ms": 1954
+    },
+    {
+      "id": "OPT_OUT-0-0",
+      "family": "OPT_OUT-0",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT",
+      "model_predicted": "OPT_OUT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 111
+      },
+      "latency_ms": 1328
+    },
+    {
+      "id": "OWNER_RENT-0-0",
+      "family": "OWNER_RENT-0",
+      "expected": "OWNER_RENT",
+      "predicted": "OWNER_RENT",
+      "model_predicted": "OWNER_RENT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 261
+      },
+      "latency_ms": 2093
+    },
+    {
+      "id": "OWNER_SELL-0-0",
+      "family": "OWNER_SELL-0",
+      "expected": "OWNER_SELL",
+      "predicted": "OWNER_SELL",
+      "model_predicted": "OWNER_SELL",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 358
+      },
+      "latency_ms": 2829
+    },
+    {
+      "id": "PROPERTY_DECLINED-0-0",
+      "family": "PROPERTY_DECLINED-0",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 107
+      },
+      "latency_ms": 1375
+    },
+    {
+      "id": "SEARCH_COMPLETED-0-0",
+      "family": "SEARCH_COMPLETED-0",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED",
+      "model_predicted": "SEARCH_COMPLETED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 615,
+        "completion_tokens": 103
+      },
+      "latency_ms": 1437
+    },
+    {
+      "id": "SEARCH_UPDATED-0-0",
+      "family": "SEARCH_UPDATED-0",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 192
+      },
+      "latency_ms": 1469
+    },
+    {
+      "id": "ASK_ALTERNATIVES-1-0",
+      "family": "ASK_ALTERNATIVES-1",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 614,
+        "completion_tokens": 157
+      },
+      "latency_ms": 1609
+    },
+    {
+      "id": "ASK_CONTACT-1-0",
+      "family": "ASK_CONTACT-1",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 91
+      },
+      "latency_ms": 1250
+    },
+    {
+      "id": "ASK_INFO-1-0",
+      "family": "ASK_INFO-1",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO",
+      "model_predicted": "ASK_INFO",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 98
+      },
+      "latency_ms": 1516
+    },
+    {
+      "id": "ASK_VISIT-1-0",
+      "family": "ASK_VISIT-1",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 160
+      },
+      "latency_ms": 1719
+    },
+    {
+      "id": "GIVE_OFFER-1-0",
+      "family": "GIVE_OFFER-1",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER",
+      "model_predicted": "GIVE_OFFER",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 619,
+        "completion_tokens": 92
+      },
+      "latency_ms": 1421
+    },
+    {
+      "id": "INTERESTED-1-0",
+      "family": "INTERESTED-1",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "INTERESTED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 121
+      },
+      "latency_ms": 1547
+    },
+    {
+      "id": "MIXED_NEEDS-1-0",
+      "family": "MIXED_NEEDS-1",
+      "expected": "MIXED_NEEDS",
+      "predicted": "MIXED_NEEDS",
+      "model_predicted": "ERROR",
+      "needs_review": true,
+      "source": "rules_fallback",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 621,
+        "completion_tokens": 360
+      },
+      "latency_ms": 3344
+    },
+    {
+      "id": "NO_SIGNAL-1-0",
+      "family": "NO_SIGNAL-1",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NO_SIGNAL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 619,
+        "completion_tokens": 92
+      },
+      "latency_ms": 969
+    },
+    {
+      "id": "OPT_OUT-1-0",
+      "family": "OPT_OUT-1",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT",
+      "model_predicted": "OPT_OUT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 615,
+        "completion_tokens": 86
+      },
+      "latency_ms": 1187
+    },
+    {
+      "id": "OWNER_RENT-1-0",
+      "family": "OWNER_RENT-1",
+      "expected": "OWNER_RENT",
+      "predicted": "OWNER_RENT",
+      "model_predicted": "OWNER_RENT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 619,
+        "completion_tokens": 354
+      },
+      "latency_ms": 2750
+    },
+    {
+      "id": "OWNER_SELL-1-0",
+      "family": "OWNER_SELL-1",
+      "expected": "OWNER_SELL",
+      "predicted": "OWNER_SELL",
+      "model_predicted": "OWNER_SELL",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 618,
+        "completion_tokens": 323
+      },
+      "latency_ms": 2750
+    },
+    {
+      "id": "PROPERTY_DECLINED-1-0",
+      "family": "PROPERTY_DECLINED-1",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 149
+      },
+      "latency_ms": 1750
+    },
+    {
+      "id": "SEARCH_COMPLETED-1-0",
+      "family": "SEARCH_COMPLETED-1",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED",
+      "model_predicted": "SEARCH_COMPLETED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 99
+      },
+      "latency_ms": 1391
+    },
+    {
+      "id": "SEARCH_UPDATED-1-0",
+      "family": "SEARCH_UPDATED-1",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 620,
+        "completion_tokens": 181
+      },
+      "latency_ms": 1937
+    },
+    {
+      "id": "ASK_ALTERNATIVES-2-0",
+      "family": "ASK_ALTERNATIVES-2",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 619,
+        "completion_tokens": 148
+      },
+      "latency_ms": 1563
+    },
+    {
+      "id": "ASK_CONTACT-2-0",
+      "family": "ASK_CONTACT-2",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 615,
+        "completion_tokens": 91
+      },
+      "latency_ms": 1578
+    },
+    {
+      "id": "ASK_INFO-2-0",
+      "family": "ASK_INFO-2",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO",
+      "model_predicted": "ASK_INFO",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 615,
+        "completion_tokens": 85
+      },
+      "latency_ms": 1375
+    },
+    {
+      "id": "ASK_VISIT-2-0",
+      "family": "ASK_VISIT-2",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 618,
+        "completion_tokens": 146
+      },
+      "latency_ms": 1625
+    },
+    {
+      "id": "GIVE_OFFER-2-0",
+      "family": "GIVE_OFFER-2",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "GIVE_OFFER",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 220
+      },
+      "latency_ms": 1906
+    },
+    {
+      "id": "INTERESTED-2-0",
+      "family": "INTERESTED-2",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "INTERESTED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 618,
+        "completion_tokens": 122
+      },
+      "latency_ms": 1547
+    },
+    {
+      "id": "MIXED_NEEDS-2-0",
+      "family": "MIXED_NEEDS-2",
+      "expected": "MIXED_NEEDS",
+      "predicted": "MIXED_NEEDS",
+      "model_predicted": "ERROR",
+      "needs_review": true,
+      "source": "rules_fallback",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 623,
+        "completion_tokens": 360
+      },
+      "latency_ms": 2860
+    },
+    {
+      "id": "NO_SIGNAL-2-0",
+      "family": "NO_SIGNAL-2",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "ASK_INFO",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 624,
+        "completion_tokens": 134
+      },
+      "latency_ms": 1343
+    },
+    {
+      "id": "OPT_OUT-2-0",
+      "family": "OPT_OUT-2",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT",
+      "model_predicted": "OPT_OUT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 615,
+        "completion_tokens": 93
+      },
+      "latency_ms": 1422
+    },
+    {
+      "id": "OWNER_RENT-2-0",
+      "family": "OWNER_RENT-2",
+      "expected": "OWNER_RENT",
+      "predicted": "OWNER_RENT",
+      "model_predicted": "OWNER_RENT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 211
+      },
+      "latency_ms": 1985
+    },
+    {
+      "id": "OWNER_SELL-2-0",
+      "family": "OWNER_SELL-2",
+      "expected": "OWNER_SELL",
+      "predicted": "OWNER_SELL",
+      "model_predicted": "OWNER_SELL",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 620,
+        "completion_tokens": 246
+      },
+      "latency_ms": 2531
+    },
+    {
+      "id": "PROPERTY_DECLINED-2-0",
+      "family": "PROPERTY_DECLINED-2",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 109
+      },
+      "latency_ms": 1312
+    },
+    {
+      "id": "SEARCH_COMPLETED-2-0",
+      "family": "SEARCH_COMPLETED-2",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED",
+      "model_predicted": "SEARCH_COMPLETED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 615,
+        "completion_tokens": 163
+      },
+      "latency_ms": 1750
+    },
+    {
+      "id": "SEARCH_UPDATED-2-0",
+      "family": "SEARCH_UPDATED-2",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 187
+      },
+      "latency_ms": 1922
+    },
+    {
+      "id": "ASK_ALTERNATIVES-3-0",
+      "family": "ASK_ALTERNATIVES-3",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES",
+      "model_predicted": "NO_SIGNAL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 222
+      },
+      "latency_ms": 2172
+    },
+    {
+      "id": "ASK_CONTACT-3-0",
+      "family": "ASK_CONTACT-3",
+      "expected": "ASK_CONTACT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 620,
+        "completion_tokens": 88
+      },
+      "latency_ms": 1219
+    },
+    {
+      "id": "ASK_INFO-3-0",
+      "family": "ASK_INFO-3",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO",
+      "model_predicted": "ASK_INFO",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 616,
+        "completion_tokens": 110
+      },
+      "latency_ms": 1500
+    },
+    {
+      "id": "ASK_VISIT-3-0",
+      "family": "ASK_VISIT-3",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 621,
+        "completion_tokens": 141
+      },
+      "latency_ms": 1531
+    },
+    {
+      "id": "GIVE_OFFER-3-0",
+      "family": "GIVE_OFFER-3",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER",
+      "model_predicted": "GIVE_OFFER",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 619,
+        "completion_tokens": 157
+      },
+      "latency_ms": 2047
+    },
+    {
+      "id": "INTERESTED-3-0",
+      "family": "INTERESTED-3",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "INTERESTED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 614,
+        "completion_tokens": 97
+      },
+      "latency_ms": 1328
+    },
+    {
+      "id": "MIXED_NEEDS-3-0",
+      "family": "MIXED_NEEDS-3",
+      "expected": "MIXED_NEEDS",
+      "predicted": "MIXED_NEEDS",
+      "model_predicted": "MIXED_NEEDS",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 623,
+        "completion_tokens": 258
+      },
+      "latency_ms": 2125
+    },
+    {
+      "id": "NO_SIGNAL-3-0",
+      "family": "NO_SIGNAL-3",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NO_SIGNAL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 622,
+        "completion_tokens": 174
+      },
+      "latency_ms": 1703
+    },
+    {
+      "id": "OPT_OUT-3-0",
+      "family": "OPT_OUT-3",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT",
+      "model_predicted": "OPT_OUT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 614,
+        "completion_tokens": 73
+      },
+      "latency_ms": 1203
+    },
+    {
+      "id": "OWNER_RENT-3-0",
+      "family": "OWNER_RENT-3",
+      "expected": "OWNER_RENT",
+      "predicted": "OWNER_RENT",
+      "model_predicted": "ERROR",
+      "needs_review": true,
+      "source": "rules_fallback",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 619,
+        "completion_tokens": 360
+      },
+      "latency_ms": 2922
+    },
+    {
+      "id": "OWNER_SELL-3-0",
+      "family": "OWNER_SELL-3",
+      "expected": "OWNER_SELL",
+      "predicted": "OWNER_SELL",
+      "model_predicted": "OWNER_SELL",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 618,
+        "completion_tokens": 174
+      },
+      "latency_ms": 1672
+    },
+    {
+      "id": "PROPERTY_DECLINED-3-0",
+      "family": "PROPERTY_DECLINED-3",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 617,
+        "completion_tokens": 132
+      },
+      "latency_ms": 1859
+    },
+    {
+      "id": "SEARCH_COMPLETED-3-0",
+      "family": "SEARCH_COMPLETED-3",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED",
+      "model_predicted": "SEARCH_COMPLETED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 615,
+        "completion_tokens": 111
+      },
+      "latency_ms": 1063
+    },
+    {
+      "id": "SEARCH_UPDATED-3-0",
+      "family": "SEARCH_UPDATED-3",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 620,
+        "completion_tokens": 148
+      },
+      "latency_ms": 1375
+    }
+  ],
+  "raw_model_metrics": {
+    "per_category": {
+      "ASK_ALTERNATIVES": {
+        "tp": 1,
+        "fp": 0,
+        "fn": 3,
+        "precision": 1.0,
+        "recall": 0.25,
+        "f1": 0.4
+      },
+      "ASK_CONTACT": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "ASK_INFO": {
+        "tp": 4,
+        "fp": 1,
+        "fn": 0,
+        "precision": 0.8,
+        "recall": 1.0,
+        "f1": 0.8888888888888888
+      },
+      "ASK_VISIT": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "ERROR": {
+        "tp": 0,
+        "fp": 3,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": null,
+        "f1": 0.0
+      },
+      "GIVE_OFFER": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "INTERESTED": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "MIXED_NEEDS": {
+        "tp": 2,
+        "fp": 0,
+        "fn": 2,
+        "precision": 1.0,
+        "recall": 0.5,
+        "f1": 0.6666666666666666
+      },
+      "NO_SIGNAL": {
+        "tp": 3,
+        "fp": 1,
+        "fn": 1,
+        "precision": 0.75,
+        "recall": 0.75,
+        "f1": 0.75
+      },
+      "OPT_OUT": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "OWNER_RENT": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.75,
+        "f1": 0.8571428571428571
+      },
+      "OWNER_SELL": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "PROPERTY_DECLINED": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "SEARCH_COMPLETED": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "SEARCH_UPDATED": {
+        "tp": 4,
+        "fp": 2,
+        "fn": 0,
+        "precision": 0.6666666666666666,
+        "recall": 1.0,
+        "f1": 0.8
+      }
+    },
+    "evaluation_labels": [
+      "ASK_ALTERNATIVES",
+      "ASK_CONTACT",
+      "ASK_INFO",
+      "ASK_VISIT",
+      "GIVE_OFFER",
+      "INTERESTED",
+      "MIXED_NEEDS",
+      "NO_SIGNAL",
+      "OPT_OUT",
+      "OWNER_RENT",
+      "OWNER_SELL",
+      "PROPERTY_DECLINED",
+      "SEARCH_COMPLETED",
+      "SEARCH_UPDATED"
+    ],
+    "macro_f1": 0.8830498866213153,
+    "confusion_matrix": {
+      "ASK_ALTERNATIVES": {
+        "ASK_ALTERNATIVES": 1,
+        "SEARCH_UPDATED": 2,
+        "NO_SIGNAL": 1
+      },
+      "ASK_CONTACT": {
+        "ASK_CONTACT": 4
+      },
+      "ASK_INFO": {
+        "ASK_INFO": 4
+      },
+      "ASK_VISIT": {
+        "ASK_VISIT": 4
+      },
+      "ERROR": {},
+      "GIVE_OFFER": {
+        "GIVE_OFFER": 4
+      },
+      "INTERESTED": {
+        "INTERESTED": 4
+      },
+      "MIXED_NEEDS": {
+        "MIXED_NEEDS": 2,
+        "ERROR": 2
+      },
+      "NO_SIGNAL": {
+        "NO_SIGNAL": 3,
+        "ASK_INFO": 1
+      },
+      "OPT_OUT": {
+        "OPT_OUT": 4
+      },
+      "OWNER_RENT": {
+        "OWNER_RENT": 3,
+        "ERROR": 1
+      },
+      "OWNER_SELL": {
+        "OWNER_SELL": 4
+      },
+      "PROPERTY_DECLINED": {
+        "PROPERTY_DECLINED": 4
+      },
+      "SEARCH_COMPLETED": {
+        "SEARCH_COMPLETED": 4
+      },
+      "SEARCH_UPDATED": {
+        "SEARCH_UPDATED": 4
+      }
+    }
+  },
+  "implementation_stage": "exploratory, before final deterministic grammar corrections; raw provider metrics only",
+  "evaluation_labels": [
+    "ASK_ALTERNATIVES",
+    "ASK_CONTACT",
+    "ASK_INFO",
+    "ASK_VISIT",
+    "GIVE_OFFER",
+    "INTERESTED",
+    "MIXED_NEEDS",
+    "NO_SIGNAL",
+    "OPT_OUT",
+    "OWNER_RENT",
+    "OWNER_SELL",
+    "PROPERTY_DECLINED",
+    "SEARCH_COMPLETED",
+    "SEARCH_UPDATED"
+  ]
+}

@@ -482,7 +482,7 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None,
         result = db[COLLECTION_CONVERSATIONS].update_one(
             {"_id": qid},
             {
-                "$push": {"messages": {"$each": [message], "$slice": -50}},
+                "$push": {"messages": {"$each": [message]}},
                 "$set": {**snapshot_fields, "conversation_id": conversation_id},
             }
         )
@@ -490,7 +490,7 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None,
         result = db[COLLECTION_CONVERSATIONS].update_one(
             {"phone": phone},
             {
-                "$push": {"messages": {"$each": [message], "$slice": -50}},
+                "$push": {"messages": {"$each": [message]}},
                 "$set": {**snapshot_fields, "conversation_id": conversation_id},
                 "$setOnInsert": {
                     "created_at": now.isoformat(),
@@ -566,11 +566,13 @@ def obtener_conversacion(phone: str) -> List[Dict]:
     }
     return [
         message for message in raw_messages
-        if not (
+        if isinstance(message, dict)
+        and message.get("channel") != "executive_whatsapp"
+        and not (
             message.get("role") == "assistant"
             and message.get("delivery_status") in excluded_delivery_states
         )
-    ]
+    ][-50:]
 
 def obtener_prospecto(phone: str) -> dict:
     db = get_db()

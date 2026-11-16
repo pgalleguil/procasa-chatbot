@@ -1,0 +1,1644 @@
+{
+  "mode": "deterministic_only",
+  "extraction_cases": 32,
+  "extraction_metrics": {
+    "tp": 72,
+    "fp": 0,
+    "fn": 6,
+    "precision": 1.0,
+    "recall": 0.9230769230769231,
+    "f1": 0.96
+  },
+  "extraction_rows": [
+    {
+      "id": "extraction-0-False",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-0-True",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-1-False",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-1-True",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-2-False",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-2-True",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-3-False",
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-3-True",
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-4-False",
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-4-True",
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-5-False",
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-5-True",
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-6-False",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-6-True",
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-7-False",
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-7-True",
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-8-False",
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-8-True",
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-9-False",
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-9-True",
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-10-False",
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-10-True",
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-11-False",
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-11-True",
+      "tp": 0,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-12-False",
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-12-True",
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "missing": [],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-13-False",
+      "tp": 1,
+      "fp": 0,
+      "fn": 1,
+      "missing": [
+        [
+          "DEMAND.garden",
+          "true"
+        ]
+      ],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-13-True",
+      "tp": 1,
+      "fp": 0,
+      "fn": 1,
+      "missing": [
+        [
+          "DEMAND.garden",
+          "true"
+        ]
+      ],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-14-False",
+      "tp": 1,
+      "fp": 0,
+      "fn": 1,
+      "missing": [
+        [
+          "DEMAND.sector",
+          "\"Ciudad Satélite\""
+        ]
+      ],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-14-True",
+      "tp": 1,
+      "fp": 0,
+      "fn": 1,
+      "missing": [
+        [
+          "DEMAND.sector",
+          "\"Ciudad Satélite\""
+        ]
+      ],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-15-False",
+      "tp": 1,
+      "fp": 0,
+      "fn": 1,
+      "missing": [
+        [
+          "DEMAND.max_price_clp",
+          "100000000"
+        ]
+      ],
+      "unexpected": []
+    },
+    {
+      "id": "extraction-15-True",
+      "tp": 1,
+      "fp": 0,
+      "fn": 1,
+      "missing": [
+        [
+          "DEMAND.max_price_clp",
+          "100000000"
+        ]
+      ],
+      "unexpected": []
+    }
+  ],
+  "scenario_cases": 36,
+  "dimensions": {
+    "intent": {
+      "per_category": {
+        "ASK_ALTERNATIVES": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "ASK_VISIT": {
+          "tp": 9,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "NO_SIGNAL": {
+          "tp": 18,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "SEARCH_UPDATED": {
+          "tp": 6,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "evaluation_labels": [
+        "ASK_ALTERNATIVES",
+        "ASK_VISIT",
+        "NO_SIGNAL",
+        "SEARCH_UPDATED"
+      ],
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "ASK_ALTERNATIVES": {
+          "ASK_ALTERNATIVES": 3
+        },
+        "ASK_VISIT": {
+          "ASK_VISIT": 9
+        },
+        "NO_SIGNAL": {
+          "NO_SIGNAL": 18
+        },
+        "SEARCH_UPDATED": {
+          "SEARCH_UPDATED": 6
+        }
+      }
+    },
+    "search_status": {
+      "per_category": {
+        "ACTIVE": {
+          "tp": 18,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "COMPLETED": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "UNKNOWN": {
+          "tp": 15,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "evaluation_labels": [
+        "ACTIVE",
+        "COMPLETED",
+        "UNKNOWN"
+      ],
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "ACTIVE": {
+          "ACTIVE": 18
+        },
+        "COMPLETED": {
+          "COMPLETED": 3
+        },
+        "UNKNOWN": {
+          "UNKNOWN": 15
+        }
+      }
+    },
+    "contact_permission": {
+      "per_category": {
+        "OPTED_OUT": {
+          "tp": 6,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "UNKNOWN": {
+          "tp": 30,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "evaluation_labels": [
+        "OPTED_OUT",
+        "UNKNOWN"
+      ],
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "OPTED_OUT": {
+          "OPTED_OUT": 6
+        },
+        "UNKNOWN": {
+          "UNKNOWN": 30
+        }
+      }
+    },
+    "customer_responded": {
+      "per_category": {
+        "False": {
+          "tp": 24,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "True": {
+          "tp": 12,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "evaluation_labels": [
+        "False",
+        "True"
+      ],
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "False": {
+          "False": 24
+        },
+        "True": {
+          "True": 12
+        }
+      }
+    },
+    "agent_contacted": {
+      "per_category": {
+        "False": {
+          "tp": 18,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "True": {
+          "tp": 18,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "evaluation_labels": [
+        "False",
+        "True"
+      ],
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "False": {
+          "False": 18
+        },
+        "True": {
+          "True": 18
+        }
+      }
+    },
+    "awaiting": {
+      "per_category": {
+        "CUSTOMER": {
+          "tp": 6,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "EXECUTIVE": {
+          "tp": 27,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "NONE": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "evaluation_labels": [
+        "CUSTOMER",
+        "EXECUTIVE",
+        "NONE"
+      ],
+      "macro_f1": 1.0,
+      "confusion_matrix": {
+        "CUSTOMER": {
+          "CUSTOMER": 6
+        },
+        "EXECUTIVE": {
+          "EXECUTIVE": 27
+        },
+        "NONE": {
+          "NONE": 3
+        }
+      }
+    }
+  },
+  "scenario_rows": {
+    "intent": [
+      {
+        "id": "customer_before_outreach-ordered",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "customer_before_outreach-out_of_order",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "customer_before_outreach-duplicate",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "reply_after_outreach-ordered",
+        "expected": "ASK_VISIT",
+        "predicted": "ASK_VISIT"
+      },
+      {
+        "id": "reply_after_outreach-out_of_order",
+        "expected": "ASK_VISIT",
+        "predicted": "ASK_VISIT"
+      },
+      {
+        "id": "reply_after_outreach-duplicate",
+        "expected": "ASK_VISIT",
+        "predicted": "ASK_VISIT"
+      },
+      {
+        "id": "agent_only-ordered",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "agent_only-out_of_order",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "agent_only-duplicate",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "customer_only-ordered",
+        "expected": "ASK_VISIT",
+        "predicted": "ASK_VISIT"
+      },
+      {
+        "id": "customer_only-out_of_order",
+        "expected": "ASK_VISIT",
+        "predicted": "ASK_VISIT"
+      },
+      {
+        "id": "customer_only-duplicate",
+        "expected": "ASK_VISIT",
+        "predicted": "ASK_VISIT"
+      },
+      {
+        "id": "decline_alternative-ordered",
+        "expected": "ASK_ALTERNATIVES",
+        "predicted": "ASK_ALTERNATIVES"
+      },
+      {
+        "id": "decline_alternative-out_of_order",
+        "expected": "ASK_ALTERNATIVES",
+        "predicted": "ASK_ALTERNATIVES"
+      },
+      {
+        "id": "decline_alternative-duplicate",
+        "expected": "ASK_ALTERNATIVES",
+        "predicted": "ASK_ALTERNATIVES"
+      },
+      {
+        "id": "close_then_greeting-ordered",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "close_then_greeting-out_of_order",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "close_then_greeting-duplicate",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "stop_then_greeting-ordered",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "stop_then_greeting-out_of_order",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "stop_then_greeting-duplicate",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "reactivate-ordered",
+        "expected": "SEARCH_UPDATED",
+        "predicted": "SEARCH_UPDATED"
+      },
+      {
+        "id": "reactivate-out_of_order",
+        "expected": "SEARCH_UPDATED",
+        "predicted": "SEARCH_UPDATED"
+      },
+      {
+        "id": "reactivate-duplicate",
+        "expected": "SEARCH_UPDATED",
+        "predicted": "SEARCH_UPDATED"
+      },
+      {
+        "id": "reactivate_without_consent-ordered",
+        "expected": "SEARCH_UPDATED",
+        "predicted": "SEARCH_UPDATED"
+      },
+      {
+        "id": "reactivate_without_consent-out_of_order",
+        "expected": "SEARCH_UPDATED",
+        "predicted": "SEARCH_UPDATED"
+      },
+      {
+        "id": "reactivate_without_consent-duplicate",
+        "expected": "SEARCH_UPDATED",
+        "predicted": "SEARCH_UPDATED"
+      },
+      {
+        "id": "elliptical_visit-ordered",
+        "expected": "ASK_VISIT",
+        "predicted": "ASK_VISIT"
+      },
+      {
+        "id": "elliptical_visit-out_of_order",
+        "expected": "ASK_VISIT",
+        "predicted": "ASK_VISIT"
+      },
+      {
+        "id": "elliptical_visit-duplicate",
+        "expected": "ASK_VISIT",
+        "predicted": "ASK_VISIT"
+      },
+      {
+        "id": "ambiguous_choice-ordered",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "ambiguous_choice-out_of_order",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "ambiguous_choice-duplicate",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-ordered",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-out_of_order",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-duplicate",
+        "expected": "NO_SIGNAL",
+        "predicted": "NO_SIGNAL"
+      }
+    ],
+    "search_status": [
+      {
+        "id": "customer_before_outreach-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "customer_before_outreach-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "customer_before_outreach-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "reply_after_outreach-ordered",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "reply_after_outreach-out_of_order",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "reply_after_outreach-duplicate",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "agent_only-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "agent_only-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "agent_only-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "customer_only-ordered",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "customer_only-out_of_order",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "customer_only-duplicate",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "decline_alternative-ordered",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "decline_alternative-out_of_order",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "decline_alternative-duplicate",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "close_then_greeting-ordered",
+        "expected": "COMPLETED",
+        "predicted": "COMPLETED"
+      },
+      {
+        "id": "close_then_greeting-out_of_order",
+        "expected": "COMPLETED",
+        "predicted": "COMPLETED"
+      },
+      {
+        "id": "close_then_greeting-duplicate",
+        "expected": "COMPLETED",
+        "predicted": "COMPLETED"
+      },
+      {
+        "id": "stop_then_greeting-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "stop_then_greeting-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "stop_then_greeting-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "reactivate-ordered",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "reactivate-out_of_order",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "reactivate-duplicate",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "reactivate_without_consent-ordered",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "reactivate_without_consent-out_of_order",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "reactivate_without_consent-duplicate",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "elliptical_visit-ordered",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "elliptical_visit-out_of_order",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "elliptical_visit-duplicate",
+        "expected": "ACTIVE",
+        "predicted": "ACTIVE"
+      },
+      {
+        "id": "ambiguous_choice-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "ambiguous_choice-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "ambiguous_choice-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      }
+    ],
+    "contact_permission": [
+      {
+        "id": "customer_before_outreach-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "customer_before_outreach-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "customer_before_outreach-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "reply_after_outreach-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "reply_after_outreach-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "reply_after_outreach-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "agent_only-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "agent_only-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "agent_only-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "customer_only-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "customer_only-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "customer_only-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "decline_alternative-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "decline_alternative-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "decline_alternative-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "close_then_greeting-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "close_then_greeting-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "close_then_greeting-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "stop_then_greeting-ordered",
+        "expected": "OPTED_OUT",
+        "predicted": "OPTED_OUT"
+      },
+      {
+        "id": "stop_then_greeting-out_of_order",
+        "expected": "OPTED_OUT",
+        "predicted": "OPTED_OUT"
+      },
+      {
+        "id": "stop_then_greeting-duplicate",
+        "expected": "OPTED_OUT",
+        "predicted": "OPTED_OUT"
+      },
+      {
+        "id": "reactivate-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "reactivate-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "reactivate-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "reactivate_without_consent-ordered",
+        "expected": "OPTED_OUT",
+        "predicted": "OPTED_OUT"
+      },
+      {
+        "id": "reactivate_without_consent-out_of_order",
+        "expected": "OPTED_OUT",
+        "predicted": "OPTED_OUT"
+      },
+      {
+        "id": "reactivate_without_consent-duplicate",
+        "expected": "OPTED_OUT",
+        "predicted": "OPTED_OUT"
+      },
+      {
+        "id": "elliptical_visit-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "elliptical_visit-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "elliptical_visit-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "ambiguous_choice-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "ambiguous_choice-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "ambiguous_choice-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-ordered",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-out_of_order",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-duplicate",
+        "expected": "UNKNOWN",
+        "predicted": "UNKNOWN"
+      }
+    ],
+    "customer_responded": [
+      {
+        "id": "customer_before_outreach-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "customer_before_outreach-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "customer_before_outreach-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reply_after_outreach-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "reply_after_outreach-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "reply_after_outreach-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "agent_only-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "agent_only-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "agent_only-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "customer_only-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "customer_only-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "customer_only-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "decline_alternative-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "decline_alternative-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "decline_alternative-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "close_then_greeting-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "close_then_greeting-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "close_then_greeting-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "stop_then_greeting-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "stop_then_greeting-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "stop_then_greeting-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate_without_consent-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate_without_consent-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate_without_consent-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "elliptical_visit-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "elliptical_visit-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "elliptical_visit-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "ambiguous_choice-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "ambiguous_choice-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "ambiguous_choice-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      }
+    ],
+    "agent_contacted": [
+      {
+        "id": "customer_before_outreach-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "customer_before_outreach-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "customer_before_outreach-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "reply_after_outreach-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "reply_after_outreach-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "reply_after_outreach-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "agent_only-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "agent_only-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "agent_only-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "customer_only-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "customer_only-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "customer_only-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "decline_alternative-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "decline_alternative-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "decline_alternative-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "close_then_greeting-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "close_then_greeting-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "close_then_greeting-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "stop_then_greeting-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "stop_then_greeting-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "stop_then_greeting-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate_without_consent-ordered",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate_without_consent-out_of_order",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "reactivate_without_consent-duplicate",
+        "expected": "False",
+        "predicted": "False"
+      },
+      {
+        "id": "elliptical_visit-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "elliptical_visit-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "elliptical_visit-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "ambiguous_choice-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "ambiguous_choice-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "ambiguous_choice-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-ordered",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-out_of_order",
+        "expected": "True",
+        "predicted": "True"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-duplicate",
+        "expected": "True",
+        "predicted": "True"
+      }
+    ],
+    "awaiting": [
+      {
+        "id": "customer_before_outreach-ordered",
+        "expected": "CUSTOMER",
+        "predicted": "CUSTOMER"
+      },
+      {
+        "id": "customer_before_outreach-out_of_order",
+        "expected": "CUSTOMER",
+        "predicted": "CUSTOMER"
+      },
+      {
+        "id": "customer_before_outreach-duplicate",
+        "expected": "CUSTOMER",
+        "predicted": "CUSTOMER"
+      },
+      {
+        "id": "reply_after_outreach-ordered",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "reply_after_outreach-out_of_order",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "reply_after_outreach-duplicate",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "agent_only-ordered",
+        "expected": "CUSTOMER",
+        "predicted": "CUSTOMER"
+      },
+      {
+        "id": "agent_only-out_of_order",
+        "expected": "CUSTOMER",
+        "predicted": "CUSTOMER"
+      },
+      {
+        "id": "agent_only-duplicate",
+        "expected": "CUSTOMER",
+        "predicted": "CUSTOMER"
+      },
+      {
+        "id": "customer_only-ordered",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "customer_only-out_of_order",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "customer_only-duplicate",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "decline_alternative-ordered",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "decline_alternative-out_of_order",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "decline_alternative-duplicate",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "close_then_greeting-ordered",
+        "expected": "NONE",
+        "predicted": "NONE"
+      },
+      {
+        "id": "close_then_greeting-out_of_order",
+        "expected": "NONE",
+        "predicted": "NONE"
+      },
+      {
+        "id": "close_then_greeting-duplicate",
+        "expected": "NONE",
+        "predicted": "NONE"
+      },
+      {
+        "id": "stop_then_greeting-ordered",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "stop_then_greeting-out_of_order",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "stop_then_greeting-duplicate",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "reactivate-ordered",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "reactivate-out_of_order",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "reactivate-duplicate",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "reactivate_without_consent-ordered",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "reactivate_without_consent-out_of_order",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "reactivate_without_consent-duplicate",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "elliptical_visit-ordered",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "elliptical_visit-out_of_order",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "elliptical_visit-duplicate",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "ambiguous_choice-ordered",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "ambiguous_choice-out_of_order",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "ambiguous_choice-duplicate",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-ordered",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-out_of_order",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      },
+      {
+        "id": "executive_offer_not_customer_offer-duplicate",
+        "expected": "EXECUTIVE",
+        "predicted": "EXECUTIVE"
+      }
+    ]
+  },
+  "limitations": "Synthetic; variants correlated; extraction measures exact field/value facts; no LLM extraction accuracy claim."
+}

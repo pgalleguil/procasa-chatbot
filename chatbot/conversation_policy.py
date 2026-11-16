@@ -1,6 +1,8 @@
 """Deterministic safeguards for outbound chatbot conversation behaviour."""
 from __future__ import annotations
 
+from .message_scope import office_messages
+
 import re
 import unicodedata
 
@@ -749,7 +751,7 @@ def nudge_eligibility(lead: dict) -> dict:
         return {"eligible": False, "reason": "human_takeover_confirmed", "evidence": takeover_at, "state": "human_handoff"}
     if lead.get("bot_pausado") or lead.get("delivery_unknown_pending"):
         return {"eligible": False, "reason": "manual_pause_or_delivery_unknown", "evidence": True, "state": status}
-    messages = lead.get("messages") or []
+    messages = office_messages(lead.get("messages"))
     last_message = messages[-1] if messages else {}
     if last_message.get("role") == "assistant" and last_message.get("tipo") in {
         "rechazo_corredor", "cierre_conversacion", "despedida",

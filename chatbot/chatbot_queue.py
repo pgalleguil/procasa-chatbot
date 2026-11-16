@@ -6,6 +6,8 @@ response pipelines.
 """
 from __future__ import annotations
 
+from .message_scope import office_messages
+
 import asyncio
 import inspect
 import logging
@@ -126,7 +128,7 @@ def _recent_bot_response_is_duplicate(db, *, phone, response):
     except (KeyError, AssertionError, AttributeError):
         return False
     assistant_messages = [
-        str(item.get("content") or "") for item in (lead.get("messages") or [])
+        str(item.get("content") or "") for item in office_messages(lead.get("messages"))
         if item.get("role") == "assistant"
         and item.get("delivery_status") not in {"generated", "provider_attempt", "suppressed", "delivery_unknown"}
     ]

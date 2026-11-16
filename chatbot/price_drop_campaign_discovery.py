@@ -1,5 +1,7 @@
 """Read-only discovery of current Prop360 price reductions and exact inquiry leads."""
 from __future__ import annotations
+
+from .message_scope import office_messages
 import hashlib
 import re
 from dataclasses import asdict, dataclass
@@ -643,7 +645,7 @@ def _block_reason(lead: dict[str, Any], event: PriceDropEvent) -> str | None:
             return ("event_already_attempted" if status in {"SENT", "RESPONDED"}
                     else "event_delivery_unresolved" if status in {"SENDING", "DELIVERY_UNKNOWN"}
                     else "event_already_prepared")
-    for message in lead.get("messages") or []:
+    for message in office_messages(lead.get("messages")):
         meta = message.get("metadata") or {} if isinstance(message, dict) else {}
         if (meta.get("campaign_id") == event.event_id
                 or meta.get("price_drop_event_id") == event.event_id

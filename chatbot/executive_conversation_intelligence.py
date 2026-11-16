@@ -11,24 +11,28 @@ import json
 import logging
 import re
 import unicodedata
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
-VERSION = "executive_hybrid_v1"
+VERSION = "executive_hybrid_v2"
 INTENTS = frozenset({
     "NO_SIGNAL", "ASK_INFO", "INTERESTED", "ASK_VISIT", "ASK_CONTACT",
     "GIVE_OFFER", "ASK_ALTERNATIVES", "PROPERTY_DECLINED",
-    "SEARCH_COMPLETED", "OPT_OUT",
+    "SEARCH_COMPLETED", "OPT_OUT", "SEARCH_UPDATED", "OWNER_SELL", "OWNER_RENT", "MIXED_NEEDS",
 })
 OPERATIONS = frozenset({"ARRIENDO", "VENTA"})
 PROPERTY_TYPES = frozenset({"DEPARTAMENTO", "CASA", "TERRENO", "OFICINA", "LOCAL_COMERCIAL"})
-HOT_INTENTS = frozenset({"ASK_VISIT", "ASK_CONTACT", "GIVE_OFFER"})
+from .lead_temperature import HOT_INTENTS
+from .executive_semantics import intent as evidence_intent, extract, ambiguous
 TERMINAL = frozenset({"OPT_OUT", "SEARCH_COMPLETED"})
 PII = [
     (re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b"), "[correo]"),
     (re.compile(r"(?<!\d)(?:\+?56[\s-]?)?9[\s-]?\d{4}[\s-]?\d{4}(?!\d)"), "[telefono]"),
     (re.compile(r"\b\d{1,2}\.\d{3}\.\d{3}-[\dkK]\b"), "[rut]"),
+    (re.compile(r"\b\d{7,8}-[\dkK]\b"), "[rut]"),
+    (re.compile(r"https?://\S+", re.I), "[enlace]"),
 ]
 SYS_PROMPT = """Clasificador inmobiliario chileno. Responde SOLO JSON válido.
 Recibes mensajes entre ejecutivo y cliente, y un estado comercial anterior.
@@ -39,7 +43,9 @@ No confundas 'ya encontré/compré/arrendé propiedad' con la baja explícita 'n
 No inventes comuna, valor, tipo, operación, visitas concretadas, acuerdos, ofertas, permisos, datos personales ni fechas.
 No infieras una visita por un mero 'me interesa' o solicitud de detalles.
 Categorías intent: NO_SIGNAL, ASK_INFO, INTERESTED, ASK_VISIT, ASK_CONTACT,
-GIVE_OFFER, ASK_ALTERNATIVES, PROPERTY_DECLINED, SEARCH_COMPLETED, OPT_OUT.
+GIVE_OFFER, ASK_ALTERNATIVES, PROPERTY_DECLINED, SEARCH_COMPLETED, OPT_OUT,
+SEARCH_UPDATED (necesidad de búsqueda), OWNER_SELL (ofrece su inmueble para vender),
+OWNER_RENT (ofrece su inmueble para arrendar), MIXED_NEEDS (vende para comprar).
 Si la intención es ambigua, NO_SIGNAL y needs_review=true.
 JSON: {"intent":"...", "search":{"operation":null,
 "property_type":null,"comunas":[],"max_price_uf":null,
@@ -59,10 +65,10 @@ def _plain(text: Any) -> str:
 
 
 def _safe(text: Any, limit: int = 700) -> str:
-    result = str(text or "")[:limit]
+    result = str(text or "")
     for pattern, replacement in PII:
         result = pattern.sub(replacement, result)
-    return result
+    return result[:limit]
 
 
 def _match(pattern: str, text: str) -> bool:
@@ -70,116 +76,64 @@ def _match(pattern: str, text: str) -> bool:
 
 
 def rule_intent(text: str) -> str:
-    """Specific, explicit intent only; avoid latent semantic assumptions."""
-    msg = _plain(text)
-    if not msg:
-        return "NO_SIGNAL"
-    # A property-specific preference is NOT a global STOP.
-    if _match(r"\b(no me (?:escriban|contacten|manden mensajes) (?:mas|nunca)|"
-              r"no (?:quiero|deseo) (?:recibir|que me envien) (?:mas )?mensajes|"
-              r"denme de baja|(?:quiero que me )?den (?:de )?baja|eliminen mi numero|"
-              r"no me contacten mas|no me contactes mas|stop)\b", msg):
-        if not _match(r"\b(?:de|sobre|por) (?:esa|esta|la) (?:propiedad|casa|departamento)\b", msg):
-            return "OPT_OUT"
-    if _match(r"\b(ya (?:encontre|compre|arrende|adquiri) (?:una |un |mi )?(?:propiedad|casa|departamento|inmueble)|"
-              r"ya no (?:estoy buscando|busco (?:casa|departamento|propiedad))|"
-              r"termine (?:mi |la )?busqueda)\b", msg):
-        return "SEARCH_COMPLETED"
-    if _match(r"\b(?:hago una oferta|quiero ofertar|mi oferta (?:es|seria)|"
-              r"ofrezco \d|presentar una oferta)\b", msg):
-        return "GIVE_OFFER"
-    if _match(r"\b(?:quiero (?:agendar|coordinar|hacer) una visita|"
-              r"(?:podemos|puedo|podria|quiero) (?:ir a )?visitar(?:la|lo)?|"
-              r"(?:cuando|como) (?:puedo|podemos) (?:visitar|ir a ver)|"
-              r"agendemos (?:una )?visita)\b", msg):
-        if not _match(r"\b(?:no (?:puedo|quiero) visitar|cancelar la visita)\b", msg):
-            return "ASK_VISIT"
-    if _match(r"\b(?:me (?:puedes|pueden|podrias) llamar|"
-              r"(?:llamame|llamenme)|quiero (?:hablar|conversar) con (?:un |una )?(?:ejecutiv[oa]|asesor[ae]?|corredor[ae]?)|"
-              r"contacteme(?:n)? por telefono)\b", msg):
-        if "no me llam" not in msg:
-            return "ASK_CONTACT"
-    if _match(r"\b(?:busco (?:otra|otras) (?:casa|propiedad|opcion|alternativa)|"
-              r"(?:otras?|mas) (?:opciones|alternativas|propiedades) similares|"
-              r"ahora busco en|mejor en otra comuna|tienen algo parecido)\b", msg):
-        return "ASK_ALTERNATIVES"
-    if _match(r"\b(?:esa|esta|la) (?:casa|propiedad|opcion|departamento) no me interesa|"
-              r"no me interesa (?:esa|esta|la) (?:casa|propiedad|opcion|departamento)\b", msg):
-        return "PROPERTY_DECLINED"
-    if _match(r"\b(?:me interesa|estoy interesado|estoy interesada|sigo interesado|sigo interesada)\b", msg):
-        if "no me interesa" not in msg:
-            return "INTERESTED"
-    if "?" in text or _match(r"\b(?:cuanto cuesta|gastos comunes|donde queda|"
-                            r"tiene estacionamiento|me das detalles|quiero informacion)\b", msg):
-        return "ASK_INFO"
-    return "NO_SIGNAL"
+    return evidence_intent(text)
 
 
-def _customer_only(messages: list[dict]) -> list[dict]:
-    return [m for m in messages if m.get("actor_type") == "customer"
-            and m.get("channel") == "executive_whatsapp"
-            and isinstance(m.get("content"), str)]
-
-
-def _trusted_search(value: object, customer_texts: list[str], prior: dict) -> dict:
-    """Model proposals must have literal evidence in customer utterances."""
-    result = dict(prior) if isinstance(prior, dict) else {}
-    data = value if isinstance(value, dict) else {}
-    text = _plain(" ".join(customer_texts))
-    operation = str(data.get("operation") or "").upper()
-    if operation in OPERATIONS and _match(
-        r"\b(?:arriend|arrend|alquil)" if operation == "ARRIENDO" else r"\b(?:compr|vent|adquir)", text
-    ):
-        result["operation"] = operation
-    prop = str(data.get("property_type") or "").upper()
-    hints = {"DEPARTAMENTO": r"\b(?:departamento|depto)\b", "CASA": r"\bcasa\b",
-             "TERRENO": r"\bterreno\b", "OFICINA": r"\boficina\b",
-             "LOCAL_COMERCIAL": r"\blocal comercial\b"}
-    if prop in PROPERTY_TYPES and _match(hints[prop], text):
-        result["property_type"] = prop
-    comunas = data.get("comunas")
-    if isinstance(comunas, list):
-        validated = []
-        for raw in comunas[:5]:
-            if not isinstance(raw, str) or not 2 <= len(raw.strip()) <= 50:
-                continue
-            name = raw.strip()
-            if re.search(r"\b" + re.escape(_plain(name)) + r"\b", text):
-                if name not in validated:
-                    validated.append(name)
-        if validated:
-            result["comunas"] = validated
-    for key, marker in (("max_price_uf", "uf"), ("max_price_clp", "clp"), ("min_bedrooms", "dormitorio")):
-        raw = data.get(key)
-        if type(raw) is not int or raw <= 0:
+def _ordered(messages):
+    """Provider timestamps establish order, never webhook arrival order."""
+    turns, seen = [], set()
+    for message in messages:
+        if not isinstance(message, dict) or message.get("channel") != "executive_whatsapp":
             continue
-        if key == "min_bedrooms":
-            if 1 <= raw <= 12 and _match(rf"\b{raw}\s*(?:dormitorios?|piezas?|habitaciones?)\b", text):
-                result[key] = raw
-        elif key == "max_price_uf":
-            if 1 <= raw <= 100000 and _match(rf"\b{raw}(?:[.,]0+)?\s*uf\b", text):
-                result[key] = raw
-        elif key == "max_price_clp":
-            if 10000 <= raw <= 100000000000 and str(raw) in re.sub(r"[.\s]", "", text):
-                result[key] = raw
-    return result
+        if message.get("actor_type") not in ("customer", "human_agent"):
+            continue
+        if not isinstance(message.get("content"), str):
+            continue
+        identity = (str(message.get("wasender_session_id", "")), message.get("provider_message_id"))
+        if not identity[1] or identity in seen:
+            continue
+        try:
+            stamp = message.get("timestamp")
+            stamp = stamp if isinstance(stamp, datetime) else datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            continue
+        seen.add(identity)
+        turns.append((stamp, {**message, "timestamp": stamp.astimezone(timezone.utc).isoformat()}))
+    # Equal times remain ambiguous for response attribution; stable order is
+    # only a display convention, never evidence of a customer response.
+    return [m for _, m in sorted(turns, key=lambda item: item[0])]
 
 
-def _propose_with_deepseek(messages: list[dict], prior: dict) -> dict:
+def _valid_proposal(raw):
+    if not isinstance(raw, dict):
+        raise ValueError("invalid_model_json")
+    if raw.get("intent") not in INTENTS or type(raw.get("needs_review")) is not bool:
+        raise ValueError("invalid_model_schema")
+    confidence = raw.get("confidence")
+    if type(confidence) not in (float, int) or not 0 <= confidence <= 1:
+        raise ValueError("invalid_model_confidence")
+    if not isinstance(raw.get("search"), dict):
+        raise ValueError("invalid_model_search")
+    return raw
+
+
+def _propose_with_deepseek(messages: list[dict], prior: dict, *, diagnostics=None) -> dict:
     # Dedicated short, low-temperature, bounded classification call.
     from config import Config
     from .grok_client import client
     context = [
         {"actor": "CLIENTE" if m.get("actor_type") == "customer" else "EJECUTIVO",
          "texto": _safe(m.get("content"))}
-        for m in messages[-8:]
+        for m in messages[-32:]
     ]
-    response = client.chat.completions.create(
+    response = client.with_options(max_retries=0).chat.completions.create(
         model=Config.DEEPSEEK_MODEL_FAST,
         messages=[
             {"role": "system", "content": SYS_PROMPT},
             {"role": "user", "content": json.dumps({
-                "previous_search": prior,
+                "previous_search": {},  # Never forward persisted strings/PII as trusted instructions.
                 "recent_business_messages": context
             }, ensure_ascii=False)},
         ],
@@ -188,129 +142,160 @@ def _propose_with_deepseek(messages: list[dict], prior: dict) -> dict:
         timeout=12,
         response_format={"type": "json_object"},
     )
+    if diagnostics is not None:
+        usage = getattr(response, "usage", None)
+        diagnostics.update({"model": response.model,
+                            "prompt_tokens": getattr(usage, "prompt_tokens", 0),
+                            "completion_tokens": getattr(usage, "completion_tokens", 0)})
+    if response.choices[0].finish_reason != "stop":
+        raise ValueError("incomplete_model_output")
     output = response.choices[0].message.content
     if not isinstance(output, str) or len(output) > 6000:
         raise ValueError("invalid_model_output")
     parsed = json.loads(output)
     if not isinstance(parsed, dict):
         raise ValueError("invalid_model_json")
-    return parsed
+    return _valid_proposal(parsed)
 
 
 def classify_hybrid(messages: list[dict], previous: dict | None = None,
                     *, llm_enabled: bool = True, propose=None) -> dict:
-    """Return a safe commercial snapshot, without mutating any CRM state."""
+    """Evidence-backed snapshot. Model-only interpretations remain suggestions.
+
+    Accepts a complete authorized window or an incremental suffix plus summary.
+    No auto-consent, campaigns, canonical temperature or CRM writes.
+    """
     previous = previous if isinstance(previous, dict) else {}
-    turns = [m for m in messages if m.get("channel") == "executive_whatsapp"
-             and m.get("actor_type") in ("customer", "human_agent")]
+    prior = previous.get("summary") if isinstance(previous.get("summary"), dict) else {}
+    turns = _ordered(messages)
     if not turns:
         raise ValueError("no_authorized_messages")
-    customers = _customer_only(turns)
+    customers = [m for m in turns if m["actor_type"] == "customer"]
     last_customer = customers[-1] if customers else None
-    last = turns[-1]
-    prior_summary = previous.get("summary") if isinstance(previous.get("summary"), dict) else {}
-    old_customer_id = str(prior_summary.get("last_customer_message_id") or "")
-    customer_id = str(last_customer.get("provider_message_id") or "") if last_customer else ""
-    unchanged_customer = bool(customer_id and old_customer_id == customer_id)
-    rule = rule_intent(last_customer["content"]) if last_customer else "NO_SIGNAL"
-    proposal: dict = {}
-    source = "rules"
-    if llm_enabled and last_customer and not unchanged_customer:
+    customer_id = str(last_customer.get("provider_message_id") or "") if last_customer else prior.get("last_customer_message_id")
+    old_id = prior.get("last_customer_message_id")
+    # The checkpoint is in ingestion order, whereas interpretation uses event
+    # time. A newly delivered old STOP must not disappear behind the checkpoint.
+    old_index = next((i for i, m in enumerate(messages) if m.get("provider_message_id") == old_id and m.get("actor_type") == "customer"), -1)
+    fresh_ids = {m.get("provider_message_id") for m in messages[old_index + 1:]}
+    fresh = [m for m in turns if m.get("provider_message_id") in fresh_ids]
+    intent = prior.get("intent", "NO_SIGNAL")
+    search_status = prior.get("search_status", "UNKNOWN")
+    opted_out = prior.get("contact_permission") == "OPTED_OUT" or prior.get("intent") == "OPT_OUT"
+    state = {"needs": prior.get("needs", {}), "field_evidence": prior.get("field_evidence", {})}
+    if not state["needs"] and prior.get("search"):
+        state["needs"] = {"DEMAND": prior["search"]}
+    previous_agent = ""
+    previous_agent_time = None
+    uncertain = False
+    new_customer = False
+    latest_evidence = prior.get("intent_evidence_provider_ids", [])
+    request = deepcopy(prior.get("latest_important_request"))
+    watermark = prior.get("last_customer_at")
+    for m in turns:
+        if m["actor_type"] == "human_agent":
+            previous_agent = m["content"]
+            previous_agent_time = m["timestamp"]
+            if request and m["timestamp"] > request["timestamp"]:
+                request["executive_message_after_request"] = True
+            continue
+        if m not in fresh or m.get("_context_only"):
+            continue
+        # A late delivery may add evidence but cannot silently rewrite newer
+        # requirements. Keep global stop evidence sticky and request review.
+        late = bool(watermark and str(m.get("timestamp")) < str(watermark))
+        gap = (datetime.fromisoformat(m["timestamp"]) - datetime.fromisoformat(previous_agent_time)).total_seconds() if previous_agent_time else None
+        current = evidence_intent(m["content"], previous_agent if gap is not None and 0 < gap <= 48 * 3600 else "")
+        previous_agent = ""  # An elliptical answer must immediately follow the agent.
+        if current == "OPT_OUT":
+            opted_out = True
+        if late:
+            uncertain = True
+            continue
+        new_customer = True
+        if search_status == "COMPLETED" and current in ("SEARCH_UPDATED", "ASK_ALTERNATIVES"):
+            state = {"needs": {k: v for k, v in state.get("needs", {}).items() if k != "DEMAND"},
+                     "field_evidence": {k: v for k, v in state.get("field_evidence", {}).items() if k != "DEMAND"}}
+        state = extract(m["content"], state, m.get("provider_message_id"))
+        if current == "SEARCH_COMPLETED":
+            search_status = "COMPLETED"
+        elif current not in ("NO_SIGNAL", "OPT_OUT", "PROPERTY_DECLINED"):
+            search_status = "ACTIVE"
+        # Greetings never clear a completed search or unsubscribe preference.
+        intent = current
+        if current in HOT_INTENTS:
+            request = {"intent": current, "provider_message_id": m["provider_message_id"],
+                       "timestamp": m["timestamp"], "executive_message_after_request": False,
+                       "fulfillment": "UNKNOWN"}
+        elif request and (current in TERMINAL or re.fullmatch(
+                r"(?:ya )?no quiero (?:visitar|la visita|que me llamen)|cancela(?:r|en)? la visita",
+                _plain(m["content"]).strip(". "))):
+            request["customer_withdrew"] = True
+        latest_evidence = [m["provider_message_id"]] if current != "NO_SIGNAL" else []
+        uncertain |= ambiguous(m["content"]) or current == "NO_SIGNAL" or bool(re.search(r"\bno\b", _plain(m["content"])))
+    source, proposal = "rules", {}
+    if llm_enabled and new_customer:
         try:
-            proposal = (propose or _propose_with_deepseek)(
-                turns[-8:], prior_summary.get("search") or {}
-            )
+            proposal = _valid_proposal((propose or _propose_with_deepseek)(turns[-32:], {}))
             source = "hybrid"
         except Exception as exc:
-            # Never log customer utterances / prompt, even if provider errors do.
             logger.warning("EXEC_INTELLIGENCE model_failure=%s", type(exc).__name__)
             source = "rules_fallback"
-    previous_intent = str(prior_summary.get("intent") or "NO_SIGNAL")
-    proposed_intent = str(proposal.get("intent") or "NO_SIGNAL").upper()
-    if proposed_intent not in INTENTS:
-        proposed_intent = "NO_SIGNAL"
-    if unchanged_customer:
-        intent = previous_intent if previous_intent in INTENTS else rule
-    elif rule in TERMINAL:
-        intent = rule
-    elif proposed_intent in TERMINAL:
-        # High-impact decisions must have explicit hard evidence, not model guesswork.
-        intent = rule
-    elif rule in HOT_INTENTS:
-        intent = rule
-    elif rule in {"PROPERTY_DECLINED", "ASK_ALTERNATIVES"}:
-        intent = rule
-    else:
-        intent = proposed_intent if proposed_intent != "NO_SIGNAL" else rule
-    texts = [str(m.get("content") or "") for m in customers[-8:]]
-    search = _trusted_search(
-        proposal.get("search") if not unchanged_customer else {},
-        texts, prior_summary.get("search") or {},
-    )
-    # A completed search is not the same as an explicit global marketing opt-out.
-    if intent == "OPT_OUT":
-        search_state = "UNKNOWN"
-        campaign_hint = "SUPPRESS_REVIEW"
-        reason = "explicit_opt_out"
-    elif intent == "SEARCH_COMPLETED":
-        search_state = "COMPLETED"
-        campaign_hint = "SUPPRESS_REVIEW"
-        reason = "search_completed"
-    else:
-        search_state = "ACTIVE" if customers and (intent != "NO_SIGNAL" or search) else "UNKNOWN"
-        campaign_hint = "REVIEW"
-        reason = None
-    count_agent = sum(m.get("actor_type") == "human_agent" for m in turns)
-    count_customer = len(customers)
-    # A customer writing BEFORE the executive is not a response to outreach.
-    seen_agent = False
-    genuine_reply = False
-    for turn in turns:
-        if turn.get("actor_type") == "human_agent":
-            seen_agent = True
-        elif seen_agent and turn.get("actor_type") == "customer":
-            genuine_reply = True
-    last_agent = next((m for m in reversed(turns) if m.get("actor_type") == "human_agent"), None)
-    last_inbound = last_customer
+    # Model interpretation is explicitly unconfirmed, never promoted to an
+    # observed visit/offer/stop. Confidence is self-reported, not calibrated.
+    model_disagrees = bool(proposal and proposal["intent"] != intent)
+    contacts = prior.get("contact", {})
+    agents = [m for m in turns if m["actor_type"] == "human_agent"]
+    def stamp(m):
+        value = m["timestamp"]
+        value = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    reply = any(stamp(a) < stamp(c) for a in agents for c in customers)
+    if contacts.get("last_agent_at"):
+        old_agent = {"timestamp": contacts["last_agent_at"]}
+        reply |= any(stamp(old_agent) < stamp(c) for c in customers)
+    last = turns[-1]
+    tied = len({m["actor_type"] for m in turns if stamp(m) == stamp(last)}) > 1
     contact = {
-        "agent_messages": count_agent,
-        "customer_messages": count_customer,
-        "agent_contacted": count_agent > 0,
-        "customer_responded": genuine_reply,
-        "last_agent_at": last_agent.get("timestamp") if last_agent else None,
-        "last_customer_at": last_inbound.get("timestamp") if last_inbound else None,
-        "awaiting": "EXECUTIVE" if last.get("actor_type") == "customer" else "CUSTOMER",
-        "last_actor": last.get("actor_type"),
+        "agent_contacted": bool(agents) or contacts.get("agent_contacted", False),
+        "customer_responded": reply or contacts.get("customer_responded", False),
+        "bilateral_observed": bool(agents and customers) or contacts.get("bilateral_observed", False),
+        "last_agent_at": max([a["timestamp"] for a in agents] + ([contacts["last_agent_at"]] if contacts.get("last_agent_at") else []), default=None),
+        "last_customer_at": max([c["timestamp"] for c in customers] + ([contacts["last_customer_at"]] if contacts.get("last_customer_at") else []), default=None),
+        "awaiting": "UNKNOWN" if tied else ("EXECUTIVE" if last["actor_type"] == "customer" else "CUSTOMER"),
+        "last_actor": None if tied else last["actor_type"],
+        "formal_crm_management": False,
+        "important_request_pending": bool(request and not request["executive_message_after_request"]
+                                          and not request.get("customer_withdrew")),
     }
-    if intent in TERMINAL:
+    # Count only the supplied window; do not label it a lifetime total.
+    contact["window_agent_messages"] = len(agents)
+    contact["window_customer_messages"] = len(customers)
+    previous_latest = max(contacts.get("last_agent_at") or "", contacts.get("last_customer_at") or "")
+    if previous_latest > last["timestamp"]:
+        contact["awaiting"] = contacts.get("awaiting", "UNKNOWN")
+        contact["last_actor"] = contacts.get("last_actor")
+    if watermark and last_customer and last_customer["timestamp"] < watermark:
+        customer_id = old_id
+    if intent in TERMINAL or search_status == "COMPLETED":
         contact["awaiting"] = "NONE"
-    confidence = proposal.get("confidence")
-    if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
-        confidence = 0.95 if rule != "NO_SIGNAL" else 0.0
-    # A model cannot create a confirmed opt-out or completed search.
-    review = (source == "rules_fallback" or intent in TERMINAL
-              or (intent in HOT_INTENTS and rule not in HOT_INTENTS)
-              or bool(proposal.get("needs_review"))
-              or (rule == "NO_SIGNAL" and intent == "NO_SIGNAL"))
+    reason = "explicit_opt_out" if opted_out else "search_completed" if search_status == "COMPLETED" else None
     return {
-        "version": VERSION,
-        "intent": intent,
-        "search_status": search_state,
-        "search": search,
+        "version": VERSION, "intent": intent, "search_status": search_status,
+        "search": state.get("needs", {}).get("DEMAND", {}),
+        "needs": state.get("needs", {}), "field_evidence": state.get("field_evidence", {}),
+        "contact_permission": "OPTED_OUT" if opted_out else "UNKNOWN",
         "contact": contact,
+        "latest_important_request": request,
         "suggested_priority": "HOT" if intent in HOT_INTENTS else "NORMAL",
-        "campaign": {
-            "eligibility_hint": campaign_hint,
-            "reason": reason,
-            "enforced": False,  # NEVER update opt-out / campaign flags from this snapshot.
-        },
-        "source": source,
-        "confidence": round(float(confidence), 2),
-        "needs_review": bool(review),
-        "last_customer_message_id": customer_id or None,
-        "evidence_provider_ids": [
-            str(m["provider_message_id"]) for m in turns[-4:]
-            if isinstance(m.get("provider_message_id"), str)
-        ],
+        "campaign": {"eligibility_hint": "SUPPRESS_REVIEW" if reason else "REVIEW", "reason": reason, "enforced": False},
+        "source": source, "confidence": None,
+        "confidence_kind": "not_calibrated",
+        "model_suggestion": {"intent": proposal["intent"], "self_reported_confidence": proposal["confidence"]} if proposal else None,
+        "needs_review": bool(uncertain or tied or model_disagrees or source == "rules_fallback" or intent in TERMINAL or proposal.get("needs_review")),
+        "last_customer_message_id": customer_id,
+        "last_customer_at": contact["last_customer_at"],
+        "intent_evidence_provider_ids": latest_evidence,
+        "evidence_provider_ids": [m["provider_message_id"] for m in turns[-4:]],
         "analyzed_at": datetime.now(timezone.utc).isoformat(),
     }

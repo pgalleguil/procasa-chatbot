@@ -1,4 +1,5 @@
 # chatbot/processing_service.py
+from .message_scope import office_messages
 import logging
 import re
 import uuid
@@ -233,7 +234,7 @@ class LeadProcessingService:
         # new URL or explicit international ID to create a false match.
         latest_reference = None
         visit_data_state = None
-        for message in reversed((lead_doc.get("messages") or [])[-20:]):
+        for message in reversed(office_messages(lead_doc.get("messages"))[-20:]):
             if str(message.get("role") or "").strip().lower() not in {"user", "customer", "prospect"}:
                 continue
             content = str(message.get("content") or "")
@@ -329,7 +330,7 @@ class LeadProcessingService:
 
         # B. Behavioral Signals
         message_count = lead_doc.get("message_count", 0)
-        messages = lead_doc.get("messages", [])
+        messages = office_messages(lead_doc.get("messages"))
         if message_count > 1 or len(messages) > 1:
             behavior_score += 20
         

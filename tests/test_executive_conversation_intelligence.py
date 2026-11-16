@@ -20,7 +20,7 @@ def turn(actor, text, msg_id="m1", *, cycle="cycle-A", session="133286", owner="
         "actor_type": actor, "content": text,
         "channel": "executive_whatsapp",
         "message_id": msg_id, "provider_message_id": msg_id,
-        "timestamp": "2026-11-16T16:20:00+00:00",
+        "timestamp": "2026-11-16T16:20:00+00:00" if actor == "human_agent" else "2026-11-16T16:21:00+00:00",
         "assignment_cycle_id": cycle,
         "assigned_executive_id": owner,
         "wasender_session_id": session,
@@ -65,7 +65,7 @@ def test_hybrid_extracts_only_customer_supported_search_and_visits():
             "search": {
                 "operation": "ARRIENDO", "property_type": "DEPARTAMENTO",
                 "comunas": ["Maipú", "Las Condes"],
-                "max_price_uf": 20, "min_bedrooms": 2,
+                "max_price_uf": 20, "bedrooms": 2,
             }
         }
     messages = [
@@ -74,12 +74,12 @@ def test_hybrid_extracts_only_customer_supported_search_and_visits():
     ]
     result = classify_hybrid(messages, llm_enabled=True, propose=model)
     assert calls and len(calls) == 1
-    assert result["intent"] == "ASK_VISIT"
-    assert result["suggested_priority"] == "HOT"
+    assert result["intent"] == "SEARCH_UPDATED"
+    assert result["suggested_priority"] == "NORMAL"
     assert result["needs_review"]  # model-only visit requires human review
     assert result["search"] == {
         "operation": "ARRIENDO", "property_type": "DEPARTAMENTO",
-        "comunas": ["Maipú"], "max_price_uf": 20, "min_bedrooms": 2,
+        "comunas": ["Maipú"], "max_price_uf": 20, "bedrooms": 2,
     }
     assert result["contact"]["customer_responded"] is True
     assert result["campaign"]["enforced"] is False
@@ -90,6 +90,7 @@ def test_outgoing_cannot_create_customer_intent_or_count_as_reply():
         turn("customer", "Hola", "before-agent"),
         turn("human_agent", "No le enviaré más mensajes. Ya compró un departamento.", "out"),
     ]
+    messages[0]["timestamp"] = "2026-11-16T16:19:00+00:00"
     summary = classify_hybrid(messages, llm_enabled=False)
     assert summary["intent"] == "NO_SIGNAL"
     assert summary["contact"]["customer_responded"] is False
@@ -147,7 +148,19 @@ def test_low_confidence_model_cannot_invent_global_opt_out():
     assert summary["campaign"]["reason"] is None
 
 
+@pytest.fixture(autouse=True)
+def capture_config(monkeypatch):
+    monkeypatch.setenv("PROCASA_WASENDER_TEST_AGENT", '{"session_id":133286,"webhook_secret":"synthetic-secret-123","api_token":"synthetic-token-123","capture_enabled":true}')
+
+
+class Cursor(list):
+    def limit(self, n):
+        return self[:n]
+
+
 class FakeUsers:
+    def find(self, query, projection):
+        return Cursor([{"_id": ObjectId("69796bc4bbebf240378eb739"), "nombre": "Test Agent"}])
     def find_one(self, query, projection):
         if query.get("is_active") is True and "133286" in query["wasender.session_id"]["$in"]:
             return {"_id": query["_id"]}

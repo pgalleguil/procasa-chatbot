@@ -6,6 +6,8 @@ Dedicated campaign/dispatch/turn collections provide auditable outcomes.
 """
 from __future__ import annotations
 
+from .message_scope import office_messages
+
 import hashlib
 import os
 import re
@@ -151,7 +153,7 @@ def _inquiry_evidence(lead: dict, code: str, drop_at: datetime) -> str | None:
     """
     if str((lead.get("prospecto") or {}).get("codigo") or "") != code:
         return None
-    for item in lead.get("messages") or []:
+    for item in office_messages(lead.get("messages")):
         if not isinstance(item, dict) or item.get("role") not in {"user", "customer"}:
             continue
         if not str(item.get("content") or "").strip():

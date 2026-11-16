@@ -8,6 +8,8 @@ fences as the isolated validation path.
 """
 from __future__ import annotations
 
+from .message_scope import office_messages
+
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
@@ -216,7 +218,7 @@ async def production_worker_loop(*, status: dict[str, Any],
             ) or {}
         )
         verified_facts: dict[str, Any] = {}
-        for message in reversed(lead.get("messages") or []):
+        for message in reversed(office_messages(lead.get("messages"))):
             if (
                 message.get("role") == "assistant"
                 and message.get("batch_id") == turn.get("_id")

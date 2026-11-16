@@ -5,6 +5,8 @@ No sending at import/startup, and the live provider requires explicit gates.
 """
 from __future__ import annotations
 
+from .message_scope import office_messages
+
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -208,7 +210,7 @@ def _contact_suppression_reasons(lead: dict | None) -> set[str]:
         if classification.label == "BAJA":
             reasons.add("completed_search" if classification.reason == "already_found_property"
                         else "explicit_opt_out")
-    for message in lead.get("messages") or []:
+    for message in office_messages(lead.get("messages")):
         if not isinstance(message, dict) or message.get("role") not in {"user", "customer"}:
             continue
         classification = classify_price_drop_reply(message.get("content") or "")
@@ -476,7 +478,7 @@ def _real_campaign_history_blocker(lead: dict, campaign: dict) -> str | None:
         if (prior_currency == currency and prior_old == old_price
                 and prior_new == new_price):
             return "same_price_drop_already_recorded"
-    for message in lead.get("messages") or []:
+    for message in office_messages(lead.get("messages")):
         if not isinstance(message, dict):
             continue
         metadata = message.get("metadata") or {}
@@ -504,7 +506,7 @@ def _text_sender_window_blocker(lead: dict, now: datetime) -> str | None:
     if mode != "official":
         return "whatsapp_channel_mode_invalid"
     inbound = []
-    for message in lead.get("messages") or []:
+    for message in office_messages(lead.get("messages")):
         if not isinstance(message, dict) or message.get("role") not in {"user", "customer"}:
             continue
         value = message.get("timestamp")
@@ -820,7 +822,7 @@ def _inquiry_before(lead: dict, code: str, drop_at: datetime,
     An unrelated old customer message plus the current prospecto.codigo is
     not evidence of a past inquiry about that listing.
     """
-    for message in lead.get("messages") or []:
+    for message in office_messages(lead.get("messages")):
         if not isinstance(message, dict) or message.get("role") not in ("user", "customer"):
             continue
         text = str(message.get("content") or "")

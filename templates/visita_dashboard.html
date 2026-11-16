@@ -766,7 +766,7 @@
                     </thead>
                     <tbody>
                         {% for c in contracts %}
-                        <tr data-contract-code="{{ c.visita_code }}" data-contract-status="{{ c.status }}">
+                        <tr data-contract-code="{{ c.visita_code }}" data-contract-status="{{ c.status }}" data-contract-complete="{{ 'true' if c.signature_complete else 'false' }}">
                             <td data-label="Fecha">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '---'
                                 }}<br><small class="text-secondary">{{ c.created_at.strftime('%H:%M') if c.created_at
                                     else '' }} hrs</small></td>
@@ -789,8 +789,10 @@
                                     class="status-badge status-otp_requested">Código Pedido</span>
                                 {% elif c.status == 'otp_verified' %}<span class="status-badge status-otp_verified">RUT
                                     Validado</span>
-                                {% elif c.status in ['signed','accepted'] %}<span
+                                {% elif c.status in ['signed','accepted'] and c.signature_complete %}<span
                                     class="status-badge status-signed">Firmado ✓</span>
+                                {% elif c.status in ['signed','accepted','signature_finalizing','signature_processing_failed'] %}<span
+                                    class="status-badge status-otp_verified">Aceptación registrada — PDF pendiente</span>
                                 {% else %}<span class="status-badge status-created">{{ c.status }}</span>{% endif %}
                             </td>
                             <td data-label="Acciones">
@@ -822,7 +824,7 @@
                                         <i class="fa-solid fa-rotate-right"></i>
                                     </button>
                                     {% endif %}
-                                    {% elif c.status in ['signed','accepted'] %}
+                                    {% elif c.status in ['signed','accepted'] and c.signature_complete %}
                                     <a href="/visitas/api/view_signed/{{ c.visita_code }}" target="_blank"
                                         class="btn btn-sm btn-outline-secondary" title="Ver Firmado">
                                         <i class="fa-solid fa-eye"></i>
@@ -835,9 +837,20 @@
                                         class="btn btn-sm btn-outline-info" title="Verificar Evidencia">
                                         <i class="fa-solid fa-shield-halved"></i>
                                     </a>
+                                    {% elif c.status in ['signed','accepted','signature_finalizing','signature_processing_failed'] %}
+                                    <a href="/visitas/verify/{{ c.visita_code }}" target="_blank"
+                                        class="btn btn-sm btn-outline-warning" title="Ver evidencia registrada">
+                                        <i class="fa-solid fa-shield-halved"></i>
+                                    </a>
+                                    {% if user_role in ['supervisor', 'admin'] %}
+                                    <button class="btn btn-sm btn-warning"
+                                        onclick="repairVisita('{{ c.visita_code }}', this)" title="Reparar PDF y enviar confirmación">
+                                        <i class="fa-solid fa-wrench"></i> Reparar firma
+                                    </button>
+                                    {% endif %}
                                     {% endif %}
                                     {# Eliminar: siempre visible excepto firmados #}
-                                    {% if c.status not in ['signed','accepted'] %}
+                                    {% if c.status not in ['signed','accepted','signature_finalizing','signature_processing_failed'] %}
                                     <button class="btn btn-sm btn-outline-secondary btn-hover-danger" title="Eliminar"
                                         onclick="deleteVisita('{{ c.visita_code }}', this)">
                                         <i class="fa-solid fa-trash-can"></i>
@@ -1639,11 +1652,14 @@
             'otp_requested': { text: 'Código Pedido',  cls: 'status-otp_requested' },
             'otp_verified':  { text: 'RUT Validado',   cls: 'status-otp_verified' },
             'signed':        { text: 'Firmado ✓',      cls: 'status-signed' },
-            'accepted':      { text: 'Firmado ✓',      cls: 'status-signed' }
+            'accepted':      { text: 'Firmado ✓',      cls: 'status-signed' },
+            'signature_finalizing': { text: 'Aceptación registrada — PDF pendiente', cls: 'status-otp_verified' },
+            'signature_processing_failed': { text: 'Aceptación registrada — PDF pendiente', cls: 'status-otp_verified' }
         };
 
-        function buildActionButtons(visita_code, status) {
-            const isSigned = status === 'signed' || status === 'accepted';
+        function buildActionButtons(visita_code, status, signatureComplete) {
+            const isSigned = (status === 'signed' || status === 'accepted') && signatureComplete;
+            const isAccepted = ['signed', 'accepted', 'signature_finalizing', 'signature_processing_failed'].includes(status);
             const isPending = ['sent','opened','otp_requested','otp_verified'].includes(status);
             const isCreated = status === 'created';
             const userRole = '{{ user_role }}';
@@ -1664,14 +1680,38 @@
                 html += `<a href="/visitas/api/view_signed/${visita_code}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Ver Firmado"><i class="fa-solid fa-eye"></i></a>`;
                 html += `<a href="/visitas/api/download_signed/${visita_code}" target="_blank" class="btn btn-sm btn-success" title="Descargar Firmado"><i class="fa-solid fa-file-circle-check"></i></a>`;
                 html += `<a href="/visitas/verify/${visita_code}" target="_blank" class="btn btn-sm btn-outline-info" title="Verificar Evidencia"><i class="fa-solid fa-shield-halved"></i></a>`;
+            } else if (isAccepted) {
+                html += `<a href="/visitas/verify/${visita_code}" target="_blank" class="btn btn-sm btn-outline-warning" title="Verificar Evidencia"><i class="fa-solid fa-shield-halved"></i></a>`;
+                if (isAdmin) html += `<button class="btn btn-sm btn-warning" onclick="repairVisita('${visita_code}', this)" title="Reparar PDF y enviar confirmación"><i class="fa-solid fa-wrench"></i> Reparar firma</button>`;
             }
 
-            if (!isSigned) {
+            if (!isAccepted) {
                 html += `<button class="btn btn-sm btn-outline-secondary btn-hover-danger" title="Eliminar" onclick="deleteVisita('${visita_code}', this)"><i class="fa-solid fa-trash-can"></i></button>`;
             }
 
             html += '</div>';
             return html;
+        }
+
+        async function repairVisita(visitaCode, button) {
+            if (!confirm('Se reconstruirá el certificado usando la aceptación OTP ya registrada y el PDF original archivado. No se solicitará otra firma. ¿Continuar?')) return;
+            button.disabled = true;
+            try {
+                const response = await fetch(`/visitas/api/${encodeURIComponent(visitaCode)}/repair-signature`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(result.detail || 'No se pudo reparar la firma');
+                alert(result.status === 'already_finalized'
+                    ? 'El documento ya estaba finalizado.'
+                    : 'PDF recuperado y archivado. La confirmación por correo quedó programada; consulte su registro de envío.');
+                location.reload();
+            } catch (error) {
+                alert('Error de reparación: ' + error.message);
+                button.disabled = false;
+            }
         }
 
         async function lookupProperty(code) {
@@ -1713,22 +1753,27 @@
 
                     const prevStatus = row.getAttribute('data-contract-status');
                     const newStatus  = item.status;
-                    if (prevStatus === newStatus) return; // sin cambio
+                    const complete = Boolean(item.signature_complete);
+                    const prevComplete = row.getAttribute('data-contract-complete') === 'true';
+                    if (prevStatus === newStatus && complete === prevComplete) return; // sin cambio
 
                     // Actualizar atributo de status en la fila
                     row.setAttribute('data-contract-status', newStatus);
+                    row.setAttribute('data-contract-complete', complete ? 'true' : 'false');
 
                     // Actualizar badge de estado
                     const statusCell = row.querySelector('.contract-status-cell');
                     if (statusCell) {
-                        const info = STATUS_LABELS[newStatus] || { text: newStatus, cls: 'status-created' };
+                        const info = (['signed','accepted'].includes(newStatus) && !complete)
+                            ? { text: 'Aceptación registrada — PDF pendiente', cls: 'status-otp_verified' }
+                            : (STATUS_LABELS[newStatus] || { text: newStatus, cls: 'status-created' });
                         statusCell.innerHTML = `<span class="status-badge ${info.cls}">${info.text}</span>`;
                     }
 
                     // Actualizar botones de acción
                     const actionsCell = row.querySelector('td[data-label="Acciones"]');
                     if (actionsCell) {
-                        actionsCell.innerHTML = buildActionButtons(item.visita_code, newStatus);
+                        actionsCell.innerHTML = buildActionButtons(item.visita_code, newStatus, complete);
                     }
 
                     // Si acaba de firmarse, resaltar la fila brevemente

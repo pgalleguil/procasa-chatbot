@@ -1867,6 +1867,49 @@ def test_legacy_v1_senders_and_bootstrap_are_closed():
     assert legacy_main([]) == 2
 
 
+
+def test_audience_audit_phone_index_matches_database_duplicate_guard_without_writes():
+    """Two legacy spellings of one phone remain ineligible in full audit."""
+    db = _event_db()
+    _candidate(db, phone="+56983219801", temperature="HOT")
+    _candidate(db, phone="56983219801", temperature="NORMAL")
+    event = discover_price_drops(db, now=NOW)[0]
+    live = find_candidates_for_event(db, event, now=NOW)
+    assert len(live) == 2
+    assert all(row["reason"] == "duplicate_phone" for row in live)
+    before = list(db["leads"].find())
+    result = cli.audit_full_portfolio(db, now=NOW, lead_max_age_days=None)
+    assert result["totals"]["candidate_event_matches"] == 2
+    assert result["totals"]["unique_eligible_leads"] == 0
+    assert result["reason_counts"]["duplicate_phone"] == 2
+    assert result["send_approved"] is False
+    assert result["sending_attempts"] == 0
+    assert list(db["leads"].find()) == before
+
+
+def test_audience_audit_does_not_query_duplicate_phones_for_each_event(monkeypatch):
+    """Full read-only scan must not issue N+1 Mongo $or phone lookups."""
+    db = _event_db()
+    _candidate(db, phone="+56983219801")
+    _candidate(db, phone="+56983219802")
+    leads = db["leads"]
+    original = leads.find
+    phone_queries = []
+
+    def counted_find(query=None, *args, **kwargs):
+        if isinstance(query, dict) and "$or" in query:
+            if any(isinstance(row, dict) and (
+                    "phone" in row or "contact_phone_normalized" in row)
+                    for row in query["$or"]):
+                phone_queries.append(query)
+        return original(query, *args, **kwargs)
+
+    monkeypatch.setattr(leads, "find", counted_find)
+    result = cli.audit_full_portfolio(db, now=NOW, lead_max_age_days=None)
+    assert result["totals"]["unique_eligible_leads"] == 2
+    assert phone_queries == []
+
+
 def test_full_portfolio_audit_counts_all_events_without_writes_or_provider_calls(monkeypatch, capsys):
     """Two price drops, one lead interested in both: report overlap not bulk send."""
     import json

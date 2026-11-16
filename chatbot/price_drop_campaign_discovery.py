@@ -573,7 +573,9 @@ def _block_reason(lead: dict[str, Any], event: PriceDropEvent) -> str | None:
 
 
 def _eligibility(db: Any, lead: dict[str, Any], event: PriceDropEvent,
-                 listing_ids: set[str]) -> tuple[bool, str, dict[str, Any] | None]:
+                 listing_ids: set[str], *,
+                 phone_owner_index: dict[str, set[str]] | None = None
+                 ) -> tuple[bool, str, dict[str, Any] | None]:
     phone = normalize_phone_strict(lead.get("contact_phone_normalized") or lead.get("phone") or "")
     if not phone or not has_real_phone(phone):
         return False, "invalid_phone", None
@@ -587,12 +589,25 @@ def _eligibility(db: Any, lead: dict[str, Any], event: PriceDropEvent,
     if reason:
         return False, reason, None
     variants = phone_identity_variants(phone)
-    duplicates = list(db[LEADS_COLLECTION].find(
-        {"$or": [{"phone": {"$in": list(variants)}},
-                 {"contact_phone_normalized": {"$in": list(variants)}}]},
-        {"_id": 1},
-    ).limit(2))
-    if len(duplicates) != 1 or str(duplicates[0].get("_id")) != str(lead.get("_id")):
+    if phone_owner_index is None:
+        # Interactive/sending paths retain a fresh database identity check.
+        duplicate_ids = {
+            str(row.get("_id"))
+            for row in db[LEADS_COLLECTION].find(
+                {"$or": [{"phone": {"$in": variants}},
+                         {"contact_phone_normalized": {"$in": variants}}]},
+                {"_id": 1},
+            ).limit(2)
+        }
+    else:
+        # Read-only full-history audits build this exact-value index once,
+        # rather than issuing a network roundtrip for every lead/event pair.
+        duplicate_ids = set()
+        for variant in variants:
+            duplicate_ids.update(phone_owner_index.get(variant, ()))
+            if len(duplicate_ids) > 1:
+                break
+    if duplicate_ids != {str(lead.get("_id"))}:
         return False, "duplicate_phone", None
     evidence = v2._inquiry_before(
         lead, event.property_code, event.dropped_at, listing_ids, return_evidence=True,
@@ -635,6 +650,7 @@ def find_candidates_for_event(
     lead_max_age_days: int | None = None,
     temperature_reviews: dict[str, dict[str, Any]] | None = None,
     now: datetime | None = None,
+    phone_owner_index: dict[str, set[str]] | None = None,
 ) -> list[dict[str, Any]]:
     selected_temperatures = normalize_temperature_filter(temperature_filter)
     age_limit = normalize_lead_max_age_days(lead_max_age_days)
@@ -654,7 +670,9 @@ def find_candidates_for_event(
     )
     result = []
     for lead in leads:
-        base_eligible, base_reason, evidence = _eligibility(db, lead, event, listing_ids)
+        base_eligible, base_reason, evidence = _eligibility(
+            db, lead, event, listing_ids, phone_owner_index=phone_owner_index,
+        )
         raw_temperature = str(lead.get("lead_temperature_effective") or
                               lead.get("lead_temperature") or "").strip().upper()
         review = reviews.get(str(lead.get("_id") or ""))

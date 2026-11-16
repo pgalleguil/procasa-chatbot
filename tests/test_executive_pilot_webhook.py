@@ -340,3 +340,46 @@ def test_incomplete_config_logs_only_missing_field_names(monkeypatch, caplog):
     assert PHONE not in caplog.text
     assert "Procasa-Piloto-Pablo" not in caplog.text
     assert "secret_value" not in caplog.text
+
+
+def test_legacy_wa_sender_direct_data_upsert_is_supported():
+    payload = event()
+    payload["data"] = payload["data"]["messages"]
+    parsed = pilot._parse_message(payload, PHONE)
+    assert parsed and parsed["from_me"] is True
+
+
+def test_pilot_reasons_without_exposing_unrelated_message(monkeypatch, caplog):
+    import logging
+    import json
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_PROBE_ONLY", "1")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_WEBHOOK_SECRET", "test-only-secret-of-pilot")
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_CONTACT_PHONE", PHONE)
+    monkeypatch.setenv("PROCASA_EXEC_PILOT_SESSION_LABEL", "Procasa-Piloto-Pablo")
+
+    app = FastAPI()
+    app.include_router(pilot.router)
+    client = TestClient(app)
+    headers = {"X-Webhook-Signature": "test-only-secret-of-pilot"}
+
+    private = event(jid="56999998888@s.whatsapp.net", text="PRIVATE CHAT MUST NOT LOG")
+    with caplog.at_level(logging.INFO, logger="chatbot.executive_pilot_webhook"):
+        response = client.post("/webhook/ejecutivos-piloto", data=json.dumps(private), headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "ignored"
+    assert "PRIVATE CHAT MUST NOT LOG" not in caplog.text
+    assert "other_contact" not in caplog.text
+    assert "56999998888" not in caplog.text
+
+    caplog.clear()
+    wrong_event = event(event_name="messages.received")
+    with caplog.at_level(logging.INFO, logger="chatbot.executive_pilot_webhook"):
+        response = client.post("/webhook/ejecutivos-piloto", data=json.dumps(wrong_event), headers=headers)
+    assert response.status_code == 200
+    assert "skipped=wrong_event_type" in caplog.text
+    assert PHONE not in caplog.text
+

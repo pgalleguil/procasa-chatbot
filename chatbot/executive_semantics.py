@@ -40,7 +40,13 @@ def intent(text, previous_agent=""):
         return "NO_SIGNAL"
     parts = clauses(text)
     # Only a complete imperative/request clause can assert a global stop.
-    stop = r'(?:por favor )?(?:no me (?:escriban|escribas|contacten|contactes|manden mensajes)(?: nunca)?(?: mas)?|no (?:quiero|deseo) recibir (?:mas )?mensajes|denme de baja|quiero que me den de baja|eliminen mi numero|stop)(?: por favor| gracias| nunca mas)*'
+    stop = (r'(?:por favor )?(?:'
+            r'no me (?:escriban|escribas|contacten|contactes|manden mensajes)(?: nunca)?(?: mas)?|'
+            r'no (?:quiero|deseo) recibir (?:mas )?(?:mensajes|avisos|promociones)|'
+            r'no quiero mas (?:avisos|promociones|mensajes)|'
+            r'no me (?:manden|envien) mas (?:avisos|promociones|mensajes)|'
+            r'denme de baja|quiero que me den de baja|eliminen mi numero|stop'
+            r')(?: por favor| gracias| nunca mas)*')
     if '?' not in msg and any(re.fullmatch(stop, p) for p in parts):
         return "OPT_OUT"
     active = any(re.match(r'(?:ahora |todavia |aun |sigo )?(?:busco|necesito|quiero comprar|quiero arrendar)\b', p) for p in parts)

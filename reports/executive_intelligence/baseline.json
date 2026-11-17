@@ -1,0 +1,2207 @@
+{
+  "mode": "baseline_rules",
+  "cases": 336,
+  "unique_families": 112,
+  "per_category": {
+    "ASK_ALTERNATIVES": {
+      "tp": 12,
+      "fp": 0,
+      "fn": 12,
+      "precision": 1.0,
+      "recall": 0.5,
+      "f1": 0.6666666666666666
+    },
+    "ASK_CONTACT": {
+      "tp": 21,
+      "fp": 0,
+      "fn": 3,
+      "precision": 1.0,
+      "recall": 0.875,
+      "f1": 0.9333333333333333
+    },
+    "ASK_INFO": {
+      "tp": 24,
+      "fp": 12,
+      "fn": 0,
+      "precision": 0.6666666666666666,
+      "recall": 1.0,
+      "f1": 0.8
+    },
+    "ASK_VISIT": {
+      "tp": 21,
+      "fp": 3,
+      "fn": 3,
+      "precision": 0.875,
+      "recall": 0.875,
+      "f1": 0.875
+    },
+    "GIVE_OFFER": {
+      "tp": 18,
+      "fp": 0,
+      "fn": 6,
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571428571428571
+    },
+    "INTERESTED": {
+      "tp": 24,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "MIXED_NEEDS": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "NO_SIGNAL": {
+      "tp": 9,
+      "fp": 108,
+      "fn": 15,
+      "precision": 0.07692307692307693,
+      "recall": 0.375,
+      "f1": 0.1276595744680851
+    },
+    "OPT_OUT": {
+      "tp": 24,
+      "fp": 6,
+      "fn": 0,
+      "precision": 0.8,
+      "recall": 1.0,
+      "f1": 0.8888888888888888
+    },
+    "OWNER_RENT": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "OWNER_SELL": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "PROPERTY_DECLINED": {
+      "tp": 21,
+      "fp": 3,
+      "fn": 3,
+      "precision": 0.875,
+      "recall": 0.875,
+      "f1": 0.875
+    },
+    "SEARCH_COMPLETED": {
+      "tp": 24,
+      "fp": 6,
+      "fn": 0,
+      "precision": 0.8,
+      "recall": 1.0,
+      "f1": 0.8888888888888888
+    },
+    "SEARCH_UPDATED": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 24,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    }
+  },
+  "macro_f1": 0.5651843006706229,
+  "confusion_matrix": {
+    "ASK_ALTERNATIVES": {
+      "ASK_INFO": 9,
+      "ASK_ALTERNATIVES": 12,
+      "PROPERTY_DECLINED": 3
+    },
+    "ASK_CONTACT": {
+      "ASK_CONTACT": 21,
+      "ASK_INFO": 3
+    },
+    "ASK_INFO": {
+      "ASK_INFO": 24
+    },
+    "ASK_VISIT": {
+      "ASK_VISIT": 21,
+      "NO_SIGNAL": 3
+    },
+    "GIVE_OFFER": {
+      "GIVE_OFFER": 18,
+      "NO_SIGNAL": 6
+    },
+    "INTERESTED": {
+      "INTERESTED": 24
+    },
+    "MIXED_NEEDS": {
+      "NO_SIGNAL": 24
+    },
+    "NO_SIGNAL": {
+      "ASK_VISIT": 3,
+      "SEARCH_COMPLETED": 6,
+      "NO_SIGNAL": 9,
+      "OPT_OUT": 6
+    },
+    "OPT_OUT": {
+      "OPT_OUT": 24
+    },
+    "OWNER_RENT": {
+      "NO_SIGNAL": 24
+    },
+    "OWNER_SELL": {
+      "NO_SIGNAL": 24
+    },
+    "PROPERTY_DECLINED": {
+      "PROPERTY_DECLINED": 21,
+      "NO_SIGNAL": 3
+    },
+    "SEARCH_COMPLETED": {
+      "SEARCH_COMPLETED": 24
+    },
+    "SEARCH_UPDATED": {
+      "NO_SIGNAL": 24
+    }
+  },
+  "rows": [
+    {
+      "id": "ASK_INFO-0-0",
+      "family": "ASK_INFO-0",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-0-1",
+      "family": "ASK_INFO-0",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-0-2",
+      "family": "ASK_INFO-0",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-1-0",
+      "family": "ASK_INFO-1",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-1-1",
+      "family": "ASK_INFO-1",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-1-2",
+      "family": "ASK_INFO-1",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-2-0",
+      "family": "ASK_INFO-2",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-2-1",
+      "family": "ASK_INFO-2",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-2-2",
+      "family": "ASK_INFO-2",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-3-0",
+      "family": "ASK_INFO-3",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-3-1",
+      "family": "ASK_INFO-3",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-3-2",
+      "family": "ASK_INFO-3",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-4-0",
+      "family": "ASK_INFO-4",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-4-1",
+      "family": "ASK_INFO-4",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-4-2",
+      "family": "ASK_INFO-4",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-5-0",
+      "family": "ASK_INFO-5",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-5-1",
+      "family": "ASK_INFO-5",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-5-2",
+      "family": "ASK_INFO-5",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-6-0",
+      "family": "ASK_INFO-6",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-6-1",
+      "family": "ASK_INFO-6",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-6-2",
+      "family": "ASK_INFO-6",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-7-0",
+      "family": "ASK_INFO-7",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-7-1",
+      "family": "ASK_INFO-7",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_INFO-7-2",
+      "family": "ASK_INFO-7",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "INTERESTED-0-0",
+      "family": "INTERESTED-0",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-0-1",
+      "family": "INTERESTED-0",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-0-2",
+      "family": "INTERESTED-0",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-1-0",
+      "family": "INTERESTED-1",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-1-1",
+      "family": "INTERESTED-1",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-1-2",
+      "family": "INTERESTED-1",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-2-0",
+      "family": "INTERESTED-2",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-2-1",
+      "family": "INTERESTED-2",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-2-2",
+      "family": "INTERESTED-2",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-3-0",
+      "family": "INTERESTED-3",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-3-1",
+      "family": "INTERESTED-3",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-3-2",
+      "family": "INTERESTED-3",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-4-0",
+      "family": "INTERESTED-4",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-4-1",
+      "family": "INTERESTED-4",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-4-2",
+      "family": "INTERESTED-4",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-5-0",
+      "family": "INTERESTED-5",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-5-1",
+      "family": "INTERESTED-5",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-5-2",
+      "family": "INTERESTED-5",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-6-0",
+      "family": "INTERESTED-6",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-6-1",
+      "family": "INTERESTED-6",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-6-2",
+      "family": "INTERESTED-6",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-7-0",
+      "family": "INTERESTED-7",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-7-1",
+      "family": "INTERESTED-7",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "INTERESTED-7-2",
+      "family": "INTERESTED-7",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED"
+    },
+    {
+      "id": "ASK_VISIT-0-0",
+      "family": "ASK_VISIT-0",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-0-1",
+      "family": "ASK_VISIT-0",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-0-2",
+      "family": "ASK_VISIT-0",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-1-0",
+      "family": "ASK_VISIT-1",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-1-1",
+      "family": "ASK_VISIT-1",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-1-2",
+      "family": "ASK_VISIT-1",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-2-0",
+      "family": "ASK_VISIT-2",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-2-1",
+      "family": "ASK_VISIT-2",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-2-2",
+      "family": "ASK_VISIT-2",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-3-0",
+      "family": "ASK_VISIT-3",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-3-1",
+      "family": "ASK_VISIT-3",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-3-2",
+      "family": "ASK_VISIT-3",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-4-0",
+      "family": "ASK_VISIT-4",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-4-1",
+      "family": "ASK_VISIT-4",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-4-2",
+      "family": "ASK_VISIT-4",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-5-0",
+      "family": "ASK_VISIT-5",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-5-1",
+      "family": "ASK_VISIT-5",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-5-2",
+      "family": "ASK_VISIT-5",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-6-0",
+      "family": "ASK_VISIT-6",
+      "expected": "ASK_VISIT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "ASK_VISIT-6-1",
+      "family": "ASK_VISIT-6",
+      "expected": "ASK_VISIT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "ASK_VISIT-6-2",
+      "family": "ASK_VISIT-6",
+      "expected": "ASK_VISIT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "ASK_VISIT-7-0",
+      "family": "ASK_VISIT-7",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-7-1",
+      "family": "ASK_VISIT-7",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_VISIT-7-2",
+      "family": "ASK_VISIT-7",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "ASK_CONTACT-0-0",
+      "family": "ASK_CONTACT-0",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-0-1",
+      "family": "ASK_CONTACT-0",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-0-2",
+      "family": "ASK_CONTACT-0",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-1-0",
+      "family": "ASK_CONTACT-1",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-1-1",
+      "family": "ASK_CONTACT-1",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-1-2",
+      "family": "ASK_CONTACT-1",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-2-0",
+      "family": "ASK_CONTACT-2",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-2-1",
+      "family": "ASK_CONTACT-2",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-2-2",
+      "family": "ASK_CONTACT-2",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-3-0",
+      "family": "ASK_CONTACT-3",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_CONTACT-3-1",
+      "family": "ASK_CONTACT-3",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_CONTACT-3-2",
+      "family": "ASK_CONTACT-3",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_CONTACT-4-0",
+      "family": "ASK_CONTACT-4",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-4-1",
+      "family": "ASK_CONTACT-4",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-4-2",
+      "family": "ASK_CONTACT-4",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-5-0",
+      "family": "ASK_CONTACT-5",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-5-1",
+      "family": "ASK_CONTACT-5",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-5-2",
+      "family": "ASK_CONTACT-5",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-6-0",
+      "family": "ASK_CONTACT-6",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-6-1",
+      "family": "ASK_CONTACT-6",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-6-2",
+      "family": "ASK_CONTACT-6",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-7-0",
+      "family": "ASK_CONTACT-7",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-7-1",
+      "family": "ASK_CONTACT-7",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "ASK_CONTACT-7-2",
+      "family": "ASK_CONTACT-7",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT"
+    },
+    {
+      "id": "GIVE_OFFER-0-0",
+      "family": "GIVE_OFFER-0",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-0-1",
+      "family": "GIVE_OFFER-0",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-0-2",
+      "family": "GIVE_OFFER-0",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-1-0",
+      "family": "GIVE_OFFER-1",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-1-1",
+      "family": "GIVE_OFFER-1",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-1-2",
+      "family": "GIVE_OFFER-1",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-2-0",
+      "family": "GIVE_OFFER-2",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "GIVE_OFFER-2-1",
+      "family": "GIVE_OFFER-2",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "GIVE_OFFER-2-2",
+      "family": "GIVE_OFFER-2",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "GIVE_OFFER-3-0",
+      "family": "GIVE_OFFER-3",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-3-1",
+      "family": "GIVE_OFFER-3",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-3-2",
+      "family": "GIVE_OFFER-3",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-4-0",
+      "family": "GIVE_OFFER-4",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-4-1",
+      "family": "GIVE_OFFER-4",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-4-2",
+      "family": "GIVE_OFFER-4",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-5-0",
+      "family": "GIVE_OFFER-5",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-5-1",
+      "family": "GIVE_OFFER-5",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-5-2",
+      "family": "GIVE_OFFER-5",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-6-0",
+      "family": "GIVE_OFFER-6",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-6-1",
+      "family": "GIVE_OFFER-6",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-6-2",
+      "family": "GIVE_OFFER-6",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER"
+    },
+    {
+      "id": "GIVE_OFFER-7-0",
+      "family": "GIVE_OFFER-7",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "GIVE_OFFER-7-1",
+      "family": "GIVE_OFFER-7",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "GIVE_OFFER-7-2",
+      "family": "GIVE_OFFER-7",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-0-0",
+      "family": "ASK_ALTERNATIVES-0",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-0-1",
+      "family": "ASK_ALTERNATIVES-0",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-0-2",
+      "family": "ASK_ALTERNATIVES-0",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-1-0",
+      "family": "ASK_ALTERNATIVES-1",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-1-1",
+      "family": "ASK_ALTERNATIVES-1",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-1-2",
+      "family": "ASK_ALTERNATIVES-1",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-2-0",
+      "family": "ASK_ALTERNATIVES-2",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-2-1",
+      "family": "ASK_ALTERNATIVES-2",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-2-2",
+      "family": "ASK_ALTERNATIVES-2",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-3-0",
+      "family": "ASK_ALTERNATIVES-3",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-3-1",
+      "family": "ASK_ALTERNATIVES-3",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-3-2",
+      "family": "ASK_ALTERNATIVES-3",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-4-0",
+      "family": "ASK_ALTERNATIVES-4",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-4-1",
+      "family": "ASK_ALTERNATIVES-4",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-4-2",
+      "family": "ASK_ALTERNATIVES-4",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-5-0",
+      "family": "ASK_ALTERNATIVES-5",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-5-1",
+      "family": "ASK_ALTERNATIVES-5",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-5-2",
+      "family": "ASK_ALTERNATIVES-5",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_INFO"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-6-0",
+      "family": "ASK_ALTERNATIVES-6",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-6-1",
+      "family": "ASK_ALTERNATIVES-6",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-6-2",
+      "family": "ASK_ALTERNATIVES-6",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-7-0",
+      "family": "ASK_ALTERNATIVES-7",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-7-1",
+      "family": "ASK_ALTERNATIVES-7",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "ASK_ALTERNATIVES-7-2",
+      "family": "ASK_ALTERNATIVES-7",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES"
+    },
+    {
+      "id": "PROPERTY_DECLINED-0-0",
+      "family": "PROPERTY_DECLINED-0",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-0-1",
+      "family": "PROPERTY_DECLINED-0",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-0-2",
+      "family": "PROPERTY_DECLINED-0",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-1-0",
+      "family": "PROPERTY_DECLINED-1",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-1-1",
+      "family": "PROPERTY_DECLINED-1",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-1-2",
+      "family": "PROPERTY_DECLINED-1",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-2-0",
+      "family": "PROPERTY_DECLINED-2",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-2-1",
+      "family": "PROPERTY_DECLINED-2",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-2-2",
+      "family": "PROPERTY_DECLINED-2",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-3-0",
+      "family": "PROPERTY_DECLINED-3",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "PROPERTY_DECLINED-3-1",
+      "family": "PROPERTY_DECLINED-3",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "PROPERTY_DECLINED-3-2",
+      "family": "PROPERTY_DECLINED-3",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "PROPERTY_DECLINED-4-0",
+      "family": "PROPERTY_DECLINED-4",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-4-1",
+      "family": "PROPERTY_DECLINED-4",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-4-2",
+      "family": "PROPERTY_DECLINED-4",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-5-0",
+      "family": "PROPERTY_DECLINED-5",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-5-1",
+      "family": "PROPERTY_DECLINED-5",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-5-2",
+      "family": "PROPERTY_DECLINED-5",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-6-0",
+      "family": "PROPERTY_DECLINED-6",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-6-1",
+      "family": "PROPERTY_DECLINED-6",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-6-2",
+      "family": "PROPERTY_DECLINED-6",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-7-0",
+      "family": "PROPERTY_DECLINED-7",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-7-1",
+      "family": "PROPERTY_DECLINED-7",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "PROPERTY_DECLINED-7-2",
+      "family": "PROPERTY_DECLINED-7",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-0-0",
+      "family": "SEARCH_COMPLETED-0",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-0-1",
+      "family": "SEARCH_COMPLETED-0",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-0-2",
+      "family": "SEARCH_COMPLETED-0",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-1-0",
+      "family": "SEARCH_COMPLETED-1",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-1-1",
+      "family": "SEARCH_COMPLETED-1",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-1-2",
+      "family": "SEARCH_COMPLETED-1",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-2-0",
+      "family": "SEARCH_COMPLETED-2",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-2-1",
+      "family": "SEARCH_COMPLETED-2",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-2-2",
+      "family": "SEARCH_COMPLETED-2",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-3-0",
+      "family": "SEARCH_COMPLETED-3",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-3-1",
+      "family": "SEARCH_COMPLETED-3",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-3-2",
+      "family": "SEARCH_COMPLETED-3",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-4-0",
+      "family": "SEARCH_COMPLETED-4",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-4-1",
+      "family": "SEARCH_COMPLETED-4",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-4-2",
+      "family": "SEARCH_COMPLETED-4",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-5-0",
+      "family": "SEARCH_COMPLETED-5",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-5-1",
+      "family": "SEARCH_COMPLETED-5",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-5-2",
+      "family": "SEARCH_COMPLETED-5",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-6-0",
+      "family": "SEARCH_COMPLETED-6",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-6-1",
+      "family": "SEARCH_COMPLETED-6",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-6-2",
+      "family": "SEARCH_COMPLETED-6",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-7-0",
+      "family": "SEARCH_COMPLETED-7",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-7-1",
+      "family": "SEARCH_COMPLETED-7",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "SEARCH_COMPLETED-7-2",
+      "family": "SEARCH_COMPLETED-7",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "OPT_OUT-0-0",
+      "family": "OPT_OUT-0",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-0-1",
+      "family": "OPT_OUT-0",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-0-2",
+      "family": "OPT_OUT-0",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-1-0",
+      "family": "OPT_OUT-1",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-1-1",
+      "family": "OPT_OUT-1",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-1-2",
+      "family": "OPT_OUT-1",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-2-0",
+      "family": "OPT_OUT-2",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-2-1",
+      "family": "OPT_OUT-2",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-2-2",
+      "family": "OPT_OUT-2",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-3-0",
+      "family": "OPT_OUT-3",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-3-1",
+      "family": "OPT_OUT-3",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-3-2",
+      "family": "OPT_OUT-3",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-4-0",
+      "family": "OPT_OUT-4",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-4-1",
+      "family": "OPT_OUT-4",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-4-2",
+      "family": "OPT_OUT-4",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-5-0",
+      "family": "OPT_OUT-5",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-5-1",
+      "family": "OPT_OUT-5",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-5-2",
+      "family": "OPT_OUT-5",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-6-0",
+      "family": "OPT_OUT-6",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-6-1",
+      "family": "OPT_OUT-6",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-6-2",
+      "family": "OPT_OUT-6",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-7-0",
+      "family": "OPT_OUT-7",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-7-1",
+      "family": "OPT_OUT-7",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "OPT_OUT-7-2",
+      "family": "OPT_OUT-7",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "SEARCH_UPDATED-0-0",
+      "family": "SEARCH_UPDATED-0",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-0-1",
+      "family": "SEARCH_UPDATED-0",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-0-2",
+      "family": "SEARCH_UPDATED-0",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-1-0",
+      "family": "SEARCH_UPDATED-1",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-1-1",
+      "family": "SEARCH_UPDATED-1",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-1-2",
+      "family": "SEARCH_UPDATED-1",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-2-0",
+      "family": "SEARCH_UPDATED-2",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-2-1",
+      "family": "SEARCH_UPDATED-2",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-2-2",
+      "family": "SEARCH_UPDATED-2",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-3-0",
+      "family": "SEARCH_UPDATED-3",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-3-1",
+      "family": "SEARCH_UPDATED-3",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-3-2",
+      "family": "SEARCH_UPDATED-3",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-4-0",
+      "family": "SEARCH_UPDATED-4",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-4-1",
+      "family": "SEARCH_UPDATED-4",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-4-2",
+      "family": "SEARCH_UPDATED-4",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-5-0",
+      "family": "SEARCH_UPDATED-5",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-5-1",
+      "family": "SEARCH_UPDATED-5",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-5-2",
+      "family": "SEARCH_UPDATED-5",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-6-0",
+      "family": "SEARCH_UPDATED-6",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-6-1",
+      "family": "SEARCH_UPDATED-6",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-6-2",
+      "family": "SEARCH_UPDATED-6",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-7-0",
+      "family": "SEARCH_UPDATED-7",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-7-1",
+      "family": "SEARCH_UPDATED-7",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "SEARCH_UPDATED-7-2",
+      "family": "SEARCH_UPDATED-7",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-0-0",
+      "family": "OWNER_SELL-0",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-0-1",
+      "family": "OWNER_SELL-0",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-0-2",
+      "family": "OWNER_SELL-0",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-1-0",
+      "family": "OWNER_SELL-1",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-1-1",
+      "family": "OWNER_SELL-1",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-1-2",
+      "family": "OWNER_SELL-1",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-2-0",
+      "family": "OWNER_SELL-2",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-2-1",
+      "family": "OWNER_SELL-2",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-2-2",
+      "family": "OWNER_SELL-2",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-3-0",
+      "family": "OWNER_SELL-3",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-3-1",
+      "family": "OWNER_SELL-3",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-3-2",
+      "family": "OWNER_SELL-3",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-4-0",
+      "family": "OWNER_SELL-4",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-4-1",
+      "family": "OWNER_SELL-4",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-4-2",
+      "family": "OWNER_SELL-4",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-5-0",
+      "family": "OWNER_SELL-5",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-5-1",
+      "family": "OWNER_SELL-5",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-5-2",
+      "family": "OWNER_SELL-5",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-6-0",
+      "family": "OWNER_SELL-6",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-6-1",
+      "family": "OWNER_SELL-6",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-6-2",
+      "family": "OWNER_SELL-6",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-7-0",
+      "family": "OWNER_SELL-7",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-7-1",
+      "family": "OWNER_SELL-7",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_SELL-7-2",
+      "family": "OWNER_SELL-7",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-0-0",
+      "family": "OWNER_RENT-0",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-0-1",
+      "family": "OWNER_RENT-0",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-0-2",
+      "family": "OWNER_RENT-0",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-1-0",
+      "family": "OWNER_RENT-1",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-1-1",
+      "family": "OWNER_RENT-1",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-1-2",
+      "family": "OWNER_RENT-1",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-2-0",
+      "family": "OWNER_RENT-2",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-2-1",
+      "family": "OWNER_RENT-2",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-2-2",
+      "family": "OWNER_RENT-2",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-3-0",
+      "family": "OWNER_RENT-3",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-3-1",
+      "family": "OWNER_RENT-3",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-3-2",
+      "family": "OWNER_RENT-3",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-4-0",
+      "family": "OWNER_RENT-4",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-4-1",
+      "family": "OWNER_RENT-4",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-4-2",
+      "family": "OWNER_RENT-4",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-5-0",
+      "family": "OWNER_RENT-5",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-5-1",
+      "family": "OWNER_RENT-5",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-5-2",
+      "family": "OWNER_RENT-5",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-6-0",
+      "family": "OWNER_RENT-6",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-6-1",
+      "family": "OWNER_RENT-6",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-6-2",
+      "family": "OWNER_RENT-6",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-7-0",
+      "family": "OWNER_RENT-7",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-7-1",
+      "family": "OWNER_RENT-7",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "OWNER_RENT-7-2",
+      "family": "OWNER_RENT-7",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-0-0",
+      "family": "MIXED_NEEDS-0",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-0-1",
+      "family": "MIXED_NEEDS-0",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-0-2",
+      "family": "MIXED_NEEDS-0",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-1-0",
+      "family": "MIXED_NEEDS-1",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-1-1",
+      "family": "MIXED_NEEDS-1",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-1-2",
+      "family": "MIXED_NEEDS-1",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-2-0",
+      "family": "MIXED_NEEDS-2",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-2-1",
+      "family": "MIXED_NEEDS-2",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-2-2",
+      "family": "MIXED_NEEDS-2",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-3-0",
+      "family": "MIXED_NEEDS-3",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-3-1",
+      "family": "MIXED_NEEDS-3",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-3-2",
+      "family": "MIXED_NEEDS-3",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-4-0",
+      "family": "MIXED_NEEDS-4",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-4-1",
+      "family": "MIXED_NEEDS-4",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-4-2",
+      "family": "MIXED_NEEDS-4",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-5-0",
+      "family": "MIXED_NEEDS-5",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-5-1",
+      "family": "MIXED_NEEDS-5",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-5-2",
+      "family": "MIXED_NEEDS-5",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-6-0",
+      "family": "MIXED_NEEDS-6",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-6-1",
+      "family": "MIXED_NEEDS-6",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-6-2",
+      "family": "MIXED_NEEDS-6",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-7-0",
+      "family": "MIXED_NEEDS-7",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-7-1",
+      "family": "MIXED_NEEDS-7",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "MIXED_NEEDS-7-2",
+      "family": "MIXED_NEEDS-7",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "NO_SIGNAL-0-0",
+      "family": "NO_SIGNAL-0",
+      "expected": "NO_SIGNAL",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "NO_SIGNAL-0-1",
+      "family": "NO_SIGNAL-0",
+      "expected": "NO_SIGNAL",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "NO_SIGNAL-0-2",
+      "family": "NO_SIGNAL-0",
+      "expected": "NO_SIGNAL",
+      "predicted": "ASK_VISIT"
+    },
+    {
+      "id": "NO_SIGNAL-1-0",
+      "family": "NO_SIGNAL-1",
+      "expected": "NO_SIGNAL",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "NO_SIGNAL-1-1",
+      "family": "NO_SIGNAL-1",
+      "expected": "NO_SIGNAL",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "NO_SIGNAL-1-2",
+      "family": "NO_SIGNAL-1",
+      "expected": "NO_SIGNAL",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "NO_SIGNAL-2-0",
+      "family": "NO_SIGNAL-2",
+      "expected": "NO_SIGNAL",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "NO_SIGNAL-2-1",
+      "family": "NO_SIGNAL-2",
+      "expected": "NO_SIGNAL",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "NO_SIGNAL-2-2",
+      "family": "NO_SIGNAL-2",
+      "expected": "NO_SIGNAL",
+      "predicted": "SEARCH_COMPLETED"
+    },
+    {
+      "id": "NO_SIGNAL-3-0",
+      "family": "NO_SIGNAL-3",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "NO_SIGNAL-3-1",
+      "family": "NO_SIGNAL-3",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "NO_SIGNAL-3-2",
+      "family": "NO_SIGNAL-3",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "NO_SIGNAL-4-0",
+      "family": "NO_SIGNAL-4",
+      "expected": "NO_SIGNAL",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "NO_SIGNAL-4-1",
+      "family": "NO_SIGNAL-4",
+      "expected": "NO_SIGNAL",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "NO_SIGNAL-4-2",
+      "family": "NO_SIGNAL-4",
+      "expected": "NO_SIGNAL",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "NO_SIGNAL-5-0",
+      "family": "NO_SIGNAL-5",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "NO_SIGNAL-5-1",
+      "family": "NO_SIGNAL-5",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "NO_SIGNAL-5-2",
+      "family": "NO_SIGNAL-5",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "NO_SIGNAL-6-0",
+      "family": "NO_SIGNAL-6",
+      "expected": "NO_SIGNAL",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "NO_SIGNAL-6-1",
+      "family": "NO_SIGNAL-6",
+      "expected": "NO_SIGNAL",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "NO_SIGNAL-6-2",
+      "family": "NO_SIGNAL-6",
+      "expected": "NO_SIGNAL",
+      "predicted": "OPT_OUT"
+    },
+    {
+      "id": "NO_SIGNAL-7-0",
+      "family": "NO_SIGNAL-7",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "NO_SIGNAL-7-1",
+      "family": "NO_SIGNAL-7",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL"
+    },
+    {
+      "id": "NO_SIGNAL-7-2",
+      "family": "NO_SIGNAL-7",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL"
+    }
+  ],
+  "evaluation_labels": [
+    "ASK_ALTERNATIVES",
+    "ASK_CONTACT",
+    "ASK_INFO",
+    "ASK_VISIT",
+    "GIVE_OFFER",
+    "INTERESTED",
+    "MIXED_NEEDS",
+    "NO_SIGNAL",
+    "OPT_OUT",
+    "OWNER_RENT",
+    "OWNER_SELL",
+    "PROPERTY_DECLINED",
+    "SEARCH_COMPLETED",
+    "SEARCH_UPDATED"
+  ]
+}

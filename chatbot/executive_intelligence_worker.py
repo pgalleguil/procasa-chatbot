@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from pymongo import ReturnDocument
 
@@ -18,6 +19,24 @@ from .crm_metrics import active_assignment_cycle
 from .executive_conversation_intelligence import VERSION, classify_hybrid
 
 logger = logging.getLogger(__name__)
+WINDOW = 200
+
+
+def _available(now):
+    return {"commercial_intelligence.pending": True, "$or": [
+        {"commercial_intelligence.lease_expires_at": None},
+        {"commercial_intelligence.lease_expires_at": {"$lt": now}},
+    ]}
+
+
+def ensure_indexes(db):
+    """Idempotent; called only when the independently gated worker is enabled."""
+    db["leads"].create_index(
+        [("commercial_intelligence.lease_expires_at", 1),
+         ("commercial_intelligence.pending_at", 1)],
+        name="executive_intelligence_pending_lease",
+        partialFilterExpression={"commercial_intelligence.pending": True},
+    )
 
 
 def _is_authorized(db, doc: dict) -> bool:
@@ -41,26 +60,70 @@ def _is_authorized(db, doc: dict) -> bool:
     sid = marker.get("pending_session_id")
     if not sid:
         return False
-    return db["usuarios"].find_one({
+    user = db["usuarios"].find_one({
         "_id": oid, "rol": "agente", "is_active": True,
         "wasender.session_id": {"$in": [int(sid), str(sid)] if str(sid).isdigit() else [sid]},
-    }, {"_id": 1}) is not None
+    }, {"_id": 1, "nombre": 1})
+    if not user:
+        return False
+    from .executive_whatsapp_audit import _session
+    session = _session(db, str(sid))
+    return bool(session and session["user_id"] == owner and session["capture_enabled"])
 
 
 def _claim(db, lead_id, *, now: datetime):
     # Multiple application instances may run; claim is an atomic lease.
     return db["leads"].find_one_and_update(
-        {
-            "_id": lead_id,
-            "commercial_intelligence.pending": True,
-            "$or": [
-                {"commercial_intelligence.lease_expires_at": {"$exists": False}},
-                {"commercial_intelligence.lease_expires_at": {"$lt": now}},
-            ],
-        },
-        {"$set": {"commercial_intelligence.lease_expires_at": now + timedelta(seconds=90)}},
+        {"_id": lead_id, **_available(now)},
+        {"$set": {"commercial_intelligence.lease_expires_at": now + timedelta(seconds=90),
+                  "commercial_intelligence.lease_token": str(uuid4())}},
+        projection={"_id": 1, "lifecycle": 1, "commercial_intelligence": 1},
         return_document=ReturnDocument.AFTER,
     )
+
+
+def _load_window(db, doc):
+    """Filter in Mongo before transfer; only new authorized turns plus context.
+
+    Canonical embedded history still needs a server-side scan. Transfer and
+    Python/model work are bounded, without discarding pending messages.
+    """
+    marker, lifecycle = doc["commercial_intelligence"], doc["lifecycle"]
+    cycle = str(lifecycle["current_assignment_cycle_id"])
+    checkpoint = marker.get("last_processed_message_id") if (
+        marker.get("last_processed_cycle_id") == cycle and marker.get("version") == VERSION) else None
+    rows = list(db["leads"].aggregate([
+        {"$match": {"_id": doc["_id"],
+                    "commercial_intelligence.pending_message_id": marker["pending_message_id"],
+                    "commercial_intelligence.lease_token": marker["lease_token"],
+                    "lifecycle.current_assignment_cycle_id": cycle,
+                    "lifecycle.assigned_to_user_id": lifecycle["assigned_to_user_id"]}},
+        {"$project": {"messages": {"$filter": {
+            "input": {"$ifNull": ["$messages", []]}, "as": "m", "cond": {"$and": [
+                {"$eq": ["$$m.channel", "executive_whatsapp"]},
+                {"$eq": ["$$m.assignment_cycle_id", cycle]},
+                {"$eq": ["$$m.assigned_executive_id", str(lifecycle["assigned_to_user_id"])]},
+                {"$eq": ["$$m.wasender_session_id", str(marker["pending_session_id"])]},
+                {"$in": ["$$m.actor_type", ["customer", "human_agent"]]},
+            ]}}}}},
+        {"$project": {"messages": 1, "position": {"$indexOfArray": ["$messages.message_id", checkpoint]}}},
+        {"$project": {
+            "context": {"$cond": [{"$gte": ["$position", 0]},
+                {"$slice": ["$messages", {"$max": [0, {"$subtract": ["$position", 1]}]}, {"$min": [2, {"$add": ["$position", 1]}]}]}, []]},
+            "messages": {"$slice": ["$messages", {"$add": ["$position", 1]}, WINDOW + 1]},
+            "checkpoint_missing": {"$and": [{"$literal": checkpoint is not None}, {"$lt": ["$position", 0]}]},
+        }},
+    ]))
+    if not rows:
+        return False
+    row = rows[0]
+    pending = row.get("messages", [])
+    doc["_more_pending"] = len(pending) > WINDOW
+    batch = pending[:WINDOW]
+    doc["_checkpoint_missing"] = row.get("checkpoint_missing", False)
+    doc["_processed_cursor"] = batch[-1]["message_id"] if batch else checkpoint
+    doc["messages"] = [{**m, "_context_only": True} for m in row.get("context", [])] + batch
+    return True
 
 
 def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
@@ -73,6 +136,8 @@ def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
         "commercial_intelligence.pending": True,
         "commercial_intelligence.pending_message_id": marker.get("pending_message_id"),
         "commercial_intelligence.pending_cycle_id": marker.get("pending_cycle_id"),
+        "commercial_intelligence.pending_session_id": marker.get("pending_session_id"),
+        "commercial_intelligence.lease_token": marker.get("lease_token"),
     }
     if status != "stale_assignment":
         match.update({
@@ -82,18 +147,28 @@ def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
     # A stale job may only be cleared, never interpreted or persisted as an
     # outcome. Its message/cycle CAS still prevents clearing newer work.
     values = {
-        "commercial_intelligence.pending": False,
+        "commercial_intelligence.pending": bool(doc.get("_more_pending")) if summary is not None else False,
         "commercial_intelligence.status": status,
-        "commercial_intelligence.last_processed_message_id": marker.get("pending_message_id"),
+        "commercial_intelligence.last_processed_message_id": doc.get("_processed_cursor", marker.get("pending_message_id")),
         "commercial_intelligence.last_processed_cycle_id": marker.get("pending_cycle_id"),
+        "commercial_intelligence.lease_expires_at": None,
+        "commercial_intelligence.lease_token": None,
     }
     if summary is not None:
         values["commercial_intelligence.summary"] = summary
         values["commercial_intelligence.version"] = VERSION
     changed = db["leads"].update_one(
         match,
-        {"$set": values, "$unset": {"commercial_intelligence.lease_expires_at": ""}},
+        {"$set": values},
     )
+    if changed.modified_count != 1:
+        # Release only our own lease; never change a newer pending marker or
+        # another worker's token. This avoids a 90-second wait after a new turn.
+        db["leads"].update_one(
+            {"_id": doc["_id"], "commercial_intelligence.lease_token": marker.get("lease_token")},
+            {"$set": {"commercial_intelligence.lease_expires_at": None,
+                      "commercial_intelligence.lease_token": None}},
+        )
     return status if changed.modified_count == 1 else "superseded"
 
 
@@ -102,6 +177,8 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     if not _is_authorized(db, doc):
         # On reassignment, do not interpret the previous owner's conversation.
         return _finish(db, doc, summary=None, status="stale_assignment")
+    if "messages" not in doc and not _load_window(db, doc):
+        return "superseded"
     owner = str(doc["lifecycle"]["assigned_to_user_id"])
     cycle_id = str(doc["lifecycle"]["current_assignment_cycle_id"])
     session_id = str(marker["pending_session_id"])
@@ -118,10 +195,21 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
         return _finish(db, doc, summary=None, status="no_eligible_turns")
     # No ad-hoc outreach, no automatic CRM results, no opt-out side effects.
     # Previous commercial evidence is valid only within this assignment cycle.
-    prior = marker if str(marker.get("last_processed_cycle_id") or "") == cycle_id else {}
+    prior = marker if (str(marker.get("last_processed_cycle_id") or "") == cycle_id
+                       and marker.get("version") == VERSION) else {}
+    if not prior and ((marker.get("summary") or {}).get("contact_permission") == "OPTED_OUT"
+                      or (marker.get("summary") or {}).get("intent") == "OPT_OUT"):
+        prior = {"summary": {"contact_permission": "OPTED_OUT"}}
     summary = classify_hybrid(
         turns, prior, llm_enabled=llm_enabled, propose=propose,
     )
+    if doc.get("_checkpoint_missing"):
+        summary["needs_review"] = True
+        summary["history_incomplete"] = True
+    # Revoked capture, reassignment, or a disabled user during a model request
+    # must also prevent publishing its result.
+    if not _is_authorized(db, doc):
+        return _finish(db, doc, summary=None, status="stale_assignment")
     return _finish(db, doc, summary=summary, status="ready")
 
 
@@ -132,9 +220,9 @@ def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propo
     now = datetime.now(timezone.utc)
     # Bounded scan; only pointer fields leave Mongo until a claim is obtained.
     cursor = db["leads"].find(
-        {"commercial_intelligence.pending": True},
+        _available(now),
         {"_id": 1},
-    ).limit(max(1, min(limit * 3, 30)))
+    ).sort("commercial_intelligence.pending_at", 1).limit(max(1, min(limit * 3, 30)))
     for row in cursor:
         if processed >= limit:
             break
@@ -155,10 +243,14 @@ def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propo
 
 
 async def executive_intelligence_worker_loop() -> None:
+    indexed = False
     while True:
         try:
             if os.getenv("PROCASA_EXEC_INTELLIGENCE_ENABLED", "0") == "1":
                 from .storage import get_db
+                if not indexed:
+                    await asyncio.to_thread(ensure_indexes, get_db())
+                    indexed = True
                 llm_enabled = os.getenv("PROCASA_EXEC_INTELLIGENCE_LLM_ENABLED", "0") == "1"
                 result = await asyncio.to_thread(
                     process_pending_batch, get_db(),

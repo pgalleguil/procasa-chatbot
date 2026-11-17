@@ -1,0 +1,1437 @@
+{
+  "mode": "live_deepseek",
+  "cases": 70,
+  "unique_families": 70,
+  "limitations": "Reused 70-case regression challenge after observing earlier results; NOT a new independent holdout. Synthetic, no population precision claim.",
+  "per_category": {
+    "ASK_ALTERNATIVES": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.8888888888888888
+    },
+    "ASK_CONTACT": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "precision": 1.0,
+      "recall": 0.4,
+      "f1": 0.5714285714285714
+    },
+    "ASK_INFO": {
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "ASK_VISIT": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.8888888888888888
+    },
+    "GIVE_OFFER": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 2,
+      "precision": 1.0,
+      "recall": 0.6,
+      "f1": 0.75
+    },
+    "INTERESTED": {
+      "tp": 5,
+      "fp": 1,
+      "fn": 0,
+      "precision": 0.8333333333333334,
+      "recall": 1.0,
+      "f1": 0.9090909090909091
+    },
+    "MIXED_NEEDS": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "NO_SIGNAL": {
+      "tp": 4,
+      "fp": 26,
+      "fn": 1,
+      "precision": 0.13333333333333333,
+      "recall": 0.8,
+      "f1": 0.22857142857142856
+    },
+    "OPT_OUT": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "OWNER_RENT": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "OWNER_SELL": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "precision": 1.0,
+      "recall": 0.4,
+      "f1": 0.5714285714285714
+    },
+    "PROPERTY_DECLINED": {
+      "tp": 5,
+      "fp": 1,
+      "fn": 0,
+      "precision": 0.8333333333333334,
+      "recall": 1.0,
+      "f1": 0.9090909090909091
+    },
+    "SEARCH_COMPLETED": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "SEARCH_UPDATED": {
+      "tp": 2,
+      "fp": 2,
+      "fn": 3,
+      "precision": 0.5,
+      "recall": 0.4,
+      "f1": 0.4444444444444444
+    }
+  },
+  "evaluation_labels": [
+    "ASK_ALTERNATIVES",
+    "ASK_CONTACT",
+    "ASK_INFO",
+    "ASK_VISIT",
+    "GIVE_OFFER",
+    "INTERESTED",
+    "MIXED_NEEDS",
+    "NO_SIGNAL",
+    "OPT_OUT",
+    "OWNER_RENT",
+    "OWNER_SELL",
+    "PROPERTY_DECLINED",
+    "SEARCH_COMPLETED",
+    "SEARCH_UPDATED"
+  ],
+  "macro_f1": 0.6067975675118532,
+  "confusion_matrix": {
+    "ASK_ALTERNATIVES": {
+      "ASK_ALTERNATIVES": 4,
+      "NO_SIGNAL": 1
+    },
+    "ASK_CONTACT": {
+      "NO_SIGNAL": 3,
+      "ASK_CONTACT": 2
+    },
+    "ASK_INFO": {
+      "ASK_INFO": 5
+    },
+    "ASK_VISIT": {
+      "NO_SIGNAL": 1,
+      "ASK_VISIT": 4
+    },
+    "GIVE_OFFER": {
+      "GIVE_OFFER": 3,
+      "NO_SIGNAL": 2
+    },
+    "INTERESTED": {
+      "INTERESTED": 5
+    },
+    "MIXED_NEEDS": {
+      "NO_SIGNAL": 2,
+      "MIXED_NEEDS": 1,
+      "SEARCH_UPDATED": 1,
+      "INTERESTED": 1
+    },
+    "NO_SIGNAL": {
+      "NO_SIGNAL": 4,
+      "PROPERTY_DECLINED": 1
+    },
+    "OPT_OUT": {
+      "NO_SIGNAL": 4,
+      "OPT_OUT": 1
+    },
+    "OWNER_RENT": {
+      "NO_SIGNAL": 4,
+      "OWNER_RENT": 1
+    },
+    "OWNER_SELL": {
+      "OWNER_SELL": 2,
+      "NO_SIGNAL": 2,
+      "SEARCH_UPDATED": 1
+    },
+    "PROPERTY_DECLINED": {
+      "PROPERTY_DECLINED": 5
+    },
+    "SEARCH_COMPLETED": {
+      "NO_SIGNAL": 4,
+      "SEARCH_COMPLETED": 1
+    },
+    "SEARCH_UPDATED": {
+      "NO_SIGNAL": 3,
+      "SEARCH_UPDATED": 2
+    }
+  },
+  "rows": [
+    {
+      "id": "holdout-ASK_ALTERNATIVES-0",
+      "family": "holdout-ASK_ALTERNATIVES-0",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES",
+      "model_predicted": "ASK_ALTERNATIVES",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 710,
+        "completion_tokens": 185
+      },
+      "latency_ms": 3594
+    },
+    {
+      "id": "holdout-ASK_CONTACT-0",
+      "family": "holdout-ASK_CONTACT-0",
+      "expected": "ASK_CONTACT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 139
+      },
+      "latency_ms": 1328
+    },
+    {
+      "id": "holdout-ASK_INFO-0",
+      "family": "holdout-ASK_INFO-0",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO",
+      "model_predicted": "ASK_INFO",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 112
+      },
+      "latency_ms": 1297
+    },
+    {
+      "id": "holdout-ASK_VISIT-0",
+      "family": "holdout-ASK_VISIT-0",
+      "expected": "ASK_VISIT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 118
+      },
+      "latency_ms": 1297
+    },
+    {
+      "id": "holdout-GIVE_OFFER-0",
+      "family": "holdout-GIVE_OFFER-0",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER",
+      "model_predicted": "GIVE_OFFER",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 715,
+        "completion_tokens": 240
+      },
+      "latency_ms": 2266
+    },
+    {
+      "id": "holdout-INTERESTED-0",
+      "family": "holdout-INTERESTED-0",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "INTERESTED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 712,
+        "completion_tokens": 160
+      },
+      "latency_ms": 1718
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-0",
+      "family": "holdout-MIXED_NEEDS-0",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "MIXED_NEEDS",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 716,
+        "completion_tokens": 206
+      },
+      "latency_ms": 1953
+    },
+    {
+      "id": "holdout-NO_SIGNAL-0",
+      "family": "holdout-NO_SIGNAL-0",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 716,
+        "completion_tokens": 186
+      },
+      "latency_ms": 1610
+    },
+    {
+      "id": "holdout-OPT_OUT-0",
+      "family": "holdout-OPT_OUT-0",
+      "expected": "OPT_OUT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OPT_OUT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 712,
+        "completion_tokens": 119
+      },
+      "latency_ms": 1609
+    },
+    {
+      "id": "holdout-OWNER_RENT-0",
+      "family": "holdout-OWNER_RENT-0",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OWNER_RENT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 718,
+        "completion_tokens": 208
+      },
+      "latency_ms": 1922
+    },
+    {
+      "id": "holdout-OWNER_SELL-0",
+      "family": "holdout-OWNER_SELL-0",
+      "expected": "OWNER_SELL",
+      "predicted": "OWNER_SELL",
+      "model_predicted": "OWNER_SELL",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 122
+      },
+      "latency_ms": 1500
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-0",
+      "family": "holdout-PROPERTY_DECLINED-0",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 708,
+        "completion_tokens": 154
+      },
+      "latency_ms": 1203
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-0",
+      "family": "holdout-SEARCH_COMPLETED-0",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "SEARCH_COMPLETED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 713,
+        "completion_tokens": 145
+      },
+      "latency_ms": 1391
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-0",
+      "family": "holdout-SEARCH_UPDATED-0",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 183
+      },
+      "latency_ms": 1672
+    },
+    {
+      "id": "holdout-ASK_ALTERNATIVES-1",
+      "family": "holdout-ASK_ALTERNATIVES-1",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "ASK_ALTERNATIVES",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 391
+      },
+      "latency_ms": 2500
+    },
+    {
+      "id": "holdout-ASK_CONTACT-1",
+      "family": "holdout-ASK_CONTACT-1",
+      "expected": "ASK_CONTACT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 708,
+        "completion_tokens": 172
+      },
+      "latency_ms": 1609
+    },
+    {
+      "id": "holdout-ASK_INFO-1",
+      "family": "holdout-ASK_INFO-1",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO",
+      "model_predicted": "ASK_INFO",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 712,
+        "completion_tokens": 130
+      },
+      "latency_ms": 1359
+    },
+    {
+      "id": "holdout-ASK_VISIT-1",
+      "family": "holdout-ASK_VISIT-1",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 708,
+        "completion_tokens": 178
+      },
+      "latency_ms": 1360
+    },
+    {
+      "id": "holdout-GIVE_OFFER-1",
+      "family": "holdout-GIVE_OFFER-1",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "GIVE_OFFER",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 712,
+        "completion_tokens": 233
+      },
+      "latency_ms": 2156
+    },
+    {
+      "id": "holdout-INTERESTED-1",
+      "family": "holdout-INTERESTED-1",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "INTERESTED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 709,
+        "completion_tokens": 179
+      },
+      "latency_ms": 1750
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-1",
+      "family": "holdout-MIXED_NEEDS-1",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "MIXED_NEEDS",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 717,
+        "completion_tokens": 284
+      },
+      "latency_ms": 2125
+    },
+    {
+      "id": "holdout-NO_SIGNAL-1",
+      "family": "holdout-NO_SIGNAL-1",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NO_SIGNAL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 248
+      },
+      "latency_ms": 1656
+    },
+    {
+      "id": "holdout-OPT_OUT-1",
+      "family": "holdout-OPT_OUT-1",
+      "expected": "OPT_OUT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OPT_OUT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 708,
+        "completion_tokens": 124
+      },
+      "latency_ms": 1344
+    },
+    {
+      "id": "holdout-OWNER_RENT-1",
+      "family": "holdout-OWNER_RENT-1",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OWNER_RENT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 710,
+        "completion_tokens": 153
+      },
+      "latency_ms": 1375
+    },
+    {
+      "id": "holdout-OWNER_SELL-1",
+      "family": "holdout-OWNER_SELL-1",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OWNER_SELL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 713,
+        "completion_tokens": 161
+      },
+      "latency_ms": 1625
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-1",
+      "family": "holdout-PROPERTY_DECLINED-1",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 710,
+        "completion_tokens": 132
+      },
+      "latency_ms": 1609
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-1",
+      "family": "holdout-SEARCH_COMPLETED-1",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "SEARCH_COMPLETED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 149
+      },
+      "latency_ms": 1532
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-1",
+      "family": "holdout-SEARCH_UPDATED-1",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 713,
+        "completion_tokens": 188
+      },
+      "latency_ms": 1578
+    },
+    {
+      "id": "holdout-ASK_ALTERNATIVES-2",
+      "family": "holdout-ASK_ALTERNATIVES-2",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES",
+      "model_predicted": "ASK_ALTERNATIVES",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 183
+      },
+      "latency_ms": 1656
+    },
+    {
+      "id": "holdout-ASK_CONTACT-2",
+      "family": "holdout-ASK_CONTACT-2",
+      "expected": "ASK_CONTACT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 713,
+        "completion_tokens": 155
+      },
+      "latency_ms": 1547
+    },
+    {
+      "id": "holdout-ASK_INFO-2",
+      "family": "holdout-ASK_INFO-2",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO",
+      "model_predicted": "ASK_INFO",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 710,
+        "completion_tokens": 105
+      },
+      "latency_ms": 1437
+    },
+    {
+      "id": "holdout-ASK_VISIT-2",
+      "family": "holdout-ASK_VISIT-2",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 245
+      },
+      "latency_ms": 1954
+    },
+    {
+      "id": "holdout-GIVE_OFFER-2",
+      "family": "holdout-GIVE_OFFER-2",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "GIVE_OFFER",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 712,
+        "completion_tokens": 166
+      },
+      "latency_ms": 1750
+    },
+    {
+      "id": "holdout-INTERESTED-2",
+      "family": "holdout-INTERESTED-2",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "INTERESTED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 710,
+        "completion_tokens": 147
+      },
+      "latency_ms": 1468
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-2",
+      "family": "holdout-MIXED_NEEDS-2",
+      "expected": "MIXED_NEEDS",
+      "predicted": "MIXED_NEEDS",
+      "model_predicted": "MIXED_NEEDS",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 712,
+        "completion_tokens": 330
+      },
+      "latency_ms": 2422
+    },
+    {
+      "id": "holdout-NO_SIGNAL-2",
+      "family": "holdout-NO_SIGNAL-2",
+      "expected": "NO_SIGNAL",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 317
+      },
+      "latency_ms": 2235
+    },
+    {
+      "id": "holdout-OPT_OUT-2",
+      "family": "holdout-OPT_OUT-2",
+      "expected": "OPT_OUT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OPT_OUT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 709,
+        "completion_tokens": 138
+      },
+      "latency_ms": 1421
+    },
+    {
+      "id": "holdout-OWNER_RENT-2",
+      "family": "holdout-OWNER_RENT-2",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OWNER_RENT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 174
+      },
+      "latency_ms": 1563
+    },
+    {
+      "id": "holdout-OWNER_SELL-2",
+      "family": "holdout-OWNER_SELL-2",
+      "expected": "OWNER_SELL",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "OWNER_SELL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 348
+      },
+      "latency_ms": 2562
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-2",
+      "family": "holdout-PROPERTY_DECLINED-2",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 134
+      },
+      "latency_ms": 1344
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-2",
+      "family": "holdout-SEARCH_COMPLETED-2",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "SEARCH_COMPLETED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 709,
+        "completion_tokens": 160
+      },
+      "latency_ms": 1735
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-2",
+      "family": "holdout-SEARCH_UPDATED-2",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 134
+      },
+      "latency_ms": 1265
+    },
+    {
+      "id": "holdout-ASK_ALTERNATIVES-3",
+      "family": "holdout-ASK_ALTERNATIVES-3",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES",
+      "model_predicted": "ASK_ALTERNATIVES",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 200
+      },
+      "latency_ms": 2078
+    },
+    {
+      "id": "holdout-ASK_CONTACT-3",
+      "family": "holdout-ASK_CONTACT-3",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 118
+      },
+      "latency_ms": 1297
+    },
+    {
+      "id": "holdout-ASK_INFO-3",
+      "family": "holdout-ASK_INFO-3",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO",
+      "model_predicted": "ASK_INFO",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 119
+      },
+      "latency_ms": 1188
+    },
+    {
+      "id": "holdout-ASK_VISIT-3",
+      "family": "holdout-ASK_VISIT-3",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 709,
+        "completion_tokens": 111
+      },
+      "latency_ms": 1375
+    },
+    {
+      "id": "holdout-GIVE_OFFER-3",
+      "family": "holdout-GIVE_OFFER-3",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER",
+      "model_predicted": "GIVE_OFFER",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 717,
+        "completion_tokens": 255
+      },
+      "latency_ms": 1765
+    },
+    {
+      "id": "holdout-INTERESTED-3",
+      "family": "holdout-INTERESTED-3",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "INTERESTED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 708,
+        "completion_tokens": 122
+      },
+      "latency_ms": 1532
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-3",
+      "family": "holdout-MIXED_NEEDS-3",
+      "expected": "MIXED_NEEDS",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "MIXED_NEEDS",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 345
+      },
+      "latency_ms": 2578
+    },
+    {
+      "id": "holdout-NO_SIGNAL-3",
+      "family": "holdout-NO_SIGNAL-3",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NO_SIGNAL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 213
+      },
+      "latency_ms": 1890
+    },
+    {
+      "id": "holdout-OPT_OUT-3",
+      "family": "holdout-OPT_OUT-3",
+      "expected": "OPT_OUT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OPT_OUT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 124
+      },
+      "latency_ms": 1344
+    },
+    {
+      "id": "holdout-OWNER_RENT-3",
+      "family": "holdout-OWNER_RENT-3",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OWNER_RENT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 273
+      },
+      "latency_ms": 2297
+    },
+    {
+      "id": "holdout-OWNER_SELL-3",
+      "family": "holdout-OWNER_SELL-3",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "OWNER_SELL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 712,
+        "completion_tokens": 149
+      },
+      "latency_ms": 1719
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-3",
+      "family": "holdout-PROPERTY_DECLINED-3",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 710,
+        "completion_tokens": 130
+      },
+      "latency_ms": 1468
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-3",
+      "family": "holdout-SEARCH_COMPLETED-3",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "SEARCH_COMPLETED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 708,
+        "completion_tokens": 198
+      },
+      "latency_ms": 1813
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-3",
+      "family": "holdout-SEARCH_UPDATED-3",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 713,
+        "completion_tokens": 156
+      },
+      "latency_ms": 1578
+    },
+    {
+      "id": "holdout-ASK_ALTERNATIVES-4",
+      "family": "holdout-ASK_ALTERNATIVES-4",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES",
+      "model_predicted": "ASK_ALTERNATIVES",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 708,
+        "completion_tokens": 275
+      },
+      "latency_ms": 2047
+    },
+    {
+      "id": "holdout-ASK_CONTACT-4",
+      "family": "holdout-ASK_CONTACT-4",
+      "expected": "ASK_CONTACT",
+      "predicted": "ASK_CONTACT",
+      "model_predicted": "ASK_CONTACT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 711,
+        "completion_tokens": 120
+      },
+      "latency_ms": 1062
+    },
+    {
+      "id": "holdout-ASK_INFO-4",
+      "family": "holdout-ASK_INFO-4",
+      "expected": "ASK_INFO",
+      "predicted": "ASK_INFO",
+      "model_predicted": "ASK_INFO",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 710,
+        "completion_tokens": 112
+      },
+      "latency_ms": 1454
+    },
+    {
+      "id": "holdout-ASK_VISIT-4",
+      "family": "holdout-ASK_VISIT-4",
+      "expected": "ASK_VISIT",
+      "predicted": "ASK_VISIT",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 713,
+        "completion_tokens": 248
+      },
+      "latency_ms": 2000
+    },
+    {
+      "id": "holdout-GIVE_OFFER-4",
+      "family": "holdout-GIVE_OFFER-4",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER",
+      "model_predicted": "GIVE_OFFER",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 265
+      },
+      "latency_ms": 2156
+    },
+    {
+      "id": "holdout-INTERESTED-4",
+      "family": "holdout-INTERESTED-4",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "ASK_VISIT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 712,
+        "completion_tokens": 348
+      },
+      "latency_ms": 2515
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-4",
+      "family": "holdout-MIXED_NEEDS-4",
+      "expected": "MIXED_NEEDS",
+      "predicted": "INTERESTED",
+      "model_predicted": "MIXED_NEEDS",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 713,
+        "completion_tokens": 243
+      },
+      "latency_ms": 1985
+    },
+    {
+      "id": "holdout-NO_SIGNAL-4",
+      "family": "holdout-NO_SIGNAL-4",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NO_SIGNAL",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 714,
+        "completion_tokens": 177
+      },
+      "latency_ms": 1594
+    },
+    {
+      "id": "holdout-OPT_OUT-4",
+      "family": "holdout-OPT_OUT-4",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT",
+      "model_predicted": "OPT_OUT",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 707,
+        "completion_tokens": 127
+      },
+      "latency_ms": 1406
+    },
+    {
+      "id": "holdout-OWNER_RENT-4",
+      "family": "holdout-OWNER_RENT-4",
+      "expected": "OWNER_RENT",
+      "predicted": "OWNER_RENT",
+      "model_predicted": "OWNER_RENT",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 710,
+        "completion_tokens": 217
+      },
+      "latency_ms": 1719
+    },
+    {
+      "id": "holdout-OWNER_SELL-4",
+      "family": "holdout-OWNER_SELL-4",
+      "expected": "OWNER_SELL",
+      "predicted": "OWNER_SELL",
+      "model_predicted": "ERROR",
+      "needs_review": true,
+      "source": "rules_fallback",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 713,
+        "completion_tokens": 600
+      },
+      "latency_ms": 3641
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-4",
+      "family": "holdout-PROPERTY_DECLINED-4",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "PROPERTY_DECLINED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 709,
+        "completion_tokens": 140
+      },
+      "latency_ms": 1281
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-4",
+      "family": "holdout-SEARCH_COMPLETED-4",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED",
+      "model_predicted": "SEARCH_COMPLETED",
+      "needs_review": true,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 708,
+        "completion_tokens": 222
+      },
+      "latency_ms": 1828
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-4",
+      "family": "holdout-SEARCH_UPDATED-4",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "SEARCH_UPDATED",
+      "needs_review": false,
+      "source": "hybrid",
+      "usage": {
+        "model": "deepseek-flash",
+        "prompt_tokens": 713,
+        "completion_tokens": 219
+      },
+      "latency_ms": 1531
+    }
+  ],
+  "raw_model_metrics": {
+    "per_category": {
+      "ASK_ALTERNATIVES": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "ASK_CONTACT": {
+        "tp": 5,
+        "fp": 1,
+        "fn": 0,
+        "precision": 0.8333333333333334,
+        "recall": 1.0,
+        "f1": 0.9090909090909091
+      },
+      "ASK_INFO": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "ASK_VISIT": {
+        "tp": 5,
+        "fp": 1,
+        "fn": 0,
+        "precision": 0.8333333333333334,
+        "recall": 1.0,
+        "f1": 0.9090909090909091
+      },
+      "ERROR": {
+        "tp": 0,
+        "fp": 1,
+        "fn": 0,
+        "precision": 0.0,
+        "recall": null,
+        "f1": 0.0
+      },
+      "GIVE_OFFER": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "INTERESTED": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.8888888888888888
+      },
+      "MIXED_NEEDS": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "NO_SIGNAL": {
+        "tp": 3,
+        "fp": 0,
+        "fn": 2,
+        "precision": 1.0,
+        "recall": 0.6,
+        "f1": 0.75
+      },
+      "OPT_OUT": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "OWNER_RENT": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "OWNER_SELL": {
+        "tp": 4,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1.0,
+        "recall": 0.8,
+        "f1": 0.8888888888888888
+      },
+      "PROPERTY_DECLINED": {
+        "tp": 5,
+        "fp": 1,
+        "fn": 0,
+        "precision": 0.8333333333333334,
+        "recall": 1.0,
+        "f1": 0.9090909090909091
+      },
+      "SEARCH_COMPLETED": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "SEARCH_UPDATED": {
+        "tp": 5,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    },
+    "evaluation_labels": [
+      "ASK_ALTERNATIVES",
+      "ASK_CONTACT",
+      "ASK_INFO",
+      "ASK_VISIT",
+      "GIVE_OFFER",
+      "INTERESTED",
+      "MIXED_NEEDS",
+      "NO_SIGNAL",
+      "OPT_OUT",
+      "OWNER_RENT",
+      "OWNER_SELL",
+      "PROPERTY_DECLINED",
+      "SEARCH_COMPLETED",
+      "SEARCH_UPDATED"
+    ],
+    "macro_f1": 0.9467893217893218,
+    "confusion_matrix": {
+      "ASK_ALTERNATIVES": {
+        "ASK_ALTERNATIVES": 5
+      },
+      "ASK_CONTACT": {
+        "ASK_CONTACT": 5
+      },
+      "ASK_INFO": {
+        "ASK_INFO": 5
+      },
+      "ASK_VISIT": {
+        "ASK_VISIT": 5
+      },
+      "ERROR": {},
+      "GIVE_OFFER": {
+        "GIVE_OFFER": 5
+      },
+      "INTERESTED": {
+        "INTERESTED": 4,
+        "ASK_VISIT": 1
+      },
+      "MIXED_NEEDS": {
+        "MIXED_NEEDS": 5
+      },
+      "NO_SIGNAL": {
+        "ASK_CONTACT": 1,
+        "NO_SIGNAL": 3,
+        "PROPERTY_DECLINED": 1
+      },
+      "OPT_OUT": {
+        "OPT_OUT": 5
+      },
+      "OWNER_RENT": {
+        "OWNER_RENT": 5
+      },
+      "OWNER_SELL": {
+        "OWNER_SELL": 4,
+        "ERROR": 1
+      },
+      "PROPERTY_DECLINED": {
+        "PROPERTY_DECLINED": 5
+      },
+      "SEARCH_COMPLETED": {
+        "SEARCH_COMPLETED": 5
+      },
+      "SEARCH_UPDATED": {
+        "SEARCH_UPDATED": 5
+      }
+    }
+  }
+}

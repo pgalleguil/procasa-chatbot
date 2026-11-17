@@ -1,0 +1,966 @@
+{
+  "mode": "deterministic_only",
+  "cases": 70,
+  "unique_families": 70,
+  "limitations": "Synthetic wording holdout; no tuning after observation, not representative prevalence. No population 99% claim.",
+  "per_category": {
+    "ASK_ALTERNATIVES": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "ASK_CONTACT": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "ASK_INFO": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "ASK_VISIT": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 5,
+      "precision": null,
+      "recall": 0.0,
+      "f1": 0.0
+    },
+    "GIVE_OFFER": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "precision": 1.0,
+      "recall": 0.4,
+      "f1": 0.5714285714285714
+    },
+    "INTERESTED": {
+      "tp": 2,
+      "fp": 1,
+      "fn": 3,
+      "precision": 0.6666666666666666,
+      "recall": 0.4,
+      "f1": 0.5
+    },
+    "MIXED_NEEDS": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "NO_SIGNAL": {
+      "tp": 5,
+      "fp": 48,
+      "fn": 0,
+      "precision": 0.09433962264150944,
+      "recall": 1.0,
+      "f1": 0.1724137931034483
+    },
+    "OPT_OUT": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "OWNER_RENT": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "OWNER_SELL": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "precision": 1.0,
+      "recall": 0.4,
+      "f1": 0.5714285714285714
+    },
+    "PROPERTY_DECLINED": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "SEARCH_COMPLETED": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 4,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333333333333333
+    },
+    "SEARCH_UPDATED": {
+      "tp": 2,
+      "fp": 2,
+      "fn": 3,
+      "precision": 0.5,
+      "recall": 0.4,
+      "f1": 0.4444444444444444
+    }
+  },
+  "macro_f1": 0.30426538431464545,
+  "confusion_matrix": {
+    "ASK_ALTERNATIVES": {
+      "NO_SIGNAL": 4,
+      "ASK_ALTERNATIVES": 1
+    },
+    "ASK_CONTACT": {
+      "NO_SIGNAL": 5
+    },
+    "ASK_INFO": {
+      "NO_SIGNAL": 5
+    },
+    "ASK_VISIT": {
+      "NO_SIGNAL": 5
+    },
+    "GIVE_OFFER": {
+      "NO_SIGNAL": 3,
+      "GIVE_OFFER": 2
+    },
+    "INTERESTED": {
+      "NO_SIGNAL": 3,
+      "INTERESTED": 2
+    },
+    "MIXED_NEEDS": {
+      "NO_SIGNAL": 2,
+      "MIXED_NEEDS": 1,
+      "SEARCH_UPDATED": 1,
+      "INTERESTED": 1
+    },
+    "NO_SIGNAL": {
+      "NO_SIGNAL": 5
+    },
+    "OPT_OUT": {
+      "NO_SIGNAL": 4,
+      "OPT_OUT": 1
+    },
+    "OWNER_RENT": {
+      "NO_SIGNAL": 4,
+      "OWNER_RENT": 1
+    },
+    "OWNER_SELL": {
+      "OWNER_SELL": 2,
+      "NO_SIGNAL": 2,
+      "SEARCH_UPDATED": 1
+    },
+    "PROPERTY_DECLINED": {
+      "NO_SIGNAL": 4,
+      "PROPERTY_DECLINED": 1
+    },
+    "SEARCH_COMPLETED": {
+      "NO_SIGNAL": 4,
+      "SEARCH_COMPLETED": 1
+    },
+    "SEARCH_UPDATED": {
+      "NO_SIGNAL": 3,
+      "SEARCH_UPDATED": 2
+    }
+  },
+  "rows": [
+    {
+      "id": "holdout-ASK_INFO-0",
+      "family": "holdout-ASK_INFO-0",
+      "expected": "ASK_INFO",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_INFO-1",
+      "family": "holdout-ASK_INFO-1",
+      "expected": "ASK_INFO",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_INFO-2",
+      "family": "holdout-ASK_INFO-2",
+      "expected": "ASK_INFO",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_INFO-3",
+      "family": "holdout-ASK_INFO-3",
+      "expected": "ASK_INFO",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 15
+    },
+    {
+      "id": "holdout-ASK_INFO-4",
+      "family": "holdout-ASK_INFO-4",
+      "expected": "ASK_INFO",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-INTERESTED-0",
+      "family": "holdout-INTERESTED-0",
+      "expected": "INTERESTED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-INTERESTED-1",
+      "family": "holdout-INTERESTED-1",
+      "expected": "INTERESTED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-INTERESTED-2",
+      "family": "holdout-INTERESTED-2",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-INTERESTED-3",
+      "family": "holdout-INTERESTED-3",
+      "expected": "INTERESTED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-INTERESTED-4",
+      "family": "holdout-INTERESTED-4",
+      "expected": "INTERESTED",
+      "predicted": "INTERESTED",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_VISIT-0",
+      "family": "holdout-ASK_VISIT-0",
+      "expected": "ASK_VISIT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_VISIT-1",
+      "family": "holdout-ASK_VISIT-1",
+      "expected": "ASK_VISIT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_VISIT-2",
+      "family": "holdout-ASK_VISIT-2",
+      "expected": "ASK_VISIT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_VISIT-3",
+      "family": "holdout-ASK_VISIT-3",
+      "expected": "ASK_VISIT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_VISIT-4",
+      "family": "holdout-ASK_VISIT-4",
+      "expected": "ASK_VISIT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_CONTACT-0",
+      "family": "holdout-ASK_CONTACT-0",
+      "expected": "ASK_CONTACT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_CONTACT-1",
+      "family": "holdout-ASK_CONTACT-1",
+      "expected": "ASK_CONTACT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_CONTACT-2",
+      "family": "holdout-ASK_CONTACT-2",
+      "expected": "ASK_CONTACT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_CONTACT-3",
+      "family": "holdout-ASK_CONTACT-3",
+      "expected": "ASK_CONTACT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_CONTACT-4",
+      "family": "holdout-ASK_CONTACT-4",
+      "expected": "ASK_CONTACT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-GIVE_OFFER-0",
+      "family": "holdout-GIVE_OFFER-0",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-GIVE_OFFER-1",
+      "family": "holdout-GIVE_OFFER-1",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-GIVE_OFFER-2",
+      "family": "holdout-GIVE_OFFER-2",
+      "expected": "GIVE_OFFER",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-GIVE_OFFER-3",
+      "family": "holdout-GIVE_OFFER-3",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-GIVE_OFFER-4",
+      "family": "holdout-GIVE_OFFER-4",
+      "expected": "GIVE_OFFER",
+      "predicted": "GIVE_OFFER",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_ALTERNATIVES-0",
+      "family": "holdout-ASK_ALTERNATIVES-0",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_ALTERNATIVES-1",
+      "family": "holdout-ASK_ALTERNATIVES-1",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_ALTERNATIVES-2",
+      "family": "holdout-ASK_ALTERNATIVES-2",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_ALTERNATIVES-3",
+      "family": "holdout-ASK_ALTERNATIVES-3",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-ASK_ALTERNATIVES-4",
+      "family": "holdout-ASK_ALTERNATIVES-4",
+      "expected": "ASK_ALTERNATIVES",
+      "predicted": "ASK_ALTERNATIVES",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-0",
+      "family": "holdout-PROPERTY_DECLINED-0",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-1",
+      "family": "holdout-PROPERTY_DECLINED-1",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-2",
+      "family": "holdout-PROPERTY_DECLINED-2",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-3",
+      "family": "holdout-PROPERTY_DECLINED-3",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-PROPERTY_DECLINED-4",
+      "family": "holdout-PROPERTY_DECLINED-4",
+      "expected": "PROPERTY_DECLINED",
+      "predicted": "PROPERTY_DECLINED",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-0",
+      "family": "holdout-SEARCH_COMPLETED-0",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-1",
+      "family": "holdout-SEARCH_COMPLETED-1",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-2",
+      "family": "holdout-SEARCH_COMPLETED-2",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-3",
+      "family": "holdout-SEARCH_COMPLETED-3",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_COMPLETED-4",
+      "family": "holdout-SEARCH_COMPLETED-4",
+      "expected": "SEARCH_COMPLETED",
+      "predicted": "SEARCH_COMPLETED",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OPT_OUT-0",
+      "family": "holdout-OPT_OUT-0",
+      "expected": "OPT_OUT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OPT_OUT-1",
+      "family": "holdout-OPT_OUT-1",
+      "expected": "OPT_OUT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OPT_OUT-2",
+      "family": "holdout-OPT_OUT-2",
+      "expected": "OPT_OUT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OPT_OUT-3",
+      "family": "holdout-OPT_OUT-3",
+      "expected": "OPT_OUT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OPT_OUT-4",
+      "family": "holdout-OPT_OUT-4",
+      "expected": "OPT_OUT",
+      "predicted": "OPT_OUT",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-0",
+      "family": "holdout-SEARCH_UPDATED-0",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-1",
+      "family": "holdout-SEARCH_UPDATED-1",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-2",
+      "family": "holdout-SEARCH_UPDATED-2",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-3",
+      "family": "holdout-SEARCH_UPDATED-3",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-SEARCH_UPDATED-4",
+      "family": "holdout-SEARCH_UPDATED-4",
+      "expected": "SEARCH_UPDATED",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_SELL-0",
+      "family": "holdout-OWNER_SELL-0",
+      "expected": "OWNER_SELL",
+      "predicted": "OWNER_SELL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_SELL-1",
+      "family": "holdout-OWNER_SELL-1",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_SELL-2",
+      "family": "holdout-OWNER_SELL-2",
+      "expected": "OWNER_SELL",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_SELL-3",
+      "family": "holdout-OWNER_SELL-3",
+      "expected": "OWNER_SELL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_SELL-4",
+      "family": "holdout-OWNER_SELL-4",
+      "expected": "OWNER_SELL",
+      "predicted": "OWNER_SELL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_RENT-0",
+      "family": "holdout-OWNER_RENT-0",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_RENT-1",
+      "family": "holdout-OWNER_RENT-1",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_RENT-2",
+      "family": "holdout-OWNER_RENT-2",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_RENT-3",
+      "family": "holdout-OWNER_RENT-3",
+      "expected": "OWNER_RENT",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-OWNER_RENT-4",
+      "family": "holdout-OWNER_RENT-4",
+      "expected": "OWNER_RENT",
+      "predicted": "OWNER_RENT",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-0",
+      "family": "holdout-MIXED_NEEDS-0",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-1",
+      "family": "holdout-MIXED_NEEDS-1",
+      "expected": "MIXED_NEEDS",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-2",
+      "family": "holdout-MIXED_NEEDS-2",
+      "expected": "MIXED_NEEDS",
+      "predicted": "MIXED_NEEDS",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-3",
+      "family": "holdout-MIXED_NEEDS-3",
+      "expected": "MIXED_NEEDS",
+      "predicted": "SEARCH_UPDATED",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-MIXED_NEEDS-4",
+      "family": "holdout-MIXED_NEEDS-4",
+      "expected": "MIXED_NEEDS",
+      "predicted": "INTERESTED",
+      "model_predicted": "NOT_RUN",
+      "needs_review": false,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-NO_SIGNAL-0",
+      "family": "holdout-NO_SIGNAL-0",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-NO_SIGNAL-1",
+      "family": "holdout-NO_SIGNAL-1",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-NO_SIGNAL-2",
+      "family": "holdout-NO_SIGNAL-2",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-NO_SIGNAL-3",
+      "family": "holdout-NO_SIGNAL-3",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    },
+    {
+      "id": "holdout-NO_SIGNAL-4",
+      "family": "holdout-NO_SIGNAL-4",
+      "expected": "NO_SIGNAL",
+      "predicted": "NO_SIGNAL",
+      "model_predicted": "NOT_RUN",
+      "needs_review": true,
+      "source": "rules",
+      "usage": {},
+      "latency_ms": 0
+    }
+  ],
+  "evaluation_labels": [
+    "ASK_ALTERNATIVES",
+    "ASK_CONTACT",
+    "ASK_INFO",
+    "ASK_VISIT",
+    "GIVE_OFFER",
+    "INTERESTED",
+    "MIXED_NEEDS",
+    "NO_SIGNAL",
+    "OPT_OUT",
+    "OWNER_RENT",
+    "OWNER_SELL",
+    "PROPERTY_DECLINED",
+    "SEARCH_COMPLETED",
+    "SEARCH_UPDATED"
+  ]
+}

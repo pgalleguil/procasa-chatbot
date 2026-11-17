@@ -5,6 +5,8 @@ context.  A response which cannot be made safe is suppressed, never sent.
 """
 from __future__ import annotations
 
+from .message_scope import office_messages
+
 import re
 
 from chatbot.phase3_conversation import (
@@ -140,7 +142,7 @@ def admit_customer_response(*, candidate: str, customer_message: str, lead=None,
     # policy state from that durable history instead of only the current
     # inbound; otherwise a repair can lose a prior visit preference, actor
     # role, operation switch, or human ownership signal.
-    history = list(lead.get("messages") or [])
+    history = office_messages(lead.get("messages"))
     if not history or history[-1].get("role") != "user" or history[-1].get("content") != customer_message:
         history.append({"role": "user", "content": customer_message})
     state = build_conversation_state(lead, history, property_context=property_context)

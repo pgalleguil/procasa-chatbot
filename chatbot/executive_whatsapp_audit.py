@@ -53,6 +53,27 @@ def _variable_name_for_executive(name: object) -> str | None:
     return "PROCASA_WASENDER_" + slug
 
 
+def _capture_enabled_for_session(session_id: str, configured: bool) -> bool:
+    """Explicit non-secret session allowlist; fail closed if malformed.
+
+    When present, the allowlist is authoritative for ALL sessions, including
+    those whose legacy secret JSON sets capture_enabled=true. This permits
+    changing capture without reading, retyping or exposing webhook credentials.
+    Receipt and signature checks remain independent; global write must also be
+    enabled and lead ownership must be verified for every message.
+    """
+    raw = os.getenv("PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS", "")
+    if not raw:
+        return configured
+    if len(raw) > 256:
+        return False
+    items = [value.strip() for value in raw.split(",")]
+    if (len(items) > 10 or len(items) != len(set(items))
+            or any(not _SESSION_ID.fullmatch(value) for value in items)):
+        return False
+    return session_id in items
+
+
 def _executive_credentials(name: object, session_id: str) -> dict | None:
     """Read only the configured executive's dedicated secret from Render.
 
@@ -83,7 +104,9 @@ def _executive_credentials(name: object, session_id: str) -> dict | None:
     return {
         "secret": secret.strip(),
         "token": token.strip(),
-        "capture_enabled": values.get("capture_enabled") is True,
+        "capture_enabled": _capture_enabled_for_session(
+            session_id, values.get("capture_enabled") is True
+        ),
     }
 
 

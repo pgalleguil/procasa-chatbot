@@ -75,7 +75,9 @@ def test_hybrid_extracts_only_customer_supported_search_and_visits():
     result = classify_hybrid(messages, llm_enabled=True, propose=model)
     assert calls and len(calls) == 1
     assert result["intent"] == "SEARCH_UPDATED"
-    assert result["suggested_priority"] == "NORMAL"
+    assert result["executive_management"]["case_type"] == "REQUISITOS_ACTUALIZADOS"
+    assert result["executive_management"]["next_step_hint"] == "ACTUALIZAR_BUSQUEDA"
+    assert "suggested_priority" not in result
     assert result["needs_review"]  # model-only visit requires human review
     assert result["search"] == {
         "operation": "ARRIENDO", "property_type": "DEPARTAMENTO",
@@ -231,3 +233,46 @@ def test_worker_filters_old_cycle_messages(monkeypatch):
     assert worker.process_claimed(db, doc, llm_enabled=False) == "ready"
     summary = db["leads"].writes[0][1]["$set"]["commercial_intelligence.summary"]
     assert summary["intent"] == "ASK_VISIT"
+
+@pytest.mark.parametrize("message,case_type,action", [
+    ("Quiero agendar una visita", "VISITA_SOLICITADA", "COORDINAR_VISITA"),
+    ("¿Me pueden llamar?", "CONTACTO_SOLICITADO", "CONTACTAR_CLIENTE"),
+    ("Quiero presentar una oferta", "OFERTA_PROPUESTA", "REVISAR_OFERTA"),
+    ("Me interesa", "INTERES_EXPRESADO", "DAR_SEGUIMIENTO"),
+    ("Esa propiedad no me interesa", "PROPIEDAD_DESCARTADA", "ACTUALIZAR_PREFERENCIAS"),
+    ("Quiero vender mi casa", "CAPTACION_VENTA", "GESTIONAR_CAPTACION_VENTA"),
+    ("Ya encontré una casa", "BUSQUEDA_FINALIZADA", "REVISAR_CIERRE_BUSQUEDA"),
+    ("No me escriban más", "BAJA_COMUNICACIONES", "RESPETAR_RESTRICCION_CONTACTO"),
+])
+def test_executive_cases_are_commercial_not_chatbot_temperature(message, case_type, action):
+    result = classify_hybrid([turn("customer", message)], llm_enabled=False)
+    assert result["executive_management"]["case_type"] == case_type
+    assert result["executive_management"]["next_step_hint"] == action
+    assert result["executive_management"]["formal_crm_result"] is False
+    assert "suggested_priority" not in result
+    assert not ({"lead_temperature", "lead_temperature_effective", "temperature_at_assignment"} & set(result))
+
+
+def test_executive_case_is_not_affected_by_prior_chatbot_hot_or_cold():
+    message = turn("customer", "Quiero agendar una visita", "fresh")
+    for temperature in ("HOT", "COLD", "NORMAL"):
+        prior = {"lead_temperature_effective": temperature, "temperature_at_assignment": temperature}
+        result = classify_hybrid([message], prior, llm_enabled=False)
+        assert result["executive_management"]["case_type"] == "VISITA_SOLICITADA"
+        assert result["executive_management"]["next_step_hint"] == "COORDINAR_VISITA"
+        assert "suggested_priority" not in result
+        assert prior == {"lead_temperature_effective": temperature, "temperature_at_assignment": temperature}
+
+
+def test_executive_new_summary_does_not_retain_old_temperature_suggestion():
+    old = {"summary": {"intent": "ASK_VISIT", "suggested_priority": "HOT",
+                       "latest_important_request": {"intent": "ASK_VISIT",
+                           "provider_message_id": "old", "timestamp": "2026-11-16T16:21:00+00:00",
+                           "executive_message_after_request": False,
+                           "fulfillment": "UNKNOWN"}}}
+    summary = classify_hybrid([turn("customer", "Hola", "fresh")], old, llm_enabled=False)
+    assert "suggested_priority" not in summary
+    assert summary["executive_management"]["case_type"] == "SIN_SENAL_CLARA"
+    assert summary["executive_management"]["next_step_hint"] == "COORDINAR_VISITA"
+    assert summary["executive_management"]["pending_customer_request"]
+

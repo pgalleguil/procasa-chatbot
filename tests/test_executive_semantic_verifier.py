@@ -46,7 +46,9 @@ def test_critical_rule_is_not_kept_when_verification_rejects(change):
     result = classify_hybrid([message(text)], propose=lambda *_: proposal(text, 'ASK_VISIT'),
                              verify=lambda *_: check(text, 'ASK_VISIT', **change))
     assert result['intent'] == 'NO_SIGNAL'
-    assert result['suggested_priority'] == 'NORMAL'
+    assert result['executive_management']['case_type'] == 'SIN_SENAL_CLARA'
+    assert result['executive_management']['next_step_hint'] is None
+    assert 'suggested_priority' not in result
     assert result['needs_review']
 
 

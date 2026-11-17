@@ -12,14 +12,14 @@ Un worker con lease atómico de 90 segundos clasifica pendientes; comprueba otra
 ## Motor híbrido: reglas + DeepSeek
 1. Reglas determinísticas para visita explícita, llamada, oferta, alternativas, rechazo puntual, búsqueda terminada y baja global.
 2. DeepSeek para interpretar necesidades del cliente con JSON estructurado y contexto limitado a 8 mensajes comerciales. El prompt elimina teléfono, correo y RUT; no incluye chats privados, nombres ni identificadores de clientes.
-3. Consolidación bajo commercial_intelligence.summary con intent, search, search_status, contact, suggested_priority, campaign, source, confidence, needs_review, evidence_provider_ids, analyzed_at y versión.
+3. Consolidación bajo commercial_intelligence.summary con intent, search, search_status, contact, executive_management (case_type, next_step_hint, pending_customer_request, needs_review), campaign, source, confidence, needs_review, evidence_provider_ids, analyzed_at y versión.
 
 Distinciones esenciales:
 - OPT_OUT: petición explícita de no recibir más contactos.
 - SEARCH_COMPLETED: ya compró, arrendó o dejó de buscar.
 - PROPERTY_DECLINED: no quiere esa propiedad, pero la búsqueda sigue.
 - ASK_ALTERNATIVES: solicita similares o cambia necesidades.
-- ASK_VISIT / ASK_CONTACT / GIVE_OFFER: prioridad HOT sugerida; no se altera automáticamente la temperatura canónica del CRM.
+- ASK_VISIT / ASK_CONTACT / GIVE_OFFER: registrar **VISITA_SOLICITADA / CONTACTO_SOLICITADO / OFERTA_PROPUESTA**, con próximo paso sugerido y evidencia; nunca emitir HOT/NORMAL/COLD ni alterar la temperatura canónica o el SLA del chatbot.
 - Mensaje del ejecutivo no es respuesta del cliente. El contador de respuestas exige secuencia ejecutivo -> cliente.
 
 Las comunas y atributos extraídos por IA requieren evidencia textual en mensajes del cliente; no se aceptan deducciones derivadas de ofertas del ejecutivo.
@@ -44,3 +44,6 @@ El worker procesa máximo tres leads por lote cada 20 segundos. Una caída del L
 4. Revisar manualmente las categorías de clasificación antes de habilitar las sesiones restantes.
 
 WaSender no permite recuperar historial anterior al vínculo del teléfono.
+## Regla de separación de clasificaciones
+
+La temperatura **HOT / NORMAL / COLD** corresponde exclusivamente al tramo chatbot/ingreso y a su lógica canónica de asignación. La etapa posterior del ejecutivo tiene la clasificación independiente `commercial_intelligence.summary.executive_management` (caso comercial y acción sugerida), sin promoción a temperatura, gestión formal SLA, visitas realizadas ni ventas cerradas. Un `next_step_hint` es una sugerencia para seguimiento humano, nunca una acción automática.

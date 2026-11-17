@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
-VERSION = "executive_hybrid_v3"
+VERSION = "executive_hybrid_v4"
 INTENTS = frozenset({
     "NO_SIGNAL", "ASK_INFO", "INTERESTED", "ASK_VISIT", "ASK_CONTACT",
     "GIVE_OFFER", "ASK_ALTERNATIVES", "PROPERTY_DECLINED",
@@ -25,7 +25,41 @@ INTENTS = frozenset({
 OPERATIONS = frozenset({"ARRIENDO", "VENTA"})
 PROPERTY_TYPES = frozenset({"DEPARTAMENTO", "CASA", "TERRENO", "OFICINA", "LOCAL_COMERCIAL"})
 from .executive_evidence import CRITICAL, grounded, supported, VERIFY_PROMPT
-from .lead_temperature import HOT_INTENTS
+# Executive requests are operational signals, NEVER lead-temperature classifications.
+IMPORTANT_CUSTOMER_REQUESTS = frozenset({"ASK_VISIT", "ASK_CONTACT", "GIVE_OFFER"})
+EXECUTIVE_CASES = {
+    "NO_SIGNAL": ("SIN_SENAL_CLARA", None),
+    "ASK_INFO": ("INFORMACION_SOLICITADA", "RESPONDER_CONSULTA"),
+    "INTERESTED": ("INTERES_EXPRESADO", "DAR_SEGUIMIENTO"),
+    "ASK_VISIT": ("VISITA_SOLICITADA", "COORDINAR_VISITA"),
+    "ASK_CONTACT": ("CONTACTO_SOLICITADO", "CONTACTAR_CLIENTE"),
+    "GIVE_OFFER": ("OFERTA_PROPUESTA", "REVISAR_OFERTA"),
+    "ASK_ALTERNATIVES": ("ALTERNATIVAS_SOLICITADAS", "PROPONER_ALTERNATIVAS"),
+    "PROPERTY_DECLINED": ("PROPIEDAD_DESCARTADA", "ACTUALIZAR_PREFERENCIAS"),
+    "SEARCH_COMPLETED": ("BUSQUEDA_FINALIZADA", "REVISAR_CIERRE_BUSQUEDA"),
+    "OPT_OUT": ("BAJA_COMUNICACIONES", "RESPETAR_RESTRICCION_CONTACTO"),
+    "SEARCH_UPDATED": ("REQUISITOS_ACTUALIZADOS", "ACTUALIZAR_BUSQUEDA"),
+    "OWNER_SELL": ("CAPTACION_VENTA", "GESTIONAR_CAPTACION_VENTA"),
+    "OWNER_RENT": ("CAPTACION_ARRIENDO", "GESTIONAR_CAPTACION_ARRIENDO"),
+    "MIXED_NEEDS": ("OPERACION_MIXTA", "EVALUAR_VENTA_Y_COMPRA"),
+}
+
+
+def _management_assessment(intent: str, request: dict | None, pending: bool,
+                           needs_review: bool) -> dict:
+    """Non-executable commercial guidance, neither CRM management nor chatbot priority."""
+    case_type, next_step = EXECUTIVE_CASES.get(intent, EXECUTIVE_CASES["NO_SIGNAL"])
+    # A simple greeting must not erase an outstanding customer request.
+    if intent == "NO_SIGNAL" and pending and isinstance(request, dict):
+        next_step = EXECUTIVE_CASES.get(request.get("intent"), (None, None))[1]
+    return {
+        "case_type": case_type,
+        "next_step_hint": next_step,
+        "pending_customer_request": bool(pending),
+        "needs_review": bool(needs_review),
+        "formal_crm_result": False,
+    }
+
 from .executive_semantics import intent as evidence_intent, extract, ambiguous
 TERMINAL = frozenset({"OPT_OUT", "SEARCH_COMPLETED"})
 PII = [
@@ -305,7 +339,7 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
             search_status = "ACTIVE"
         # Greetings never clear a completed search or unsubscribe preference.
         intent = current
-        if current in HOT_INTENTS:
+        if current in IMPORTANT_CUSTOMER_REQUESTS:
             request = {"intent": current, "provider_message_id": m["provider_message_id"],
                        "timestamp": m["timestamp"], "executive_message_after_request": False,
                        "fulfillment": "UNKNOWN"}
@@ -368,7 +402,7 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
             elif intent not in ("OPT_OUT", "PROPERTY_DECLINED"):
                 search_status = "ACTIVE"
             opted_out = opted_out_before_latest or observed_explicit_opt_out or intent == "OPT_OUT"
-            if intent in HOT_INTENTS:
+            if intent in IMPORTANT_CUSTOMER_REQUESTS:
                 request = {"intent": intent, "provider_message_id": last_customer["provider_message_id"],
                            "timestamp": last_customer["timestamp"], "fulfillment": "UNKNOWN",
                            "executive_message_after_request": any(m["actor_type"] == "human_agent" and m["timestamp"] > last_customer["timestamp"] for m in turns)}
@@ -419,6 +453,14 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
     if intent in TERMINAL or search_status == "COMPLETED":
         contact["awaiting"] = "NONE"
     reason = "explicit_opt_out" if opted_out else "search_completed" if search_status == "COMPLETED" else None
+    needs_review = bool(
+        uncertain or transport_review or tied or model_disagrees
+        or source == "rules_fallback" or intent in TERMINAL
+        or proposal.get("needs_review")
+    )
+    executive_management = _management_assessment(
+        intent, request, contact["important_request_pending"], needs_review
+    )
     return {
         "version": VERSION, "intent": intent, "search_status": search_status,
         "search": state.get("needs", {}).get("DEMAND", {}),
@@ -427,14 +469,14 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
         "explicit_opt_out_provider_ids": opt_out_evidence,
         "contact": contact,
         "latest_important_request": request,
-        "suggested_priority": "HOT" if intent in HOT_INTENTS else "NORMAL",
+        "executive_management": executive_management,
         "campaign": {"eligibility_hint": "SUPPRESS_REVIEW" if reason else "REVIEW", "reason": reason, "enforced": False},
         "source": source, "confidence": None,
         "decision_basis": decision, "verification": verification,
         "signals": list(dict.fromkeys([intent] + (["PROPERTY_DECLINED"] if last_customer and evidence_intent(last_customer["content"].split("pero")[0]) == "PROPERTY_DECLINED" else []))),
         "confidence_kind": "not_calibrated",
         "model_suggestion": {"intent": proposal["intent"], "self_reported_confidence": proposal["confidence"]} if proposal else None,
-        "needs_review": bool(uncertain or transport_review or tied or model_disagrees or source == "rules_fallback" or intent in TERMINAL or proposal.get("needs_review")),
+        "needs_review": needs_review,
         "last_customer_message_id": customer_id,
         "last_customer_at": contact["last_customer_at"],
         "intent_evidence_provider_ids": latest_evidence,

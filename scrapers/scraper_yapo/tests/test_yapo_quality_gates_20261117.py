@@ -59,6 +59,26 @@ def test_unrelated_recommendation_profile_cannot_fill_missing_publisher_profile(
     assert fields["seller_type"] == ""
 
 
+def test_unrecognized_publisher_card_structure_does_not_borrow_recommended_identity():
+    html = (
+        '<html><body><main>'
+        '<div class="profile"><span class="seller-name">RE/MAX Relacionado</span>'
+        '<a href="/user/profile/id/99999999">Ver anunciante recomendado</a></div>'
+        '<h3>Publicado por</h3>'
+        '<h1>Casa en Maipú</h1>'
+        '<div class="d3-property-about__text">Vendo mi propia casa.</div>'
+        '</main></body></html>'
+    )
+    fields = extract_listing_fields(
+        html,
+        source_url="https://www.yapo.cl/bienes-raices-venta-de-propiedades-casas/casa/87654321",
+    )
+    assert fields["publicador_visible"] == ""
+    assert fields["seller_profile_id"] == ""
+    assert fields["seller_type"] == ""
+    assert fields["contact_logo_alt"] == ""
+
+
 @pytest.mark.parametrize("description,expected_rule", [
     ("Venta de particular. No soy dueño de esta casa.", "OWNER_DECLARATION_WITH_NEGATION"),
     ("Venta de particular. Propiedad heredada de mis padres.", "OWNER_DECLARATION_WITH_REPRESENTATION"),

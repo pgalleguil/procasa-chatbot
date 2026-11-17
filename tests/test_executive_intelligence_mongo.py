@@ -208,3 +208,39 @@ def test_office_append_preserves_executive_evidence(db, monkeypatch):
     assert saved['messages'][:120] == lead['messages']
     history = storage.obtener_conversacion(lead['phone'])
     assert len(history) == 1 and history[0]['content'] == 'Respuesta de oficina'
+
+
+def test_real_mongo_global_optout_is_durable_and_campaign_safe(db):
+    from chatbot.price_drop_campaign_classifier import lead_must_not_be_contacted
+    from chatbot.price_drop_leads_v2 import _contact_suppression_reasons
+    lead = seed(db)
+    cycle = db.crm_assignment_cycles.find_one({'assignment_cycle_id': 'cycle-A'})
+    session = {'user_id': str(OWNER), 'session_id': '100'}
+    parsed = dict(timestamp=NOW.isoformat(), timestamp_source='provider',
+                  provider_message_id='client-global-stop', from_me=False,
+                  content='No quiero más avisos')
+    assert audit._record_authorized(
+        db, session=session, phone=lead['phone'], parsed=parsed,
+        lead=lead, cycle=cycle) == 'stored'
+    saved = db.leads.find_one({'_id': lead['_id']})
+    assert saved['price_drop_v2']['opted_out'] is True
+    assert saved['price_drop_campaign_v1']['opted_out'] is True
+    assert saved['contact_restrictions']['marketing_opt_out'] is True
+    assert saved['contact_restrictions']['marketing_opt_out_provider_id'] == 'client-global-stop'
+    assert lead_must_not_be_contacted(saved)
+    assert 'explicit_opt_out' in _contact_suppression_reasons(saved)
+    assert audit._record_authorized(
+        db, session=session, phone=lead['phone'], parsed=parsed,
+        lead=lead, cycle=cycle) == 'duplicate_or_reassigned'
+    assert len(db.leads.find_one({'_id': lead['_id']})['messages']) == 3
+    # A later customer-initiated service request is still a valid message;
+    # it must never undo the marketing restriction.
+    parsed = dict(parsed, provider_message_id='new-service',
+                  content='Ahora necesito arrendar un departamento')
+    assert audit._record_authorized(
+        db, session=session, phone=lead['phone'], parsed=parsed,
+        lead=lead, cycle=cycle) == 'stored'
+    after = db.leads.find_one({'_id': lead['_id']})
+    assert after['contact_restrictions']['marketing_opt_out'] is True
+    assert lead_must_not_be_contacted(after)
+    assert after.get('conversation_status') is None

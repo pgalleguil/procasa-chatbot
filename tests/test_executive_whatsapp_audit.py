@@ -373,3 +373,43 @@ def test_authorized_append_atomically_queues_hybrid_classification(rig):
     prior = db["leads"].last_mutation
     assert post(client, event(from_me=True, msg_id="queued-out")).json()["status"] == "duplicate_or_reassigned"
     assert db["leads"].last_mutation is prior
+
+
+def test_capture_session_allowlist_is_authoritative_for_incoming_and_outgoing(rig, monkeypatch):
+    db, cycle, client = rig
+    # A different session's legacy JSON says enabled; the explicit list
+    # prevents that session from saving any customer or executive messages.
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS", "133517")
+    assert post(client, event(from_me=True, msg_id="out-unselected")).json()["status"] == "dry_run"
+    assert post(client, event(from_me=False, msg_id="in-unselected")).json()["status"] == "dry_run"
+    assert db["leads"].update_calls == 0
+
+    # An explicitly selected session may capture without replacing its token
+    # or webhook secret, even when its legacy JSON has capture_enabled=false.
+    monkeypatch.setenv(EXEC_ENV, session_config(capture_enabled=False))
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS", "133286, 133517")
+    assert post(client, event(from_me=True, msg_id="manual-selected")).json()["status"] == "stored"
+    assert post(client, event(from_me=False, msg_id="reply-selected")).json()["status"] == "stored"
+    assert [m["actor_type"] for m in db["leads"].lead["messages"][-2:]] == [
+        "human_agent", "customer",
+    ]
+    assert all(m["wasender_session_id"] == SESSION for m in db["leads"].lead["messages"][-2:])
+
+
+@pytest.mark.parametrize("invalid", [
+    "all", "*", "133286,", "133286,133286", "133286,abc",
+    "133286," + ",".join(str(i) for i in range(11)),
+])
+def test_malformed_session_capture_allowlist_fails_closed(rig, monkeypatch, invalid):
+    db, cycle, client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS", invalid)
+    assert post(client, event(from_me=True)).json()["status"] == "dry_run"
+    assert db["leads"].update_calls == 0
+
+
+def test_capture_allowlist_does_not_bypass_global_write_gate(rig, monkeypatch):
+    db, cycle, client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS", SESSION)
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0")
+    assert post(client, event(from_me=False)).json()["status"] == "dry_run"
+    assert db["leads"].update_calls == 0

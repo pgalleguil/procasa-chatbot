@@ -265,26 +265,42 @@ def _jsonld_product_details(soup: Any) -> dict[str, Any]:
     return {}
 
 
-def _current_yapo_publisher(soup: Any) -> tuple[str, str]:
-    """Read the advertiser card introduced by Yapo's current detail template."""
+def _current_yapo_publisher_card(soup: Any) -> Any | None:
+    """Select only the advertiser card, not the entire main or suggested ads.
+
+    Yapo may wrap the "Publicado por" heading in one or two divs. The former
+    parent.parent fallback could select <main> and then read an unrelated
+    seller's name/profile from a recommendation carousel.
+    """
     for heading in soup.select("main h3"):
         if _commune_key(heading.get_text(" ", strip=True)) != "publicado-por":
             continue
-        card = heading.parent.parent if heading.parent and heading.parent.parent else heading.parent
-        if card is None:
-            continue
-        names = [node.get_text(" ", strip=True) for node in card.select("h4, [data-qa='publisher-name']")
-                 if _commune_key(node.get_text(" ", strip=True)) != "publicado-por"]
-        name = next((value for value in names if value), "")
-        logo = ""
-        for image in card.select("img[alt]"):
-            alt = str(image.get("alt") or "").strip()
-            if alt and ("logo" in alt.lower() or "foto de perfil" in alt.lower()):
-                logo = alt
+        parent = heading.parent
+        for _ in range(3):
+            if parent is None or getattr(parent, "name", "") in {"main", "body", "html"}:
                 break
-        if name:
-            return name, logo
-    return "", ""
+            names = parent.select("h4, [data-qa='publisher-name']")
+            if 1 <= len(names) <= 3:
+                return parent
+            parent = getattr(parent, "parent", None)
+    return None
+
+
+def _current_yapo_publisher(soup: Any) -> tuple[str, str]:
+    """Read the advertiser card introduced by Yapo's current detail template."""
+    card = _current_yapo_publisher_card(soup)
+    if card is None:
+        return "", ""
+    names = [node.get_text(" ", strip=True) for node in card.select("h4, [data-qa='publisher-name']")
+             if _commune_key(node.get_text(" ", strip=True)) != "publicado-por"]
+    name = next((value for value in names if value), "")
+    logo = ""
+    for image in card.select("img[alt]"):
+        alt = str(image.get("alt") or "").strip()
+        if alt and ("logo" in alt.lower() or "foto de perfil" in alt.lower()):
+            logo = alt
+            break
+    return name, logo
 
 
 def _publisher_profile_account_type(soup: Any, profile_id: str) -> tuple[str, str]:
@@ -756,7 +772,10 @@ def extract_listing_fields(
         price_currency = "CLP" if "$" in price else "UF" if re.search(r"\b(?:UF|CLF)\b", price, re.I) else ""
     description, description_source, description_summary, description_sources = _description_from_soup(soup)
 
-    publisher_scopes = _publisher_scopes(soup)
+    # Current-template publisher evidence is scoped to its actual card. Never
+    # import a profile link or a badge from recommended/similar listings.
+    publisher_card = _current_yapo_publisher_card(soup)
+    publisher_scopes = [publisher_card] if publisher_card is not None else _publisher_scopes(soup)
     seller_name, seller_name_selector = _scoped_first_text(
         publisher_scopes,
         ["[data-qa='seller-name']", "[data-qa='user-name']", ".seller-name", ".profile-name", ".contact-name", ".contact_name"],
@@ -765,7 +784,9 @@ def extract_listing_fields(
 
     publicador_visible, publicador_selector = _publicador_visible(publisher_scopes)
     current_publisher, current_publisher_logo = _current_yapo_publisher(soup)
-    if not publicador_visible and current_publisher:
+    if current_publisher:
+        # The explicit "Publicado por" heading outranks generic .profile and
+        # .seller selectors, which may belong to unrelated recommendation cards.
         publicador_visible = current_publisher
         publicador_selector = "yapo_published_by_heading"
     seller_jsonld_name, seller_jsonld_source = _jsonld_seller_name(soup)

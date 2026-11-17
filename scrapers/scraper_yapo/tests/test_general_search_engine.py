@@ -353,6 +353,12 @@ def test_j_repeat_search_uses_read_only_database_dedup_and_keeps_full_descriptio
 
     schema_validation = _validate(first_records[0])
     assert first["new_ads"] == 1
+    # INCIERTO belongs to a commercial review pool, never the assignment queue.
+    assert first["commercial_candidate_count"] == 1
+    assert first["manual_review_count"] == 1
+    assert first["owner_probable_count"] == 0
+    assert first["assignment_ready_count"] == 0
+    assert first["commercial_candidate_semantics"] == "owner_or_uncertain_for_review_not_assignment"
     assert len(first_records[0]["description"]) > 1000
     assert first_records[0]["description"].endswith("detalles de la propiedad. ")
     assert first_records[0]["schema_version"] == "yapo_propiedades_v1"

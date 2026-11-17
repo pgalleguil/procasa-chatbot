@@ -1759,6 +1759,11 @@ app.include_router(executive_pilot_router)
 from chatbot.executive_whatsapp_audit import router as executive_audit_router
 app.include_router(executive_audit_router)
 
+# Manual CRM WhatsApp messages from authenticated linked executive sessions.
+# Sending is feature-gated and defaults OFF; this does not affect the office bot.
+from chatbot.crm_executive_outbound_api import router as crm_executive_outbound_router
+app.include_router(crm_executive_outbound_router)
+
 from chatbot.lead_router import should_send_now, format_whatsapp_template
 from chatbot.storage import (
     get_db,

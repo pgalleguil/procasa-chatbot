@@ -149,3 +149,16 @@ def test_original_ledger_is_not_mutated():
     snapshot = deepcopy(ledger)
     update([turn("human_agent", "Perfecto, lo reviso", 2)], ledger)
     assert ledger == snapshot
+
+
+def test_no_cross_cycle_cross_session_cross_owner_or_office_evidence():
+    current = turn("customer", "Hola", 1)
+    foreign = [
+        turn("customer", "Quiero agendar una visita", 2, cycle="old-cycle"),
+        turn("customer", "Mi oferta sería 2700 UF", 3, session="other-session"),
+        turn("customer", "Quiero vender mi casa", 4, owner="another-owner"),
+        dict(turn("customer", "Quiero agendar una visita", 5), channel="office"),
+    ]
+    ledger, active, count = update([current] + foreign)
+    assert ledger == []
+    assert active is None and count == 0

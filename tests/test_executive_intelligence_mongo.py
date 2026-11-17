@@ -244,3 +244,87 @@ def test_real_mongo_global_optout_is_durable_and_campaign_safe(db):
     assert after['contact_restrictions']['marketing_opt_out'] is True
     assert lead_must_not_be_contacted(after)
     assert after.get('conversation_status') is None
+
+
+def test_opportunity_ledger_persists_across_new_message_and_reassignment(db):
+    lead = seed(db)
+    db.leads.update_one({'_id': lead['_id']}, {
+        '$set': {'messages.1.content': 'Quiero agendar una visita'}})
+    claimed = worker._claim(db, lead['_id'], now=NOW)
+    assert worker._load_window(db, claimed)
+    assert worker.process_claimed(db, claimed, llm_enabled=False) == 'ready'
+    saved = db.leads.find_one({'_id': lead['_id']})
+    cases = saved['commercial_intelligence']['opportunities']
+    assert len(cases) == 1
+    assert cases[0]['status'] == 'PENDIENTE_GESTION'
+    assert cases[0]['case_type'] == 'VISITA_SOLICITADA'
+    assert saved['commercial_intelligence']['summary']['executive_management']['active_opportunity_id'] == cases[0]['opportunity_id']
+
+    agent_reply = dict(lead['messages'][0], message_id='2', provider_message_id='2',
+                       timestamp=(NOW + timedelta(seconds=2)).isoformat(),
+                       content='Perfecto, lo reviso')
+    customer_thanks = dict(lead['messages'][1], message_id='3', provider_message_id='3',
+                           timestamp=(NOW + timedelta(seconds=3)).isoformat(),
+                           content='Gracias')
+    db.leads.update_one({'_id': lead['_id']}, {
+        '$push': {'messages': {'$each': [agent_reply, customer_thanks]}},
+        '$set': {
+            'commercial_intelligence.pending': True,
+            'commercial_intelligence.pending_message_id': '3',
+            'commercial_intelligence.pending_at': NOW + timedelta(seconds=3),
+        }})
+    claimed2 = worker._claim(db, lead['_id'], now=NOW + timedelta(seconds=4))
+    assert worker._load_window(db, claimed2)
+    assert worker.process_claimed(db, claimed2, llm_enabled=False) == 'ready'
+    after = db.leads.find_one({'_id': lead['_id']})
+    cases2 = after['commercial_intelligence']['opportunities']
+    assert len(cases2) == 1
+    assert cases2[0]['opportunity_id'] == cases[0]['opportunity_id']
+    assert cases2[0]['agent_reply_observed'] is True
+    assert cases2[0]['status'] == 'PENDIENTE_GESTION'
+    management = after['commercial_intelligence']['summary']['executive_management']
+    assert management['case_type'] == 'VISITA_SOLICITADA'
+    assert management['last_message_case_type'] == 'SIN_SENAL_CLARA'
+    assert management['pending_customer_request'] is True
+    assert after['commercial_intelligence']['opportunities_revision'] == 2
+
+    db.crm_assignment_cycles.update_one({'assignment_cycle_id': 'cycle-A'}, {
+        '$set': {'cycle_status': 'closed', 'unassigned_at': NOW + timedelta(seconds=5)}})
+    db.crm_assignment_cycles.insert_one({
+        'lead_id': str(lead['_id']), 'assignment_cycle_id': 'cycle-B',
+        'assigned_to_user_id': str(OWNER), 'cycle_status': 'active',
+        'unassigned_at': None, 'assigned_at': NOW + timedelta(seconds=5)})
+    next_message = dict(customer_thanks, message_id='4', provider_message_id='4',
+                        timestamp=(NOW + timedelta(seconds=6)).isoformat(),
+                        assignment_cycle_id='cycle-B', content='Hola')
+    db.leads.update_one({'_id': lead['_id']}, {
+        '$push': {'messages': next_message},
+        '$set': {
+            'lifecycle.current_assignment_cycle_id': 'cycle-B',
+            'commercial_intelligence.pending': True,
+            'commercial_intelligence.pending_cycle_id': 'cycle-B',
+            'commercial_intelligence.pending_message_id': '4',
+            'commercial_intelligence.pending_at': NOW + timedelta(seconds=6),
+        }})
+    claimed3 = worker._claim(db, lead['_id'], now=NOW + timedelta(seconds=7))
+    assert worker._load_window(db, claimed3)
+    assert worker.process_claimed(db, claimed3, llm_enabled=False) == 'ready'
+    next_saved = db.leads.find_one({'_id': lead['_id']})
+    assert len(next_saved['commercial_intelligence']['opportunities']) == 1
+    assert next_saved['commercial_intelligence']['opportunities'][0]['assignment_cycle_id'] == 'cycle-A'
+    assert next_saved['commercial_intelligence']['summary']['executive_management']['open_opportunities_count'] == 0
+    assert next_saved['commercial_intelligence']['summary']['executive_management']['active_opportunity_id'] is None
+
+
+def test_stale_classification_never_writes_new_ledger(db):
+    lead = seed(db)
+    db.leads.update_one({'_id': lead['_id']}, {
+        '$set': {'messages.1.content': 'Quiero agendar una visita'}})
+    claimed = worker._claim(db, lead['_id'], now=NOW)
+    def competing_message(*_args):
+        db.leads.update_one({'_id': lead['_id']}, {
+            '$set': {'commercial_intelligence.pending_message_id': 'new-event'}})
+        return {'intent': 'NO_SIGNAL', 'search': {}, 'confidence': .7, 'needs_review': True}
+    assert worker.process_claimed(db, claimed, propose=competing_message) == 'superseded'
+    saved = db.leads.find_one({'_id': lead['_id']})
+    assert 'opportunities' not in saved['commercial_intelligence']

@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
-VERSION = "executive_hybrid_v4"
+VERSION = "executive_hybrid_v5"
 INTENTS = frozenset({
     "NO_SIGNAL", "ASK_INFO", "INTERESTED", "ASK_VISIT", "ASK_CONTACT",
     "GIVE_OFFER", "ASK_ALTERNATIVES", "PROPERTY_DECLINED",

@@ -17,6 +17,7 @@ from pymongo import ReturnDocument
 
 from .crm_metrics import active_assignment_cycle
 from .executive_conversation_intelligence import VERSION, classify_hybrid
+from .executive_opportunities import merge_opportunities
 
 logger = logging.getLogger(__name__)
 WINDOW = 200
@@ -157,6 +158,18 @@ def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
     if summary is not None:
         values["commercial_intelligence.summary"] = summary
         values["commercial_intelligence.version"] = VERSION
+        if "_opportunities" in doc:
+            # The ledger lives on the canonical lead, not in the versioned
+            # summary. Preserve it across agent reassignment and greetings.
+            previous_revision = marker.get("opportunities_revision")
+            match["commercial_intelligence.opportunities_revision"] = (
+                previous_revision if previous_revision is not None
+                else {"$exists": False}
+            )
+            values["commercial_intelligence.opportunities"] = doc["_opportunities"]
+            values["commercial_intelligence.opportunities_revision"] = (
+                int(previous_revision or 0) + 1
+            )
     changed = db["leads"].update_one(
         match,
         {"$set": values},
@@ -203,6 +216,23 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     summary = classify_hybrid(
         turns, prior, llm_enabled=llm_enabled, propose=propose,
     )
+    ledger, active, open_count = merge_opportunities(
+        turns, marker.get("opportunities"), summary,
+        cycle_id=cycle_id, session_id=session_id, owner_id=owner,
+    )
+    doc["_opportunities"] = ledger
+    management = summary["executive_management"]
+    management["open_opportunities_count"] = open_count
+    management["active_opportunity_id"] = active["opportunity_id"] if active else None
+    management["agent_reply_observed"] = bool(active and active.get("agent_reply_observed"))
+    # A later greeting/no-signal does NOT erase an outstanding commercial
+    # request. Keep current-message intent separately for traceability.
+    management["last_message_case_type"] = management["case_type"]
+    if active and summary["intent"] == "NO_SIGNAL":
+        management["case_type"] = active["case_type"]
+        management["next_step_hint"] = active["next_step_hint"]
+    if active and active["status"] == "PENDIENTE_GESTION":
+        management["pending_customer_request"] = True
     if doc.get("_checkpoint_missing"):
         summary["needs_review"] = True
         summary["history_incomplete"] = True

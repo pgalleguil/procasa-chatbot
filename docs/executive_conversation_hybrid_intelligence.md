@@ -11,7 +11,7 @@ Un worker con lease atómico de 90 segundos clasifica pendientes; comprueba otra
 
 ## Motor híbrido: reglas + DeepSeek
 1. Reglas determinísticas para visita explícita, llamada, oferta, alternativas, rechazo puntual, búsqueda terminada y baja global.
-2. DeepSeek para interpretar necesidades del cliente con JSON estructurado y contexto limitado a 8 mensajes comerciales. El prompt elimina teléfono, correo y RUT; no incluye chats privados, nombres ni identificadores de clientes.
+2. DeepSeek para interpretar necesidades del cliente con JSON estructurado y hasta 32 mensajes comerciales recientes, además del resumen tipado anterior. El prompt elimina teléfono, correo y RUT; no incluye chats privados, nombres ni identificadores de clientes.
 3. Consolidación bajo commercial_intelligence.summary con intent, search, search_status, contact, executive_management (case_type, next_step_hint, pending_customer_request, needs_review), campaign, source, confidence, needs_review, evidence_provider_ids, analyzed_at y versión.
 
 Distinciones esenciales:
@@ -47,3 +47,17 @@ WaSender no permite recuperar historial anterior al vínculo del teléfono.
 ## Regla de separación de clasificaciones
 
 La temperatura **HOT / NORMAL / COLD** corresponde exclusivamente al tramo chatbot/ingreso y a su lógica canónica de asignación. La etapa posterior del ejecutivo tiene la clasificación independiente `commercial_intelligence.summary.executive_management` (caso comercial y acción sugerida), sin promoción a temperatura, gestión formal SLA, visitas realizadas ni ventas cerradas. Un `next_step_hint` es una sugerencia para seguimiento humano, nunca una acción automática.
+
+## Historial durable de oportunidades comerciales (v5)
+
+`URLS.leads.commercial_intelligence.opportunities` conserva los casos detectados por conversación comercial autorizada y por ciclo de asignación. Cada oportunidad tiene `opportunity_id` determinístico, ejecutivo, sesión, `assignment_cycle_id`, tipo comercial, estado, siguiente paso y referencias de los mensajes de evidencia (no copia contenido ni datos personales). El resumen de la conversación mantiene las oportunidades abiertas y el caso activo actual, aunque llegue después un saludo o un «gracias».
+
+- `DETECTADA`: interés o nueva necesidad observada, sin dar por confirmada una gestión.
+- `PENDIENTE_GESTION`: solicitud explícita de visita, contacto, oferta, información o alternativas. La respuesta de WhatsApp no basta para cerrar la solicitud.
+- `EN_GESTION`: estado reservado para gestión comercial comprobada por un evento humano del CRM; el clasificador no lo atribuye por una promesa de WhatsApp.
+- `CONCRETADA`: reservado para un resultado verificado del CRM; la IA no confirma por sí sola visitas ni aceptación de ofertas.
+- `DESCARTADA`: la cancelación explícita del cliente puede cerrar el caso concreto, preservando el histórico; no cancela otras oportunidades.
+
+Un mensaje saliente posterior solo agrega `agent_reply_observed` y su ID de evidencia. No registra gestión formal del CRM, no cambia el SLA ni la temperatura HOT/COLD. El ledger se actualiza con el mismo compare-and-swap de clasificación del documento `leads`, protegido por una revisión; retransmisiones y trabajadores concurrentes no deben crear duplicados. Los casos de ciclos anteriores permanecen históricos, pero no cuentan como oportunidades abiertas de una asignación nueva.
+
+**Límite de escalamiento:** al estar integrado en el documento canónico de MongoDB, el historial de oportunidades debe vigilarse frente al límite de tamaño de 16 MB por documento. Para volúmenes extraordinarios se debe archivar en una colección de eventos con referencias dentro del lead antes de llegar al límite. Esta versión no implementa ese archivado ni una interfaz para transiciones manuales confirmadas.

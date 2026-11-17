@@ -255,6 +255,25 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
         "provider_message_id": provider_id,
         "timestamp_source": "provider",
     }
+    # An unambiguous global STOP from an assigned customer must suppress
+    # future marketing in the *same atomic write as the authorized message*.
+    # This does not pause responses to customer-initiated service requests,
+    # nor does a model prediction or executive outgoing text set this flag.
+    # Reuse the existing campaign opt-out fields so every campaign sender's
+    # established gate sees the restriction without scanning passive chats.
+    suppression = {}
+    if not parsed["from_me"]:
+        from .executive_semantics import intent as executive_customer_intent
+        if executive_customer_intent(parsed["content"]) == "OPT_OUT":
+            suppression = {
+                "price_drop_v2.opted_out": True,
+                "price_drop_campaign_v1.opted_out": True,
+                "contact_restrictions.marketing_opt_out": True,
+                "contact_restrictions.marketing_opt_out_source": "executive_whatsapp",
+                "contact_restrictions.marketing_opt_out_session_id": session["session_id"],
+                "contact_restrictions.marketing_opt_out_provider_id": provider_id,
+                "contact_restrictions.marketing_opt_out_at": occurred,
+            }
     # Restrict both identity and ownership on the write itself: an SLA
     # reassignment between read and write must block the stale agent.
     result = db["leads"].update_one(
@@ -279,6 +298,7 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
                 "commercial_intelligence.pending_source": "executive_whatsapp",
                 "commercial_intelligence.pending_session_id": session["session_id"],
                 "commercial_intelligence.pending_at": datetime.now(timezone.utc),
+                **suppression,
             },
         },
     )

@@ -186,6 +186,8 @@ def _contact_suppression_reasons(lead: dict | None) -> set[str]:
     if not isinstance(lead, dict):
         return set()
     reasons: set[str] = set()
+    if (lead.get("contact_restrictions") or {}).get("marketing_opt_out") is True:
+        reasons.add("explicit_opt_out")
     if lead.get("conversation_status") in {
         "STOPPED_BY_CLIENT", "STOPPED", "BLOCKED", "BLOCKED_EXTERNAL_BROKER",
     }:

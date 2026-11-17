@@ -104,3 +104,31 @@ def test_old_question_cannot_be_verified_as_current_acceptance():
         verify=lambda *_: pytest.fail("old context must fail before verification"))
     assert result["intent"] == "NO_SIGNAL"
     assert result["needs_review"]
+
+@pytest.mark.parametrize("verifier_outcome", ["rejected", "alternate_supported", "exception"])
+def test_explicit_stop_survives_llm_verifier_disagreement(verifier_outcome):
+    text = "No me contacten más"
+    candidate = "ASK_INFO" if verifier_outcome == "alternate_supported" else "OPT_OUT"
+    def verifier(*_):
+        if verifier_outcome == "exception":
+            raise RuntimeError("private-error-sentinel")
+        return check(text, candidate, supported=verifier_outcome == "alternate_supported")
+    summary = classify_hybrid(
+        [message(text)],
+        propose=lambda *_: proposal(text, candidate),
+        verify=verifier,
+    )
+    assert summary["contact_permission"] == "OPTED_OUT"
+    assert summary["campaign"]["reason"] == "explicit_opt_out"
+    assert summary["campaign"]["eligibility_hint"] == "SUPPRESS_REVIEW"
+    assert summary["explicit_opt_out_provider_ids"] == ["1"]
+
+
+def test_model_cannot_rescind_opt_out_on_customer_reactivation():
+    old = classify_hybrid([message("No quiero más avisos")], llm_enabled=False)
+    fresh = message("Ahora busco una casa en Maipú", n=2)
+    summary = classify_hybrid([fresh], {"summary": old},
+        propose=lambda *_: proposal(fresh["content"], "SEARCH_UPDATED", n=2))
+    assert summary["search_status"] == "ACTIVE"
+    assert summary["contact_permission"] == "OPTED_OUT"
+    assert summary["campaign"]["reason"] == "explicit_opt_out"

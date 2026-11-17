@@ -775,7 +775,14 @@ def extract_listing_fields(
     # Current-template publisher evidence is scoped to its actual card. Never
     # import a profile link or a badge from recommended/similar listings.
     publisher_card = _current_yapo_publisher_card(soup)
-    publisher_scopes = [publisher_card] if publisher_card is not None else _publisher_scopes(soup)
+    if publisher_card is not None:
+        publisher_scopes = [publisher_card]
+    elif any(_commune_key(node.get_text(" ", strip=True)) == "publicado-por" for node in soup.select("main h3")):
+        # The current publisher heading exists, but we cannot safely isolate
+        # its card. Fail closed rather than pulling a recommended seller.
+        publisher_scopes = []
+    else:
+        publisher_scopes = _publisher_scopes(soup)
     seller_name, seller_name_selector = _scoped_first_text(
         publisher_scopes,
         ["[data-qa='seller-name']", "[data-qa='user-name']", ".seller-name", ".profile-name", ".contact-name", ".contact_name"],

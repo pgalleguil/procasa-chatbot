@@ -54,3 +54,20 @@ def test_office_history_reader_excludes_passive_channel(monkeypatch):
     assert len(history) == 50
     assert history[0]['content'] == '10'
     assert history[-1]['content'] == '59'
+
+def test_durable_executive_optout_blocks_campaigns_without_reading_passive_chat():
+    from chatbot.price_drop_campaign_classifier import lead_must_not_be_contacted
+    doc = {"contact_restrictions": {"marketing_opt_out": True},
+           "messages": [executive("Hola, quiero consultar por una casa")]}
+    assert lead_must_not_be_contacted(doc)
+    assert campaigns._contact_suppression_reasons(doc) == {"explicit_opt_out"}
+    # The customer may still initiate a new service inquiry; no CRM pause
+    # or STOPPED_BY_CLIENT state is written by executive intake.
+    assert "conversation_status" not in doc
+
+
+def test_legacy_campaign_flags_remain_sufficient_even_without_new_metadata():
+    from chatbot.price_drop_campaign_classifier import lead_must_not_be_contacted
+    for key in ("price_drop_v2", "price_drop_campaign_v1"):
+        assert lead_must_not_be_contacted({key: {"opted_out": True}})
+        assert campaigns._contact_suppression_reasons({key: {"opted_out": True}}) == {"explicit_opt_out"}

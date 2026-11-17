@@ -1470,6 +1470,24 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
             "named_contact": seller_contact_mismatch["named_contact"],
             "evidence": seller_contact_mismatch["fragment"],
         })
+    if owner_evidence and contextual["owner_negations"]:
+        contradictions.append({
+            "rule_id": "OWNER_DECLARATION_WITH_NEGATION",
+            "reason": "Coexisten una declaración de venta privada y una negación de titularidad; verificar quién publica.",
+            "evidence_ids": [f"{item['rule_id']}:{item['field']}:{item['position_start']}" for item in contextual["owner_negations"]],
+        })
+    if owner_evidence and contextual["family_or_representative_signals"]:
+        contradictions.append({
+            "rule_id": "OWNER_DECLARATION_WITH_REPRESENTATION",
+            "reason": "La publicación menciona herencia, familia o representación; la identidad del dueño no queda acreditada.",
+            "evidence_ids": [f"{item['rule_id']}:{item['field']}:{item['position_start']}" for item in contextual["family_or_representative_signals"]],
+        })
+    owner_attribution_conflict = bool(
+        seller_contact_mismatch
+        or contextual["owner_negations"]
+        or contextual["owner_third_party_mentions"]
+        or contextual["family_or_representative_signals"]
+    )
 
     if strong_broker_identity:
         state = "CORREDOR_SEGURO"
@@ -1487,13 +1505,15 @@ def classify_yapo_listing(extracted: dict[str, Any]) -> dict[str, Any] | None:
         )
     elif strong_owner and not (
         strong_broker_identity or probable_broker or commercial_conflict
-        or confirmed_company_identity or contextual["owner_third_party_mentions"]
-        or seller_contact_mismatch
+        or confirmed_company_identity or owner_attribution_conflict
     ):
         state = "DUEÑO_PROBABLE"
         reason = "Una declaración atribuible indica que vende su propia propiedad; no verifica titularidad legal."
         source = "owner_declaration_grammar"
-    elif private_party_declaration and not (strong_broker_identity or probable_broker or commercial_conflict or confirmed_company_identity):
+    elif private_party_declaration and not (
+        strong_broker_identity or probable_broker or commercial_conflict
+        or confirmed_company_identity or owner_attribution_conflict
+    ):
         state = "DUEÑO_PROBABLE"
         reason = "El anunciante se identifica como particular; es un indicio de venta privada, no acredita titularidad legal."
         source = "private_party_declaration"

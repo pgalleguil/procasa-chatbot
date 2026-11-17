@@ -517,6 +517,10 @@ def _save_search_outputs(summary: dict[str, Any], records: list[dict[str, Any]],
         "details", "publisher_profile_context", "publisher_field_provenance",
         "publisher_identity_candidates", "seller_type", "seller_profile_id", "seller_profile_url",
         "listing_advertiser", "listing_advertiser_type", "classification", "classification_evidence",
+        "classification_state", "classification_reason", "classification_evidence_strength",
+        "classification_requires_review", "classification_contradictions",
+        "availability_status", "availability_checked_at", "availability_source",
+        "assignment_ready", "exclude_from_assignment", "assignment_block_reasons",
         "classification_debug", "gestion", "pipeline_state",
         "pipeline_complete", "scrape_stage", "processed_at", "updated_at", "fecha_scraping",
         "extraction_issues",
@@ -527,8 +531,15 @@ def _save_search_outputs(summary: dict[str, Any], records: list[dict[str, Any]],
         writer.writeheader()
         for record in records:
             row = dict(record)
+            classification = record.get("classification") or {}
+            row["classification_state"] = classification.get("state") or ""
+            row["classification_reason"] = classification.get("reason") or ""
+            row["classification_evidence_strength"] = classification.get("evidence_strength") or ""
+            row["classification_requires_review"] = bool(classification.get("requires_review"))
+            row["classification_contradictions"] = classification.get("contradictions") or []
             for field in (
                 "filter_validation", "classification", "classification_evidence", "extraction_issues",
+                "classification_contradictions", "assignment_block_reasons",
                 "gestion", "image_urls", "enlaces_fotos", "attributes", "raw_attributes", "details",
                 "publisher_profile_context", "publisher_field_provenance", "publisher_identity_candidates",
                 "classification_debug",
@@ -1045,6 +1056,7 @@ def run_search(
                 emit_staging_checkpoint(records_out[-1], "preliminary")
 
     commercial_states = {"DUEÑO_SEGURO", "DUEÑO_PROBABLE", "INCIERTO"}
+    owner_states = {"DUEÑO_SEGURO", "DUEÑO_PROBABLE"}
     summary["publisher_profile_metrics"] = enrich_batch_publisher_profiles(
         records_out,
         config,
@@ -1056,16 +1068,39 @@ def run_search(
     class_counts: dict[str, int] = {}
     availability_counts: dict[str, int] = {}
     summary["commercial_candidates"] = []
+    summary["owner_probable_candidates"] = []
+    summary["manual_review_candidates"] = []
+    summary["assignment_ready_candidates"] = []
     for item in records_out:
-        state = str((item.get("classification") or {}).get("state") or "unavailable")
+        classification = item.get("classification") or {}
+        state = str(classification.get("state") or "unavailable")
         class_counts[state] = class_counts.get(state, 0) + 1
         availability_state = str(item.get("availability_status") or "NO_VERIFICADO")
         availability_counts[availability_state] = availability_counts.get(availability_state, 0) + 1
-        if item.get("filter_status") == "PASA" and state in commercial_states:
+        if item.get("filter_status") != "PASA":
+            continue
+        if state in commercial_states:
+            # Historical key: this is a REVIEW pool, not an assignment queue.
             summary["commercial_candidates"].append(item["listing_id"])
+        if state in owner_states:
+            summary["owner_probable_candidates"].append(item["listing_id"])
+        if state == "INCIERTO" or classification.get("requires_review"):
+            summary["manual_review_candidates"].append(item["listing_id"])
+        if (
+            state in owner_states and availability_state == "ACTIVO"
+            and classification.get("assignment_ready") is True
+            and not classification.get("exclude_from_assignment")
+            and item.get("assignment_ready") is True
+            and not item.get("exclude_from_assignment")
+        ):
+            summary["assignment_ready_candidates"].append(item["listing_id"])
     summary["preliminary_classification_counts"] = class_counts
     summary["availability_status_counts"] = availability_counts
     summary["commercial_candidate_count"] = len(summary["commercial_candidates"])
+    summary["commercial_candidate_semantics"] = "owner_or_uncertain_for_review_not_assignment"
+    summary["owner_probable_count"] = len(summary["owner_probable_candidates"])
+    summary["manual_review_count"] = len(summary["manual_review_candidates"])
+    summary["assignment_ready_count"] = len(summary["assignment_ready_candidates"])
     summary["broker_excluded_count"] = sum(
         str((item.get("classification") or {}).get("state") or "").startswith("CORREDOR")
         for item in records_out

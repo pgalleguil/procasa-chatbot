@@ -98,7 +98,9 @@ def test_model_cannot_turn_literal_but_negated_attributes_into_requirements():
                              propose=lambda *_: proposal)
     assert result['search'] == {}
     assert result['intent'] != 'ASK_VISIT'
-    assert result['suggested_priority'] == 'NORMAL'
+    assert result['executive_management']['case_type'] == 'SIN_SENAL_CLARA'
+    assert result['executive_management']['next_step_hint'] is None
+    assert 'suggested_priority' not in result
     assert result['needs_review']
     assert result['confidence'] is None
 

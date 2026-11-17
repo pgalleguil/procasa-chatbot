@@ -5330,6 +5330,7 @@
             // Trust only the authenticated server capability check, not a
             // browser-supplied executive/session identifier or phone number.
             window.crmExecutiveDirectReady = false;
+            window.crmExecutiveOutboundAttemptKey = null;
             if (target === 'lead' && newChannel === 'wa') {
                 fetch('/api/crm/executive-whatsapp/available/{{ lead_id }}', {
                     credentials: 'same-origin'
@@ -5402,6 +5403,7 @@
             const msgInput = document.getElementById('commMessage');
             if (msgInput && !msgInput.dataset.listener) {
                 msgInput.addEventListener('input', () => {
+                    window.crmExecutiveOutboundAttemptKey = null;
                     // Read the current modal target at event time. Capturing the
                     // first open's `target` could redirect a later message to the
                     // previous recipient after switching between lead and owner.
@@ -5601,9 +5603,9 @@
                 }
 
                 const wasModified = originalTemplateText && (finalMsg !== originalTemplateText);
-                if (!directExecutiveWhatsApp) {
-                    // Legacy wa.me only opens a compose window; this is not
-                    // evidence that WhatsApp delivered or even sent anything.
+                if (!directExecutiveWhatsApp && currentCommChannel !== 'wa') {
+                    // Legacy wa.me only opens a compose window, never mark a
+                    // WA message as sent before provider acceptance.
                     logAction(`SEND_${currentCommChannel.toUpperCase()}_${target.toUpperCase()}`, {
                         target_person: target,
                         template_used: currentTemplateLabel,
@@ -5617,7 +5619,12 @@
                         btn.dataset.sending = '1';
                         btn.disabled = true;
                         try {
-                            const idempotency = crypto.randomUUID();
+                            // Preserve the key if the provider result is uncertain;
+                            // clicking twice must never re-dispatch the same message.
+                            if (!window.crmExecutiveOutboundAttemptKey) {
+                                window.crmExecutiveOutboundAttemptKey = crypto.randomUUID();
+                            }
+                            const idempotency = window.crmExecutiveOutboundAttemptKey;
                             const response = await fetch('/api/crm/executive-whatsapp/send', {
                                 method: 'POST',
                                 headers: {'Content-Type': 'application/json'},
@@ -5639,6 +5646,7 @@
                                 confirmed: true,
                                 provider_message_id: result.provider_message_id
                             }, 'lead');
+                            window.crmExecutiveOutboundAttemptKey = null;
                             hideModal();
                             alert('Mensaje aceptado por WaSender desde el teléfono del ejecutivo. La entrega final puede tardar.');
                         } catch (err) {

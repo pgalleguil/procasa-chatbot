@@ -61,8 +61,13 @@ def merge_opportunities(messages, existing, summary, *, cycle_id, session_id, ow
     Closed cases are never reopened by reprocessing an older message.
     """
     ledger = deepcopy(existing) if isinstance(existing, list) else []
-    by_id = {x.get("opportunity_id"): x for x in ledger
-             if isinstance(x, dict) and isinstance(x.get("opportunity_id"), str)}
+    by_id = {}
+    for item in ledger:
+        if not isinstance(item, dict):
+            continue
+        for key in [item.get("opportunity_id"), *(item.get("correlation_ids") or [])]:
+            if isinstance(key, str):
+                by_id[key] = item
     prior_agent = None
     turns = _ordered(messages)
     last_customer = next((m for m in reversed(turns)
@@ -193,6 +198,7 @@ def merge_opportunities(messages, existing, summary, *, cycle_id, session_id, ow
             "evidence_message_ids": [message_id],
             "agent_reply_observed": False,
             "formal_crm_management": False,
+            "needs_review": bool(m is last_customer and summary.get("needs_review")),
             "evidence_kind": "verified_model" if m is last_customer and accepted_model and kind == summary.get("intent") else "customer_rule",
         }
         ledger.append(item)

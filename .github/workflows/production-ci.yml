@@ -23,7 +23,7 @@ jobs:
       - name: Compile critical application modules
         run: |
           python -m py_compile \
-            webhook.py config.py api_visitas.py api_contracts.py services/pdf_generator_visitas.py services/pdf_generator_contracts.py api_crm.py api_captacion.py chatbot/executive_pilot_webhook.py chatbot/executive_whatsapp_audit.py chatbot/executive_conversation_intelligence.py chatbot/executive_intelligence_worker.py chatbot/executive_opportunities.py \
+            webhook.py config.py api_visitas.py api_contracts.py services/pdf_generator_visitas.py services/pdf_generator_contracts.py api_crm.py api_captacion.py chatbot/executive_pilot_webhook.py chatbot/executive_whatsapp_audit.py chatbot/executive_conversation_intelligence.py chatbot/executive_intelligence_worker.py chatbot/executive_opportunities.py chatbot/crm_executive_outbound.py chatbot/crm_executive_outbound_api.py \
             captacion_management.py captacion_assignment_eligibility.py \
             chatbot/crm_assignment_integrity.py chatbot/crm_sla_live_capacity.py chatbot/crm_metrics.py chatbot/crm_service.py chatbot/lead_router.py chatbot/lead_inactive_rescue.py chatbot/commercial_intake.py \
             chatbot/core.py chatbot/customer_response_semantics.py chatbot/public_property_facts.py chatbot/property_read_guard.py chatbot/price_drop_v2_customer_response.py chatbot/chatbot_queue.py chatbot/link_extractor.py chatbot/rag.py chatbot/property_read_guard.py chatbot/price_drop_pilot.py chatbot/price_drop_pilot_isolation.py chatbot/price_drop_pilot_exec_notice_sim.py chatbot/price_drop_pilot_dual_notice_sim.py chatbot/price_drop_pilot_followup_v12.py chatbot/price_drop_pilot_guard_v13.py chatbot/price_drop_pilot_conversation_v14.py scripts/price_drop_pilot_test.py scripts/price_drop_leads_v2_bootstrap.py chatbot/price_drop_campaign_real.py chatbot/price_drop_leads_v2.py chatbot/price_drop_campaign_exec_alert.py chatbot/price_drop_campaign_classifier.py chatbot/price_drop_campaign_bootstrap.py scripts/price_drop_campaign_real_pilot.py \
@@ -134,6 +134,7 @@ jobs:
               tests/test_executive_whatsapp_audit.py
               tests/test_executive_conversation_intelligence.py
               tests/test_executive_opportunities.py
+              tests/test_crm_executive_outbound.py
               tests/test_executive_intelligence_adversarial.py
               tests/test_executive_semantic_verifier.py
               tests/test_executive_office_boundary.py

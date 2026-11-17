@@ -37,7 +37,9 @@ Al añadir o eliminar ejecutivos, gestionar **solo su variable de Render**; no e
 
 - `PROCASA_EXEC_AUDIT_ENABLED=1` habilita la recepción del webhook; exige firma y vínculo de usuario único.
 - `PROCASA_EXEC_AUDIT_WRITE_ENABLED=0` impide toda escritura. No cambiar durante la configuración inicial.
-- `capture_enabled=false` en cada variable impide que dicha sesión escriba en `leads.messages` incluso con escritura global habilitada. Solo cambiar a `true` después de validar un lead inequívoco asignado con el mismo ciclo CRM vigente.
+- `capture_enabled=false` en la variable individual impide la captura por defecto. También se puede usar la nueva variable no secreta `PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS`: si existe, la lista de IDs separados por comas **reemplaza** a los valores `capture_enabled` de todas las sesiones. Solo las incluidas pueden almacenar mensajes; el formato inválido desactiva todas. Ejemplo: `133517,133523,133526,133527,133286`.
+- Para guardar mensajes se requieren simultáneamente `PROCASA_EXEC_AUDIT_ENABLED=1`, `PROCASA_EXEC_AUDIT_WRITE_ENABLED=1`, la sesión autorizada por lista o JSON, webhook firmado, lead único asignado al ejecutivo y ciclo CRM vigente. No se permite ninguna escritura para números privados o leads ajenos.
+- La lista permite activar o desactivar ejecutivos sin abrir ni sobrescribir tokens o secretos. No habilita la IA: `PROCASA_EXEC_INTELLIGENCE_ENABLED` sigue siendo independiente. No recupera automáticamente mensajes previos a la conexión o activación.
 
 Ruta para Pablo: `POST https://procasa-chatbot-yr8d.onrender.com/webhook/ejecutivos/133286` y seleccionar `messages.upsert` + `messages.received` en WaSender. Nunca subir secretos reales a GitHub, MongoDB o chats.
 

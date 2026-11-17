@@ -561,6 +561,8 @@ def lead_must_not_be_contacted(lead: dict | None) -> bool:
     """
     if not isinstance(lead, dict):
         return False
+    if (lead.get("contact_restrictions") or {}).get("marketing_opt_out") is True:
+        return True
     if lead.get("conversation_status") in {
         "STOPPED_BY_CLIENT", "STOPPED", "BLOCKED", "BLOCKED_EXTERNAL_BROKER",
     }:

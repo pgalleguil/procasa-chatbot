@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from hashlib import sha256
-import json
 import os
 import re
 from uuid import uuid4
@@ -18,6 +17,7 @@ import requests
 
 from .crm_metrics import active_assignment_cycle
 from .executive_whatsapp_audit import _session, _authorized_lead
+from config import Config
 from .phone_utils import normalize_phone_strict
 from .price_drop_campaign_classifier import lead_must_not_be_contacted
 from .whatsapp_client import normalize_whatsapp_recipient, _provider_message_id
@@ -118,7 +118,6 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     utc_now = now if now is not None else datetime.now(timezone.utc)
     if utc_now.tzinfo is None:
         raise OutboundBlocked("aware_timestamp_required")
-    from .storage import get_db  # imported lazily; no secret information in outbox
     document = {
         "_id": identity,
         "lead_id": oid, "assignment_cycle_id": cycle_id,
@@ -146,7 +145,7 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
             "state": "blocked", "block_reason": exc.code,
         }})
         return {"status": "blocked", "reason": exc.code}
-    url = os.getenv("WASENDER_BASE_URL", "https://www.wasenderapi.com/api").rstrip("/") + "/send-message"
+    url = Config.WASENDER_BASE_URL.rstrip("/") + "/send-message"
     headers = {"Authorization": "Bearer " + session["token"], "Content-Type": "application/json"}
     do_post = post or requests.post
     try:

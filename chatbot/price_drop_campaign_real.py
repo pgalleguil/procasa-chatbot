@@ -51,6 +51,7 @@ LEAD_PROJECTION = {
     "conversation_status": 1, "contact_identity_incomplete": 1,
     "phone_is_synthetic": 1, "price_drop_campaign_v1.opted_out": 1,
     "price_drop_v2.opted_out": 1, "price_drop_v2.campaigns": 1,
+    "contact_restrictions.marketing_opt_out": 1,
     "lead_temperature_effective": 1, "lead_temperature": 1,
     "lifecycle.hot_since": 1, "last_intent": 1,
 }

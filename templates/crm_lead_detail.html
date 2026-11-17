@@ -5327,6 +5327,20 @@
         // --- FUNCIONES SISTEMA DE COMUNICACIÓN (LOGGING CORREGIDO) ---
         function openCommPanel(target, defaultChannel = 'wa') {
             const newChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
+            // Trust only the authenticated server capability check, not a
+            // browser-supplied executive/session identifier or phone number.
+            window.crmExecutiveDirectReady = false;
+            if (target === 'lead' && newChannel === 'wa') {
+                fetch('/api/crm/executive-whatsapp/available/{{ lead_id }}', {
+                    credentials: 'same-origin'
+                }).then(r => r.ok ? r.json() : {available: false})
+                  .then(result => {
+                    if (currentCommTarget === 'lead' && currentCommChannel === 'wa') {
+                        window.crmExecutiveDirectReady = result.available === true;
+                        updateSendLink('lead', semState.currentCategory || 'contacto');
+                    }
+                  }).catch(() => { window.crmExecutiveDirectReady = false; });
+            }
 
             // UX FIX: Clear message if switching target (Lead/Owner) OR channel (WA/Email)
             if (currentCommTarget !== target || currentCommChannel !== newChannel) {
@@ -5534,8 +5548,14 @@
             }
 
             // --- Standard Channel Logic ---
+            const directExecutiveWhatsApp = (
+                target === 'lead' && currentCommChannel === 'wa'
+                && window.crmExecutiveDirectReady === true
+            );
             if (currentCommChannel === 'wa') {
-                btn.innerHTML = '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
+                btn.innerHTML = directExecutiveWhatsApp
+                    ? '<i class="fa-brands fa-whatsapp me-1"></i> Enviar desde mi WhatsApp'
+                    : '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-envelope me-1"></i> Abrir Correo';
             }
@@ -5562,15 +5582,16 @@
                 btn.style.borderColor = '';
             }
 
-            btn.onclick = function (e) {
+            btn.onclick = async function (e) {
                 e.preventDefault();
+                if (btn.dataset.sending === '1') return;
 
                 // 1. Obtener mensaje
                 const finalMsg = msgBody.value;
 
                 // Log action triggers ONLY here (actual click)
                 const logType = currentCommChannel === 'wa' ? `CLICK_WHATSAPP_${target.toUpperCase()}` : `CLICK_EMAIL_${target.toUpperCase()}`;
-                if (currentCommChannel !== 'email') { // Emails are logged by backend usually, but consistent logging here:
+                if (currentCommChannel !== 'email' && !directExecutiveWhatsApp) {
                     logAction(logType, { target: target, channel: currentCommChannel }, target);
                 }
 
@@ -5580,14 +5601,54 @@
                 }
 
                 const wasModified = originalTemplateText && (finalMsg !== originalTemplateText);
-                logAction(`SEND_${currentCommChannel.toUpperCase()}_${target.toUpperCase()}`, {
-                    target_person: target,
-                    template_used: currentTemplateLabel,
-                    is_modified: wasModified,
-                    content_preview: finalMsg.substring(0, 50)
-                }, target);
+                if (!directExecutiveWhatsApp) {
+                    // Legacy wa.me only opens a compose window; this is not
+                    // evidence that WhatsApp delivered or even sent anything.
+                    logAction(`SEND_${currentCommChannel.toUpperCase()}_${target.toUpperCase()}`, {
+                        target_person: target,
+                        template_used: currentTemplateLabel,
+                        is_modified: wasModified,
+                        content_preview: finalMsg.substring(0, 50)
+                    }, target);
+                }
 
                 if (currentCommChannel === 'wa') {
+                    if (directExecutiveWhatsApp) {
+                        btn.dataset.sending = '1';
+                        btn.disabled = true;
+                        try {
+                            const idempotency = crypto.randomUUID();
+                            const response = await fetch('/api/crm/executive-whatsapp/send', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                credentials: 'same-origin',
+                                body: JSON.stringify({
+                                    lead_id: '{{ lead_id }}',
+                                    text: finalMsg,
+                                    idempotency_key: idempotency
+                                })
+                            });
+                            const result = await response.json();
+                            if (!response.ok || result.status !== 'accepted') {
+                                throw new Error(result.detail || result.status || 'provider_unconfirmed');
+                            }
+                            logAction('SEND_WA_LEAD', {
+                                target_person: 'lead',
+                                template_used: currentTemplateLabel,
+                                is_modified: wasModified,
+                                confirmed: true,
+                                provider_message_id: result.provider_message_id
+                            }, 'lead');
+                            hideModal();
+                            alert('Mensaje aceptado por WaSender desde el teléfono del ejecutivo. La entrega final puede tardar.');
+                        } catch (err) {
+                            alert('No se pudo confirmar el envío por API. Revisa el estado en el CRM antes de intentar enviarlo de nuevo.');
+                        } finally {
+                            btn.dataset.sending = '';
+                            btn.disabled = false;
+                        }
+                        return;
+                    }
                     // --- LÓGICA WHATSAPP con Validación ---
                     if (!phone || phone === 'None' || phone.replace(/\D/g, '').length < 6) {
                         alert("⚠️ Error: El destinatario no tiene un número de teléfono válido registrado.");

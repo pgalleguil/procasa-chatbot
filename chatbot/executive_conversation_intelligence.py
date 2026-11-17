@@ -248,6 +248,10 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
     intent = prior.get("intent", "NO_SIGNAL")
     search_status = prior.get("search_status", "UNKNOWN")
     opted_out = prior.get("contact_permission") == "OPTED_OUT" or prior.get("intent") == "OPT_OUT"
+    # Contact restrictions are monotonic. Neither a model suggestion nor a
+    # failed semantic verifier can revoke an explicit customer opt-out.
+    observed_explicit_opt_out = False
+    opt_out_evidence = list(prior.get("explicit_opt_out_provider_ids") or [])[-7:]
     state = {"needs": prior.get("needs", {}), "field_evidence": prior.get("field_evidence", {})}
     if not state["needs"] and prior.get("search"):
         state["needs"] = {"DEMAND": prior["search"]}
@@ -282,6 +286,8 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
             request_before_latest = deepcopy(request)
         if current == "OPT_OUT":
             opted_out = True
+            observed_explicit_opt_out = True
+            opt_out_evidence = (opt_out_evidence + [m["provider_message_id"]])[-8:]
         if late:
             transport_review = True
             uncertain = True
@@ -361,7 +367,7 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
                 search_status = "COMPLETED"
             elif intent not in ("OPT_OUT", "PROPERTY_DECLINED"):
                 search_status = "ACTIVE"
-            opted_out = opted_out_before_latest or intent == "OPT_OUT"
+            opted_out = opted_out_before_latest or observed_explicit_opt_out or intent == "OPT_OUT"
             if intent in HOT_INTENTS:
                 request = {"intent": intent, "provider_message_id": last_customer["provider_message_id"],
                            "timestamp": last_customer["timestamp"], "fulfillment": "UNKNOWN",
@@ -373,7 +379,7 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
     if verification in {"rejected", "failed", "unavailable"} and rule in CRITICAL:
         intent = "NO_SIGNAL"
         search_status = status_before_latest
-        opted_out = opted_out_before_latest
+        opted_out = opted_out_before_latest or observed_explicit_opt_out
         request = request_before_latest
         latest_evidence = []
         decision = "abstained"
@@ -418,6 +424,7 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
         "search": state.get("needs", {}).get("DEMAND", {}),
         "needs": state.get("needs", {}), "field_evidence": state.get("field_evidence", {}),
         "contact_permission": "OPTED_OUT" if opted_out else "UNKNOWN",
+        "explicit_opt_out_provider_ids": opt_out_evidence,
         "contact": contact,
         "latest_important_request": request,
         "suggested_priority": "HOT" if intent in HOT_INTENTS else "NORMAL",

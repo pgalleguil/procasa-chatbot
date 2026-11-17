@@ -69,7 +69,15 @@ def merge_opportunities(messages, existing, summary, *, cycle_id, session_id, ow
             if isinstance(key, str):
                 by_id[key] = item
     prior_agent = None
-    turns = _ordered(messages)
+    # Defense in depth: never interpret office, private, old-owner, old-cycle
+    # or other-session messages even if a caller supplies them accidentally.
+    scoped = [m for m in messages if isinstance(m, dict)
+              and m.get("channel") == "executive_whatsapp"
+              and str(m.get("assignment_cycle_id")) == str(cycle_id)
+              and str(m.get("wasender_session_id")) == str(session_id)
+              and str(m.get("assigned_executive_id")) == str(owner_id)
+              and m.get("actor_type") in ("customer", "human_agent")]
+    turns = _ordered(scoped)
     last_customer = next((m for m in reversed(turns)
                           if m.get("actor_type") == "customer" and not m.get("_context_only")), None)
     last_customer_id = (last_customer or {}).get("provider_message_id")

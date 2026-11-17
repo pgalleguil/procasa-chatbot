@@ -5,6 +5,8 @@ message body remains in the canonical lead campaign and leads.messages.
 """
 from __future__ import annotations
 
+from .message_scope import office_messages
+
 import json
 import os
 import tempfile
@@ -150,7 +152,7 @@ def reconcile_pending_receipts(db: Any, path: str | Path, *, now=None) -> dict[s
             has_echo = any(
                 isinstance(item, dict)
                 and item.get("provider_message_id") == receipt["provider_message_id"]
-                for item in (lead.get("messages") or [])
+                for item in office_messages(lead.get("messages"))
             )
             if has_echo:
                 result = db["leads"].update_one(

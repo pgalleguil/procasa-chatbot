@@ -413,3 +413,58 @@ def test_capture_allowlist_does_not_bypass_global_write_gate(rig, monkeypatch):
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0")
     assert post(client, event(from_me=False)).json()["status"] == "dry_run"
     assert db["leads"].update_calls == 0
+
+@pytest.mark.parametrize("text", [
+    "STOP", "No me contacten más", "No quiero más avisos",
+    "No me manden más promociones", "No quiero recibir mensajes",
+])
+def test_customer_global_stop_atomically_enforces_campaign_guard(rig, text):
+    from chatbot.price_drop_campaign_classifier import lead_must_not_be_contacted
+    from chatbot.price_drop_leads_v2 import _contact_suppression_reasons
+    db, _cycle, client = rig
+    response = post(client, event(from_me=False, text=text, msg_id="stop-inbound"))
+    assert response.status_code == 200
+    assert response.json()["status"] == "stored"
+    mutation = db["leads"].last_mutation
+    changes = mutation["$set"]
+    assert changes["price_drop_v2.opted_out"] is True
+    assert changes["price_drop_campaign_v1.opted_out"] is True
+    assert changes["contact_restrictions.marketing_opt_out"] is True
+    assert changes["contact_restrictions.marketing_opt_out_source"] == "executive_whatsapp"
+    assert changes["contact_restrictions.marketing_opt_out_provider_id"] == "stop-inbound"
+    assert changes["contact_restrictions.marketing_opt_out_session_id"] == SESSION
+    # The sender's existing opt-out guards see durable fields, not the
+    # executive transcript (which must stay outside office automation).
+    canonical = {"price_drop_v2": {"opted_out": changes["price_drop_v2.opted_out"]},
+                 "price_drop_campaign_v1": {"opted_out": changes["price_drop_campaign_v1.opted_out"]}}
+    assert lead_must_not_be_contacted(canonical)
+    assert "explicit_opt_out" in _contact_suppression_reasons(canonical)
+    assert post(client, event(from_me=False, text=text, msg_id="stop-inbound")).json()["status"] == "duplicate_or_reassigned"
+
+
+@pytest.mark.parametrize("text", [
+    "No quiero agendar una visita", "No me escriban más por esa propiedad",
+    "No quiero más avisos de esa casa", "No quiero que me den de baja",
+    '"No me contacten más" dijo mi vecino',
+    "¿Qué ocurre si digo STOP?", "Por favor no me llamen por teléfono",
+])
+def test_non_global_customer_phrases_never_set_campaign_optout(rig, text):
+    db, _cycle, client = rig
+    response = post(client, event(from_me=False, text=text))
+    assert response.json()["status"] == "stored"
+    assert "price_drop_v2.opted_out" not in db["leads"].last_mutation["$set"]
+    assert "price_drop_campaign_v1.opted_out" not in db["leads"].last_mutation["$set"]
+
+
+def test_executive_outgoing_stop_cannot_opt_out_customer(rig):
+    db, _cycle, client = rig
+    assert post(client, event(from_me=True, text="No me contacten más")).json()["status"] == "stored"
+    assert "price_drop_v2.opted_out" not in db["leads"].last_mutation["$set"]
+
+
+def test_optout_requires_authorized_write_not_dry_run(rig, monkeypatch):
+    db, _cycle, client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0")
+    assert post(client, event(from_me=False, text="No me contacten más")).json()["status"] == "dry_run"
+    assert db["leads"].update_calls == 0
+    assert db["leads"].last_mutation is None

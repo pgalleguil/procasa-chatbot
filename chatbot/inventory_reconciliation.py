@@ -7,6 +7,8 @@ the same provider message id, preserving idempotency and active assignments.
 """
 from __future__ import annotations
 
+from .message_scope import office_messages
+
 import logging
 import re
 from datetime import timedelta
@@ -203,7 +205,7 @@ def _source_message(db, event: dict) -> tuple[str | None, Any]:
         return str(event["source_message"]), event.get("received_at")
 
     lead = db["leads"].find_one({"_id": event.get("lead_id")}, {"messages": {"$slice": -20}})
-    for message in reversed((lead or {}).get("messages") or []):
+    for message in reversed(office_messages((lead or {}).get("messages"))):
         if message.get("role") == "user" and message.get("content"):
             return str(message["content"]), event.get("received_at")
     return None, event.get("received_at")

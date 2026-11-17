@@ -133,6 +133,9 @@ jobs:
               tests/test_executive_pilot_webhook.py
               tests/test_executive_whatsapp_audit.py
               tests/test_executive_conversation_intelligence.py
+              tests/test_executive_intelligence_adversarial.py
+              tests/test_executive_semantic_verifier.py
+              tests/test_executive_office_boundary.py
           - suite: CRM sort order
             tests: >-
               tests/test_crm_sort_order.py
@@ -186,3 +189,31 @@ jobs:
         run: python -m pip install -r requirements.txt pytest pytest-asyncio beautifulsoup4
       - name: Run ${{ matrix.suite }}
         run: python -m pytest -c pytest-procasa.ini ${{ matrix.tests }}
+
+  executive-mongo-integration:
+    name: Executive evidence MongoDB integration
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1})'"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      EXEC_AUDIT_TEST_MONGO_URI: mongodb://127.0.0.1:27017
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install runtime and test dependencies
+        run: python -m pip install -r requirements.txt pytest pytest-asyncio beautifulsoup4
+      - name: Exercise real MongoDB concurrency and projections
+        run: python -m pytest -c pytest-procasa.ini tests/test_executive_intelligence_mongo.py
+      - name: Reproduce synthetic evaluations without external API calls
+        run: |
+          python scripts/evaluate_executive_intelligence.py
+          python scripts/evaluate_executive_intelligence.py --holdout --output reports/executive_intelligence/holdout.json
+          python scripts/evaluate_executive_dimensions.py

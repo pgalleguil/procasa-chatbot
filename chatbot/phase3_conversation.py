@@ -6,6 +6,8 @@ visit, CRM operation, notification or executive contact without evidence.
 """
 from __future__ import annotations
 
+from .message_scope import office_messages
+
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -229,7 +231,7 @@ def _last_user(messages: list[dict]) -> dict:
 
 
 def build_conversation_state(lead: dict, messages: list[dict] | None = None, events=None, property_context=None) -> dict:
-    messages = [item for item in (messages or lead.get("messages") or []) if item.get("role") in {"user", "assistant"}]
+    messages = [item for item in office_messages(messages or lead.get("messages")) if item.get("role") in {"user", "assistant"}]
     prospect = lead.get("prospecto") or {}
     context = property_context or {}
     last = _last_user(messages)

@@ -473,7 +473,7 @@ def test_hot_greeting_price_context_excludes_raw_user_content(context):
     assert "soy Paula" in greeting
     assert "6436" not in greeting
     assert "Peñaflor" in greeting
-    assert "consultaste por el precio" in greeting
+    assert "tienes consultas sobre el precio" in greeting
     assert "privado@example.org" not in greeting
 
 

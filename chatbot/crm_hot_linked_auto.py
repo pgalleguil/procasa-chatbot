@@ -189,6 +189,18 @@ def eligible_hot_auto(db, *, lead: dict, cycle: dict, now: datetime) -> dict:
         raise OutboundBlocked("assignment_changed")
     if lead_must_not_be_contacted(lead):
         raise OutboundBlocked("customer_blocked")
+    if str(lead.get("lead_temperature_effective") or "").upper() != "HOT":
+        raise OutboundBlocked("lead_not_hot")
+    # Avoid a second greeting if the assigned executive has already
+    # contacted this lead via WhatsApp during the very same cycle.
+    if any(
+        isinstance(m, dict)
+        and str(m.get("assignment_cycle_id") or "") == cycle_id
+        and m.get("channel") == "executive_whatsapp"
+        and m.get("actor_type") in ("human_agent", "automation")
+        for m in (lead.get("messages") or [])
+    ):
+        raise OutboundBlocked("executive_already_contacted")
     try:
         phone = normalize_whatsapp_recipient(str(lead.get("phone") or ""))
     except ValueError:
@@ -392,7 +404,7 @@ async def hot_auto_worker_loop(*, stop_event=None):
     while stop_event is None or not stop_event.is_set():
         if enabled():
             try:
-                result = await asyncio.to_thread(process_hot_auto_batch, get_db())
+                result = await asyncio.to_thread(lambda: process_hot_auto_batch(get_db()))
                 logger.info("[HOT_EXEC_AUTO] status=%s examined=%s accepted_exempt=%s skipped=%s",
                             result["status"], result["examined"], result["sent"], result.get("skipped"))
             except Exception:

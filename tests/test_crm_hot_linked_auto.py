@@ -681,3 +681,14 @@ def test_hot_greeting_unknown_executive_uses_neutral_role(context):
     _db, leads, _cycles = context
     greeting = hot._message_for(leads.doc, "Alex Rivera")
     assert "tu contacto asignado del equipo de asesoría inmobiliaria" in greeting
+
+
+def test_hot_greeting_declined_visit_keeps_price_in_same_message(context):
+    _db, leads, _cycles = context
+    leads.doc["messages"] = [{
+        **inbound(), "conversation_id": "conv-1",
+        "content": "No quiero agendar una visita, pero sí necesito conocer el precio",
+    }]
+    greeting = hot._message_for(leads.doc, "Paula", assigned_at=ASSIGNED, now=NOW)
+    assert "coordinar una visita" not in greeting
+    assert "el precio" in greeting

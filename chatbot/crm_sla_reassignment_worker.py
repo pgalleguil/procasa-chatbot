@@ -657,7 +657,7 @@ def canonical_expiration_recheck(cycle: Mapping[str, Any], lead: Mapping[str, An
     """
     assigned_at = _utc(cycle.get("assigned_at"))
     from .crm_hot_linked_auto import sla_exemption
-    if sla_exemption(cycle, lead):
+    if sla_exemption(cycle):
         return CanonicalExpiration(
             assigned_at, None, None, 60, None, 0.0, False,
             "HOT", "hot_exec_auto_exempt", None, False,

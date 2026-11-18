@@ -14,6 +14,8 @@ This runs ONCE, when invoked; it is not a scheduled/background campaign.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
+from decimal import Decimal, InvalidOperation
 import json
 import os
 import sys
@@ -85,7 +87,8 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
     if not events:
         if progress:
             progress("selection_completed_recipients_0")
-        return [], {"events_examined": 0, "events_discovered": 0}
+        return [], {"events_examined": 0, "events_discovered": 0,
+                    "exclusions_by_reason": {}, "events_needing_price_review": []}
     if progress:
         progress(f"loading_phone_index_events_{len(events)}")
     phone_owner_index: dict[str, set[str]] = {}
@@ -101,9 +104,28 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
                 if isinstance(raw_phone, str) and raw_phone:
                     phone_owner_index.setdefault(raw_phone, set()).add(lead_id)
     chosen, seen = [], set()
+    excluded = Counter()
+    price_review_codes = set()
     event_count = 0
     for event in events:
         event_count += 1
+        # A mistaken UF/CLP historical conversion may look like an enormous
+        # price reduction. A reduction of 90% or more always requires human
+        # price-history review before any *automatic* outreach. The actual
+        # publication checker verifies the current price, not the old one.
+        try:
+            old = Decimal(str(event.old_price))
+            new = Decimal(str(event.new_price))
+            extreme = (not old.is_finite() or not new.is_finite()
+                       or not old > new > 0 or old / new >= 10)
+        except (InvalidOperation, TypeError, ValueError, ZeroDivisionError):
+            extreme = True
+        if extreme:
+            excluded["extreme_or_invalid_price_drop_event"] += 1
+            price_review_codes.add(str(event.property_code))
+            if progress:
+                progress(f"skipped_event_requires_price_review_property_{event.property_code}")
+            continue
         if progress:
             progress(f"matching_event_{event_count}_of_{len(events)}_property_{event.property_code}")
         candidates = find_candidates_for_event(
@@ -114,19 +136,27 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
             progress(f"matched_event_{event_count}_candidates_{len(candidates)}")
         for candidate in candidates:
             if not candidate.get("eligible"):
+                excluded[str(candidate.get("reason") or "candidate_not_eligible")] += 1
                 continue
             identity = str(candidate["lead_id"])
             if identity in seen:
+                excluded["duplicate_within_batch"] += 1
                 continue
             lead = db["leads"].find_one({"_id": cli._lead_id(identity)})
-            if not lead or lead_must_not_be_contacted(lead):
+            if not lead:
+                excluded["candidate_lead_missing_at_recheck"] += 1
+                continue
+            if lead_must_not_be_contacted(lead):
+                excluded["contact_suppression_at_recheck"] += 1
                 continue
             # Explicit revocation/STOP remains binding even without an opt-in
             # prerequisite. Exclude before writing a PREPARED campaign.
             if v2.whatsapp_contact_authorization_blocker(lead, {}) is not None:
+                excluded["whatsapp_authorization_revoked"] += 1
                 continue
             phone = str(lead.get("contact_phone_normalized") or lead.get("phone") or "")
             if recent_outreach_or_pending(lead, now=now):
+                excluded["recent_outreach_or_pending"] += 1
                 continue
             # Preserve exactly one candidate per person across all properties.
             seen.add(identity)
@@ -139,7 +169,9 @@ def choose_new_recipients(db, *, max_messages, max_age_days, now,
     if progress:
         progress(f"selection_completed_recipients_{len(chosen)}")
     return chosen, {"events_examined": event_count,
-                    "events_discovered": len(events)}
+                    "events_discovered": len(events),
+                    "exclusions_by_reason": dict(sorted(excluded.items())),
+                    "events_needing_price_review": sorted(price_review_codes)}
 
 
 def verify_publications(db, chosen, *, now):

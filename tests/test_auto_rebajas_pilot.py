@@ -8,7 +8,9 @@ import scripts.enviar_rebajas_automatico as automatic
 
 
 def test_historical_inquiry_eligible_without_separate_optin_but_stop_excludes(monkeypatch):
-    event = SimpleNamespace(event_id="price_event_123", dropped_at=datetime.now(timezone.utc))
+    event = SimpleNamespace(event_id="price_event_123", dropped_at=datetime.now(timezone.utc),
+                            property_code="6436", operation="Venta", currency="UF",
+                            old_price=2790, new_price=2690)
     candidate = {"eligible": True, "lead_id": "a" * 24}
     lead = {"_id": candidate["lead_id"], "phone": "+56911111111"}
     class FakeCursor(list):

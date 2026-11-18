@@ -6878,6 +6878,8 @@ async def unauthorized_exception_handler(request: Request, exc: HTTPException):
 
 async def process_pending_leads_loop():
     logger.info("[BACKGROUND] Iniciando loop de leads pendientes...")
+    # Per-process cadence; each original event also has an atomic DB lease.
+    next_property_reconcile_at = 0.0
     while True:
         try:
             background_tasks_status["notifications_loop"]["last_heartbeat"] = datetime.now(CHILE_TZ).isoformat()
@@ -7099,6 +7101,36 @@ async def process_pending_leads_loop():
                     logger.exception("[PRICE_DROP_EXEC_NOTICE] worker failed; no auto resend")
 
             if should_send_now():
+                # A changed MLC or temporarily unavailable Portal page must
+                # not strand a recent commercial event until manual recovery.
+                # Retry only a few due, recent events; no extra customer
+                # WhatsApp is sent. Normal CRM owner and notification guards
+                # still apply to any successfully resolved property.
+                loop = asyncio.get_running_loop()
+                if (os.getenv("PENDING_PROPERTY_AUTO_RECOVER_ENABLED", "true").lower()
+                        in {"1", "true", "yes"}
+                        and loop.time() >= next_property_reconcile_at):
+                    next_property_reconcile_at = loop.time() + 300
+                    try:
+                        from chatbot.inventory_reconciliation import (
+                            AUTO_RECONCILE_MAX_AGE_DAYS,
+                            reconcile_waiting_inventory_events,
+                        )
+                        from chatbot.storage import get_db as _get_pending_property_db
+                        import functools
+                        result = await loop.run_in_executor(
+                            _WORKER_THREAD_POOL,
+                            functools.partial(
+                                reconcile_waiting_inventory_events,
+                                _get_pending_property_db(),
+                                limit=3,
+                                max_age_days=AUTO_RECONCILE_MAX_AGE_DAYS,
+                            ),
+                        )
+                        if any(result.get(k) for k in ("completed", "waiting", "failed")):
+                            logger.info("[PENDING_PROPERTY_AUTO_RECOVER] %s", result)
+                    except Exception:
+                        logger.exception("[PENDING_PROPERTY_AUTO_RECOVER] bounded retry failed")
                 # Canonical Hot worker. Fully sync — runs in threadpool.
                 if Config.LEAD_HOT_NOTIFICATIONS_ENABLED:
                     from chatbot.crm_hot_delivery import process_one_hot_sync

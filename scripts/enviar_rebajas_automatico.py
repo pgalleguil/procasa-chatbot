@@ -17,7 +17,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, time as day_time, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -164,11 +164,16 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
         allowed_change_keys=None, now=None,
         provider_plan="trial", min_delay=60.0, max_delay=90.0,
         daily_provider_cap=50,
+        start_time=day_time(9), end_time=day_time(20),
+        allowed_weekdays="MON,TUE,WED,THU,FRI",
+        timezone_name="America/Santiago",
         progress: Callable[[str], None] | None = None):
     if not 1 <= max_messages <= cli.MAX_MESSAGES_PER_RUN:
         raise ValueError("max_messages_must_be_within_provider_run_limit")
     cli.validate_limits(max_messages, min_delay, max_delay,
                         provider_plan=provider_plan, daily_cap=daily_provider_cap)
+    if start_time >= end_time:
+        raise ValueError("business_hours_start_must_precede_end")
     stamp = now or datetime.now(timezone.utc)
     selected, counters = choose_new_recipients(
         db, max_messages=max_messages, max_age_days=max_age_days,
@@ -246,6 +251,8 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
         max_messages=max_messages, min_delay_seconds=min_delay,
         max_delay_seconds=max_delay, provider_plan=provider_plan,
         daily_provider_cap=daily_provider_cap,
+        start_time=start_time, end_time=end_time,
+        allowed_weekdays=allowed_weekdays, timezone_name=timezone_name,
         temperature_filter="ALL", lead_max_age_days=max_age_days,
         enforce_campaign_filters=True, already_confirmed=True,
     )
@@ -269,6 +276,8 @@ def main():
     parser.add_argument("--provider-plan", choices=("trial", "paid"), default="trial")
     parser.add_argument("--min-delay-seconds", type=float, default=60)
     parser.add_argument("--max-delay-seconds", type=float, default=90)
+    parser.add_argument("--start-time", type=cli._parse_time, default=day_time(9))
+    parser.add_argument("--end-time", type=cli._parse_time, default=day_time(20))
     args = parser.parse_args()
     if args.lead_max_age_days < 0 or (args.max_events is not None and args.max_events < 1):
         parser.error("lead age must be non-negative and optional event limit positive")
@@ -279,6 +288,7 @@ def main():
             max_events=args.max_events, provider_plan=args.provider_plan,
             min_delay=args.min_delay_seconds, max_delay=args.max_delay_seconds,
             daily_provider_cap=args.daily_provider_cap,
+            start_time=args.start_time, end_time=args.end_time,
         )
     except (ValueError, cli.CliError, v2.PilotBlocked) as exc:
         outcome = {"status": "BLOCKED", "reason": str(exc)[:180], "attempts": 0}

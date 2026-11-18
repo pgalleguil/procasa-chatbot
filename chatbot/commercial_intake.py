@@ -289,6 +289,13 @@ def process_inbound(db, *, inbound_provider_id, phone, text, received_at=None,
         return db[COLLECTION].find_one({"_id": event["_id"]})
     code = str(prop.get("codigo") or raw)
     identity = property_reference_identity(raw)
+    # Cache only a source-verified external publication -> exact Prop360 code.
+    # This never authorizes a new executive by itself: cycle creation and the
+    # active-recipient gate below remain authoritative.
+    if (prop_meta.get("match_method") == "publisher_verified_internal_code"
+            and prop_meta.get("verified_internal_code") == code):
+        from .portal_verified_reference import persist_verified_portal_link
+        persist_verified_portal_link(db, str(raw), code, "public_portal")
     property_context = _commercial_property_context(prop, prop_meta)
     previous_prospect = lead.get("prospecto") or {}
     comuna = property_context["comuna"] or previous_prospect.get("comuna") or lead.get("comuna") or ""

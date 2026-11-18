@@ -656,6 +656,13 @@ def canonical_expiration_recheck(cycle: Mapping[str, Any], lead: Mapping[str, An
     silently create a false negative.
     """
     assigned_at = _utc(cycle.get("assigned_at"))
+    from .crm_hot_linked_auto import sla_exemption
+    if sla_exemption(cycle):
+        return CanonicalExpiration(
+            assigned_at, None, None, 60, None, 0.0, False,
+            "HOT", "hot_exec_auto_exempt", None, False,
+            None, None, "exempt", "EXEMPT_AUTO_HOT",
+        )
     if _awaiting_owner_notification(cycle):
         # Never fall back to assigned_at for a reassignment destination.  Its
         # commercial SLA begins only after the provider confirms delivery.

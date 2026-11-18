@@ -527,6 +527,13 @@ async def evaluate_sla_alerts(
         if cycle_origin in EXCLUDED_ORIGINS:
             excluded[f"excluded_cycle_origin:{cycle_origin}"] += 1; continue
 
+        # A confirmed executive HOT API greeting exempts this active cycle
+        # from first-contact SLA alerts, without claiming human management.
+        from .crm_hot_linked_auto import sla_exemption
+        if sla_exemption(cycle):
+            excluded["hot_exec_auto_exempt"] += 1
+            continue
+
         # ---- Query crm_management_results for this cycle ----
         cycle_mgmts = mgmt_by_cycle.get(cycle_id, [])
 

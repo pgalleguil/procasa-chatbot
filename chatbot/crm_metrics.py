@@ -952,6 +952,21 @@ def calculate_cycle_sla(*, cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
                         first_valid_management_at=None) -> dict[str, Any]:
     """Calculate SLA using the canonical cycle start, Hot start and management rule."""
     lead = lead if isinstance(lead, Mapping) else {}
+    # A verified, cycle-scoped executive HOT greeting uses an explicit
+    # operational exception; it is never counted as human management.
+    from .crm_hot_linked_auto import sla_exemption
+    if sla_exemption(cycle):
+        return {
+            "status": "exempt", "canonical_state": "EXEMPT_AUTO_HOT",
+            "temperature": "HOT", "minutes": None, "hot_minutes": None,
+            "fulfilled": False, "threshold_minutes": None,
+            "deadline_at": None, "hot_start": None,
+            "hot_start_source": "hot_exec_auto_confirmed",
+            "hot_start_discrepancy": False,
+            "hot_start_conflicting_sources": [],
+            "elapsed_hot_minutes": None, "coverage": "hot_exec_auto_confirmed",
+            "sla_exempt": True, "exemption_reason": "HOT_EXEC_API_CONFIRMED",
+        }
     effective_start = resolve_cycle_sla_start(cycle=cycle)
     temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
     hot_resolution = (

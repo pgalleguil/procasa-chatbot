@@ -178,6 +178,7 @@ def build_source_cycle_filter(
             {"sla_first_management_status": {"$ne": "completed"}},
             _management_absent_filter("first_contact_attempt_at"),
             _management_absent_filter("reassignment_protection_at"),
+            {"hot_auto_sla_exemption.status": {"$ne": "active"}},
         ],
     }
     if source_cycle.get("_id") is not None:
@@ -635,6 +636,9 @@ def build_transaction_plan(
         raise TransactionContractError("invalid_supervisor_review_status")
     if source_cycle.get("cycle_status") != "active" or source_cycle.get("unassigned_at") is not None:
         raise TransactionContractError("source_cycle_not_active")
+    from chatbot.crm_hot_linked_auto import sla_exemption
+    if sla_exemption(source_cycle):
+        raise TransactionContractError("hot_exec_auto_exempt")
     raw_breach_at = _first_present(
         decision, "source_cycle_sla_breached_at", "sla_breached_at"
     )

@@ -3089,7 +3089,7 @@
                                         <p>Lunes a viernes, de 09:00 a 19:00. El contador se pausa fuera de ese horario y durante el fin de semana.</p>
 
                                         <h4>Importante</h4>
-                                        <p>Abrir WhatsApp, llamar, enviar mensajes o cambiar el estado no detiene el SLA. Para acreditar la gestión es obligatorio registrar el resultado en el CRM.</p>
+                                        <p>Abrir WhatsApp, llamar o enviar mensajes manuales no acredita gestión humana ni detiene el SLA. Excepción: HOT asignado a un ejecutivo con sesión vinculada y contacto automático por API confirmado, para el ciclo y fecha de activación correspondientes. En esos casos el CRM muestra "Sin SLA · WhatsApp automático"; el seguimiento comercial humano continúa pendiente.</p>
 
                                         <p class="sla-info-note">Los leads anteriores al inicio de esta política aparecen como "Histórico" y no participan en las nuevas métricas.</p>
                                         <p class="sla-info-note">Las alertas automáticas, avisos al supervisor y la reasignación de leads todavía no están activados.</p>
@@ -3130,7 +3130,10 @@
                             </td>
                             <td class="col-priority" data-label="Prioridad">
                                 <div class="mobile-cell-value">
-                                    {% if lead.sla_status == 'critical' %}
+                                    {% if lead.sla_status == 'exempt' %}
+                                    <i class="fa-solid fa-comment-dots text-success"></i>
+                                    <span class="priority-sla text-success">Sin SLA · WhatsApp automático</span>
+                                    {% elif lead.sla_status == 'critical' %}
                                     <div class="led-indicator led-red pulse-red"></div>
                                     <span class="priority-sla">{{ lead.sla_compact_label|default(lead.sla_label) }}</span>
                                     {% elif lead.sla_status == 'near_critical' %}

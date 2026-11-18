@@ -209,3 +209,71 @@ def test_manual_scraper_loads_existing_external_env_before_config_import():
     assert 'os.getenv("PRICE_DROP_ENV_FILE"' in src
     assert "load_dotenv(dotenv_path=_external_env, override=False)" in src
     assert src.index("load_dotenv(dotenv_path=_external_env") < src.index("from config import Config")
+
+
+def test_post_scrape_business_hours_now_end_at_2000_chile():
+    from zoneinfo import ZoneInfo
+    from datetime import time as daytime
+    tz = ZoneInfo("America/Santiago")
+    local = datetime(2026, 11, 18, 19, 30, tzinfo=tz)
+    assert hook._during_business_hours(local) is True
+    assert hook._during_business_hours(local.replace(hour=19, minute=59)) is True
+    assert hook._during_business_hours(local.replace(hour=20, minute=0)) is False
+
+
+def test_auto_cli_end_time_is_propagated_without_sending(monkeypatch):
+    from datetime import time as daytime
+    from scripts import enviar_piloto_rebajas as cli
+    from scripts import enviar_rebajas_automatico as auto
+    monkeypatch.setattr(cli, "_get_db", lambda: object())
+    calls = []
+    def fake_run(db, **kwargs):
+        calls.append(kwargs)
+        return {"status": "NO_ELIGIBLE_RECIPIENTS", "attempts": 0}
+    monkeypatch.setattr(auto, "run", fake_run)
+    assert cli.main([
+        "--auto", "--execute", "--max-messages", "5",
+        "--start-time", "09:00", "--end-time", "20:00",
+        "--lead-max-age-days", "90",
+        "--min-delay-seconds", "300", "--max-delay-seconds", "600",
+    ]) == 0
+    assert calls[0]["start_time"] == daytime(9)
+    assert calls[0]["end_time"] == daytime(20)
+    assert calls[0]["timezone_name"] == "America/Santiago"
+    assert calls[0]["max_messages"] == 5
+
+
+def test_automatic_batch_forwards_window_to_real_sender(monkeypatch):
+    from datetime import time as daytime
+    from types import SimpleNamespace
+    from scripts import enviar_rebajas_automatico as auto
+    from chatbot import price_drop_leads_v2 as v2
+    db = _db()
+    now = datetime(2026, 11, 18, 21, 0, tzinfo=timezone.utc)
+    event = SimpleNamespace(property_code="6436", operation="Venta", currency="UF",
+                            current_price=2690, listing_url="https://www.procasa.cl/6436",
+                            campaign_id="rebaja_6436_unit", event_id="rebaja_6436_unit")
+    selected = [{"event": event, "candidate": {"eligible": True}, "lead_id": "507f1f77bcf86cd799439011", "last4": "0001"}]
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
+    monkeypatch.setattr(auto, "choose_new_recipients", lambda *args, **kwargs:
+                        (selected, {"events_examined": 1, "events_discovered": 1}))
+    monkeypatch.setattr(auto, "verify_publications", lambda *args, **kwargs:
+                        {event.event_id: {"sendable": True, "status": "VERIFIED"}})
+    monkeypatch.setattr(auto.cli, "_backup_leads", lambda *args, **kwargs: "/tmp/backup")
+    monkeypatch.setattr(auto.cli, "prepare_selected", lambda *args, **kwargs: None)
+    monkeypatch.setattr(auto.v2, "approve_one", lambda *args, **kwargs: None)
+    kwargs_seen = []
+    def fake_send(*args, **kwargs):
+        kwargs_seen.append(kwargs)
+        return {"status": "COMPLETED", "attempts": 1}
+    monkeypatch.setattr(auto.cli, "execute_approved_batch", fake_send)
+    result = auto.run(db, execute=True, max_messages=5, max_age_days=90,
+                      min_delay=300, max_delay=600, now=now,
+                      start_time=daytime(9), end_time=daytime(20))
+    assert result["status"] == "COMPLETED"
+    assert result["attempts"] == 1
+    assert kwargs_seen[0]["end_time"] == daytime(20)
+    assert kwargs_seen[0]["timezone_name"] == "America/Santiago"

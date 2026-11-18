@@ -2616,6 +2616,9 @@ def main(argv: list[str] | None = None) -> int:
                     property_code=args.property_code,
                     max_events=args.limit,  # None scans all verified history
                     provider_plan=args.provider_plan,
+                    start_time=args.start_time, end_time=args.end_time,
+                    allowed_weekdays=args.allowed_weekdays,
+                    timezone_name=args.timezone,
                     min_delay=args.min_delay_seconds,
                     max_delay=args.max_delay_seconds,
                     daily_provider_cap=args.daily_provider_cap,

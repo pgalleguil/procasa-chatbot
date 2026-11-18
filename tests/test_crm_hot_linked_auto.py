@@ -452,7 +452,7 @@ def test_hot_greeting_uses_property_and_visit_intent_without_reasking_for_detail
     assert greeting.startswith("Hola Juan, soy Hernán, tu asesor inmobiliario asignado en PROCASA.")
     assert "16479" not in greeting
     assert "tu búsqueda inmobiliaria en Maipú" in greeting
-    assert "propusiste un horario para visitar la propiedad" in greeting
+    assert "ya nos propusiste un horario para la visita" in greeting
     assert "sábado" not in greeting  # do not echo proposed personal details
     assert "+56912345678" not in greeting
     assert "¿Qué día" not in greeting  # do not ask again for a supplied day
@@ -473,7 +473,7 @@ def test_hot_greeting_price_context_excludes_raw_user_content(context):
     assert "soy Paula" in greeting
     assert "6436" not in greeting
     assert "Peñaflor" in greeting
-    assert "consultaste por el precio" in greeting
+    assert "tienes consultas sobre el precio" in greeting
     assert "privado@example.org" not in greeting
 
 
@@ -572,7 +572,7 @@ def test_hot_greeting_continues_actual_multi_turn_customer_and_bot_dialogue(cont
     msg = sent[0]
     assert "soy Hernán, tu asesor inmobiliario asignado en PROCASA" in msg
     assert "un departamento en arriendo en Ñuñoa" in msg
-    assert "propusiste un horario para visitar la propiedad" in msg
+    assert "ya nos propusiste un horario para la visita" in msg
     assert "la disponibilidad" in msg
     assert "16479" not in msg
     assert "sábado" not in msg
@@ -693,3 +693,54 @@ def test_hot_greeting_declined_visit_keeps_price_in_same_message(context):
     greeting = hot._message_for(leads.doc, "Paula", assigned_at=ASSIGNED, now=NOW)
     assert "coordinar una visita" not in greeting
     assert "el precio" in greeting
+
+
+
+def test_hot_greeting_handoff_does_not_mention_reading_chat_or_repeating_it(context):
+    _db, leads, _ = context
+    leads.doc["prospecto"].update({
+        "nombre": "Juan", "tipo": "DEPTO", "operacion": "A", "comuna": "Ñuñoa",
+    })
+    leads.doc["messages"] = [
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=14)).isoformat(),
+         "content": "¿Está disponible?"},
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=10)).isoformat(),
+         "content": "Quiero agendar la visita el sábado a las 11:00"},
+    ]
+    greeting = hot._message_for(leads.doc, "Paula Morales", assigned_at=ASSIGNED, now=NOW)
+    assert greeting.startswith("Hola Juan, soy Paula, tu asesora inmobiliaria asignada en PROCASA.")
+    assert "Te escribo por un departamento en arriendo en Ñuñoa." in greeting
+    assert "ya nos propusiste un horario para la visita" in greeting
+    assert "también consultaste por la disponibilidad" in greeting
+    assert greeting.endswith("¿Te parece si coordinamos los detalles por aquí?")
+    for unwanted in (
+        "Revisé", "nuestro asistente", "conversación", "repetir lo conversado",
+        "sin que tengas", "16479", "sábado", "11:00",
+    ):
+        assert unwanted not in greeting
+
+
+def test_hot_greeting_only_price_conversation_has_direct_followup(context):
+    _db, leads, _ = context
+    leads.doc["messages"] = [{
+        **inbound(), "conversation_id": "conv-1", "content": "¿Cuál es el precio?",
+    }]
+    greeting = hot._message_for(leads.doc, "Paula Morales", assigned_at=ASSIGNED, now=NOW)
+    assert "tienes consultas sobre el precio" in greeting
+    assert greeting.endswith("¿Te parece si lo vemos por aquí?")
+    assert "nuestro asistente" not in greeting
+    assert "repetir lo conversado" not in greeting
+
+
+def test_hot_greeting_without_topics_does_not_claim_to_review_chat(context):
+    _db, leads, _ = context
+    leads.doc["messages"] = [{
+        **inbound(), "conversation_id": "conv-1", "content": "Hola, buenas tardes",
+    }]
+    greeting = hot._message_for(leads.doc, "Paula Morales", assigned_at=ASSIGNED, now=NOW)
+    assert "Te escribo por tu consulta inmobiliaria." in greeting
+    assert greeting.endswith("¿Te parece si seguimos por aquí?")
+    assert "Revisé" not in greeting
+    assert "asistente" not in greeting

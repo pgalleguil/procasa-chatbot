@@ -375,27 +375,25 @@ def _message_for(lead: dict, executive_name: str, *, assigned_at: datetime | Non
     if not has_dialogue:
         return generic
     subject = _property_reference(lead)
-    opening = (
-        f"Revisé tu conversación con nuestro asistente sobre {subject}. "
-        if subject else "Revisé lo que conversaste con nuestro asistente. "
-    )
+    opening = f"Te escribo por {subject}. " if subject else "Te escribo por tu consulta inmobiliaria. "
     if "visita" in topics:
         visit = (
-            "Vi que ya propusiste un horario para visitar la propiedad"
-            if visit_time_given else "Vi que te interesa coordinar una visita"
+            "Entiendo que ya nos propusiste un horario para la visita"
+            if visit_time_given else "Entiendo que te interesa coordinar una visita"
         )
         others = [t for t in topics if t != "visita"]
-        detail = (visit + f" y también consultaste por {_TOPIC_PHRASES[others[0]]}. "
-                  if others else visit + ". ")
+        detail = (
+            visit + f" y que también consultaste por {_TOPIC_PHRASES[others[0]]}. "
+            if others else visit + ". "
+        )
+        ending = "¿Te parece si coordinamos los detalles por aquí?"
     elif topics:
         facts = [_TOPIC_PHRASES[t] for t in topics]
-        detail = "Vi que consultaste por " + " y ".join(facts) + ". "
+        detail = "Entiendo que tienes consultas sobre " + " y ".join(facts) + ". "
+        ending = "¿Te parece si lo vemos por aquí?"
     else:
         detail = ""
-    ending = (
-        "Voy a ayudarte a continuar con estos temas sin que tengas que repetir lo conversado. "
-        "¿Te parece que sigamos por aquí?"
-    )
+        ending = "¿Te parece si seguimos por aquí?"
     return heading + opening + detail + ending
 
 

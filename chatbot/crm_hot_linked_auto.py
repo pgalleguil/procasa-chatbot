@@ -76,6 +76,8 @@ def sla_exemption(cycle: dict | None, lead: dict | None = None) -> dict | None:
     row = cycle.get("hot_auto_sla_exemption") or {}
     if not isinstance(row, dict):
         return None
+    accepted = coerce_utc_datetime(row.get("accepted_at"))
+    assigned = coerce_utc_datetime(cycle.get("assigned_at"))
     if (
         row.get("status") != "active"
         or row.get("kind") != KIND
@@ -84,7 +86,10 @@ def sla_exemption(cycle: dict | None, lead: dict | None = None) -> dict | None:
         or str(row.get("assignment_cycle_id") or "") != str(cycle.get("assignment_cycle_id") or "")
         or str(row.get("executive_id") or "") != str(cycle.get("assigned_to_user_id") or "")
         or not str(row.get("session_id") or "").isdigit()
-        or not coerce_utc_datetime(row.get("accepted_at"))
+        or accepted is None
+        or assigned is None
+        or accepted < assigned
+        or not str(row.get("outbox_id") or "").strip()
         or str(cycle.get("temperature_at_assignment") or "").upper() != "HOT"
         or cycle.get("cycle_status") != "active"
         or cycle.get("unassigned_at") is not None
@@ -313,7 +318,9 @@ def send_hot_auto(db, *, lead_id, post=None, now=None) -> dict:
         state = "accepted" if ok and pid else "accepted_without_provider_id" if ok else "rejected"
     except Exception:
         pass
-    accepted_at = datetime.now(timezone.utc)
+    # Preserve a single monotonic source for injected worker/test time. In
+    # production the wall clock is used unless the cycle clock is later.
+    accepted_at = max(now, datetime.now(timezone.utc))
     db[OUTBOX].update_one({"_id": key}, {"$set": {
         "state": state, "provider_message_id": pid, "provider_result_at": accepted_at,
     }})

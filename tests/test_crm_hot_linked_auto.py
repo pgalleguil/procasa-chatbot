@@ -307,6 +307,13 @@ def test_sla_exemption_requires_correct_cycle_owner_status_and_provider_evidence
     bad["temperature_at_assignment"] = "NORMAL"
     assert not hot.sla_exemption(bad, leads.doc)
     bad = deepcopy(cycles.doc)
+    bad["hot_auto_sla_exemption"]["accepted_at"] = bad["assigned_at"] - timedelta(seconds=1)
+    assert not hot.sla_exemption(bad, leads.doc)
+    bad = deepcopy(cycles.doc)
+    bad["hot_auto_sla_exemption"].pop("outbox_id", None)
+    assert not hot.sla_exemption(bad, leads.doc)
+
+    bad = deepcopy(cycles.doc)
     bad["cycle_status"] = "closed"
     assert not hot.sla_exemption(bad, leads.doc)
     assert "first_valid_management_at" not in cycles.doc

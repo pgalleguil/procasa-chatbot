@@ -61,7 +61,7 @@ def find_unique_echo_match(
             continue
         if not message.get("message_id") or not message.get("provider_message_id"):
             continue
-        if message.get("role") != "agent":
+        if message.get("role") != ("assistant" if source == "crm_hot_auto_api" else "agent"):
             continue
         if _normalized(message.get("content")) != _normalized(content):
             continue

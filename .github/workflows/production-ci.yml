@@ -113,6 +113,7 @@ jobs:
               tests/test_enlace_property_resolution.py
               tests/test_missing_property_admin_alert.py
               tests/test_missing_property_portal_reconciliation.py
+              tests/test_pending_property_automatic_retry.py
               tests/test_portal_verified_reference.py
               tests/test_toctoc_canonical_persistence.py
               tests/test_toctoc_extractor_regressions.py

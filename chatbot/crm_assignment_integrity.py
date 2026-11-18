@@ -784,3 +784,56 @@ def reconcile_assignment_integrity_with_retries(
             )
             wait(delay)
     raise RuntimeError("unreachable reconciliation retry state")
+
+
+def prepare_pending_missing_property_admin_alert(
+    db: Any,
+    *,
+    lead_phone: str,
+    requested_target_phone: str,
+    lead_type: str,
+    assignment_type: str,
+) -> dict[str, Any]:
+    """Authorize an admin-only missing-publication notice without creating an assignment.
+
+    This is deliberately separate from prepare_pending_assignment_notification:
+    an unresolved property must never acquire an artificial executive/CRM cycle
+    just to notify administration.
+    """
+    from .missing_property_admin import MISSING_PROPERTY_ADMIN_PHONE
+    from .phone_utils import has_real_phone
+    from .crm_metrics import resolve_canonical_lead
+    import re
+
+    target_digits = re.sub(r"\D", "", str(requested_target_phone or ""))
+    if (
+        lead_type != "MissingProperty"
+        or assignment_type != "MISSING_PROPERTY"
+        or target_digits != MISSING_PROPERTY_ADMIN_PHONE
+    ):
+        return {"status": "blocked", "reason": "invalid_admin_notice"}
+    if not has_real_phone(lead_phone):
+        return {"status": "blocked", "reason": "invalid_contact_phone"}
+
+    resolution = resolve_canonical_lead(db, phone=str(lead_phone))
+    lead = resolution.lead
+    if not lead or resolution.status == "ambiguous_phone":
+        return {"status": "blocked", "reason": "canonical_lead_missing_or_ambiguous"}
+
+    # A delayed notification must not describe an already resolved inquiry
+    # as unassigned/missing once the inventory has caught up.
+    prospect = lead.get("prospecto") or {}
+    if (
+        lead.get("assignment_type") not in {"MISSING_PROPERTY", "AMBIGUOUS_PROPERTY_REFERENCE"}
+        and not prospect.get("link_pendiente")
+    ):
+        return {"status": "blocked", "reason": "property_no_longer_pending"}
+
+    return {
+        "status": "ready",
+        "lead_id": lead["_id"],
+        "cycle_id": "",
+        "owner_name": "Administración PROCASA",
+        "owner_phone": MISSING_PROPERTY_ADMIN_PHONE,
+        "admin_only": True,
+    }

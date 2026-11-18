@@ -92,4 +92,5 @@ def test_background_worker_has_separate_admin_and_executive_queues():
     source = (Path(__file__).parents[1] / "webhook.py").read_text(encoding="utf-8")
     assert 'group_key = (target_phone, "missing_property_admin" if admin_only else "executive")' in source
     assert 'prepare_pending_missing_property_admin_alert(' in source
+    assert 'if lead_type == "MissingProperty" and not admin_only:' in source
     assert 'prepare_pending_assignment_notification(' in source

@@ -210,6 +210,16 @@ def test_existing_diana_classification_is_repaired_without_new_customer_message(
         },
     })
     monkeypatch.setattr(worker, "_is_authorized", lambda *_: True)
+    assert db.leads.count_documents({
+        "commercial_intelligence.summary.search_status": "ACTIVE",
+        "commercial_intelligence.active_search": {"$exists": False},
+        "commercial_intelligence.pending": False,
+    }) == 1
+    office_turns, source = worker._load_office_search_context(
+        db, db.leads.find_one({"_id": lead_id}),
+    )
+    assert len(office_turns) >= 3, office_turns
+    assert source["conversation_id"] == CONV
     result = worker.backfill_missing_active_searches(db, limit=2)
     assert result["repaired"] == 1
     saved = db.leads.find_one({"_id": lead_id})

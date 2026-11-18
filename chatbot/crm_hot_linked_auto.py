@@ -175,15 +175,129 @@ def _verified_recent_office_job(db, *, lead: dict, phone: str, now: datetime) ->
     return bool(row and row.get("inbound_provider_message_id"))
 
 
-def _message_for(lead: dict, executive_name: str) -> str:
-    first = str((lead.get("prospecto") or {}).get("nombre") or "").strip().split(" ")[0]
-    executive = str(executive_name or "").strip().split(" ")[0]
+# Keep the first executive greeting deterministic. Only reference facts already
+# stored in this lead's recent office chat; never send raw customer text or
+# ask an LLM to infer unverified property details or promise availability.
+_CONTEXT_WINDOW = timedelta(hours=24)
+_CONTEXT_SOURCES = {"", "office_whatsapp", "wasender_inbound", "whatsapp_inbound", "whatsapp", "chatbot"}
+_CONTEXT_CHANNELS = {"", "office_whatsapp", "whatsapp"}
+_INTENT_PATTERNS = (
+    ("visita", re.compile(r"\b(?:visita(?:s|r)?|agendar|agendemos)\b|coordinar.{0,35}\bvisita\b|conocer.{0,35}\b(?:casa|departamento|depto|propiedad)\b", re.I)),
+    ("gastos", re.compile(r"\bgastos?\s+comunes?\b", re.I)),
+    ("disponibilidad", re.compile(r"\b(?:disponib(?:le|ilidad)|sigue\s+(?:a la venta|en arriendo)|a[uú]n\s+(?:est[aá]|disponible))\b", re.I)),
+    ("financiamiento", re.compile(r"\b(?:cr[eé]dito|hipotecari[oa]|financiamient[oa]|pie)\b", re.I)),
+    ("precio", re.compile(r"\b(?:precio|valor|cu[aá]nto\s+(?:cuesta|vale)|rebaja)\b", re.I)),
+    ("caracteristicas", re.compile(r"\b(?:metros?|m2|m²|superficie|orientaci[oó]n|dormitorios?|estacionamientos?)\b", re.I)),
+    ("fotos", re.compile(r"\b(?:fotograf[ií]as?|fotos?|im[aá]genes|video|plano)\b", re.I)),
+)
+_VISIT_NEGATION = re.compile(
+    r"\b(?:no|nunca)\s+(?:quiero|necesito|me\s+interesa|puedo)\b.{0,60}\b(?:visita|visitar|agendar)\b",
+    re.I,
+)
+_INTENT_SENTENCES = {
+    "visita": "Vi que querías coordinar una visita. Te escribo para revisar los detalles contigo.",
+    "gastos": "Vi que preguntaste por los gastos comunes. Te escribo para ayudarte con esa información.",
+    "disponibilidad": "Vi que consultaste por la disponibilidad. Te escribo para revisarlo contigo.",
+    "financiamiento": "Vi que consultaste por financiamiento. Te escribo para continuar con esa consulta.",
+    "precio": "Vi que preguntaste por el precio. Te escribo para ayudarte con esa información.",
+    "caracteristicas": "Vi que consultaste por características de la propiedad. Te escribo para ayudarte.",
+    "fotos": "Vi que solicitaste información visual de la propiedad. Te escribo para ayudarte.",
+}
+
+
+def _safe_first_name(value: object) -> str:
+    parts = str(value or "").strip().split()
+    first = parts[0].strip(",.;:") if parts else ""
+    return first if re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ'-]{1,30}", first) else ""
+
+
+def _recent_office_context(lead: dict, *, assigned_at: datetime, now: datetime) -> tuple[str | None, bool]:
+    """Only time-bounded customer messages in this lead's office conversation.
+
+    The canonical chatbot often omits source/channel and provider message IDs
+    on messages stored in leads.messages. In that case require actor_type and
+    matching conversation_id; never use portal, campaign, executive or bot text.
+    """
+    messages = lead.get("messages")
+    if not isinstance(messages, list):
+        return None, False
+    conversation_id = str(lead.get("conversation_id") or "")
+    recent_chat = False
+    for msg in reversed(messages[-40:]):
+        if not isinstance(msg, dict) or msg.get("role") not in {"user", "customer"} or msg.get("actor_type") != "customer":
+            continue
+        source = str(msg.get("source") or "").lower()
+        channel = str(msg.get("channel") or "").lower()
+        if source not in _CONTEXT_SOURCES or channel not in _CONTEXT_CHANNELS:
+            continue
+        # Unlabelled chatbot turns must be linked to this exact conversation.
+        if not source and not channel and (
+            not conversation_id or str(msg.get("conversation_id") or "") != conversation_id
+        ):
+            continue
+        if msg.get("conversation_id") and conversation_id and str(msg["conversation_id"]) != conversation_id:
+            continue
+        raw_ts = msg.get("timestamp")
+        if not isinstance(raw_ts, str) or not re.search(r"(?:Z|[+-]\d{2}:\d{2})$", raw_ts):
+            continue
+        received = coerce_utc_datetime(raw_ts)
+        if received is None or not (assigned_at - _CONTEXT_WINDOW <= received <= assigned_at <= now):
+            continue
+        body = msg.get("content")
+        if not isinstance(body, str) or not body.strip():
+            continue
+        recent_chat = True
+        # Only classify intent. Never put untrusted text from chats into the
+        # executive's outbound WhatsApp greeting.
+        body = body[:2000]
+        no_visit = bool(_VISIT_NEGATION.search(body))
+        for intent, pattern in _INTENT_PATTERNS:
+            if intent == "visita" and no_visit:
+                continue
+            if pattern.search(body):
+                return intent, True
+        if no_visit:
+            # Do not re-use an older visit request after the lead has declined.
+            return None, True
+    return None, recent_chat
+
+
+def _property_reference(lead: dict) -> str:
+    prospect = lead.get("prospecto") or {}
+    if not isinstance(prospect, dict):
+        prospect = {}
+    code = str(prospect.get("codigo_propiedad") or lead.get("codigo_propiedad") or "").strip()
+    if not re.fullmatch(r"\d{3,7}", code):
+        return ""
+    area = str(prospect.get("comuna") or lead.get("comuna") or "").strip()
+    area = re.sub(r"\s+", " ", area)
+    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ .-]{1,49}", area):
+        area = ""
+    return f"la propiedad código {code}" + (f" en {area}" if area else "")
+
+
+def _message_for(lead: dict, executive_name: str, *, assigned_at: datetime | None = None,
+                 now: datetime | None = None) -> str:
+    first = _safe_first_name((lead.get("prospecto") or {}).get("nombre"))
+    executive = _safe_first_name(executive_name)
     greeting = f"Hola {first}, " if first else "Hola, "
-    return (
-        greeting + f"soy {executive} de PROCASA. "
-        "Me asignaron tu consulta inmobiliaria y desde este número puedo ayudarte "
+    heading = greeting + (f"soy {executive} de PROCASA. " if executive else "te escribo de PROCASA. ")
+    generic = (
+        heading + "Me asignaron tu consulta inmobiliaria y desde este número puedo ayudarte "
         "con información o coordinar una visita. ¿Cómo te gustaría continuar?"
     )
+    if not assigned_at or not now:
+        return generic
+    intent, has_chat = _recent_office_context(lead, assigned_at=assigned_at, now=now)
+    if not has_chat:
+        return generic
+    subject = _property_reference(lead)
+    if not subject and not intent:
+        return generic
+    introduction = f"Me asignaron tu consulta por {subject}. " if subject else "Me asignaron tu consulta inmobiliaria. "
+    if intent:
+        return heading + introduction + _INTENT_SENTENCES[intent]
+    return heading + introduction + "Te escribo para continuar con lo que conversaste con nuestro equipo."
 
 
 def eligible_hot_auto(db, *, lead: dict, cycle: dict, now: datetime) -> dict:
@@ -262,7 +376,7 @@ def eligible_hot_auto(db, *, lead: dict, cycle: dict, now: datetime) -> dict:
         raise OutboundBlocked("session_not_ready")
     return {
         "owner": owner, "cycle_id": cycle_id, "session": session,
-        "recipient": phone, "message": _message_for(lead, user.get("nombre")),
+        "recipient": phone, "message": _message_for(lead, user.get("nombre"), assigned_at=assigned, now=now),
     }
 
 
@@ -297,7 +411,9 @@ def send_hot_auto(db, *, lead_id, post=None, now=None) -> dict:
         fresh = db["leads"].find_one({"_id": lead_id})
         fresh_cycle = active_assignment_cycle(db, lead_id)
         checked = eligible_hot_auto(db, lead=fresh, cycle=fresh_cycle, now=now)
-        if checked["cycle_id"] != cycle_id or checked["owner"] != owner or str(checked["session"]["session_id"]) != sid:
+        if (checked["cycle_id"] != cycle_id or checked["owner"] != owner
+                or str(checked["session"]["session_id"]) != sid
+                or checked["message"] != info["message"]):
             raise OutboundBlocked("assignment_or_session_changed")
     except OutboundBlocked as exc:
         db[OUTBOX].update_one({"_id": key}, {"$set": {"state": "blocked", "reason": exc.code}})

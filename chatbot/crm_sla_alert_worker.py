@@ -91,6 +91,9 @@ async def _revalidate(db, alert: dict) -> str | None:
         return "cycle_not_found"
     if cycle.get("cycle_status") != "active" or cycle.get("unassigned_at"):
         return "cycle_inactive"
+    from .crm_hot_linked_auto import sla_exemption
+    if sla_exemption(cycle):
+        return "hot_exec_auto_exempt"
     if str(cycle.get("sla_start_status") or "").lower() == "pending_notification":
         return "awaiting_owner_notification"
 

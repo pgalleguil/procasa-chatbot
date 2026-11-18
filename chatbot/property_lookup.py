@@ -631,6 +631,23 @@ def lookup_property_link(db, url: str, collection_name: str = PROPERTY_COLLECTIO
         if docs:
             status = "historical" if method.startswith("historical") else "active"
             return docs[0], {**meta, "match_method": method, "publication_status": status, "resolvable": True}
+
+    # A fresh Portal Inmobiliario MLC can differ from Prop360's last stored MLC.
+    # Only the publisher's explicit internal code may bridge this gap. Never
+    # guess a property by headline, street, asking price, or shared URL slug.
+    if portal == "portal_inmobiliario" and external_id and normalized:
+        from .portal_verified_reference import recover_verified_portal_link
+        verified, verified_meta = recover_verified_portal_link(
+            db, raw, collection_name, operation,
+        )
+        if verified:
+            return verified, {
+                **meta, **verified_meta,
+                "publication_status": "active", "resolvable": True,
+            }
+        if verified_meta.get("error_code"):
+            return None, {**meta, **verified_meta, "resolvable": False}
+
     return None, {**meta, "match_method": None, "resolvable": False}
 
 

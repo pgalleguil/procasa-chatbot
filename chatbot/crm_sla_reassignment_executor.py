@@ -616,6 +616,11 @@ def _revalidate(
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_CYCLE_CHANGED, "source_cycle_lead_changed")
     if source.get("cycle_status") != "active" or source.get("unassigned_at") is not None:
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_CYCLE_CLOSED, "source_cycle_not_active")
+    # Read this inside the transaction: a worker can hold an older decision
+    # after a confirmed API greeting has exempted the current HOT cycle.
+    from .crm_hot_linked_auto import sla_exemption
+    if sla_exemption(source, lead):
+        raise _KnownAbort(SLAReassignmentErrorCode.ABORT_SLA_NOT_EXPIRED, "hot_exec_auto_exempt")
     if str(source.get("reassignment_state") or "").upper() == "AWAITING_OWNER_NOTIFICATION":
         raise _KnownAbort(
             SLAReassignmentErrorCode.ABORT_SLA_NOT_EXPIRED,

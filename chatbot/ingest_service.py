@@ -85,7 +85,7 @@ def _portal_message_entry(event, *, message: str, contact_date: str, portal_sour
             meta.get("contact_message_present") is False
             or (
                 meta.get("contact_message_present") is not True
-                and bool(re.fullmatch(r"Contacto vía .{1,80} \\([A-Za-záéíóúñÁÉÍÓÚÑ -]{1,35}\\)", message))
+                and bool(re.fullmatch(r"Contacto vía .{1,80} \([A-Za-záéíóúñÁÉÍÓÚÑ -]{1,35}\)", message))
             )
         )
     )

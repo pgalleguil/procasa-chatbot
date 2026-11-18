@@ -277,3 +277,54 @@ def test_automatic_batch_forwards_window_to_real_sender(monkeypatch):
     assert result["attempts"] == 1
     assert kwargs_seen[0]["end_time"] == daytime(20)
     assert kwargs_seen[0]["timezone_name"] == "America/Santiago"
+
+
+def test_auto_selection_quarantines_extreme_currency_conversion_history(monkeypatch):
+    """Do not advertise an implausible historical UF 1498288 -> UF 36.5."""
+    from types import SimpleNamespace
+    from scripts import enviar_rebajas_automatico as auto
+    db = _db()
+    strange = SimpleNamespace(property_code="16544", operation="Arriendo",
+                              currency="UF", old_price=1498288, new_price=36.5,
+                              event_id="suspicious", dropped_at=NOW)
+    ordinary = SimpleNamespace(property_code="16972", operation="Arriendo",
+                               currency="UF", old_price=63, new_price=60,
+                               event_id="valid", dropped_at=NOW)
+    monkeypatch.setattr(auto.cli, "_events", lambda *a, **kw: [strange, ordinary])
+    reached = []
+    def fake_find(*args, **kwargs):
+        reached.append(args[1].event_id)
+        return []
+    monkeypatch.setattr(auto, "find_candidates_for_event", fake_find)
+    recipients, report = auto.choose_new_recipients(
+        db, max_messages=5, max_age_days=120, now=NOW,
+    )
+    assert recipients == []
+    assert reached == ["valid"]
+    assert report["events_needing_price_review"] == ["16544"]
+    assert report["exclusions_by_reason"]["extreme_or_invalid_price_drop_event"] == 1
+
+
+def test_auto_dry_run_explains_why_leads_were_excluded(monkeypatch):
+    from types import SimpleNamespace
+    from scripts import enviar_rebajas_automatico as auto
+    db = _db()
+    event = SimpleNamespace(property_code="16972", operation="Arriendo",
+                            currency="UF", old_price=63, new_price=60,
+                            event_id="valid", dropped_at=NOW)
+    monkeypatch.setattr(auto.cli, "_events", lambda *a, **kw: [event])
+    monkeypatch.setattr(auto, "find_candidates_for_event",
+                        lambda *a, **kw: [
+                            {"eligible": False, "reason": "lead_age_exceeded"},
+                            {"eligible": False, "reason": "event_already_attempted"},
+                            {"eligible": False, "reason": "lead_age_exceeded"},
+                        ])
+    report = auto.run(db, execute=False, max_messages=5, max_age_days=90,
+                      now=NOW)
+    assert report["status"] == "NO_ELIGIBLE_RECIPIENTS"
+    assert report["selected"] == 0
+    assert report["attempts"] == 0
+    assert report["exclusions_by_reason"] == {
+        "event_already_attempted": 1, "lead_age_exceeded": 2,
+    }
+    assert report["events_needing_price_review"] == []

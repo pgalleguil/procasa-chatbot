@@ -636,8 +636,8 @@ def build_transaction_plan(
         raise TransactionContractError("invalid_supervisor_review_status")
     if source_cycle.get("cycle_status") != "active" or source_cycle.get("unassigned_at") is not None:
         raise TransactionContractError("source_cycle_not_active")
-    from .crm_hot_linked_auto import sla_exemption
-    if sla_exemption(source_cycle, lead):
+    from chatbot.crm_hot_linked_auto import sla_exemption
+    if sla_exemption(source_cycle):
         raise TransactionContractError("hot_exec_auto_exempt")
     raw_breach_at = _first_present(
         decision, "source_cycle_sla_breached_at", "sla_breached_at"

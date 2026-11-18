@@ -79,6 +79,17 @@ def _portal_message_entry(event, *, message: str, contact_date: str, portal_sour
     Real written portal inquiries may be kept as customer messages, but must
     identify their portal channel and have an offset-aware Chile timestamp.
     """
+    if str(event.source_system).lower() != "prop360":
+        # This change is strictly Prop360-specific. Preserve established
+        # ingest semantics for the other connectors.
+        return {
+            "role": "user",
+            "content": message or f"Contacto desde {portal_source or event.source_system}",
+            "timestamp": contact_date,
+            "source": event.source_system,
+            "source_event_id": event.source_event_id,
+            "portal": portal_source,
+        }
     meta = event.metadata if isinstance(event.metadata, dict) else {}
     generated = (
         str(event.source_system).lower() == "prop360"

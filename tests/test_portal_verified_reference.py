@@ -130,3 +130,64 @@ def test_live_verification_can_be_disabled(monkeypatch):
     prop, meta = lookup_property_link(_db(), URL)
     assert prop is None
     assert meta["resolvable"] is False
+
+
+def test_original_pending_event_assigns_verified_property_to_susana_without_duplicate(monkeypatch):
+    from bson import ObjectId
+    from chatbot import commercial_intake
+    from chatbot.inventory_reconciliation import resume_waiting_event
+
+    db = _db()
+    lead_id = ObjectId("6afda85a52583fb245daf2a6")
+    db.leads.insert_one({
+        "_id": lead_id, "phone": "+56946433269",
+        "lead_temperature_effective": "COLD",
+        "assignment_type": "MISSING_PROPERTY",
+        "commercial_processing_state": "waiting_inventory_sync",
+        "prospecto": {"link_pendiente": True, "operacion": "Arriendo"},
+    })
+    db.usuarios.insert_one({
+        "_id": ObjectId("6989c6309dd2ba54e478196b"),
+        "nombre": "Susana Ensignia",
+        "telefono": "+56939125978",
+        "is_active": True, "rol": "agente",
+    })
+    db.commercial_processing_events.insert_one({
+        "source_inbound_provider_id": "provider-recovered-original",
+        "lead_id": lead_id, "phone": "+56946433269",
+        "source_property_code": URL,
+        "source_external_id": "MLC-2406218977",
+        "source_message": f"Hola, preguntas sobre {URL}",
+        "commercial_processing_state": "waiting_inventory_sync",
+    })
+    assert persist_verified_portal_link(db, URL, CODE, "operator_verified_public_portal")
+    monkeypatch.setattr(
+        commercial_intake, "find_responsible_executive",
+        lambda **kwargs: ("Susana Ensignia", "+56939125978", "PROPERTY"),
+    )
+    from chatbot import crm_non_hot_digest, crm_hot_delivery
+    monkeypatch.setattr(crm_non_hot_digest, "accumulate_non_hot_lead", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        crm_hot_delivery, "assign_and_enqueue_hot",
+        lambda *a, **kw: pytest.fail("COLD event may not send a HOT notice"),
+    )
+    recovered = resume_waiting_event(db, db.commercial_processing_events.find_one({
+        "source_inbound_provider_id": "provider-recovered-original",
+    }))
+    fresh = db.leads.find_one({"_id": lead_id})
+    cycles = list(db.crm_assignment_cycles.find({"lead_id": lead_id}))
+    assert recovered["status"] == "completed"
+    assert fresh["prospecto"]["codigo"] == CODE
+    assert fresh["ejecutivo_asignado"] == "Susana Ensignia"
+    assert len(cycles) == 1
+    assert cycles[0]["property_code"] == CODE
+    assert cycles[0]["assigned_to_display_name"] == "Susana Ensignia"
+    assert db.commercial_processing_events.count_documents({
+        "source_inbound_provider_id": "provider-recovered-original",
+    }) == 1
+    repeated = commercial_intake.process_inbound(
+        db, inbound_provider_id="provider-recovered-original",
+        phone="+56946433269", text=f"Hola, preguntas sobre {URL}",
+    )
+    assert repeated["commercial_processing_state"] == "completed"
+    assert db.crm_assignment_cycles.count_documents({"lead_id": lead_id}) == 1

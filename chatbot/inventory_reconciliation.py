@@ -34,7 +34,11 @@ logger = logging.getLogger(__name__)
 
 RECONCILE_LEASE_MINUTES = 10
 RETRY_DELAY_SECONDS = 60
+RECENT_BACKLOG_RETRY_SECONDS = 20 * 60
 DEFAULT_RECONCILE_LIMIT = 200
+# Never auto-assign an old, uncontacted customer simply because a portal
+# starts serving the previously missing link weeks later.
+AUTO_RECONCILE_MAX_AGE_DAYS = 3
 
 
 def _property_active(prop: dict[str, Any]) -> bool:
@@ -162,8 +166,12 @@ def _candidate_events(db, identities: dict[str, set[str]], limit: int) -> list[d
     return list(coll.find(base).sort("created_at", 1).limit(max(1, int(limit))))
 
 
-def _backlog_events(db, limit: int) -> list[dict]:
-    """Return a bounded pending backlog for recovery after partial syncs."""
+def _backlog_events(db, limit: int, *, max_age_days: int | None = None) -> list[dict]:
+    """Select due events in age order; optionally restrict automatic recovery.
+
+    Inventory-triggered explicit reconciliation can still consider all ages.
+    The periodic recovery worker only inspects recent customer inquiries.
+    """
     now = _now()
     query = {
         "commercial_processing_state": WAITING_INVENTORY,
@@ -172,6 +180,10 @@ def _backlog_events(db, limit: int) -> list[dict]:
             {"next_attempt_at": {"$lte": now}},
         ],
     }
+    if max_age_days is not None:
+        window = max(1, int(max_age_days))
+        cutoff = now - timedelta(days=window)
+        query["received_at"] = {"$gte": cutoff, "$lte": now}
     return list(db[COLLECTION].find(query).sort("created_at", 1).limit(max(1, int(limit))))
 
 
@@ -241,7 +253,11 @@ def _release_event(db, event_id, reason: str) -> None:
         {
             "$set": {
                 "commercial_processing_state": WAITING_INVENTORY,
-                "next_attempt_at": now + timedelta(seconds=RETRY_DELAY_SECONDS),
+                # A blocked portal is retried, but without repeatedly hitting
+                # the same URL or starving other waiting leads each cycle.
+                "next_attempt_at": now + timedelta(
+                    seconds=max(RETRY_DELAY_SECONDS, RECENT_BACKLOG_RETRY_SECONDS)
+                ),
                 "last_reconcile_error": reason,
                 "updated_at": now,
             },
@@ -286,12 +302,26 @@ def resume_waiting_event(db, event: dict) -> dict:
         return {"status": "failed", "reason": str(exc), "event_id": str(claimed["_id"])}
 
 
-def reconcile_waiting_inventory_events(db, properties: Iterable[dict[str, Any]] | None = None,
-                                       limit: int = DEFAULT_RECONCILE_LIMIT) -> dict:
-    """Resolve only pending inventory events after a successful sync."""
+def reconcile_waiting_inventory_events(
+    db,
+    properties: Iterable[dict[str, Any]] | None = None,
+    limit: int = DEFAULT_RECONCILE_LIMIT,
+    *,
+    max_age_days: int | None = None,
+) -> dict:
+    """Resume due original events without creating a duplicate inbound message.
+
+    When the sync supplies no identities, fall back to the due backlog instead
+    of filtering it against an empty set (which previously returned zero).
+    """
     identities = _merge_identities(properties)
-    events = _candidate_events(db, identities, limit) if any(identities.values()) else _backlog_events(db, limit)
-    if identities:
+    has_inventory_delta = any(identities.values())
+    events = (
+        _candidate_events(db, identities, limit)
+        if has_inventory_delta
+        else _backlog_events(db, limit, max_age_days=max_age_days)
+    )
+    if has_inventory_delta:
         events = [event for event in events if _event_matches_inventory(event, identities)]
 
     report = {"candidates": len(events), "completed": 0, "waiting": 0, "failed": 0, "skipped": 0}

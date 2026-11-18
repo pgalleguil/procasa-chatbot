@@ -344,6 +344,105 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     return outcome
 
 
+def backfill_missing_active_searches(db, *, limit: int = 20) -> dict:
+    """One-time bounded repair of recent already-classified active searches.
+
+    This is required for existing cases where the executive summary contains
+    SEARCH_UPDATED but the earlier office budget was never interpreted.
+    No webhook replay, new message, private conversation or customer send.
+    """
+    cursor = db["leads"].find({
+        "commercial_intelligence.summary.search_status": "ACTIVE",
+        "commercial_intelligence.active_search": {"$exists": False},
+        "commercial_intelligence.pending": False,
+    }, {
+        "_id": 1, "lifecycle": 1, "commercial_intelligence": 1,
+    }).sort("commercial_intelligence.summary.last_customer_at", -1).limit(
+        max(1, min(limit, 50)),
+    )
+    examined, repaired = 0, 0
+    for doc in cursor:
+        examined += 1
+        summary = (doc.get("commercial_intelligence") or {}).get("summary") or {}
+        if summary.get("contact_permission") == "OPTED_OUT":
+            continue
+        if not _is_authorized(db, doc):
+            continue
+        marker, life = doc["commercial_intelligence"], doc["lifecycle"]
+        cycle_id = str(life.get("current_assignment_cycle_id") or "")
+        owner = str(life.get("assigned_to_user_id") or "")
+        sid = str(marker.get("pending_session_id") or "")
+        office, base = _load_office_search_context(db, doc)
+        if not base.get("conversation_id"):
+            continue
+        rows = list(db["leads"].aggregate([
+            {"$match": {"_id": doc["_id"],
+                        "lifecycle.current_assignment_cycle_id": cycle_id,
+                        "lifecycle.assigned_to_user_id": owner}},
+            {"$project": {"customer_exec": {"$slice": [{"$filter": {
+                "input": {"$ifNull": ["$messages", []]}, "as": "m",
+                "cond": {"$and": [
+                    {"$eq": ["$m.channel", "executive_whatsapp"]},
+                    {"$eq": ["$m.actor_type", "customer"]},
+                    {"$eq": ["$m.assignment_cycle_id", cycle_id]},
+                    {"$eq": ["$m.assigned_executive_id", owner]},
+                    {"$eq": ["$m.wasender_session_id", sid]},
+                    {"$ne": [{"$ifNull": ["$m.provider_message_id", None]}, None]},
+                ]}}}, -100]}}},
+        ]))
+        executive = (rows[0].get("customer_exec") or []) if rows else []
+        search = capture_active_search(
+            office + executive, conversation_id=str(base["conversation_id"]),
+            cycle_id=cycle_id, owner_id=owner, session_id=sid,
+            original_property_code=str(base.get("codigo_propiedad") or base.get("codigo") or ""),
+            original_operation=str(base.get("operacion") or (base.get("prospecto") or {}).get("operacion") or ""),
+        )
+        if not search or search.get("status") != "ACTIVE" or not search.get("followup_required"):
+            continue
+        matches = find_matching_inventory(db, search)
+        search.update(
+            matches=matches,
+            match_status="CANDIDATES_NEED_VERIFICATION" if matches else "WAITING_INVENTORY",
+            last_matched_at=datetime.now(timezone.utc).isoformat(),
+        )
+        criteria = search["criteria"]
+        public = {key: criteria[key] for key in (
+            "operation", "comunas", "property_types", "max_price_clp",
+        ) if key in criteria}
+        hint = ("REVALIDAR_Y_PROPONER_ALTERNATIVAS" if matches
+                else "BUSCAR_ALTERNATIVAS_Y_HACER_SEGUIMIENTO")
+        result = db["leads"].update_one({
+            "_id": doc["_id"],
+            "lifecycle.current_assignment_cycle_id": cycle_id,
+            "lifecycle.assigned_to_user_id": owner,
+            "commercial_intelligence.summary.search_status": "ACTIVE",
+            "commercial_intelligence.pending": False,
+            "commercial_intelligence.active_search": {"$exists": False},
+        }, {"$set": {
+            "commercial_intelligence.active_search": search,
+            "commercial_intelligence.summary.search": public,
+            "commercial_intelligence.summary.needs.DEMAND": public,
+            "commercial_intelligence.summary.field_evidence.DEMAND": search["field_evidence"],
+            "commercial_intelligence.summary.active_search_status": search["match_status"],
+            "commercial_intelligence.summary.followup_search_required": True,
+            "commercial_intelligence.summary.executive_management.case_type":
+                "BUSQUEDA_ACTIVA_ALTERNATIVAS",
+            "commercial_intelligence.summary.executive_management.next_step_hint": hint,
+            "commercial_intelligence.summary.executive_management.pending_customer_request": True,
+        }})
+        if result.modified_count != 1:
+            continue
+        repaired += 1
+        try:
+            ensure_followup_task(
+                db, lead_id=doc["_id"], cycle_id=cycle_id,
+                owner_id=owner, search=search,
+            )
+        except Exception as exc:
+            logger.warning("ACTIVE_SEARCH backfill_task_error=%s", type(exc).__name__)
+    return {"examined": examined, "repaired": repaired}
+
+
 def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propose=None) -> dict:
     examined = 0
     processed = 0
@@ -397,8 +496,14 @@ async def executive_intelligence_worker_loop() -> None:
                 # the current inventory after new listings / price reductions.
                 # This creates executive follow-up tasks, never customer sends.
                 refresh_ticks += 1
-                if refresh_ticks >= 45:
-                    refresh_ticks = 0
+                if refresh_ticks == 1 or refresh_ticks >= 45:
+                    if refresh_ticks >= 45:
+                        refresh_ticks = 0
+                    repaired = await asyncio.to_thread(
+                        backfill_missing_active_searches, get_db(), limit=20,
+                    )
+                    if repaired["repaired"]:
+                        logger.info("ACTIVE_SEARCH repaired=%s", repaired["repaired"])
                     refreshed = await asyncio.to_thread(
                         refresh_active_search_batch, get_db(), limit=20,
                     )

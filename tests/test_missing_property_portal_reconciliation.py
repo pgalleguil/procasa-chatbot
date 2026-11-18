@@ -43,7 +43,7 @@ def test_portal_lookup_failure_debug_does_not_claim_yapo_was_queried(monkeypatch
     assert has_link is True
     assert prop is None
     assert portal == "PortalInmobiliario"
-    assert external_id in {"MLC-2406218977", "2406218977"}
+    assert external_id == "MLC2406218977"
     assert writes
     debug = writes[-1]["debug_link"]
     assert debug["resultado"] == "NOT_FOUND"

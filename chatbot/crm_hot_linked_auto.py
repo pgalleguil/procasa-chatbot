@@ -182,7 +182,7 @@ _CONTEXT_WINDOW = timedelta(hours=24)
 _CONTEXT_SOURCES = {"", "office_whatsapp", "wasender_inbound", "whatsapp_inbound", "whatsapp", "chatbot"}
 _CONTEXT_CHANNELS = {"", "office_whatsapp", "whatsapp"}
 _INTENT_PATTERNS = (
-    ("visita", re.compile(r"\b(?:visita(?:s|r)?|agendar|agendemos)\b|coordinar.{0,35}\bvisita\b|conocer.{0,35}\b(?:casa|departamento|depto|propiedad)\b", re.I)),
+    ("visita", re.compile(r"\b(?:visita(?:s|r)?|agendar|agendemos)\b|coordinar.{0,35}\bvisita\b|\b(?:conocer|ir\s+a\s+ver|ver)\s+(?:(?:la|el|un|una)\s+)?(?:casa|departamento|depto|propiedad)\b", re.I)),
     ("gastos", re.compile(r"\bgastos?\s+comunes?\b", re.I)),
     ("disponibilidad", re.compile(r"\b(?:disponib(?:le|ilidad)|sigue\s+(?:a la venta|en arriendo)|a[uú]n\s+(?:est[aá]|disponible))\b", re.I)),
     ("financiamiento", re.compile(r"\b(?:cr[eé]dito|hipotecari[oa]|financiamient[oa]|pie)\b", re.I)),

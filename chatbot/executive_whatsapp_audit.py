@@ -24,6 +24,7 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from .crm_metrics import active_assignment_cycle, coerce_utc_datetime
+from .executive_whatsapp_echo import find_unique_echo_match
 from .executive_pilot_webhook import (
     _parse_message, _remote_contact, _remote_lid, _phone_number_from_jid,
 )
@@ -261,6 +262,33 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
         return "invalid_id"
     actor = session["user_id"]
     cycle_id = str(cycle["assignment_cycle_id"])
+    if parsed["from_me"]:
+        # One CRM API send may have TWO provider IDs: an API receipt and a
+        # different WhatsApp webhook message key. Reconcile only a unique,
+        # same-owner/session/cycle/content echo within 30 seconds. This
+        # comparison occurs after verifying that this is an assigned lead.
+        stored = db["leads"].find_one({"_id": lead["_id"]}, {"messages": 1}) or {}
+        for original_source in ("crm_manual_api", "crm_hot_auto_api"):
+            match = find_unique_echo_match(
+                stored.get("messages") or [],
+                source=original_source, content=parsed["content"],
+                session_id=str(session["session_id"]), cycle_id=cycle_id,
+                owner_id=actor, occurred_at=occurred,
+            )
+            if match:
+                reconciled = db["leads"].update_one({
+                    "_id": lead["_id"],
+                    "lifecycle.current_assignment_cycle_id": cycle_id,
+                    "lifecycle.assigned_to_user_id": actor,
+                    "messages": {"$elemMatch": {
+                        "message_id": match["message_id"],
+                        "provider_echo_message_id": {"$exists": False},
+                    }},
+                }, {"$set": {
+                    "messages.$.provider_echo_message_id": provider_id,
+                    "messages.$.provider_echo_at": occurred.isoformat(),
+                }})
+                return "echo_reconciled" if reconciled.modified_count == 1 else "duplicate_or_reassigned"
     entry = {
         "role": "agent" if parsed["from_me"] else "user",
         "content": parsed["content"],
@@ -407,6 +435,6 @@ async def executive_session_audit(
         # customer JID or lead ID is ever logged here.
         logger.warning("EXEC_AUDIT status=temporary_failure")
         raise HTTPException(status_code=503, detail="audit_temporarily_unavailable")
-    if status in ("stored", "duplicate_or_reassigned", "dry_run"):
+    if status in ("stored", "echo_reconciled", "duplicate_or_reassigned", "dry_run"):
         logger.info("EXEC_AUDIT status=%s", status)
     return JSONResponse({"ok": True, "status": status})

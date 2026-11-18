@@ -318,7 +318,9 @@ def send_hot_auto(db, *, lead_id, post=None, now=None) -> dict:
         state = "accepted" if ok and pid else "accepted_without_provider_id" if ok else "rejected"
     except Exception:
         pass
-    accepted_at = datetime.now(timezone.utc)
+    # Preserve a single monotonic source for injected worker/test time. In
+    # production the wall clock is used unless the cycle clock is later.
+    accepted_at = max(now, datetime.now(timezone.utc))
     db[OUTBOX].update_one({"_id": key}, {"$set": {
         "state": state, "provider_message_id": pid, "provider_result_at": accepted_at,
     }})

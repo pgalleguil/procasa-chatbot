@@ -145,6 +145,31 @@ def _verified_whatsapp_permission(lead: dict, *, phone: str, now: datetime) -> b
     return False
 
 
+def _verified_recent_office_job(db, *, lead: dict, phone: str, now: datetime) -> bool:
+    """Use the canonical, idempotent office inbound queue as inquiry evidence.
+
+    Office webhooks persist a signed/provider-ID inbound in chatbot_inbound_jobs
+    before the chatbot writes its timeline. Never infer consent from generic
+    lead creation, portal scraping, lead-level last_message_at or campaigns.
+    """
+    if not lead.get("_id"):
+        return False
+    row = db["chatbot_inbound_jobs"].find_one({
+        "kind": "inbound_job",
+        "message_type": "inbound_message",
+        "message_domain": "chatbot",
+        "is_from_me": False,
+        "lead_id": str(lead["_id"]),
+        "phone": phone,
+        "received_at": {"$gte": now - CONTACT_WINDOW, "$lte": now},
+        "inbound_provider_message_id": {"$type": "string", "$ne": ""},
+    }, {
+        "_id": 1,
+        "inbound_provider_message_id": 1,
+    })
+    return bool(row and row.get("inbound_provider_message_id"))
+
+
 def _message_for(lead: dict, executive_name: str) -> str:
     first = str((lead.get("prospecto") or {}).get("nombre") or "").strip().split(" ")[0]
     executive = str(executive_name or "").strip().split(" ")[0]
@@ -208,7 +233,10 @@ def eligible_hot_auto(db, *, lead: dict, cycle: dict, now: datetime) -> dict:
     if "@" in phone:
         raise OutboundBlocked("individual_only")
     canonical = normalize_phone_strict(phone)
-    if not _verified_whatsapp_permission(lead, phone=canonical, now=now):
+    if not (
+        _verified_whatsapp_permission(lead, phone=canonical, now=now)
+        or _verified_recent_office_job(db, lead=lead, phone=canonical, now=now)
+    ):
         raise OutboundBlocked("whatsapp_permission_missing")
     authorized = _authorized_lead(db, phone=canonical, user_id=owner)
     if not authorized or str(authorized[0]["_id"]) != str(lead["_id"]):

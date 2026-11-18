@@ -172,6 +172,9 @@ class FakeUsers:
 class FakeLeads:
     def __init__(self):
         self.writes = []
+    def find_one(self, selector, projection=None):
+        # This synthetic classification fixture contains no office transcript.
+        return {}
     def update_one(self, selector, mutation):
         self.writes.append((selector, mutation))
         return SimpleNamespace(modified_count=1)

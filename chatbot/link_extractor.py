@@ -259,6 +259,9 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
         }
 
         # === PASO 2: RESOLUCIÓN DETERMINÍSTICA POR PLATAFORMA ===
+        # Guardar las consultas realmente realizadas para cada portal.
+        # Un fallo de Portal Inmobiliario no debe registrarse como búsqueda Yapo.
+        candidatos = []
         if plataforma == "Yapo":
             cod_yapo = extraer_codigo_yapo(url_clean)
             ruta_yapo = extraer_ruta_yapo(url_clean)
@@ -472,7 +475,14 @@ def analizar_mensaje_para_link(mensaje: str, phone=None, trace_id: str = None) -
                 logger.exception(f"[LINK_EXCEPTION] trace={trace_id or 'no-trace'} phone={phone} tipo_error=forensics mensaje=fallo_busqueda_similares")
             try:
                 from .storage import actualizar_prospecto
-                debug_info["query_usada"] = {"$or": [{"yapo.url_yapo": url_clean}, {"publicaciones.yapo.url_yapo": url_clean}]}
+                debug_info["query_usada"] = {"$or": [q for q in candidatos if q]} if candidatos else {}
+                debug_info["ruta_prioritaria"] = {
+                    "PortalInmobiliario": "publicaciones.portal_inmobiliario",
+                    "MercadoLibre": "publicaciones.portal_inmobiliario",
+                    "Yapo": "publicaciones.yapo",
+                    "TocToc": "publicaciones.toctoc",
+                    "Procasa": "publicaciones.procasa",
+                }.get(plataforma, "")
                 debug_info["resultado"] = "NOT_FOUND"
                 debug_info["timestamp"] = __import__("datetime").datetime.now().isoformat()
                 debug_info["cantidad_matches_similares"] = len(similares)

@@ -72,6 +72,9 @@ class Leads:
     def find(self, query, projection):
         return Cursor([self.lead] if self.lead["phone"] in query["phone"]["$in"] else [])
 
+    def find_one(self, query, projection=None):
+        return self.lead if query.get("_id") == LEAD else None
+
     def update_one(self, selector, mutation):
         self.update_calls += 1
         if self.raise_on_update:
@@ -468,3 +471,72 @@ def test_optout_requires_authorized_write_not_dry_run(rig, monkeypatch):
     assert post(client, event(from_me=False, text="No me contacten más")).json()["status"] == "dry_run"
     assert db["leads"].update_calls == 0
     assert db["leads"].last_mutation is None
+
+
+
+def test_crm_api_message_and_webhook_echo_are_one_canonical_message():
+    """Actual observed provider pattern: numeric API ID + WhatsApp hex key."""
+    import mongomock
+    from datetime import timedelta
+    db = mongomock.MongoClient().echo_test
+    now = datetime.now(timezone.utc)
+    lead_id = ObjectId()
+    cycle = "executive-echo-cycle"
+    db.leads.insert_one({
+        "_id": lead_id, "phone": "+56996762064",
+        "lifecycle": {"current_assignment_cycle_id": cycle, "assigned_to_user_id": str(USER)},
+        "messages": [{
+            "message_id": "api-accepted-1", "role": "agent",
+            "actor_type": "human_agent", "source": "crm_manual_api",
+            "channel": "executive_whatsapp",
+            "wasender_session_id": SESSION,
+            "assigned_executive_id": str(USER), "assignment_cycle_id": cycle,
+            "provider_message_id": "98648827",
+            "timestamp": (now - timedelta(seconds=1)).isoformat(),
+            "content": "Buenas tardes, mi nombre es Hernán. ¿En qué puedo ayudar? ",
+        }],
+    })
+    session = {"session_id": SESSION, "user_id": str(USER)}
+    active = {"assignment_cycle_id": cycle, "assigned_at": now - timedelta(minutes=10)}
+    parsed = {"from_me": True, "content": "Buenas tardes, mi nombre es Hernán. ¿En qué puedo ayudar?",
+              "timestamp": now.isoformat(), "timestamp_source": "provider",
+              "provider_message_id": "3EB028719C15348F91AB0D"}
+    result = audit._record_authorized(db, session=session, phone="+56996762064",
+                                      parsed=parsed, lead=db.leads.find_one({"_id": lead_id}), cycle=active)
+    assert result == "echo_reconciled"
+    stored = db.leads.find_one({"_id": lead_id})["messages"]
+    assert len(stored) == 1
+    assert stored[0]["provider_message_id"] == "98648827"
+    assert stored[0]["provider_echo_message_id"] == "3EB028719C15348F91AB0D"
+    assert audit._record_authorized(db, session=session, phone="+56996762064",
+                                    parsed=parsed, lead=db.leads.find_one({"_id": lead_id}),
+                                    cycle=active) == "duplicate_or_reassigned"
+    assert len(db.leads.find_one({"_id": lead_id})["messages"]) == 1
+
+
+def test_new_identical_whatsapp_message_after_echo_is_not_suppressed():
+    import mongomock
+    from datetime import timedelta
+    db = mongomock.MongoClient().echo_test2
+    now = datetime.now(timezone.utc)
+    lead_id = ObjectId()
+    cycle = "echo-distinct-cycle"
+    db.leads.insert_one({
+        "_id": lead_id, "phone": "+56996762064",
+        "lifecycle": {"current_assignment_cycle_id": cycle, "assigned_to_user_id": str(USER)},
+        "messages": [{
+            "message_id": "api-accepted-1", "role": "agent", "source": "crm_manual_api",
+            "channel": "executive_whatsapp", "wasender_session_id": SESSION,
+            "assigned_executive_id": str(USER), "assignment_cycle_id": cycle,
+            "provider_message_id": "api-999", "provider_echo_message_id": "wa-111",
+            "timestamp": (now - timedelta(seconds=2)).isoformat(), "content": "Hola",
+        }],
+    })
+    session = {"session_id": SESSION, "user_id": str(USER)}
+    active = {"assignment_cycle_id": cycle, "assigned_at": now - timedelta(minutes=10)}
+    parsed = {"from_me": True, "content": "Hola", "timestamp": now.isoformat(),
+              "timestamp_source": "provider", "provider_message_id": "wa-222"}
+    assert audit._record_authorized(db, session=session, phone="+56996762064",
+                                    parsed=parsed, lead=db.leads.find_one({"_id": lead_id}),
+                                    cycle=active) == "stored"
+    assert len(db.leads.find_one({"_id": lead_id})["messages"]) == 2

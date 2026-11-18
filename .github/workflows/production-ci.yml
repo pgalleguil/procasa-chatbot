@@ -23,7 +23,7 @@ jobs:
       - name: Compile critical application modules
         run: |
           python -m py_compile \
-            webhook.py config.py api_visitas.py api_contracts.py services/pdf_generator_visitas.py services/pdf_generator_contracts.py api_crm.py api_captacion.py chatbot/executive_pilot_webhook.py chatbot/executive_whatsapp_audit.py chatbot/executive_conversation_intelligence.py chatbot/executive_intelligence_worker.py chatbot/executive_opportunities.py chatbot/crm_executive_outbound.py chatbot/crm_executive_outbound_api.py chatbot/crm_hot_linked_auto.py \
+            webhook.py config.py api_visitas.py api_contracts.py services/pdf_generator_visitas.py services/pdf_generator_contracts.py api_crm.py api_captacion.py chatbot/executive_pilot_webhook.py chatbot/executive_whatsapp_audit.py chatbot/executive_conversation_intelligence.py chatbot/executive_intelligence_worker.py chatbot/executive_opportunities.py chatbot/active_search.py chatbot/active_search_followup.py chatbot/crm_executive_outbound.py chatbot/crm_executive_outbound_api.py chatbot/crm_hot_linked_auto.py \
             captacion_management.py captacion_assignment_eligibility.py \
             chatbot/crm_assignment_integrity.py chatbot/crm_sla_live_capacity.py chatbot/crm_metrics.py chatbot/crm_service.py chatbot/lead_router.py chatbot/lead_inactive_rescue.py chatbot/commercial_intake.py \
             chatbot/missing_property_admin.py chatbot/inventory_reconciliation.py chatbot/portal_verified_reference.py scripts/recuperar_lead_portal_mlc.py \
@@ -143,6 +143,7 @@ jobs:
               tests/test_crm_executive_outbound.py
               tests/test_crm_hot_linked_auto.py
               tests/test_executive_intelligence_adversarial.py
+              tests/test_active_search.py
               tests/test_executive_semantic_verifier.py
               tests/test_executive_office_boundary.py
           - suite: CRM sort order

@@ -18,6 +18,8 @@ from pymongo import ReturnDocument
 from .crm_metrics import active_assignment_cycle
 from .executive_conversation_intelligence import VERSION, classify_hybrid
 from .executive_opportunities import merge_opportunities
+from .active_search import capture_active_search, find_matching_inventory
+from .active_search_followup import ensure_followup_task, refresh_active_search_batch
 
 logger = logging.getLogger(__name__)
 WINDOW = 200
@@ -127,6 +129,78 @@ def _load_window(db, doc):
     return True
 
 
+def _load_office_search_context(db, doc: dict) -> tuple[list[dict], dict]:
+    """Only canonical office CUSTOMER turns in this exact conversation.
+
+    Unlike executive turns, these messages are NEVER passed to DeepSeek or
+    stored in the executive interpretation window. No personal chats/portals.
+    """
+    base = db["leads"].find_one({"_id": doc["_id"]}, {
+        "conversation_id": 1, "codigo_propiedad": 1, "codigo": 1,
+        "operacion": 1, "prospecto.operacion": 1,
+    }) or {}
+    conv_id = str(base.get("conversation_id") or "")
+    if not conv_id:
+        return [], base
+    rows = list(db["leads"].aggregate([
+        {"$match": {"_id": doc["_id"],
+                    "conversation_id": conv_id}},
+        {"$project": {"office_customer": {"$slice": [{"$filter": {
+            "input": {"$ifNull": ["$messages", []]}, "as": "m",
+            "cond": {"$and": [
+                {"$eq": ["$$m.actor_type", "customer"]},
+                {"$eq": ["$$m.role", "user"]},
+                {"$eq": ["$$m.conversation_id", conv_id]},
+                {"$in": [{"$ifNull": ["$$m.channel", ""]}, ["", "office_whatsapp", "whatsapp"]]},
+                {"$in": [{"$ifNull": ["$$m.source", ""]},
+                         ["", "office_whatsapp", "wasender_inbound", "whatsapp_inbound", "whatsapp"]]},
+            ]}}}, -100]}}},
+    ]))
+    return (rows[0].get("office_customer") or []) if rows else [], base
+
+
+def _merge_search_into_summary(db, doc: dict, turns: list[dict],
+                               summary: dict) -> None:
+    office, base = _load_office_search_context(db, doc)
+    marker = doc.get("commercial_intelligence") or {}
+    life = doc.get("lifecycle") or {}
+    search = capture_active_search(
+        office + turns,
+        conversation_id=str(base.get("conversation_id") or ""),
+        cycle_id=str(life.get("current_assignment_cycle_id") or ""),
+        owner_id=str(life.get("assigned_to_user_id") or ""),
+        session_id=str(marker.get("pending_session_id") or ""),
+        original_property_code=str(base.get("codigo_propiedad") or base.get("codigo") or ""),
+        original_operation=str(base.get("operacion") or (base.get("prospecto") or {}).get("operacion") or ""),
+        prior=marker.get("active_search"),
+    )
+    if not search:
+        return
+    if search.get("status") != "ACTIVE":
+        # Explicitly completed searches remain traceable, not a target for
+        # matching or outbound communication.
+        doc["_active_search"] = {**search, "match_status": "CLOSED", "matches": []}
+        return
+    search["matches"] = find_matching_inventory(db, search)
+    search["match_status"] = "CANDIDATES_NEED_VERIFICATION" if search["matches"] else "WAITING_INVENTORY"
+    search["last_matched_at"] = datetime.now(timezone.utc).isoformat()
+    doc["_active_search"] = search
+    if search.get("followup_required"):
+        criteria = search["criteria"]
+        canonical = {
+            key: criteria[key] for key in
+            ("operation", "comunas", "property_types", "max_price_clp")
+            if key in criteria
+        }
+        summary["search_status"] = "ACTIVE"
+        summary["search"] = {**summary.get("search", {}), **canonical}
+        summary.setdefault("needs", {})["DEMAND"] = summary["search"]
+        summary.setdefault("field_evidence", {})["DEMAND"] = search.get("field_evidence", {})
+        summary["active_search_status"] = search["match_status"]
+        # This is an outstanding opportunity, not a promise of a visit.
+        summary["followup_search_required"] = True
+
+
 def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
     marker = doc.get("commercial_intelligence") or {}
     lifecycle = doc.get("lifecycle") or {}
@@ -158,6 +232,8 @@ def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
     if summary is not None:
         values["commercial_intelligence.summary"] = summary
         values["commercial_intelligence.version"] = VERSION
+        if "_active_search" in doc:
+            values["commercial_intelligence.active_search"] = doc["_active_search"]
         if "_opportunities" in doc:
             # The ledger lives on the canonical lead, not in the versioned
             # summary. Preserve it across agent reassignment and greetings.
@@ -216,6 +292,7 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     summary = classify_hybrid(
         turns, prior, llm_enabled=llm_enabled, propose=propose,
     )
+    _merge_search_into_summary(db, doc, turns, summary)
     ledger, active, open_count = merge_opportunities(
         turns, marker.get("opportunities"), summary,
         cycle_id=cycle_id, session_id=session_id, owner_id=owner,
@@ -233,6 +310,17 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
         management["next_step_hint"] = active["next_step_hint"]
     if active and active["status"] == "PENDIENTE_GESTION":
         management["pending_customer_request"] = True
+    if summary.get("followup_search_required"):
+        # Do not confuse "last message = gracias" with "buyer is done".
+        management["case_type"] = "BUSQUEDA_ACTIVA_ALTERNATIVAS"
+        management["next_step_hint"] = (
+            "REVALIDAR_Y_PROPONER_ALTERNATIVAS"
+            if doc["_active_search"].get("matches")
+            else "BUSCAR_ALTERNATIVAS_Y_HACER_SEGUIMIENTO"
+        )
+        management["pending_customer_request"] = True
+        summary["needs_review"] = bool(doc["_active_search"].get("matches"))
+
     if doc.get("_checkpoint_missing"):
         summary["needs_review"] = True
         summary["history_incomplete"] = True
@@ -240,7 +328,119 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     # must also prevent publishing its result.
     if not _is_authorized(db, doc):
         return _finish(db, doc, summary=None, status="stale_assignment")
-    return _finish(db, doc, summary=summary, status="ready")
+    outcome = _finish(db, doc, summary=summary, status="ready")
+    if (outcome == "ready" and doc.get("_active_search")
+            and doc["_active_search"].get("followup_required")
+            and not doc["_active_search"].get("opt_out")):
+        try:
+            # Only after the CAS committed the current-owner classification.
+            # This task prompts human verification/offer; it sends no WhatsApp.
+            ensure_followup_task(
+                db, lead_id=doc["_id"], cycle_id=cycle_id, owner_id=owner,
+                search=doc["_active_search"],
+            )
+        except Exception as exc:
+            logger.warning("ACTIVE_SEARCH followup_error=%s", type(exc).__name__)
+    return outcome
+
+
+def backfill_missing_active_searches(db, *, limit: int = 20) -> dict:
+    """One-time bounded repair of recent already-classified active searches.
+
+    This is required for existing cases where the executive summary contains
+    SEARCH_UPDATED but the earlier office budget was never interpreted.
+    No webhook replay, new message, private conversation or customer send.
+    """
+    cursor = db["leads"].find({
+        "commercial_intelligence.summary.search_status": "ACTIVE",
+        "commercial_intelligence.active_search": {"$exists": False},
+        "commercial_intelligence.pending": False,
+    }, {
+        "_id": 1, "lifecycle": 1, "commercial_intelligence": 1,
+    }).sort("commercial_intelligence.summary.last_customer_at", -1).limit(
+        max(1, min(limit, 50)),
+    )
+    examined, repaired = 0, 0
+    for doc in cursor:
+        examined += 1
+        summary = (doc.get("commercial_intelligence") or {}).get("summary") or {}
+        if summary.get("contact_permission") == "OPTED_OUT":
+            continue
+        if not _is_authorized(db, doc):
+            continue
+        marker, life = doc["commercial_intelligence"], doc["lifecycle"]
+        cycle_id = str(life.get("current_assignment_cycle_id") or "")
+        owner = str(life.get("assigned_to_user_id") or "")
+        sid = str(marker.get("pending_session_id") or "")
+        office, base = _load_office_search_context(db, doc)
+        if not base.get("conversation_id"):
+            continue
+        rows = list(db["leads"].aggregate([
+            {"$match": {"_id": doc["_id"],
+                        "lifecycle.current_assignment_cycle_id": cycle_id,
+                        "lifecycle.assigned_to_user_id": owner}},
+            {"$project": {"customer_exec": {"$slice": [{"$filter": {
+                "input": {"$ifNull": ["$messages", []]}, "as": "m",
+                "cond": {"$and": [
+                    {"$eq": ["$$m.channel", "executive_whatsapp"]},
+                    {"$eq": ["$$m.actor_type", "customer"]},
+                    {"$eq": ["$$m.assignment_cycle_id", cycle_id]},
+                    {"$eq": ["$$m.assigned_executive_id", owner]},
+                    {"$eq": ["$$m.wasender_session_id", sid]},
+                    {"$ne": [{"$ifNull": ["$$m.provider_message_id", None]}, None]},
+                ]}}}, -100]}}},
+        ]))
+        executive = (rows[0].get("customer_exec") or []) if rows else []
+        search = capture_active_search(
+            office + executive, conversation_id=str(base["conversation_id"]),
+            cycle_id=cycle_id, owner_id=owner, session_id=sid,
+            original_property_code=str(base.get("codigo_propiedad") or base.get("codigo") or ""),
+            original_operation=str(base.get("operacion") or (base.get("prospecto") or {}).get("operacion") or ""),
+        )
+        if not search or search.get("status") != "ACTIVE" or not search.get("followup_required"):
+            continue
+        matches = find_matching_inventory(db, search)
+        search.update(
+            matches=matches,
+            match_status="CANDIDATES_NEED_VERIFICATION" if matches else "WAITING_INVENTORY",
+            last_matched_at=datetime.now(timezone.utc).isoformat(),
+        )
+        criteria = search["criteria"]
+        public = {key: criteria[key] for key in (
+            "operation", "comunas", "property_types", "max_price_clp",
+        ) if key in criteria}
+        hint = ("REVALIDAR_Y_PROPONER_ALTERNATIVAS" if matches
+                else "BUSCAR_ALTERNATIVAS_Y_HACER_SEGUIMIENTO")
+        result = db["leads"].update_one({
+            "_id": doc["_id"],
+            "lifecycle.current_assignment_cycle_id": cycle_id,
+            "lifecycle.assigned_to_user_id": owner,
+            "commercial_intelligence.summary.search_status": "ACTIVE",
+            "commercial_intelligence.pending": False,
+            "commercial_intelligence.active_search": {"$exists": False},
+        }, {"$set": {
+            "commercial_intelligence.active_search": search,
+            "commercial_intelligence.summary.search": public,
+            "commercial_intelligence.summary.needs.DEMAND": public,
+            "commercial_intelligence.summary.field_evidence.DEMAND": search["field_evidence"],
+            "commercial_intelligence.summary.active_search_status": search["match_status"],
+            "commercial_intelligence.summary.followup_search_required": True,
+            "commercial_intelligence.summary.executive_management.case_type":
+                "BUSQUEDA_ACTIVA_ALTERNATIVAS",
+            "commercial_intelligence.summary.executive_management.next_step_hint": hint,
+            "commercial_intelligence.summary.executive_management.pending_customer_request": True,
+        }})
+        if result.modified_count != 1:
+            continue
+        repaired += 1
+        try:
+            ensure_followup_task(
+                db, lead_id=doc["_id"], cycle_id=cycle_id,
+                owner_id=owner, search=search,
+            )
+        except Exception as exc:
+            logger.warning("ACTIVE_SEARCH backfill_task_error=%s", type(exc).__name__)
+    return {"examined": examined, "repaired": repaired}
 
 
 def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propose=None) -> dict:
@@ -274,6 +474,7 @@ def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propo
 
 async def executive_intelligence_worker_loop() -> None:
     indexed = False
+    refresh_ticks = 0
     while True:
         try:
             if os.getenv("PROCASA_EXEC_INTELLIGENCE_ENABLED", "0") == "1":
@@ -291,6 +492,26 @@ async def executive_intelligence_worker_loop() -> None:
                         "EXEC_INTELLIGENCE processed=%s failures=%s",
                         result["processed"], result["failures"],
                     )
+                # Every ~15 min, re-evaluate unmatched active searches against
+                # the current inventory after new listings / price reductions.
+                # This creates executive follow-up tasks, never customer sends.
+                refresh_ticks += 1
+                if refresh_ticks == 1 or refresh_ticks >= 45:
+                    if refresh_ticks >= 45:
+                        refresh_ticks = 0
+                    repaired = await asyncio.to_thread(
+                        backfill_missing_active_searches, get_db(), limit=20,
+                    )
+                    if repaired["repaired"]:
+                        logger.info("ACTIVE_SEARCH repaired=%s", repaired["repaired"])
+                    refreshed = await asyncio.to_thread(
+                        refresh_active_search_batch, get_db(), limit=20,
+                    )
+                    if refreshed["checked"]:
+                        logger.info(
+                            "ACTIVE_SEARCH checked=%s task_checked=%s",
+                            refreshed["checked"], refreshed["task_checked"],
+                        )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

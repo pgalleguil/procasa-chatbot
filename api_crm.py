@@ -1820,6 +1820,8 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             sla_managed_outside = (
                 canonical_sla.get("canonical_state") == "MANAGED_OUTSIDE_SLA"
             )
+            if canonical_sla.get("sla_exempt"):
+                sla_timing = "Mensaje HOT enviado desde WhatsApp del ejecutivo; seguimiento humano pendiente"
             
             if visual_pre and not canonical_sla.get("fulfilled"):
                 sla_status = "historical"
@@ -1883,6 +1885,7 @@ async def get_crm_leads_list(filtro_estado=None, busqueda=None, ordenar_por="sla
             "critical": "Vencido", "near_critical": "Próximo a vencer", "warning": "Atención",
             "good": "En plazo", "pending": "Pendiente Asignación", "fulfilled": "Gestionado",
             "pending_notification": "Pendiente de notificación",
+            "exempt": "Sin SLA · WhatsApp automático",
             "hot_critical": "Vencido", "hot_near_critical": "Próximo a vencer",
             "hot_warning": "Atención prioritaria",
             "informativo": "Antigüedad", "historical": "Histórico", "unknown": "SLA S/I",

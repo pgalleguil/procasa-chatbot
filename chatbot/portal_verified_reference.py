@@ -47,7 +47,7 @@ def publication_identity(url: str) -> tuple[str, str] | None:
 def _publisher_disclosed_code(url: str) -> str | None:
     """Parse publisher-controlled HTML; returns None on blocks or ambiguity."""
     from os import getenv
-    if getenv("PORTAL_PROPERTY_LIVE_VERIFY", "true").strip().casefold() not in {"true", "1", "yes"}:
+    if getenv("PORTAL_PROPERTY_LIVE_VERIFY", "false").strip().casefold() not in {"true", "1", "yes"}:
         return None
     identity = publication_identity(url)
     if not identity:

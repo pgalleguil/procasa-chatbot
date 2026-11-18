@@ -25,6 +25,7 @@ import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import re
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field, asdict
@@ -97,7 +98,7 @@ def _portal_message_entry(event, *, message: str, contact_date: str, portal_sour
     try:
         dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
         if dt.tzinfo is None and str(event.source_system).lower() == "prop360":
-            dt = dt.replace(tzinfo=CHILE_TZ)
+            dt = dt.replace(tzinfo=ZoneInfo("America/Santiago"))
         stamp = dt.isoformat() if dt.tzinfo is not None else now_iso
     except (ValueError, TypeError):
         stamp = now_iso

@@ -665,6 +665,7 @@ def test_hot_greeting_no_property_codes_or_unverified_narrative(context):
     assert "Las Condes" not in greeting  # unresolved property, avoid wrong description
     assert "el precio" in greeting
     assert "la disponibilidad" in greeting
+    assert "coordinar una visita" not in greeting  # conocer el precio != querer visitar
 
 
 def test_hot_greeting_fallback_still_identifies_assigned_adviser(context):

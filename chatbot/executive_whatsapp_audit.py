@@ -268,6 +268,13 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
         # same-owner/session/cycle/content echo within 30 seconds. This
         # comparison occurs after verifying that this is an assigned lead.
         stored = db["leads"].find_one({"_id": lead["_id"]}, {"messages": 1}) or {}
+        if any(
+            isinstance(previous, dict)
+            and str(previous.get("wasender_session_id") or "") == str(session["session_id"])
+            and previous.get("provider_echo_message_id") == provider_id
+            for previous in stored.get("messages", [])
+        ):
+            return "duplicate_or_reassigned"
         for original_source in ("crm_manual_api", "crm_hot_auto_api"):
             match = find_unique_echo_match(
                 stored.get("messages") or [],
@@ -333,10 +340,16 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
             "phone": lead["phone"],
             "lifecycle.current_assignment_cycle_id": cycle_id,
             "lifecycle.assigned_to_user_id": actor,
-            "$nor": [{"messages": {"$elemMatch": {
-                "wasender_session_id": session["session_id"],
-                "provider_message_id": provider_id,
-            }}}],
+            "$nor": [
+                {"messages": {"$elemMatch": {
+                    "wasender_session_id": session["session_id"],
+                    "provider_message_id": provider_id,
+                }}},
+                {"messages": {"$elemMatch": {
+                    "wasender_session_id": session["session_id"],
+                    "provider_echo_message_id": provider_id,
+                }}},
+            ],
         },
         {
             "$push": {"messages": entry},

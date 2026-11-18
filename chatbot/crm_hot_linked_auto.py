@@ -391,7 +391,7 @@ def send_hot_auto(db, *, lead_id, post=None, now=None) -> dict:
             "provider_message_id": pid}
 
 
-def process_hot_auto_batch(db, *, now=None, limit=30, post=None) -> dict:
+def process_hot_auto_batch(db, *, now=None, limit=100, max_attempts=1, post=None) -> dict:
     """Bounded prospective scan. No scans/writes if deployment flag is OFF."""
     if not enabled():
         return {"status": "disabled", "examined": 0, "sent": 0}
@@ -403,7 +403,7 @@ def process_hot_auto_batch(db, *, now=None, limit=30, post=None) -> dict:
         "assigned_at": {"$gte": cutoff, "$lte": now},
         "hot_auto_sla_exemption.status": {"$ne": "active"},
     }, {"lead_id": 1, "assignment_cycle_id": 1}).sort("assigned_at", 1).limit(min(max(limit, 1), 100))
-    examined = sent = 0
+    examined = sent = attempts = 0
     skipped: dict[str, int] = {}
     for cycle in cursor:
         examined += 1
@@ -417,13 +417,22 @@ def process_hot_auto_batch(db, *, now=None, limit=30, post=None) -> dict:
                 sent += 1
             else:
                 skipped[status] = skipped.get(status, 0) + 1
+            # Limit actual irreversible HTTP attempts per polling interval;
+            # skipped/duplicate cycles must not starve newer HOT leads.
+            if status in {
+                "accepted_exempt", "accepted_no_exemption", "accepted_unrecorded",
+                "accepted_without_provider_id", "rejected", "delivery_unknown",
+            }:
+                attempts += 1
+                if attempts >= max(1, int(max_attempts)):
+                    break
         except (OutboundBlocked, ValueError, TypeError) as exc:
             reason = getattr(exc, "code", type(exc).__name__)
             skipped[reason] = skipped.get(reason, 0) + 1
         except Exception as exc:
             logger.exception("[HOT_EXEC_AUTO] processing_error error_type=%s", type(exc).__name__)
             skipped["error"] = skipped.get("error", 0) + 1
-    return {"status": "evaluated", "examined": examined, "sent": sent, "skipped": skipped}
+    return {"status": "evaluated", "examined": examined, "sent": sent, "attempted": attempts, "skipped": skipped}
 
 
 async def hot_auto_worker_loop(*, stop_event=None):

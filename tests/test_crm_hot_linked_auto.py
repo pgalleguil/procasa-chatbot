@@ -426,3 +426,39 @@ def test_untrusted_office_job_cannot_authorize_hot_send(context, field, bad):
     db["chatbot_inbound_jobs"].record = row
     with pytest.raises(hot.OutboundBlocked, match="whatsapp_permission_missing"):
         send(db, lambda *_a, **_kw: pytest.fail("untrusted inbound must not be sent"))
+
+
+def test_one_provider_attempt_max_per_worker_poll(context, monkeypatch):
+    db, leads, cycles = context
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def sort(self, *_args):
+            return self
+
+        def limit(self, limit):
+            self.rows = self.rows[:limit]
+            return self
+
+        def __iter__(self):
+            return iter(self.rows)
+
+    monkeypatch.setattr(
+        cycles, "find",
+        lambda *_args, **_kwargs: Cursor([
+            {"lead_id": ID, "assignment_cycle_id": CYCLE},
+            {"lead_id": ID, "assignment_cycle_id": CYCLE},
+        ]),
+        raising=False,
+    )
+    calls = []
+    result = hot.process_hot_auto_batch(
+        db, now=NOW, max_attempts=1,
+        post=lambda *_a, **_k: (calls.append(True), response())[1],
+    )
+    assert len(calls) == 1
+    assert result["sent"] == 1
+    assert result["attempted"] == 1
+    assert result["examined"] == 1

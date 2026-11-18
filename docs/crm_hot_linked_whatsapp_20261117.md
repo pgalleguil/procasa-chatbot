@@ -58,3 +58,8 @@ La fase 2 está implementada en \`chatbot/crm_hot_linked_auto.py\` y conectada a
 8. Para HOT no elegibles y todo NORMAL/COLD, el SLA vigente continúa idéntico.
 
 **Límites:** Se requiere validación con una sesión real y autorización antes de habilitar estas variables en Render. Un HTTP 200 con ID es aceptación del proveedor, no prueba de lectura del cliente. La nueva condición de excepción no sustituye el control de seguimiento humano. Las conversaciones históricas no tienen backfill automático.
+
+
+### Fuente canónica de solicitud entrante de oficina
+
+El webhook del chatbot guarda los mensajes recibidos con `inbound_provider_message_id`, `phone`, `lead_id`, `received_at`, `kind=inbound_job`, `message_type=inbound_message` y `message_domain=chatbot` en `chatbot_inbound_jobs`. El envío HOT automático puede utilizar esta evidencia del **mismo lead y teléfono en las últimas 24 horas** aun cuando el mensaje no esté duplicado en `leads.messages`. Nunca debe usarse solamente la creación del lead, mensajes de portal, registros de campaña, una salida o una entrada anterior a la ventana.

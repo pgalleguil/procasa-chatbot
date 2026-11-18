@@ -343,7 +343,10 @@ def guardar_mensaje(phone: str, role: str, content: str, metadata: dict = None,
     phone = normalized or phone
 
     db = get_db()
-    now = datetime.now(CHILE_TZ)
+    # Keep canonical chatbot and executive timelines in the same UTC ISO
+    # representation. The CRM presents these aware instants in Santiago time.
+    # Historical CLT/CLST timestamps retain their original explicit offsets.
+    now = datetime.now(timezone.utc)
     metadata = dict(metadata or {})
     from .conversation_observability import (
         actor_type_for, new_message_id, resolve_or_create_conversation,

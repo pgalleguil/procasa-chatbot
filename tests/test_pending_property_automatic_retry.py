@@ -80,11 +80,12 @@ def test_changed_inventory_targets_only_matching_pending_reference(monkeypatch):
     assert resumed == [matched["_id"]]
 
 
-def test_worker_runs_bounded_and_only_during_business_hours():
+def test_no_periodic_property_retry_in_shared_webhook_worker():
+    # The Render service is resource-constrained. Unresolved properties can
+    # still be resolved on an incoming message or explicitly on inventory sync,
+    # but may not start a recurring scan through this shared worker.
     source = (Path(__file__).resolve().parents[1] / "webhook.py").read_text(encoding="utf8")
-    assert "next_property_reconcile_at = 0.0" in source
-    assert 'os.getenv("PENDING_PROPERTY_AUTO_RECOVER_ENABLED", "true")' in source
-    assert "next_property_reconcile_at = loop.time() + 300" in source
-    assert "limit=3," in source
-    assert "max_age_days=AUTO_RECONCILE_MAX_AGE_DAYS," in source
-    assert "if should_send_now():" in source
+    assert "next_property_reconcile_at" not in source
+    assert "PENDING_PROPERTY_AUTO_RECOVER_ENABLED" not in source
+    assert "PENDING_PROPERTY_AUTO_RECOVER" not in source
+    assert "reconcile_waiting_inventory_events(" not in source

@@ -19,6 +19,7 @@ from .crm_metrics import active_assignment_cycle
 from .executive_conversation_intelligence import VERSION, classify_hybrid
 from .executive_opportunities import merge_opportunities
 from .active_search import capture_active_search, find_matching_inventory
+from .active_search_followup import ensure_followup_task, refresh_active_search_batch
 
 logger = logging.getLogger(__name__)
 WINDOW = 200
@@ -327,7 +328,20 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     # must also prevent publishing its result.
     if not _is_authorized(db, doc):
         return _finish(db, doc, summary=None, status="stale_assignment")
-    return _finish(db, doc, summary=summary, status="ready")
+    outcome = _finish(db, doc, summary=summary, status="ready")
+    if (outcome == "ready" and doc.get("_active_search")
+            and doc["_active_search"].get("followup_required")
+            and not doc["_active_search"].get("opt_out")):
+        try:
+            # Only after the CAS committed the current-owner classification.
+            # This task prompts human verification/offer; it sends no WhatsApp.
+            ensure_followup_task(
+                db, lead_id=doc["_id"], cycle_id=cycle_id, owner_id=owner,
+                search=doc["_active_search"],
+            )
+        except Exception as exc:
+            logger.warning("ACTIVE_SEARCH followup_error=%s", type(exc).__name__)
+    return outcome
 
 
 def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propose=None) -> dict:
@@ -361,6 +375,7 @@ def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propo
 
 async def executive_intelligence_worker_loop() -> None:
     indexed = False
+    refresh_ticks = 0
     while True:
         try:
             if os.getenv("PROCASA_EXEC_INTELLIGENCE_ENABLED", "0") == "1":
@@ -378,6 +393,20 @@ async def executive_intelligence_worker_loop() -> None:
                         "EXEC_INTELLIGENCE processed=%s failures=%s",
                         result["processed"], result["failures"],
                     )
+                # Every ~15 min, re-evaluate unmatched active searches against
+                # the current inventory after new listings / price reductions.
+                # This creates executive follow-up tasks, never customer sends.
+                refresh_ticks += 1
+                if refresh_ticks >= 45:
+                    refresh_ticks = 0
+                    refreshed = await asyncio.to_thread(
+                        refresh_active_search_batch, get_db(), limit=20,
+                    )
+                    if refreshed["checked"]:
+                        logger.info(
+                            "ACTIVE_SEARCH checked=%s task_checked=%s",
+                            refreshed["checked"], refreshed["task_checked"],
+                        )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

@@ -1422,6 +1422,12 @@ async def lifespan(app: FastAPI):
     from chatbot.executive_intelligence_worker import executive_intelligence_worker_loop
     exec_intelligence_task = asyncio.create_task(executive_intelligence_worker_loop())
 
+    # Prospectively contact HOT leads from the linked owner's own session.
+    # The worker is inert unless explicit flags, a dated cutover and a session
+    # allowlist all exist. Existing HOT assignments are never backfilled.
+    from chatbot.crm_hot_linked_auto import hot_auto_worker_loop
+    hot_exec_auto_task = asyncio.create_task(hot_auto_worker_loop())
+
     # Prop360 (Convecta) periodic ingestion — feature-flagged, self-contained
     prop360_task = None
     try:
@@ -1588,6 +1594,7 @@ async def lifespan(app: FastAPI):
     c2_task.cancel()
     cb_task.cancel()
     exec_intelligence_task.cancel()
+    hot_exec_auto_task.cancel()
     if sla_orch_task is not None:
         sla_orch_task.cancel()
     if sla_reassignment_task is not None:
@@ -1608,7 +1615,7 @@ async def lifespan(app: FastAPI):
         captacion_indexes_task.cancel()
     try:
         await asyncio.gather(
-            n_task, t_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task, exec_intelligence_task,
+            n_task, t_task, r_task, d_task, nudge_task, w_task, el_task, tp_task, crm_weekly_task, sla_c_task, c1_task, c2_task, exec_intelligence_task, hot_exec_auto_task,
             *([sla_orch_task] if sla_orch_task is not None else []),
             *([sla_reassignment_task] if sla_reassignment_task is not None else []),
             *([non_hot_digest_task] if non_hot_digest_task is not None else []),

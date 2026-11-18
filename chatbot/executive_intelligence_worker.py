@@ -148,11 +148,11 @@ def _load_office_search_context(db, doc: dict) -> tuple[list[dict], dict]:
         {"$project": {"office_customer": {"$slice": [{"$filter": {
             "input": {"$ifNull": ["$messages", []]}, "as": "m",
             "cond": {"$and": [
-                {"$eq": ["$m.actor_type", "customer"]},
-                {"$eq": ["$m.role", "user"]},
-                {"$eq": ["$m.conversation_id", conv_id]},
-                {"$in": [{"$ifNull": ["$m.channel", ""]}, ["", "office_whatsapp", "whatsapp"]]},
-                {"$in": [{"$ifNull": ["$m.source", ""]},
+                {"$eq": ["$$m.actor_type", "customer"]},
+                {"$eq": ["$$m.role", "user"]},
+                {"$eq": ["$$m.conversation_id", conv_id]},
+                {"$in": [{"$ifNull": ["$$m.channel", ""]}, ["", "office_whatsapp", "whatsapp"]]},
+                {"$in": [{"$ifNull": ["$$m.source", ""]},
                          ["", "office_whatsapp", "wasender_inbound", "whatsapp_inbound", "whatsapp"]]},
             ]}}}, -100]}}},
     ]))
@@ -382,12 +382,12 @@ def backfill_missing_active_searches(db, *, limit: int = 20) -> dict:
             {"$project": {"customer_exec": {"$slice": [{"$filter": {
                 "input": {"$ifNull": ["$messages", []]}, "as": "m",
                 "cond": {"$and": [
-                    {"$eq": ["$m.channel", "executive_whatsapp"]},
-                    {"$eq": ["$m.actor_type", "customer"]},
-                    {"$eq": ["$m.assignment_cycle_id", cycle_id]},
-                    {"$eq": ["$m.assigned_executive_id", owner]},
-                    {"$eq": ["$m.wasender_session_id", sid]},
-                    {"$ne": [{"$ifNull": ["$m.provider_message_id", None]}, None]},
+                    {"$eq": ["$$m.channel", "executive_whatsapp"]},
+                    {"$eq": ["$$m.actor_type", "customer"]},
+                    {"$eq": ["$$m.assignment_cycle_id", cycle_id]},
+                    {"$eq": ["$$m.assigned_executive_id", owner]},
+                    {"$eq": ["$$m.wasender_session_id", sid]},
+                    {"$ne": [{"$ifNull": ["$$m.provider_message_id", None]}, None]},
                 ]}}}, -100]}}},
         ]))
         executive = (rows[0].get("customer_exec") or []) if rows else []

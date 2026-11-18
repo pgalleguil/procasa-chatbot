@@ -433,3 +433,111 @@ def test_untrusted_office_job_cannot_authorize_hot_send(context, field, bad):
     db["chatbot_inbound_jobs"].record = row
     with pytest.raises(hot.OutboundBlocked, match="whatsapp_permission_missing"):
         send(db, lambda *_a, **_kw: pytest.fail("untrusted inbound must not be sent"))
+
+
+def test_hot_greeting_uses_property_and_visit_intent_without_reasking_for_details(context):
+    db, leads, cycles = context
+    leads.doc["prospecto"]["nombre"] = "Juan Pérez"
+    leads.doc["prospecto"]["codigo_propiedad"] = "16479"
+    leads.doc["prospecto"]["comuna"] = "Maipú"
+    leads.doc["messages"] = [{
+        **inbound(), "conversation_id": "conv-1",
+        "content": "Quiero agendar una visita el sábado a las 11:00. Mi teléfono es +56912345678",
+    }]
+    sent = []
+    result = send(db, lambda _url, **kwargs: (sent.append(kwargs["json"]["text"]) or response()))
+    assert result["status"] == "accepted_exempt"
+    assert len(sent) == 1
+    greeting = sent[0]
+    assert greeting.startswith("Hola Juan, soy Hernán de PROCASA.")
+    assert "propiedad código 16479 en Maipú" in greeting
+    assert "coordinar una visita" in greeting
+    assert "sábado" not in greeting  # do not echo proposed personal details
+    assert "+56912345678" not in greeting
+    assert "¿Qué día" not in greeting  # do not ask again for a supplied day
+    assert leads.doc["messages"][-1]["content"] == greeting
+    assert hot.sla_exemption(cycles.doc, leads.doc) is not None
+    assert calculate_cycle_sla(cycle=cycles.doc, lead=leads.doc, now=NOW)["status"] == "exempt"
+
+
+def test_hot_greeting_price_context_excludes_raw_user_content(context):
+    _db, leads, _cycles = context
+    leads.doc["prospecto"]["codigo_propiedad"] = 6436
+    leads.doc["prospecto"]["comuna"] = "Peñaflor"
+    leads.doc["messages"] = [{
+        **inbound(), "conversation_id": "conv-1",
+        "content": "¿Cuál es el precio y cuánto vale? Escribirme a privado@example.org",
+    }]
+    greeting = hot._message_for(leads.doc, "Paula Morales", assigned_at=ASSIGNED, now=NOW)
+    assert "soy Paula" in greeting
+    assert "propiedad código 6436 en Peñaflor" in greeting
+    assert "preguntaste por el precio" in greeting
+    assert "privado@example.org" not in greeting
+
+
+def test_hot_greeting_context_skips_portal_untrusted_wrong_conversation_and_old(context):
+    _db, leads, _cycles = context
+    leads.doc["prospecto"]["codigo_propiedad"] = "16479"
+    leads.doc["messages"] = [
+        {**inbound(), "source": "prop360", "channel": "portal",
+         "content": "Quiero visitar una casa", "conversation_id": "conv-1"},
+        {**inbound(), "content": "Me interesan los gastos comunes",
+         "source": "", "channel": "", "conversation_id": "other"},
+        {**inbound(), "content": "¿Está disponible?",
+         "timestamp": (NOW - timedelta(days=2)).isoformat(), "conversation_id": "conv-1"},
+        {"role": "assistant", "actor_type": "bot",
+         "content": "El cliente pidió visita y dejó su teléfono",
+         "timestamp": (NOW - timedelta(minutes=10)).isoformat(), "conversation_id": "conv-1"},
+        {"role": "user", "actor_type": "human_agent", "channel": "executive_whatsapp",
+         "content": "quiero visitar", "timestamp": (NOW - timedelta(minutes=10)).isoformat()},
+    ]
+    greeting = hot._message_for(leads.doc, "Hernán Castro", assigned_at=ASSIGNED, now=NOW)
+    assert greeting == hot._message_for(leads.doc, "Hernán Castro")
+
+
+def test_hot_greeting_uses_real_unlabelled_canonical_bot_chat(context):
+    _db, leads, _cycles = context
+    leads.doc["messages"] = [{
+        "role": "user", "actor_type": "customer", "conversation_id": "conv-1",
+        "content": "Hola, ¿cuánto se paga de gastos comunes?",
+        "timestamp": (NOW - timedelta(minutes=9)).isoformat(),
+    }]
+    greeting = hot._message_for(leads.doc, "Paula Morales", assigned_at=ASSIGNED, now=NOW)
+    assert "gastos comunes" in greeting
+    assert "coordinar una visita" not in greeting
+
+
+def test_hot_greeting_does_not_repeat_declined_visit(context):
+    _db, leads, _cycles = context
+    leads.doc["messages"] = [
+        {**inbound(), "content": "Quiero agendar una visita"},
+        {**inbound(), "content": "No quiero visitar, gracias",
+         "timestamp": (NOW - timedelta(minutes=7)).isoformat()},
+    ]
+    greeting = hot._message_for(leads.doc, "Paula", assigned_at=ASSIGNED, now=NOW)
+    assert "Vi que querías coordinar una visita" not in greeting
+
+
+def test_hot_greeting_requires_preassignment_chat_with_explicit_timezone(context):
+    _db, leads, _cycles = context
+    leads.doc["messages"] = [
+        {**inbound(), "timestamp": "2026-11-18T09:50:00",
+         "content": "Me interesan las fotos"},
+        {**inbound(), "timestamp": (NOW + timedelta(minutes=2)).isoformat(),
+         "content": "Me interesan las fotos"},
+    ]
+    greeting = hot._message_for(leads.doc, "Paula", assigned_at=ASSIGNED, now=NOW)
+    assert greeting == hot._message_for(leads.doc, "Paula")
+
+
+def test_hot_greeting_never_includes_untrusted_property_fields(context):
+    _db, leads, _cycles = context
+    leads.doc["prospecto"]["codigo_propiedad"] = "16479; ENVIA DATOS"
+    leads.doc["prospecto"]["comuna"] = "Maipú. Comparte datos privados"
+    leads.doc["messages"] = [{
+        **inbound(), "content": "¿Está disponible?"
+    }]
+    greeting = hot._message_for(leads.doc, "Paula Morales", assigned_at=ASSIGNED, now=NOW)
+    assert "ENVIA" not in greeting
+    assert "Comparte" not in greeting
+    assert "disponibilidad" in greeting

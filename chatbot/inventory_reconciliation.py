@@ -62,31 +62,54 @@ def _property_identities(prop: dict[str, Any]) -> dict[str, set[str]]:
 
     publications = prop.get("publicaciones") or {}
     portal_data = publications.get("portal_inmobiliario") or {}
-    candidates = [
-        portal_data.get("url_mercado_libre"),
-        portal_data.get("url_pi"),
-        prop.get("source_url"),
-        (prop.get("metadata") or {}).get("source_url"),
-    ]
-    candidates.extend(
-        alias.get("url")
-        for alias in publications.get("aliases", []) or []
-        if isinstance(alias, dict)
-    )
+    def add_external(value: Any) -> None:
+        values = value if isinstance(value, (list, tuple, set)) else [value]
+        for item in values:
+            # The publication API uses both MLC-123 and MLC123.
+            match = re.search(r"MLC[-_]?(\d+)", str(item or ""), re.I)
+            if match:
+                external_ids.add(f"MLC-{match.group(1)}")
 
-    for raw_url in candidates:
-        if not raw_url:
+    def add_url(value: Any) -> None:
+        values = value if isinstance(value, (list, tuple, set)) else [value]
+        for item in values:
+            if not item or not str(item).lower().startswith(("http://", "https://")):
+                continue
+            raw_url = str(item).strip()
+            portal = canonical_portal(raw_url)
+            external_id = extract_property_external_id(raw_url, portal)
+            normalized = normalize_property_url(raw_url)
+            if portal:
+                portals.add(portal)
+            if external_id:
+                external_ids.add(external_id.upper())
+            if normalized:
+                urls.add(normalized)
+
+    for field in ("url_mercado_libre", "url_pi", "urls_mercado_libre", "urls_pi"):
+        add_url(portal_data.get(field))
+    add_url(prop.get("source_url"))
+    add_url((prop.get("metadata") or {}).get("source_url"))
+    add_external(portal_data.get("codigo_pi"))
+
+    # Modern Prop360 records keep the publication identity per operation.
+    # Do not depend only on the legacy top-level url_pi field; otherwise a
+    # newly ingested MLC cannot wake an existing waiting_inventory_sync lead.
+    for operation in ("A", "V", "R", "arriendo", "venta"):
+        publication = (portal_data.get("publicaciones") or {}).get(operation) or {}
+        if not isinstance(publication, dict):
             continue
-        raw_url = str(raw_url).strip()
-        portal = canonical_portal(raw_url)
-        external_id = extract_property_external_id(raw_url, portal)
-        normalized = normalize_property_url(raw_url)
-        if portal:
-            portals.add(portal)
-        if external_id:
-            external_ids.add(external_id.upper())
-        if normalized:
-            urls.add(normalized)
+        for field in ("code", "external_id", "publication_id", "portal_id"):
+            add_external(publication.get(field))
+        for field in ("url", "urls", "url_normalized", "urls_normalized"):
+            add_url(publication.get(field))
+
+    for alias in publications.get("aliases", []) or []:
+        if not isinstance(alias, dict) or alias.get("resolvable") is False:
+            continue
+        add_url(alias.get("url"))
+        add_url(alias.get("url_normalized"))
+        add_external(alias.get("external_id"))
 
     return {
         "external_ids": external_ids,

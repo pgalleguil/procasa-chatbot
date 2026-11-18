@@ -341,3 +341,24 @@ def test_invalid_and_old_wa_inbound_does_not_authorize(context):
     leads.doc["messages"] = [msg]
     with pytest.raises(hot.OutboundBlocked, match="whatsapp_permission_missing"):
         send(db, lambda *a, **k: pytest.fail("portal is not optin"))
+
+
+def test_hot_auto_does_not_duplicate_existing_executive_message(context):
+    db, leads, cycles = context
+    leads.doc["messages"].append({
+        "assignment_cycle_id": CYCLE,
+        "channel": "executive_whatsapp",
+        "actor_type": "human_agent",
+        "provider_message_id": "already-contacted",
+    })
+    with pytest.raises(hot.OutboundBlocked, match="executive_already_contacted"):
+        send(db, lambda *a, **k: pytest.fail("would double greet"))
+    assert hot.sla_exemption(cycles.doc, leads.doc) is None
+
+
+def test_temperature_mirror_mismatch_fails_closed(context):
+    db, leads, _ = context
+    leads.doc["lead_temperature_effective"] = "COLD"
+    with pytest.raises(hot.OutboundBlocked):
+        send(db, lambda *a, **k: pytest.fail("not HOT"))
+    assert not db[hot.OUTBOX].docs

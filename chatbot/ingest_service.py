@@ -536,7 +536,26 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         }
 
         if portal_message_entry is not None:
-            update_fields["last_message_at"] = portal_message_entry["timestamp"]
+            # An imported portal inquiry may be older than a conversation
+            # already handled by the office chatbot or assigned executive.
+            # Never move the canonical last-message cursor backward.
+            existing_last = target_lead.get("last_message_at")
+            can_advance = existing_last is None
+            if existing_last is not None:
+                try:
+                    incoming_dt = datetime.fromisoformat(
+                        portal_message_entry["timestamp"].replace("Z", "+00:00"))
+                    previous_dt = (existing_last if isinstance(existing_last, datetime)
+                                   else datetime.fromisoformat(str(existing_last).replace("Z", "+00:00")))
+                    can_advance = (
+                        incoming_dt.tzinfo is not None
+                        and previous_dt.tzinfo is not None
+                        and incoming_dt >= previous_dt
+                    )
+                except (ValueError, TypeError):
+                    can_advance = False
+            if can_advance:
+                update_fields["last_message_at"] = portal_message_entry["timestamp"]
 
         if email:
             update_fields["prospecto.email"] = email

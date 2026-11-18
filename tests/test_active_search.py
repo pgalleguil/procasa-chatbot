@@ -169,9 +169,6 @@ def test_followup_task_once_then_new_inventory_creates_new_task_not_outbound():
         "assignment_cycle_id": CYCLE, "assigned_to_user_id": OWNER,
     })
     db.universo_cartera_prop360.insert_one(_property("1234"))
-    from chatbot import active_search_followup
-    # Active assignment lookup must respect this exact cycle.
-    active_search_followup.active_assignment_cycle if False else None
     updated = refresh_active_search_batch(db, limit=10, now=NOW)
     assert updated["checked"] == 1
     assert db.crm_tasks.count_documents({}) == 2
@@ -181,3 +178,50 @@ def test_followup_task_once_then_new_inventory_creates_new_task_not_outbound():
     assert match_task["property_codes_to_review"] == ["1234"]
     assert "confirmar disponibilidad" in match_task["note"]
     assert db.leads.find_one({"_id": lead_id})["commercial_intelligence"]["active_search"]["match_status"] == "CANDIDATES_NEED_VERIFICATION"
+
+
+
+def test_existing_diana_classification_is_repaired_without_new_customer_message(monkeypatch):
+    from chatbot import executive_intelligence_worker as worker
+    db = mongomock.MongoClient().repair
+    lead_id = ObjectId()
+    history = [
+        office("No me sirve por precio", 1),
+        office("ando buscando casa o departamento de 97 millones maximo", 2),
+        office("en Pudahuel o Maipu", 3),
+        office("casa", 4),
+        office("gracias", 5),
+        executive("97 millones en Pudahuel y Maipú", 6),
+        executive("gracias", 7),
+    ]
+    db.leads.insert_one({
+        "_id": lead_id, "phone": "+56911112222", "conversation_id": CONV,
+        "codigo_propiedad": "17184", "operacion": "Venta",
+        "ejecutivo_asignado": "Hernán Castro", "messages": history,
+        "lifecycle": {"assigned_to_user_id": OWNER,
+                      "current_assignment_cycle_id": CYCLE},
+        "commercial_intelligence": {
+            "pending": False, "pending_source": "executive_whatsapp",
+            "pending_cycle_id": CYCLE, "pending_session_id": SESSION,
+            "summary": {"search_status": "ACTIVE", "intent": "NO_SIGNAL",
+                        "search": {}, "needs": {},
+                        "contact_permission": "UNKNOWN",
+                        "executive_management": {"case_type": "REQUISITOS_ACTUALIZADOS"}},
+        },
+    })
+    monkeypatch.setattr(worker, "_is_authorized", lambda *_: True)
+    result = worker.backfill_missing_active_searches(db, limit=2)
+    assert result["repaired"] == 1
+    saved = db.leads.find_one({"_id": lead_id})
+    profile = saved["commercial_intelligence"]["active_search"]
+    assert profile["status"] == "ACTIVE"
+    assert profile["criteria"]["max_price_clp"] == 97_000_000
+    assert profile["criteria"]["comunas"] == ["Pudahuel", "Maipú"]
+    assert profile["criteria"]["property_types"] == ["CASA"]
+    assert profile["match_status"] == "WAITING_INVENTORY"
+    assert saved["commercial_intelligence"]["summary"]["followup_search_required"]
+    assert saved["commercial_intelligence"]["summary"]["executive_management"]["case_type"] == "BUSQUEDA_ACTIVA_ALTERNATIVAS"
+    assert db.crm_tasks.count_documents({"type": "SEARCH_ALTERNATIVES"}) == 1
+    # An inventory refresh must not recreate the profile or duplicate tasks.
+    assert worker.backfill_missing_active_searches(db, limit=2)["repaired"] == 0
+    assert db.crm_tasks.count_documents({}) == 1

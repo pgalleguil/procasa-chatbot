@@ -7157,22 +7157,40 @@ async def process_pending_leads_loop():
                             await run_db("pending_notifications.mark_sent", mark_notification_sent, p["_id"])
                             continue
 
-                        # Validate the queued recipient against the live CRM
-                        # cycle before any executive-facing WhatsApp is sent.
-                        from chatbot.crm_assignment_integrity import prepare_pending_assignment_notification
+                        # Executive notices require a canonical assignment cycle.
+                        # MissingProperty is ADMINISTRATIVE: never assign an
+                        # executive simply to deliver this warning to the admin.
+                        from chatbot.crm_assignment_integrity import (
+                            prepare_pending_assignment_notification,
+                            prepare_pending_missing_property_admin_alert,
+                        )
+                        from chatbot.missing_property_admin import is_missing_property_admin_alert
                         from chatbot.storage import get_db as _get_assignment_db
                         requested_name = p.get("target_name") or lead_data.get("target_name")
-                        guarded = await run_db(
-                            "pending_notifications.assignment_guard",
-                            lambda: prepare_pending_assignment_notification(
-                                _get_assignment_db(),
-                                lead_phone=str(lead_data.get("phone") or ""),
-                                requested_owner_name=str(requested_name or ""),
-                                requested_cycle_id=str(
-                                    p.get("assignment_cycle_id") or lead_data.get("assignment_cycle_id") or ""
-                                ) or None,
-                            ),
-                        )
+                        admin_only = is_missing_property_admin_alert(p, target_phone)
+                        if admin_only:
+                            guarded = await run_db(
+                                "pending_notifications.missing_property_admin_guard",
+                                lambda: prepare_pending_missing_property_admin_alert(
+                                    _get_assignment_db(),
+                                    lead_phone=str(lead_data.get("phone") or ""),
+                                    requested_target_phone=str(target_phone),
+                                    lead_type=str(lead_data.get("lead_type") or ""),
+                                    assignment_type=str(lead_data.get("assignment_type") or ""),
+                                ),
+                            )
+                        else:
+                            guarded = await run_db(
+                                "pending_notifications.assignment_guard",
+                                lambda: prepare_pending_assignment_notification(
+                                    _get_assignment_db(),
+                                    lead_phone=str(lead_data.get("phone") or ""),
+                                    requested_owner_name=str(requested_name or ""),
+                                    requested_cycle_id=str(
+                                        p.get("assignment_cycle_id") or lead_data.get("assignment_cycle_id") or ""
+                                    ) or None,
+                                ),
+                            )
                         if guarded.get("status") != "ready":
                             reason = str(guarded.get("reason") or "assignment_unverified")
                             await run_db(
@@ -7200,17 +7218,18 @@ async def process_pending_leads_loop():
                         lead_data["target_name"] = guarded["owner_name"]
                         lead_data["assignment_cycle_id"] = guarded["cycle_id"]
                             
-                        if target_phone not in by_executive:
-                            by_executive[target_phone] = {"name": guarded["owner_name"], "items": []}
-                        
-                        by_executive[target_phone]["items"].append(p)
+                        group_key = (target_phone, "missing_property_admin" if admin_only else "executive")
+                        if group_key not in by_executive:
+                            by_executive[group_key] = {"name": guarded["owner_name"], "items": []}
+
+                        by_executive[group_key]["items"].append(p)
 
                     # 2. Procesar cada ejecutivo
                     from chatbot.lead_router import format_whatsapp_template, format_summary_whatsapp_template
                     from chatbot.notification_service import NotificationService
                     from chatbot.notification_identity import deduplicate_lead_notifications
 
-                    for target_phone, data in by_executive.items():
+                    for (target_phone, notice_bucket), data in by_executive.items():
                         raw_items = data["items"]
                         items = deduplicate_lead_notifications(raw_items)
                         target_name = data["name"]
@@ -7225,7 +7244,11 @@ async def process_pending_leads_loop():
                         # Si tiene más de uno, enviamos resumen agrupado
                         if len(items) > 1:
                             logger.info(f"[BACKGROUND] Enviando resumen de {len(items)} leads a {target_name}")
-                            msg = format_summary_whatsapp_template(items, target_name)
+                            if notice_bucket == "missing_property_admin":
+                                from chatbot.missing_property_admin import format_missing_property_admin_summary
+                                msg = format_missing_property_admin_summary(items)
+                            else:
+                                msg = format_summary_whatsapp_template(items, target_name)
                             
                             success = await NotificationService.send_notification(
                                 phone=target_phone,
@@ -7248,15 +7271,19 @@ async def process_pending_leads_loop():
                             prop_code = lead_data.get("property_code")
                             
                             logger.info(f"[BACKGROUND] Enviando lead individual {lead_phone} a {target_name}")
-                            msg = await run_db(
-                                "lead_router.format_whatsapp_template",
-                                format_whatsapp_template,
-                                lead_data,
-                                target_name,
-                                prop_code,
-                                True
-                            )
-                            
+                            if notice_bucket == "missing_property_admin":
+                                from chatbot.missing_property_admin import format_missing_property_admin_alert
+                                msg = format_missing_property_admin_alert(lead_data)
+                            else:
+                                msg = await run_db(
+                                    "lead_router.format_whatsapp_template",
+                                    format_whatsapp_template,
+                                    lead_data,
+                                    target_name,
+                                    prop_code,
+                                    True
+                                )
+
                             success = await NotificationService.send_notification(
                                 phone=target_phone,
                                 message=msg,

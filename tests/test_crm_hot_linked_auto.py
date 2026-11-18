@@ -118,6 +118,26 @@ class Outbox:
         self.docs[query["_id"]].update(update["$set"])
 
 
+class OfficeJobs:
+    def __init__(self):
+        self.record = None
+
+    def find_one(self, query, projection):
+        row = self.record
+        if not isinstance(row, dict):
+            return None
+        for key in ("kind", "message_type", "message_domain", "is_from_me", "lead_id", "phone"):
+            if row.get(key) != query.get(key):
+                return None
+        when = row.get("received_at")
+        interval = query.get("received_at") or {}
+        if not isinstance(when, datetime) or not (interval.get("$gte") <= when <= interval.get("$lte")):
+            return None
+        if not row.get("inbound_provider_message_id"):
+            return None
+        return dict(row)
+
+
 class Users:
     def find_one(self, query, projection):
         if str(query.get("_id")) != OWNER:
@@ -135,6 +155,7 @@ def context(monkeypatch):
         "leads": leads,
         "crm_assignment_cycles": cycles,
         "usuarios": Users(),
+        "chatbot_inbound_jobs": OfficeJobs(),
         hot.OUTBOX: Outbox(),
     }
     monkeypatch.setenv("PROCASA_EXEC_HOT_AUTO_ENABLED", "1")
@@ -362,3 +383,46 @@ def test_temperature_mirror_mismatch_fails_closed(context):
     with pytest.raises(hot.OutboundBlocked):
         send(db, lambda *a, **k: pytest.fail("not HOT"))
     assert not db[hot.OUTBOX].docs
+
+
+def test_verified_recent_office_inbound_job_allows_real_hot_contact(context):
+    db, leads, cycles = context
+    leads.doc["messages"] = []
+    db["chatbot_inbound_jobs"].record = {
+        "kind": "inbound_job",
+        "message_type": "inbound_message",
+        "message_domain": "chatbot",
+        "is_from_me": False,
+        "lead_id": str(ID), "phone": leads.doc["phone"],
+        "received_at": NOW - timedelta(minutes=8),
+        "inbound_provider_message_id": "real-provider-inbound-001",
+    }
+    result = send(db, lambda *_a, **_kw: response())
+    assert result["status"] == "accepted_exempt"
+    assert cycles.doc["hot_auto_sla_exemption"]["provider_message_id"] == "provider-hot-001"
+
+
+@pytest.mark.parametrize("field,bad", [
+    ("lead_id", "other-lead"),
+    ("phone", "+56999998888"),
+    ("message_domain", "campaign"),
+    ("message_type", "outbound_message"),
+    ("kind", "batch"),
+    ("is_from_me", True),
+    ("inbound_provider_message_id", ""),
+    ("received_at", NOW - timedelta(days=3)),
+])
+def test_untrusted_office_job_cannot_authorize_hot_send(context, field, bad):
+    db, leads, _ = context
+    leads.doc["messages"] = []
+    row = {
+        "kind": "inbound_job", "message_type": "inbound_message",
+        "message_domain": "chatbot", "is_from_me": False,
+        "lead_id": str(ID), "phone": leads.doc["phone"],
+        "received_at": NOW - timedelta(minutes=8),
+        "inbound_provider_message_id": "inbound-provider-001",
+    }
+    row[field] = bad
+    db["chatbot_inbound_jobs"].record = row
+    with pytest.raises(hot.OutboundBlocked, match="whatsapp_permission_missing"):
+        send(db, lambda *_a, **_kw: pytest.fail("untrusted inbound must not be sent"))

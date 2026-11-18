@@ -300,10 +300,25 @@ def process_chat_timeline(messages):
         
         ts_obj = msg.get("timestamp")
         if isinstance(ts_obj, str):
-            try: ts_obj = datetime.fromisoformat(ts_obj.replace('Z', ''))
-            except: ts_obj = datetime.min
-        
-        if ts_obj is None: ts_obj = datetime.min
+            try:
+                # Keep the offset: stripping "Z" loses the UTC information
+                # and can display an executive/office message three hours late.
+                ts_obj = datetime.fromisoformat(ts_obj.replace("Z", "+00:00"))
+                # Legacy Prop360 values without an explicit offset are
+                # ambiguous; preserve their wall clock rather than inventing
+                # a timezone. All new messages have a verified offset.
+                if ts_obj.tzinfo is not None:
+                    ts_obj = ts_obj.astimezone(CHILE_TZ)
+            except (ValueError, TypeError):
+                ts_obj = datetime.min
+        elif isinstance(ts_obj, datetime):
+            # Naive BSON Date values are UTC; normalize before display.
+            if ts_obj.tzinfo is None:
+                ts_obj = ts_obj.replace(tzinfo=timezone.utc)
+            ts_obj = ts_obj.astimezone(CHILE_TZ)
+
+        if ts_obj is None:
+            ts_obj = datetime.min
             
         processed.append({
             "role": css_class, 

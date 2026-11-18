@@ -619,7 +619,7 @@ def _revalidate(
     # Read this inside the transaction: a worker can hold an older decision
     # after a confirmed API greeting has exempted the current HOT cycle.
     from .crm_hot_linked_auto import sla_exemption
-    if sla_exemption(source, lead):
+    if sla_exemption(source):
         raise _KnownAbort(SLAReassignmentErrorCode.ABORT_SLA_NOT_EXPIRED, "hot_exec_auto_exempt")
     if str(source.get("reassignment_state") or "").upper() == "AWAITING_OWNER_NOTIFICATION":
         raise _KnownAbort(

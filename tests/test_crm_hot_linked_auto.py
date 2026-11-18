@@ -241,8 +241,8 @@ def test_accepted_send_creates_automation_not_human_and_active_sla_exemption(con
     assert not expired.expired
     assert expired.breach_at is None
     assert expired.canonical_state == "EXEMPT_AUTO_HOT"
-    second = send(db, lambda *a, **k: pytest.fail("never send another greeting"))
-    assert second["status"] == "already_exempt" if isinstance(second, dict) else True
+    with pytest.raises(hot.OutboundBlocked, match="already_exempt"):
+        send(db, lambda *a, **k: pytest.fail("never send another greeting"))
 
 
 def test_provider_failure_keeps_original_hot_sla(context):

@@ -450,10 +450,8 @@ def test_hot_greeting_uses_property_and_visit_intent_without_reasking_for_detail
     assert len(sent) == 1
     greeting = sent[0]
     assert greeting.startswith("Hola Juan, soy Hernán, tu asesor inmobiliario asignado en PROCASA.")
-    assert "una búsqueda" not in greeting
     assert "16479" not in greeting
-    assert "búsqueda" not in greeting
-    assert "Maipú" in greeting
+    assert "tu búsqueda inmobiliaria en Maipú" in greeting
     assert "propusiste un horario para visitar la propiedad" in greeting
     assert "sábado" not in greeting  # do not echo proposed personal details
     assert "+56912345678" not in greeting

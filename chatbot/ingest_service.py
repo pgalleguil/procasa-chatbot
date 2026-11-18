@@ -25,6 +25,8 @@ import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+import re
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field, asdict
 
@@ -69,6 +71,60 @@ def _has_hot_intent(message: str) -> bool:
         if keyword in msg_lower:
             return True
     return False
+
+
+def _portal_message_entry(event, *, message: str, contact_date: str, portal_source: str, now_iso: str) -> dict | None:
+    """Form metadata is not customer chat; preserve it in source_events only.
+
+    Real written portal inquiries may be kept as customer messages, but must
+    identify their portal channel and have an offset-aware Chile timestamp.
+    """
+    if str(event.source_system).lower() != "prop360":
+        # This change is strictly Prop360-specific. Preserve established
+        # ingest semantics for the other connectors.
+        return {
+            "role": "user",
+            "content": message or f"Contacto desde {portal_source or event.source_system}",
+            "timestamp": contact_date,
+            "source": event.source_system,
+            "source_event_id": event.source_event_id,
+            "portal": portal_source,
+        }
+    meta = event.metadata if isinstance(event.metadata, dict) else {}
+    generated = (
+        str(event.source_system).lower() == "prop360"
+        and (
+            meta.get("contact_message_present") is False
+            or (
+                meta.get("contact_message_present") is not True
+                and bool(re.fullmatch(r"Contacto vía .{1,80} \([A-Za-záéíóúñÁÉÍÓÚÑ -]{1,35}\)", message))
+            )
+        )
+    )
+    if generated:
+        return None
+    if not message:
+        return None
+    stamp = str(contact_date or "")
+    try:
+        dt = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        if dt.tzinfo is None and str(event.source_system).lower() == "prop360":
+            dt = dt.replace(tzinfo=ZoneInfo("America/Santiago"))
+        stamp = dt.isoformat() if dt.tzinfo is not None else now_iso
+    except (ValueError, TypeError):
+        stamp = now_iso
+    result = {
+        "role": "user",
+        "actor_type": "customer",
+        "content": message,
+        "timestamp": stamp,
+        "source": event.source_system,
+        "source_event_id": event.source_event_id,
+        "portal": portal_source,
+    }
+    if str(event.source_system).lower() == "prop360":
+        result["channel"] = "portal_form"
+    return result
 
 
 def ensure_idempotency_index():
@@ -315,6 +371,10 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
     property_code = str(event.property_code or "").strip()
     portal_source = (event.portal_source or event.metadata.get("medio") or "").strip()
     contact_date = event.contact_date or now_iso
+    portal_message_entry = _portal_message_entry(
+        event, message=message, contact_date=contact_date,
+        portal_source=portal_source, now_iso=now_iso,
+    )
 
     if not _atomic_reserve_event(event.source_system, event.source_event_id):
         ledger = db[IDEMPOTENCY_COLLECTION].find_one({
@@ -481,11 +541,32 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
                 },
             )
         update_fields: Dict[str, Any] = {
-            "last_message_at": now_iso,
             "last_crm_update": now,
             "updated_at": now_iso,
             "canal_envio": _canal_envio(event.source_system, portal_source),
         }
+
+        if portal_message_entry is not None:
+            # An imported portal inquiry may be older than a conversation
+            # already handled by the office chatbot or assigned executive.
+            # Never move the canonical last-message cursor backward.
+            existing_last = target_lead.get("last_message_at")
+            can_advance = existing_last is None
+            if existing_last is not None:
+                try:
+                    incoming_dt = datetime.fromisoformat(
+                        portal_message_entry["timestamp"].replace("Z", "+00:00"))
+                    previous_dt = (existing_last if isinstance(existing_last, datetime)
+                                   else datetime.fromisoformat(str(existing_last).replace("Z", "+00:00")))
+                    can_advance = (
+                        incoming_dt.tzinfo is not None
+                        and previous_dt.tzinfo is not None
+                        and incoming_dt >= previous_dt
+                    )
+                except (ValueError, TypeError):
+                    can_advance = False
+            if can_advance:
+                update_fields["last_message_at"] = portal_message_entry["timestamp"]
 
         if email:
             update_fields["prospecto.email"] = email
@@ -523,15 +604,6 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         if property_code and _is_valid_property_code(property_code):
             update_fields["$addToSet"]["prospecto.propiedades_vistas"] = property_code
 
-        message_entry = {
-            "role": "user",
-            "content": message or f"Contacto desde {portal_source or event.source_system}",
-            "timestamp": contact_date,
-            "source": event.source_system,
-            "source_event_id": event.source_event_id,
-            "portal": portal_source,
-        }
-
         current_exec = target_lead.get("ejecutivo_asignado") or target_lead.get("prospecto", {}).get("ejecutivo")
         unassigned = {UNASSIGNED_LABEL, "No Asignado", "No asignado", "Sin Asignar", None, ""}
         canonical_owner = (active_cycle or {}).get("assigned_to_display_name")
@@ -568,7 +640,9 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
         if hot_detected and not target_lead.get("last_intent"):
             update_fields["last_intent"] = "ASK_VISIT"
 
-        update_payload = {"$set": {}, "$push": {"messages": {"$each": [message_entry], "$slice": -50}}}
+        update_payload = {"$set": {}}
+        if portal_message_entry is not None:
+            update_payload["$push"] = {"messages": portal_message_entry}
         for k, v in update_fields.items():
             if k != "$addToSet":
                 update_payload["$set"][k] = v
@@ -711,16 +785,7 @@ def ingest_lead_event(event: LeadEvent) -> IngestResult:
             "canal_origen": portal_source or event.source_system,
         },
         "lifecycle": {"created_at": now_iso},
-        "messages": [
-            {
-                "role": "user",
-                "content": message or f"Contacto desde {portal_source or event.source_system}",
-                "timestamp": contact_date,
-                "source": event.source_system,
-                "source_event_id": event.source_event_id,
-                "portal": portal_source,
-            }
-        ],
+        "messages": [portal_message_entry] if portal_message_entry is not None else [],
         "stage_history": [
             {
                 "from": None,

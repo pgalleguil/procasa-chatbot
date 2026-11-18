@@ -637,6 +637,7 @@ class Prop360Extractor:
         self.metrics["last_id_contacto"] = id_contacto
 
         message = str(prop360_lead.get("contMsg") or "").strip()
+        contact_message_present = bool(message)
         contact_type = self._map_contact_type(prop360_lead.get("tipoContacto", ""))
         if not message:
             message = f"Contacto vía {prop360_lead.get('medio', 'Portal')} ({contact_type})"
@@ -652,6 +653,7 @@ class Prop360Extractor:
             portal_source=str(prop360_lead.get("medio") or "Portal Inmobiliario"),
             contact_date=str(prop360_lead.get("fechaContacto") or ""),
             metadata={
+                "contact_message_present": contact_message_present,
                 "idm": prop360_lead.get("idm"),
                 "tipoContacto": prop360_lead.get("tipoContacto"),
                 "contIdEstado": prop360_lead.get("contIdEstado"),

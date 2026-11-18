@@ -550,3 +550,53 @@ def test_notification_retry_after_cycle_persisted_completes_missing_digest(monke
     assert db["crm_assignment_cycles"].count_documents({"source_system": "prop360", "source_event_id": "11290"}) == 1
     assert db["crm_notifications_v1"].count_documents({}) == 1
     assert db["lead_ingest_events"].find_one({"source_system": "prop360", "source_event_id": "11290"})["status"] == "completed"
+
+
+
+def test_prop360_form_without_written_text_is_not_chat_message():
+    event = LeadEvent(
+        source_system="prop360", source_event_id="13905", phone="+56996762064",
+        message="Contacto vía Yapo (form)", contact_date="2026-11-18T14:08:08",
+        portal_source="Yapo", metadata={"contact_message_present": False},
+    )
+    assert ingest_service._portal_message_entry(
+        event, message=event.message, contact_date=event.contact_date,
+        portal_source="Yapo", now_iso="2026-11-18T20:00:00+00:00",
+    ) is None
+    # Legacy generated notices lacking the new explicit boolean also fail closed.
+    event.metadata = {}
+    assert ingest_service._portal_message_entry(
+        event, message=event.message, contact_date=event.contact_date,
+        portal_source="Yapo", now_iso="2026-11-18T20:00:00+00:00",
+    ) is None
+
+
+def test_prop360_written_inquiry_is_customer_portal_message_not_whatsapp():
+    event = LeadEvent(
+        source_system="prop360", source_event_id="13906", phone="+56996762064",
+        message="¿Puedo visitar el sitio?", contact_date="2026-11-18T14:08:08",
+        portal_source="Yapo", metadata={"contact_message_present": True},
+    )
+    msg = ingest_service._portal_message_entry(
+        event, message=event.message, contact_date=event.contact_date,
+        portal_source="Yapo", now_iso="2026-11-18T20:00:00+00:00",
+    )
+    assert msg["role"] == "user"
+    assert msg["actor_type"] == "customer"
+    assert msg["channel"] == "portal_form"
+    assert msg["source"] == "prop360"
+    assert msg["source_event_id"] == "13906"
+    assert msg["content"] == "¿Puedo visitar el sitio?"
+    assert msg["timestamp"].endswith("-03:00")
+
+
+def test_prop360_notice_cannot_become_hot_from_template_keywords():
+    event = LeadEvent(
+        source_system="prop360", source_event_id="13907",
+        message="Contacto vía Yapo (form)", portal_source="Yapo",
+        metadata={"contact_message_present": False},
+    )
+    assert ingest_service._portal_message_entry(
+        event, message=event.message, contact_date="2026-11-18T14:08:08",
+        portal_source="Yapo", now_iso="2026-11-18T20:00:00+00:00",
+    ) is None

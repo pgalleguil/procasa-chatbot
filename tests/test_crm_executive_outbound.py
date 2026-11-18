@@ -229,3 +229,35 @@ def test_reassignment_between_claim_and_provider_call_is_blocked(context, monkey
                                   post=lambda *a, **k: pytest.fail("reassigned lead was contacted"))
     assert result == {"status": "blocked", "reason": "current_assignment_required"}
     assert db["leads"].document["messages"] == []
+
+
+
+def test_webhook_echo_before_api_acceptance_does_not_create_duplicate(context, monkeypatch):
+    import mongomock
+    db, cycle = context
+    lead_copy = deepcopy(db["leads"].document)
+    lead_copy["messages"] = [{
+        "message_id": "whatsapp-echo-first", "role": "agent", "actor_type": "human_agent",
+        "source": "whatsapp_direct", "channel": "executive_whatsapp",
+        "wasender_session_id": "133517", "assigned_executive_id": OWNER,
+        "assignment_cycle_id": CYCLE, "provider_message_id": "3EB0ECHO",
+        "content": "Hola, recibí tu consulta ",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }]
+    coll = mongomock.MongoClient().test.echo_leads
+    coll.insert_one(lead_copy)
+    db["leads"] = coll
+    monkeypatch.setattr(outgoing, "_authorized_lead", lambda _db, phone, user_id: (
+        coll.find_one({"_id": LEAD_ID}), cycle,
+    ))
+    result = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER,
+        message="Hola, recibí tu consulta", idempotency_key="request-echo-first",
+        post=lambda *_a, **_kw: _response(msg="api-98648827"),
+    )
+    assert result == {"status": "accepted", "provider_message_id": "api-98648827", "recorded": True}
+    messages = coll.find_one({"_id": LEAD_ID})["messages"]
+    assert len(messages) == 1
+    assert messages[0]["provider_message_id"] == "3EB0ECHO"
+    assert messages[0]["crm_api_provider_message_id"] == "api-98648827"
+    assert next(iter(db[outgoing.OUTBOX].docs.values()))["canonical_recorded"] is True

@@ -17,6 +17,7 @@ import requests
 
 from .crm_metrics import active_assignment_cycle
 from .executive_whatsapp_audit import _session, _authorized_lead
+from .executive_whatsapp_echo import find_unique_echo_match
 from config import Config
 from .phone_utils import normalize_phone_strict
 from .price_drop_campaign_classifier import lead_must_not_be_contacted
@@ -172,6 +173,30 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     }})
     if state != "accepted":
         return {"status": state}
+    # A signed messages.upsert webhook can arrive before the send-message API
+    # response. Reconcile it instead of writing a second canonical row.
+    fresh = db["leads"].find_one({"_id": oid}) or {}
+    echo = find_unique_echo_match(
+        fresh.get("messages") or [],
+        source="whatsapp_direct", content=message,
+        session_id=sid, cycle_id=cycle_id, owner_id=owner,
+        occurred_at=datetime.now(timezone.utc),
+    )
+    if echo:
+        merged = db["leads"].update_one({
+            "_id": oid, "phone": lead["phone"],
+            "lifecycle.current_assignment_cycle_id": cycle_id,
+            "lifecycle.assigned_to_user_id": owner,
+            "messages": {"$elemMatch": {
+                "message_id": echo["message_id"],
+                "crm_api_provider_message_id": {"$exists": False},
+            }},
+        }, {"$set": {"messages.$.crm_api_provider_message_id": pid}})
+        accepted = merged.modified_count == 1
+        db[OUTBOX].update_one({"_id": identity}, {"$set": {
+            "canonical_recorded": accepted,
+        }})
+        return {"status": "accepted", "provider_message_id": pid, "recorded": accepted}
     # CAS prevents writing an executive message into a reassigned lead.
     entry = {
         "message_id": str(uuid4()), "lead_id": str(oid),

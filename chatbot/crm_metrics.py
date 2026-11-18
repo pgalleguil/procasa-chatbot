@@ -955,7 +955,7 @@ def calculate_cycle_sla(*, cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
     # A verified, cycle-scoped executive HOT greeting uses an explicit
     # operational exception; it is never counted as human management.
     from .crm_hot_linked_auto import sla_exemption
-    if sla_exemption(cycle, lead):
+    if sla_exemption(cycle):
         return {
             "status": "exempt", "canonical_state": "EXEMPT_AUTO_HOT",
             "temperature": "HOT", "minutes": None, "hot_minutes": None,

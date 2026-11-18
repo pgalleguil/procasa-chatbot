@@ -86,6 +86,8 @@ def sla_exemption(cycle: dict | None, lead: dict | None = None) -> dict | None:
         or not str(row.get("session_id") or "").isdigit()
         or not coerce_utc_datetime(row.get("accepted_at"))
         or str(cycle.get("temperature_at_assignment") or "").upper() != "HOT"
+        or cycle.get("cycle_status") != "active"
+        or cycle.get("unassigned_at") is not None
     ):
         return None
     # Never apply past-cycle exemption to a new or unrelated lead.
@@ -169,6 +171,8 @@ def eligible_hot_auto(db, *, lead: dict, cycle: dict, now: datetime) -> dict:
         or not cycle.get("assignment_cycle_id")
         or str(cycle.get("temperature_at_assignment") or "").upper() != "HOT"
         or resolve_cycle_sla_temperature(cycle=cycle, lead=lead) != "HOT"
+        or cycle.get("sla_start_status") == "pending_notification"
+        or str(cycle.get("reassignment_state") or "") == "AWAITING_OWNER_NOTIFICATION"
     ):
         raise OutboundBlocked("not_active_hot_cycle")
     if sla_exemption(cycle, lead) is not None:

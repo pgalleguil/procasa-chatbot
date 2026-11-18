@@ -297,13 +297,15 @@ def _recent_office_context(lead: dict, *, assigned_at: datetime, now: datetime) 
             last_bot_question = questions[-1] if questions else ""
             continue
         recent_customer = True
-        if _VISIT_NEGATION.search(body):
+        visit_declined = bool(_VISIT_NEGATION.search(body))
+        if visit_declined:
             if "visita" in topics:
                 topics.remove("visita")
             proposed_visit_time = False
-            last_bot_question = ""
-            continue
-        found = [key for key, pattern in _INTENT_PATTERNS if pattern.search(body)]
+        # A declined visit must not hide a different request in the same text
+        # (e.g. "no quiero visitar, pero necesito conocer el precio").
+        found = [key for key, pattern in _INTENT_PATTERNS
+                 if not (visit_declined and key == "visita") and pattern.search(body)]
         # Explicit acceptance of the chatbot's immediately preceding question
         # can carry intent even if the answer is just "sí, por favor".
         if not found and _AFFIRMATIVE.fullmatch(body) and last_bot_question:

@@ -7168,7 +7168,11 @@ async def process_pending_leads_loop():
                         from chatbot.storage import get_db as _get_assignment_db
                         requested_name = p.get("target_name") or lead_data.get("target_name")
                         admin_only = is_missing_property_admin_alert(p, target_phone)
-                        if admin_only:
+                        if lead_type == "MissingProperty" and not admin_only:
+                            # A tampered/stale admin notice must NEVER fall
+                            # through to an executive cycle assignment.
+                            guarded = {"status": "blocked", "reason": "invalid_missing_property_recipient"}
+                        elif admin_only:
                             guarded = await run_db(
                                 "pending_notifications.missing_property_admin_guard",
                                 lambda: prepare_pending_missing_property_admin_alert(

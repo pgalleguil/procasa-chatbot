@@ -18,6 +18,7 @@ from pymongo import ReturnDocument
 from .crm_metrics import active_assignment_cycle
 from .executive_conversation_intelligence import VERSION, classify_hybrid
 from .executive_opportunities import merge_opportunities
+from .active_search import capture_active_search, find_matching_inventory
 
 logger = logging.getLogger(__name__)
 WINDOW = 200
@@ -127,6 +128,78 @@ def _load_window(db, doc):
     return True
 
 
+def _load_office_search_context(db, doc: dict) -> tuple[list[dict], dict]:
+    """Only canonical office CUSTOMER turns in this exact conversation.
+
+    Unlike executive turns, these messages are NEVER passed to DeepSeek or
+    stored in the executive interpretation window. No personal chats/portals.
+    """
+    base = db["leads"].find_one({"_id": doc["_id"]}, {
+        "conversation_id": 1, "codigo_propiedad": 1, "codigo": 1,
+        "operacion": 1, "prospecto.operacion": 1,
+    }) or {}
+    conv_id = str(base.get("conversation_id") or "")
+    if not conv_id:
+        return [], base
+    rows = list(db["leads"].aggregate([
+        {"$match": {"_id": doc["_id"],
+                    "conversation_id": conv_id}},
+        {"$project": {"office_customer": {"$slice": [{"$filter": {
+            "input": {"$ifNull": ["$messages", []]}, "as": "m",
+            "cond": {"$and": [
+                {"$eq": ["$m.actor_type", "customer"]},
+                {"$eq": ["$m.role", "user"]},
+                {"$eq": ["$m.conversation_id", conv_id]},
+                {"$in": [{"$ifNull": ["$m.channel", ""]}, ["", "office_whatsapp", "whatsapp"]]},
+                {"$in": [{"$ifNull": ["$m.source", ""]},
+                         ["", "office_whatsapp", "wasender_inbound", "whatsapp_inbound", "whatsapp"]]},
+            ]}}}, -100]}}},
+    ]))
+    return (rows[0].get("office_customer") or []) if rows else [], base
+
+
+def _merge_search_into_summary(db, doc: dict, turns: list[dict],
+                               summary: dict) -> None:
+    office, base = _load_office_search_context(db, doc)
+    marker = doc.get("commercial_intelligence") or {}
+    life = doc.get("lifecycle") or {}
+    search = capture_active_search(
+        office + turns,
+        conversation_id=str(base.get("conversation_id") or ""),
+        cycle_id=str(life.get("current_assignment_cycle_id") or ""),
+        owner_id=str(life.get("assigned_to_user_id") or ""),
+        session_id=str(marker.get("pending_session_id") or ""),
+        original_property_code=str(base.get("codigo_propiedad") or base.get("codigo") or ""),
+        original_operation=str(base.get("operacion") or (base.get("prospecto") or {}).get("operacion") or ""),
+        prior=marker.get("active_search"),
+    )
+    if not search:
+        return
+    if search.get("status") != "ACTIVE":
+        # Explicitly completed searches remain traceable, not a target for
+        # matching or outbound communication.
+        doc["_active_search"] = {**search, "match_status": "CLOSED", "matches": []}
+        return
+    search["matches"] = find_matching_inventory(db, search)
+    search["match_status"] = "CANDIDATES_NEED_VERIFICATION" if search["matches"] else "WAITING_INVENTORY"
+    search["last_matched_at"] = datetime.now(timezone.utc).isoformat()
+    doc["_active_search"] = search
+    if search.get("followup_required"):
+        criteria = search["criteria"]
+        canonical = {
+            key: criteria[key] for key in
+            ("operation", "comunas", "property_types", "max_price_clp")
+            if key in criteria
+        }
+        summary["search_status"] = "ACTIVE"
+        summary["search"] = {**summary.get("search", {}), **canonical}
+        summary.setdefault("needs", {})["DEMAND"] = summary["search"]
+        summary.setdefault("field_evidence", {})["DEMAND"] = search.get("field_evidence", {})
+        summary["active_search_status"] = search["match_status"]
+        # This is an outstanding opportunity, not a promise of a visit.
+        summary["followup_search_required"] = True
+
+
 def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
     marker = doc.get("commercial_intelligence") or {}
     lifecycle = doc.get("lifecycle") or {}
@@ -158,6 +231,8 @@ def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
     if summary is not None:
         values["commercial_intelligence.summary"] = summary
         values["commercial_intelligence.version"] = VERSION
+        if "_active_search" in doc:
+            values["commercial_intelligence.active_search"] = doc["_active_search"]
         if "_opportunities" in doc:
             # The ledger lives on the canonical lead, not in the versioned
             # summary. Preserve it across agent reassignment and greetings.
@@ -216,6 +291,7 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     summary = classify_hybrid(
         turns, prior, llm_enabled=llm_enabled, propose=propose,
     )
+    _merge_search_into_summary(db, doc, turns, summary)
     ledger, active, open_count = merge_opportunities(
         turns, marker.get("opportunities"), summary,
         cycle_id=cycle_id, session_id=session_id, owner_id=owner,
@@ -233,6 +309,17 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
         management["next_step_hint"] = active["next_step_hint"]
     if active and active["status"] == "PENDIENTE_GESTION":
         management["pending_customer_request"] = True
+    if summary.get("followup_search_required"):
+        # Do not confuse "last message = gracias" with "buyer is done".
+        management["case_type"] = "BUSQUEDA_ACTIVA_ALTERNATIVAS"
+        management["next_step_hint"] = (
+            "REVALIDAR_Y_PROPONER_ALTERNATIVAS"
+            if doc["_active_search"].get("matches")
+            else "BUSCAR_ALTERNATIVAS_Y_HACER_SEGUIMIENTO"
+        )
+        management["pending_customer_request"] = True
+        summary["needs_review"] = bool(doc["_active_search"].get("matches"))
+
     if doc.get("_checkpoint_missing"):
         summary["needs_review"] = True
         summary["history_incomplete"] = True

@@ -449,9 +449,10 @@ def test_hot_greeting_uses_property_and_visit_intent_without_reasking_for_detail
     assert result["status"] == "accepted_exempt"
     assert len(sent) == 1
     greeting = sent[0]
-    assert greeting.startswith("Hola Juan, soy Hernán de PROCASA.")
-    assert "propiedad código 16479 en Maipú" in greeting
-    assert "coordinar una visita" in greeting
+    assert greeting.startswith("Hola Juan, soy Hernán, tu asesor inmobiliario asignado en PROCASA.")
+    assert "16479" not in greeting
+    assert "tu búsqueda inmobiliaria en Maipú" in greeting
+    assert "propusiste un horario para visitar la propiedad" in greeting
     assert "sábado" not in greeting  # do not echo proposed personal details
     assert "+56912345678" not in greeting
     assert "¿Qué día" not in greeting  # do not ask again for a supplied day
@@ -470,8 +471,9 @@ def test_hot_greeting_price_context_excludes_raw_user_content(context):
     }]
     greeting = hot._message_for(leads.doc, "Paula Morales", assigned_at=ASSIGNED, now=NOW)
     assert "soy Paula" in greeting
-    assert "propiedad código 6436 en Peñaflor" in greeting
-    assert "preguntaste por el precio" in greeting
+    assert "6436" not in greeting
+    assert "Peñaflor" in greeting
+    assert "consultaste por el precio" in greeting
     assert "privado@example.org" not in greeting
 
 
@@ -541,3 +543,153 @@ def test_hot_greeting_never_includes_untrusted_property_fields(context):
     assert "ENVIA" not in greeting
     assert "Comparte" not in greeting
     assert "disponibilidad" in greeting
+
+
+
+def test_hot_greeting_continues_actual_multi_turn_customer_and_bot_dialogue(context):
+    db, leads, cycles = context
+    leads.doc["prospecto"].update({
+        "nombre": "Juan", "codigo_propiedad": "16479",
+        "tipo": "DEPTO", "operacion": "A", "comuna": "Ñuñoa",
+    })
+    leads.doc["messages"] = [
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=16)).isoformat(),
+         "content": "Hola, ¿aún está disponible?"},
+        {"role": "assistant", "actor_type": "bot", "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=14)).isoformat(),
+         "content": "Gracias por consultar. ¿Te gustaría agendar una visita?"},
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=13)).isoformat(),
+         "content": "Sí, por favor"},
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=10)).isoformat(),
+         "content": "Me gustaría ir el sábado a las 11:00. Mi mail es privado@example.org"},
+    ]
+    sent = []
+    result = send(db, lambda _url, **kwargs: (sent.append(kwargs["json"]["text"]) or response()))
+    assert result["status"] == "accepted_exempt"
+    msg = sent[0]
+    assert "soy Hernán, tu asesor inmobiliario asignado en PROCASA" in msg
+    assert "un departamento en arriendo en Ñuñoa" in msg
+    assert "propusiste un horario para visitar la propiedad" in msg
+    assert "la disponibilidad" in msg
+    assert "16479" not in msg
+    assert "sábado" not in msg
+    assert "11:00" not in msg
+    assert "privado@example.org" not in msg
+    assert "¿Qué día" not in msg
+    assert hot.sla_exemption(cycles.doc, leads.doc) is not None
+    assert calculate_cycle_sla(cycle=cycles.doc, lead=leads.doc, now=NOW)["status"] == "exempt"
+
+
+def test_hot_greeting_uses_two_customer_questions_not_only_the_last_one(context):
+    _db, leads, _cycles = context
+    leads.doc["prospecto"].update({"tipo": "CASA", "operacion": "V", "comuna": "Maipú"})
+    leads.doc["messages"] = [
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=15)).isoformat(),
+         "content": "Hola, ¿qué precio tiene?"},
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=9)).isoformat(),
+         "content": "Y ¿cuánto se paga de gastos comunes?"},
+    ]
+    greeting = hot._message_for(leads.doc, "Paula Morales", assigned_at=ASSIGNED, now=NOW)
+    assert "soy Paula, tu asesora inmobiliaria asignada en PROCASA" in greeting
+    assert "una casa en venta en Maipú" in greeting
+    assert "los gastos comunes" in greeting
+    assert "el precio" in greeting
+    assert "código" not in greeting
+
+
+def test_hot_greeting_respects_visit_decline_but_keeps_other_topic(context):
+    _db, leads, _cycles = context
+    leads.doc["messages"] = [
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=20)).isoformat(),
+         "content": "Quiero agendar una visita y saber el precio"},
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=10)).isoformat(),
+         "content": "No quiero visitar la propiedad; solo necesito saber el precio"},
+    ]
+    greeting = hot._message_for(leads.doc, "Paula", assigned_at=ASSIGNED, now=NOW)
+    assert "coordinar una visita" not in greeting
+    assert "propusiste un horario" not in greeting
+    assert "el precio" in greeting
+
+
+def test_hot_greeting_does_not_assume_bot_offer_without_customer_acceptance(context):
+    _db, leads, _cycles = context
+    leads.doc["messages"] = [
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=15)).isoformat(),
+         "content": "Hola, necesito información"},
+        {"role": "assistant", "actor_type": "bot", "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=10)).isoformat(),
+         "content": "¿Quieres agendar una visita?"},
+    ]
+    greeting = hot._message_for(leads.doc, "Erika", assigned_at=ASSIGNED, now=NOW)
+    assert "soy Erika, tu asesora inmobiliaria asignada" in greeting
+    assert "coordinar una visita" not in greeting
+    assert "propusiste un horario" not in greeting
+
+
+def test_hot_greeting_short_client_confirmation_reuses_real_bot_question(context):
+    _db, leads, _cycles = context
+    leads.doc["messages"] = [
+        {"role": "assistant", "actor_type": "bot", "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=12)).isoformat(),
+         "content": "¿Te gustaría agendar una visita?"},
+        {**inbound(), "conversation_id": "conv-1",
+         "timestamp": (NOW - timedelta(minutes=11)).isoformat(),
+         "content": "Sí, por favor"},
+    ]
+    greeting = hot._message_for(leads.doc, "Susana", assigned_at=ASSIGNED, now=NOW)
+    assert "soy Susana, tu asesora inmobiliaria asignada" in greeting
+    assert "coordinar una visita" in greeting
+
+
+def test_hot_greeting_no_property_codes_or_unverified_narrative(context):
+    _db, leads, _cycles = context
+    leads.doc["prospecto"].update({
+        "codigo_propiedad": "16479", "tipo": "DEPTO",
+        "operacion": "V", "comuna": "Las Condes",
+    })
+    leads.doc["property_resolution_error"] = "property_unresolved"
+    leads.doc["messages"] = [
+        {**inbound(), "conversation_id": "conv-1",
+         "content": "Quiero conocer el precio de la propiedad 16479 y si está disponible"},
+    ]
+    greeting = hot._message_for(leads.doc, "Paula", assigned_at=ASSIGNED, now=NOW)
+    assert "16479" not in greeting
+    assert "Las Condes" not in greeting  # unresolved property, avoid wrong description
+    assert "el precio" in greeting
+    assert "la disponibilidad" in greeting
+    assert "coordinar una visita" not in greeting  # conocer el precio != querer visitar
+
+
+def test_hot_greeting_fallback_still_identifies_assigned_adviser(context):
+    _db, leads, _cycles = context
+    leads.doc["messages"] = []
+    greeting = hot._message_for(leads.doc, "Mariela Arriagada", assigned_at=ASSIGNED, now=NOW)
+    assert "soy Mariela, tu asesora inmobiliaria asignada en PROCASA" in greeting
+    assert "Quedé a cargo de tu consulta" in greeting
+    assert "código" not in greeting
+    assert "visita" not in greeting
+
+
+def test_hot_greeting_unknown_executive_uses_neutral_role(context):
+    _db, leads, _cycles = context
+    greeting = hot._message_for(leads.doc, "Alex Rivera")
+    assert "tu contacto asignado del equipo de asesoría inmobiliaria" in greeting
+
+
+def test_hot_greeting_declined_visit_keeps_price_in_same_message(context):
+    _db, leads, _cycles = context
+    leads.doc["messages"] = [{
+        **inbound(), "conversation_id": "conv-1",
+        "content": "No quiero agendar una visita, pero sí necesito conocer el precio",
+    }]
+    greeting = hot._message_for(leads.doc, "Paula", assigned_at=ASSIGNED, now=NOW)
+    assert "coordinar una visita" not in greeting
+    assert "el precio" in greeting

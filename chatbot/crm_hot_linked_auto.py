@@ -175,34 +175,61 @@ def _verified_recent_office_job(db, *, lead: dict, phone: str, now: datetime) ->
     return bool(row and row.get("inbound_provider_message_id"))
 
 
-# Keep the first executive greeting deterministic. Only reference facts already
-# stored in this lead's recent office chat; never send raw customer text or
-# ask an LLM to infer unverified property details or promise availability.
+# The HOT executive greeting is drafted from a small, verified slice of the
+# office dialogue. It never relays the customer's raw text, codes, links, prices,
+# schedule details, personal data, or unverified claims from the chatbot.
 _CONTEXT_WINDOW = timedelta(hours=24)
 _CONTEXT_SOURCES = {"", "office_whatsapp", "wasender_inbound", "whatsapp_inbound", "whatsapp", "chatbot"}
 _CONTEXT_CHANNELS = {"", "office_whatsapp", "whatsapp"}
 _INTENT_PATTERNS = (
-    ("visita", re.compile(r"\b(?:visita(?:s|r)?|agendar|agendemos)\b|coordinar.{0,35}\bvisita\b|conocer.{0,35}\b(?:casa|departamento|depto|propiedad)\b", re.I)),
+    ("visita", re.compile(r"\b(?:visita(?:s|r)?|agendar|agendemos)\b|coordinar.{0,35}\bvisita\b|\b(?:conocer|ir\s+a\s+ver|ver)\s+(?:(?:la|el|un|una)\s+)?(?:casa|departamento|depto|propiedad)\b", re.I)),
     ("gastos", re.compile(r"\bgastos?\s+comunes?\b", re.I)),
     ("disponibilidad", re.compile(r"\b(?:disponib(?:le|ilidad)|sigue\s+(?:a la venta|en arriendo)|a[uú]n\s+(?:est[aá]|disponible))\b", re.I)),
     ("financiamiento", re.compile(r"\b(?:cr[eé]dito|hipotecari[oa]|financiamient[oa]|pie)\b", re.I)),
     ("precio", re.compile(r"\b(?:precio|valor|cu[aá]nto\s+(?:cuesta|vale)|rebaja)\b", re.I)),
     ("caracteristicas", re.compile(r"\b(?:metros?|m2|m²|superficie|orientaci[oó]n|dormitorios?|estacionamientos?)\b", re.I)),
     ("fotos", re.compile(r"\b(?:fotograf[ií]as?|fotos?|im[aá]genes|video|plano)\b", re.I)),
+    ("ubicacion", re.compile(r"\b(?:ubicaci[oó]n|direcci[oó]n|d[oó]nde\s+(?:queda|est[aá]))\b", re.I)),
 )
 _VISIT_NEGATION = re.compile(
-    r"\b(?:no|nunca)\s+(?:quiero|necesito|me\s+interesa|puedo)\b.{0,60}\b(?:visita|visitar|agendar)\b",
-    re.I,
+    r"\b(?:no|nunca)\s+(?:quiero|necesito|me\s+interesa|puedo)\b.{0,60}\b(?:visita|visitar|agendar)\b"
+    r"|\b(?:visita|visitar|agendar)\b.{0,30}\b(?:no|nunca)\b", re.I,
 )
-_INTENT_SENTENCES = {
-    "visita": "Vi que querías coordinar una visita. Te escribo para revisar los detalles contigo.",
-    "gastos": "Vi que preguntaste por los gastos comunes. Te escribo para ayudarte con esa información.",
-    "disponibilidad": "Vi que consultaste por la disponibilidad. Te escribo para revisarlo contigo.",
-    "financiamiento": "Vi que consultaste por financiamiento. Te escribo para continuar con esa consulta.",
-    "precio": "Vi que preguntaste por el precio. Te escribo para ayudarte con esa información.",
-    "caracteristicas": "Vi que consultaste por características de la propiedad. Te escribo para ayudarte.",
-    "fotos": "Vi que solicitaste información visual de la propiedad. Te escribo para ayudarte.",
+_SCHEDULE_CUE = re.compile(
+    r"\b(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|"
+    r"ma[ñn]ana|pasado\s+ma[ñn]ana|esta\s+tarde|a\s+las\s+\d{1,2})\b|"
+    r"\b\d{1,2}:\d{2}\b", re.I,
+)
+_AFFIRMATIVE = re.compile(
+    r"\s*(?:s[ií]|claro|dale|ok|perfecto|de acuerdo|por supuesto|"
+    r"me interesa|hag[aá]moslo)(?:[,\s]+(?:por favor|gracias|s[ií]))?\s*[.!]?\s*", re.I,
+)
+_TOPIC_PHRASES = {
+    "gastos": "los gastos comunes",
+    "disponibilidad": "la disponibilidad",
+    "financiamiento": "el financiamiento",
+    "precio": "el precio",
+    "caracteristicas": "las características de la propiedad",
+    "fotos": "las fotografías",
+    "ubicacion": "la ubicación",
 }
+_PROPERTY_TYPES = {
+    "CASA": "una casa",
+    "DEPTO": "un departamento",
+    "DEPARTAMENTO": "un departamento",
+    "LOCAL": "un local comercial",
+    "OFICINA": "una oficina",
+    "TERRENO": "un terreno",
+    "SITIO": "un terreno",
+    "PARCELA": "una parcela",
+    "ESTACIONAMIENTO": "un estacionamiento",
+}
+_OPERATION_TYPES = {
+    "V": "en venta", "VENTA": "en venta",
+    "A": "en arriendo", "ARRIENDO": "en arriendo",
+}
+_EXECUTIVE_FEMININE_NAMES = {"paula", "mariela", "erika", "susana", "rocío"}
+_EXECUTIVE_MASCULINE_NAMES = {"hernán"}
 
 
 def _safe_first_name(value: object) -> str:
@@ -211,26 +238,32 @@ def _safe_first_name(value: object) -> str:
     return first if re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ'-]{1,30}", first) else ""
 
 
-def _recent_office_context(lead: dict, *, assigned_at: datetime, now: datetime) -> tuple[str | None, bool]:
-    """Only time-bounded customer messages in this lead's office conversation.
+def _verified_office_dialogue(lead: dict, *, assigned_at: datetime, now: datetime) -> list[tuple[str, str]]:
+    """Chronological office bot + customer turns, limited to this lead and cycle.
 
-    The canonical chatbot often omits source/channel and provider message IDs
-    on messages stored in leads.messages. In that case require actor_type and
-    matching conversation_id; never use portal, campaign, executive or bot text.
+    Bot questions may disambiguate a customer's short "sí", but bot statements
+    are never copied into the outbound greeting or treated as property facts.
     """
     messages = lead.get("messages")
     if not isinstance(messages, list):
-        return None, False
+        return []
     conversation_id = str(lead.get("conversation_id") or "")
-    recent_chat = False
-    for msg in reversed(messages[-40:]):
-        if not isinstance(msg, dict) or msg.get("role") not in {"user", "customer"} or msg.get("actor_type") != "customer":
+    turns = []
+    for index, msg in enumerate(messages[-40:]):
+        if not isinstance(msg, dict):
+            continue
+        role, actor = msg.get("role"), msg.get("actor_type")
+        if actor == "customer" and role in ("user", "customer"):
+            kind = "customer"
+        elif actor == "bot" and role == "assistant":
+            kind = "bot"
+        else:
             continue
         source = str(msg.get("source") or "").lower()
         channel = str(msg.get("channel") or "").lower()
         if source not in _CONTEXT_SOURCES or channel not in _CONTEXT_CHANNELS:
             continue
-        # Unlabelled chatbot turns must be linked to this exact conversation.
+        # Unlabelled canonical chatbot messages need the exact conversation.
         if not source and not channel and (
             not conversation_id or str(msg.get("conversation_id") or "") != conversation_id
         ):
@@ -240,64 +273,130 @@ def _recent_office_context(lead: dict, *, assigned_at: datetime, now: datetime) 
         raw_ts = msg.get("timestamp")
         if not isinstance(raw_ts, str) or not re.search(r"(?:Z|[+-]\d{2}:\d{2})$", raw_ts):
             continue
-        received = coerce_utc_datetime(raw_ts)
-        if received is None or not (assigned_at - _CONTEXT_WINDOW <= received <= assigned_at <= now):
+        timestamp = coerce_utc_datetime(raw_ts)
+        if timestamp is None or not (assigned_at - _CONTEXT_WINDOW <= timestamp <= assigned_at <= now):
             continue
-        body = msg.get("content")
-        if not isinstance(body, str) or not body.strip():
+        content = msg.get("content")
+        if not isinstance(content, str) or not content.strip():
             continue
-        recent_chat = True
-        # Only classify intent. Never put untrusted text from chats into the
-        # executive's outbound WhatsApp greeting.
-        body = body[:2000]
-        no_visit = bool(_VISIT_NEGATION.search(body))
-        for intent, pattern in _INTENT_PATTERNS:
-            if intent == "visita" and no_visit:
-                continue
-            if pattern.search(body):
-                return intent, True
-        if no_visit:
-            # Do not re-use an older visit request after the lead has declined.
-            return None, True
-    return None, recent_chat
+        turns.append((timestamp, index, kind, content[:2000]))
+    turns.sort(key=lambda turn: (turn[0], turn[1]))
+    return [(actor, text) for _, _, actor, text in turns]
+
+
+def _recent_office_context(lead: dict, *, assigned_at: datetime, now: datetime) -> tuple[list[str], bool, bool]:
+    """Summarize up to two recent topics, plus whether the lead suggested a visit time."""
+    turns = _verified_office_dialogue(lead, assigned_at=assigned_at, now=now)
+    topics: list[str] = []
+    recent_customer = False
+    proposed_visit_time = False
+    last_bot_question = ""
+    for actor, body in turns:
+        if actor == "bot":
+            questions = re.findall(r"¿([^?]{2,180})\?", body)
+            last_bot_question = questions[-1] if questions else ""
+            continue
+        recent_customer = True
+        visit_declined = bool(_VISIT_NEGATION.search(body))
+        if visit_declined:
+            if "visita" in topics:
+                topics.remove("visita")
+            proposed_visit_time = False
+        # A declined visit must not hide a different request in the same text
+        # (e.g. "no quiero visitar, pero necesito conocer el precio").
+        found = [key for key, pattern in _INTENT_PATTERNS
+                 if not (visit_declined and key == "visita") and pattern.search(body)]
+        # Explicit acceptance of the chatbot's immediately preceding question
+        # can carry intent even if the answer is just "sí, por favor".
+        if not found and _AFFIRMATIVE.fullmatch(body) and last_bot_question:
+            found = [key for key, pattern in _INTENT_PATTERNS
+                     if pattern.search(last_bot_question)]
+        if _SCHEDULE_CUE.search(body) and ("visita" in found or "visita" in topics):
+            proposed_visit_time = True
+        for topic in found:
+            if topic in topics:
+                topics.remove(topic)
+            topics.append(topic)
+        last_bot_question = ""
+    recent = list(reversed(topics))
+    if "visita" in topics:
+        selected = ["visita"] + [x for x in recent if x != "visita"][:1]
+    else:
+        selected = recent[:2]
+    return selected, recent_customer, proposed_visit_time
 
 
 def _property_reference(lead: dict) -> str:
-    prospect = lead.get("prospecto") or {}
-    if not isinstance(prospect, dict):
-        prospect = {}
-    code = str(prospect.get("codigo_propiedad") or lead.get("codigo_propiedad") or "").strip()
-    if not re.fullmatch(r"\d{3,7}", code):
+    """Readable, non-identifying description. Never expose the internal code."""
+    if lead.get("property_resolution_error"):
         return ""
+    prospect = lead.get("prospecto")
+    prospect = prospect if isinstance(prospect, dict) else {}
+    raw_type = str(prospect.get("tipo") or lead.get("tipo") or "").strip().upper()
+    raw_operation = str(prospect.get("operacion") or lead.get("operacion") or "").strip().upper()
+    kind = _PROPERTY_TYPES.get(raw_type, "")
+    operation = _OPERATION_TYPES.get(raw_operation, "")
     area = str(prospect.get("comuna") or lead.get("comuna") or "").strip()
     area = re.sub(r"\s+", " ", area)
-    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ .-]{1,49}", area):
+    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ][A-Za-zÁÉÍÓÚÜÑáéíóúüñ -]{1,49}", area):
         area = ""
-    return f"la propiedad código {code}" + (f" en {area}" if area else "")
+    if kind:
+        return kind + (f" {operation}" if operation else "") + (f" en {area}" if area else "")
+    if area:
+        return f"tu búsqueda inmobiliaria en {area}"
+    return ""
 
 
 def _message_for(lead: dict, executive_name: str, *, assigned_at: datetime | None = None,
                  now: datetime | None = None) -> str:
-    first = _safe_first_name((lead.get("prospecto") or {}).get("nombre"))
+    prospect = lead.get("prospecto") or {}
+    first = _safe_first_name(prospect.get("nombre") if isinstance(prospect, dict) else "")
     executive = _safe_first_name(executive_name)
+    if executive.lower() in _EXECUTIVE_FEMININE_NAMES:
+        role = "tu asesora inmobiliaria asignada"
+    elif executive.lower() in _EXECUTIVE_MASCULINE_NAMES:
+        role = "tu asesor inmobiliario asignado"
+    else:
+        role = "tu contacto asignado del equipo de asesoría inmobiliaria"
     greeting = f"Hola {first}, " if first else "Hola, "
-    heading = greeting + (f"soy {executive} de PROCASA. " if executive else "te escribo de PROCASA. ")
+    heading = greeting + (
+        f"soy {executive}, {role} en PROCASA. " if executive
+        else "te escribe el equipo de asesoría inmobiliaria de PROCASA. "
+    )
     generic = (
-        heading + "Me asignaron tu consulta inmobiliaria y desde este número puedo ayudarte "
-        "con información o coordinar una visita. ¿Cómo te gustaría continuar?"
+        heading + "Quedé a cargo de tu consulta y desde este número puedo ayudarte "
+        "a continuar. ¿Te parece que sigamos por aquí?"
     )
     if not assigned_at or not now:
         return generic
-    intent, has_chat = _recent_office_context(lead, assigned_at=assigned_at, now=now)
-    if not has_chat:
+    topics, has_dialogue, visit_time_given = _recent_office_context(
+        lead, assigned_at=assigned_at, now=now
+    )
+    if not has_dialogue:
         return generic
     subject = _property_reference(lead)
-    if not subject and not intent:
-        return generic
-    introduction = f"Me asignaron tu consulta por {subject}. " if subject else "Me asignaron tu consulta inmobiliaria. "
-    if intent:
-        return heading + introduction + _INTENT_SENTENCES[intent]
-    return heading + introduction + "Te escribo para continuar con lo que conversaste con nuestro equipo."
+    opening = (
+        f"Revisé tu conversación con nuestro asistente sobre {subject}. "
+        if subject else "Revisé lo que conversaste con nuestro asistente. "
+    )
+    if "visita" in topics:
+        visit = (
+            "Vi que ya propusiste un horario para visitar la propiedad"
+            if visit_time_given else "Vi que te interesa coordinar una visita"
+        )
+        others = [t for t in topics if t != "visita"]
+        detail = (visit + f" y también consultaste por {_TOPIC_PHRASES[others[0]]}. "
+                  if others else visit + ". ")
+    elif topics:
+        facts = [_TOPIC_PHRASES[t] for t in topics]
+        detail = "Vi que consultaste por " + " y ".join(facts) + ". "
+    else:
+        detail = ""
+    ending = (
+        "Voy a ayudarte a continuar con estos temas sin que tengas que repetir lo conversado. "
+        "¿Te parece que sigamos por aquí?"
+    )
+    return heading + opening + detail + ending
 
 
 def eligible_hot_auto(db, *, lead: dict, cycle: dict, now: datetime) -> dict:

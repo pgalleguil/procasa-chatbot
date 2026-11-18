@@ -34,3 +34,27 @@ El chatbot actual conserva mensajes con zona \`America/Santiago\` (p.ej. \`-03:0
 ## Restricciones del despliegue
 
 No habilitar el flag de envío manual desde esta PR. Ejecutar primero las pruebas de compilación, autorización, proveedor simulado, deduplicado y regresión del chatbot/CRM. Después validar la integración real con un ejecutivo conectado, con consentimiento expreso, en un caso controlado. Solo entonces habilitar manual, y diseñar/validar el auto HOT y exención SLA como un PR independiente.
+
+
+## Fase 2 — implementación prospectiva HOT (18-11-2026)
+
+La fase 2 está implementada en \`chatbot/crm_hot_linked_auto.py\` y conectada al ciclo de vida de \`webhook.py\`, pero permanece **inactiva por defecto**.
+
+**Variables requeridas antes de una activación controlada:**
+
+- \`PROCASA_EXEC_HOT_AUTO_ENABLED=1\` — interruptor maestro del envío automático HOT (valor predeterminado OFF).
+- \`PROCASA_EXEC_HOT_AUTO_CUTOVER_AT=YYYY-MM-DDTHH:MM:SS-03:00\` (o equivalente con zona UTC) — fecha futura de activación. No se envían mensajes a ciclos asignados antes de ese instante.
+- \`PROCASA_EXEC_HOT_AUTO_SESSION_IDS=133517,...\` — sesiones de ejecutivos autorizadas explícitamente para envío automático; independiente de la lista de captura y del envío manual.
+
+**Reglas operativas:**
+
+1. El worker revisa cada 30 segundos ciclos activos HOT nuevos y con antigüedad máxima de 60 minutos. No procesa cartera anterior al cutover ni leads NORMAL/COLD.
+2. La identidad del ejecutivo, sesión, token privado, ciclo activo, propietario actual y teléfono deben coincidir. Un WhatsApp capturado no implica permiso para enviar.
+3. Exige una solicitud de WhatsApp reciente (24 horas) con origen y proveedor verificables, o una autorización comercial explícita \`crm_hot_auto.whatsapp_contact_authorization\` con \`scope=SALE_INQUIRY\`, teléfono, evidencia, revisor, fecha y estado ACTIVE sin revocación. No se usan consentimientos de campañas promocionales como equivalente automático.
+4. Un STOP/bloqueo del cliente, sesión no disponible, proveedor rechazando el mensaje, falta de \`provider_message_id\`, error o timeout **mantienen el SLA HOT existente**. Un timeout queda durable y no se reintenta automáticamente.
+5. Solo tras la aceptación del proveedor con ID y escritura del mensaje en \`leads.messages\`, el ciclo obtiene \`hot_auto_sla_exemption\` con \`kind=HOT_EXEC_API_CONFIRMED\`, política \`hot_exec_auto_v1\`, remitente, sesión, ciclo, fecha UTC y referencia del mensaje.
+6. Los mensajes automáticos se guardan como \`actor_type=automation\` y \`source=crm_hot_auto_api\`, no como \`human_agent\`. El saludo no marca \`first_valid_management_at\` ni concluye seguimiento.
+7. \`calculate_cycle_sla\`, el monitor/revalidador de alertas, la comprobación de vencimiento, el filtro CAS de transacción y el ejecutor de reasignación reconocen la exención únicamente en ese ciclo activo. En CRM se distingue como **Sin SLA · WhatsApp automático**.
+8. Para HOT no elegibles y todo NORMAL/COLD, el SLA vigente continúa idéntico.
+
+**Límites:** Se requiere validación con una sesión real y autorización antes de habilitar estas variables en Render. Un HTTP 200 con ID es aceptación del proveedor, no prueba de lectura del cliente. La nueva condición de excepción no sustituye el control de seguimiento humano. Las conversaciones históricas no tienen backfill automático.

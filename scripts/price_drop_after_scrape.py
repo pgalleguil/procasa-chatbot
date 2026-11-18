@@ -20,7 +20,7 @@ def _enabled(name: str) -> bool:
 
 def _during_business_hours(now: datetime) -> bool:
     stamp = now.astimezone(ZoneInfo("America/Santiago"))
-    return stamp.weekday() < 5 and time(9) <= stamp.time().replace(tzinfo=None) < time(19)
+    return stamp.weekday() < 5 and time(9) <= stamp.time().replace(tzinfo=None) < time(20)
 
 
 def verified_scrape_change_keys(db, *, sync_run_id: str) -> set[tuple]:

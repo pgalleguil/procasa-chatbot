@@ -530,7 +530,7 @@ async def evaluate_sla_alerts(
         # A confirmed executive HOT API greeting exempts this active cycle
         # from first-contact SLA alerts, without claiming human management.
         from .crm_hot_linked_auto import sla_exemption
-        if sla_exemption(cycle, lead):
+        if sla_exemption(cycle):
             excluded["hot_exec_auto_exempt"] += 1
             continue
 

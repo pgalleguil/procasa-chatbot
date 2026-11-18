@@ -7131,7 +7131,7 @@ async def process_pending_leads_loop():
                         target_phone = lead_data.get("target_phone") or p.get("target_phone")
                         
                         # Fix: Si no hay teléfono o es el dummy, intentamos re-enrutar antes de descartar
-                        if not target_phone or target_phone == "+56900000000":
+                        if (not target_phone or target_phone == "+56900000000") and lead_type != "MissingProperty":
                             from chatbot.lead_router import find_responsible_executive
                             lead_phone = lead_data.get("phone")
                             p_code = lead_data.get("property_code") or lead_data.get("prospecto", {}).get("codigo")

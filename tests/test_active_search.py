@@ -239,6 +239,44 @@ def test_existing_diana_classification_is_repaired_without_new_customer_message(
     assert worker.backfill_missing_active_searches(db, limit=2)["repaired"] == 0
     assert db.crm_tasks.count_documents({}) == 1
 
+def test_karina_landmark_is_queued_without_inventing_budget_or_commune(monkeypatch):
+    # Real buyer wording. A landmark is a human verification cue, not a
+    # licence to infer geographical radius or scrape the wrong neighborhood.
+    search = classify([
+        executive("Pero me di cuenta que está más cerca del Pumahue", 1),
+        executive("Busco algo más cerca del San Fco Javier", 2),
+        executive("Tiene algo?", 3),
+    ])
+    assert search["status"] == "ACTIVE"
+    assert search["followup_required"] is True
+    assert search["criteria"]["location_targets"] == ["san fco javier"]
+    assert "max_price_clp" not in search["criteria"]
+    assert "comunas" not in search["criteria"]
+    assert "pumahue" not in str(search["criteria"])
+    assert search["field_evidence"]["location_targets"]["verification"] == "HUMAN_GEOCODING_REQUIRED"
+    db = mongomock.MongoClient().landmark
+    lead_id = ObjectId()
+    db.leads.insert_one({
+        "_id": lead_id, "ejecutivo_asignado": "Hernán Castro",
+        "lifecycle": {"assigned_to_user_id": OWNER,
+                      "current_assignment_cycle_id": CYCLE},
+        "commercial_intelligence": {"active_search": search},
+    })
+    monkeypatch.setenv("PROCASA_DEMAND_SOURCING_ENABLED", "1")
+    task_id = ensure_followup_task(db, lead_id=lead_id,
+                                  cycle_id=CYCLE, owner_id=OWNER,
+                                  search=search, now=NOW)
+    task = db.crm_tasks.find_one({"_id": task_id})
+    assert task["type"] == "SEARCH_ALTERNATIVES"
+    assert "san fco javier" in task["note"]
+    assert "presupuesto por confirmar" in task["note"]
+    review = db.crm_tasks.find_one({"type": "DEMAND_SOURCING_ADMIN_REVIEW"})
+    assert review["buyer_executive_name"] == "Hernán Castro"
+    assert review["candidate_refs"] == []
+    assert review["review_scope"] == "LOCATION_OR_BUDGET_NEEDS_HUMAN_VERIFICATION"
+    assert review["contact_approved"] is False
+
+
 def test_reference_question_cannot_override_office_preference():
     prior = classify([
         office("ando buscando casa o departamento de 97 millones maximo", 1),

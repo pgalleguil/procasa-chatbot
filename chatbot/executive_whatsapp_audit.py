@@ -275,7 +275,8 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
             for previous in stored.get("messages", [])
         ):
             return "duplicate_or_reassigned"
-        for original_source in ("crm_manual_api", "crm_hot_auto_api"):
+        for original_source in ("crm_manual_api", "crm_hot_auto_api",
+                                "price_drop_campaign_api"):
             match = find_unique_echo_match(
                 stored.get("messages") or [],
                 source=original_source, content=parsed["content"],

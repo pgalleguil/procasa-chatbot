@@ -796,11 +796,17 @@ def test_message_personalization_and_deterministic_variants_include_verified_fac
     assert candidate["first_name"] == "Carolina"
     variant = cli.message_variant_id(str(lead_id), event.event_id)
     message = cli.event_message(event, recipient_name=candidate["first_name"], variant_id=variant)
-    assert "Hola, Carolina." in message
+    assert "Hola, Carolina, ¿cómo estás?" in message
     assert "PROCASA" in message and "6436" in message
     assert "UF 2.790" in message and "UF 2.690" in message
     assert "UF 100" in message and event.listing_url in message
-    assert "no recibir más avisos" in message
+    assert "no te escribimos más" in message
+    assert "de rebaja" in message
+    assert "3,58%" in message
+    assert "propiedad código" not in message.lower()
+    assert "historial registra" not in message.lower()
+    assert "última rebaja" not in message.lower()
+    assert "fecha" not in message.lower()
     assert variant == cli.message_variant_id(str(lead_id), event.event_id)
     generic = cli.event_message(event, recipient_name=None, variant_id="rebaja_v2")
     assert "Hola, ¿cómo estás?" in generic
@@ -941,7 +947,9 @@ def test_prepare_new_event_stores_cumulative_history_and_reference_price(monkeyp
     assert campaign["price_reference"] == 2690
     assert [(row["old_price"], row["new_price"])
             for row in campaign["price_history_steps"]] == [(2690, 2590), (2590, 2490)]
-    assert "cuando estaba en UF 2.690" in campaign["outbound_message"]
+    assert "de UF 2.690 a UF 2.490" in campaign["outbound_message"]
+    assert "UF 200 menos" in campaign["outbound_message"]
+    assert "7,43%" in campaign["outbound_message"]
 
 
 def test_prepare_selected_reuses_existing_lead_authorization_without_new_evidence():
@@ -2544,3 +2552,61 @@ def test_old_sent_pilot_is_not_reselected_when_event_date_id_changes():
     assert found[0]["lead_id"] == str(customer)
     assert found[0]["eligible"] is False
     assert found[0]["reason"] == "event_already_attempted"
+
+
+
+def test_short_customer_message_percentage_and_no_internal_history():
+    from dataclasses import replace
+    from chatbot.price_drop_campaign_discovery import event_message
+    event = discover_price_drops(_event_db(), now=NOW)[0]
+    example = replace(
+        event, property_code="6377", old_price=5123, new_price=5074,
+        current_price=5074, difference=49,
+        listing_url="https://www.procasa.cl/6377",
+    )
+    for variant in ("rebaja_v1", "rebaja_v2", "rebaja_v3"):
+        msg = event_message(
+            example, recipient_name="María", variant_id=variant,
+            history=[event, example],
+        )
+        assert "Hola, María, ¿cómo estás?" in msg
+        assert "UF 5.123" in msg and "UF 5.074" in msg
+        assert "UF 49" in msg and "0,96%" in msg
+        assert "https://www.procasa.cl/6377" in msg
+        assert "visita" in msg or "ir a verla" in msg
+        assert "no te escribimos más" in msg
+        assert "propiedad código" not in msg.casefold()
+        assert "historial" not in msg.casefold()
+        assert "última rebaja" not in msg.casefold()
+        assert "2026" not in msg
+        assert len(msg) < 650
+
+
+def test_customer_message_uses_rental_monthly_price_and_clp_discount():
+    from dataclasses import replace
+    from chatbot.price_drop_campaign_discovery import event_message
+    event = discover_price_drops(_event_db(), now=NOW)[0]
+    rental = replace(
+        event, property_code="17252", operation="Arriendo",
+        old_price=435000, new_price=400000, current_price=400000,
+        difference=35000, currency="CLP",
+        listing_url="https://www.procasa.cl/17252",
+    )
+    msg = event_message(rental, variant_id="rebaja_v1")
+    assert "arriendo mensual" in msg.lower()
+    assert "$435.000" in msg and "$400.000" in msg
+    assert "$35.000" in msg and "8,05%" in msg
+    assert "Hola, ¿cómo estás?" in msg
+
+
+def test_customer_message_does_not_exaggerate_small_drop_or_wrong_current_price():
+    from dataclasses import replace
+    from chatbot.price_drop_campaign_discovery import event_message, DiscoveryError
+    event = discover_price_drops(_event_db(), now=NOW)[0]
+    tiny = replace(
+        event, old_price=4075, new_price=4057, current_price=4057,
+        difference=18,
+    )
+    assert "0,44%" in event_message(tiny)
+    with pytest.raises(DiscoveryError, match="outreach_price_not_a_reduction"):
+        event_message(replace(tiny, current_price=4080))

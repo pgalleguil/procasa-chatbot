@@ -71,7 +71,9 @@ def _status(doc: dict) -> str:
 
 def _class(doc: dict) -> str:
     classification = doc.get("classification") or {}
-    return str(classification.get("final_state") or
+    return str(classification.get("effective_state") or
+               classification.get("final_state") or
+               classification.get("final") or
                classification.get("state") or "INCIERTO").upper()
 
 
@@ -94,12 +96,16 @@ def _signature(doc: dict) -> str:
 def _policy(doc: dict) -> str:
     klass = _class(doc)
     status = _status(doc)
+    classification = doc.get("classification") or {}
     if (klass in {"CORREDOR_SEGURO", "CORREDOR_PROBABLE", "BROKER_CONFIRMED"}
+            or classification.get("hard_broker_veto") is True
+            or classification.get("professional_hard_veto") is True
             or status in _TERMINAL):
         return "EXCLUDED_BROKER_OR_TERMINAL"
     if (doc.get("precio_validacion") or "").upper().startswith("INVALID"):
         return "EXCLUDED_INVALID_PRICE"
-    description = _fold(doc.get("description"))
+    description = _fold(" ".join(str(doc.get(field) or "") for field in
+                                 ("description", "descripcion", "body_text_excerpt")))
     notes = _fold(_note_text(doc))
     if _DNC.search(description) or _DNC.search(notes):
         return "EXCLUDED_DO_NOT_CONTACT"
@@ -134,6 +140,10 @@ def find_demand_captation_candidates(
         "comuna": {"$regex": _commune_regex(communes), "$options": "i"},
         "precio_clp_normalizado": {"$gte": 10_000_000, "$lte": maximum},
         "classification.final_state": {"$nin": ["CORREDOR_SEGURO", "CORREDOR_PROBABLE"]},
+        "classification.final": {"$nin": ["CORREDOR_SEGURO", "CORREDOR_PROBABLE"]},
+        "classification.effective_state": {"$nin": ["CORREDOR_SEGURO", "CORREDOR_PROBABLE"]},
+        "classification.hard_broker_veto": {"$ne": True},
+        "classification.professional_hard_veto": {"$ne": True},
         "classification.state": {"$nin": ["CORREDOR_SEGURO", "CORREDOR_PROBABLE"]},
     }
     fields = {
@@ -141,7 +151,8 @@ def find_demand_captation_candidates(
         "url": 1, "tipo_propiedad": 1, "operacion": 1, "comuna": 1,
         "direccion_exacta": 1, "precio_clp_normalizado": 1,
         "precio_validacion": 1, "classification": 1, "gestion": 1,
-        "description": 1, "updated_at": 1,
+        "description": 1, "descripcion": 1, "body_text_excerpt": 1,
+        "updated_at": 1,
     }
     results, excluded, signatures, veto_signatures = [], {}, set(), set()
     cursor = db["propiedades_captacion"].find(query, fields).limit(
@@ -255,7 +266,13 @@ def ensure_admin_demand_review(
             "comunas": criteria.get("comunas") or [],
             "property_types": criteria.get("property_types") or [],
             "preferred_property_type": criteria.get("preferred_property_type"),
+            "location_targets": criteria.get("location_targets") or [],
         },
+        "review_scope": ("LOCATION_OR_BUDGET_NEEDS_HUMAN_VERIFICATION"
+                         if criteria.get("location_targets") and
+                         (not criteria.get("max_price_clp") or
+                          not criteria.get("comunas")) else
+                         "HISTORICAL_LISTINGS_REVALIDATION"),
         "candidate_refs": candidates["candidates"],
         "screened_count": candidates["scanned"],
         "excluded_counts": candidates["excluded"],

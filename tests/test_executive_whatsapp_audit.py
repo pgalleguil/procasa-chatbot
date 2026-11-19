@@ -662,3 +662,37 @@ def test_lid_diagnostic_distinguishes_unmapped_contact_from_invalid_token(
     assert "reason=lid_mapping_unavailable" in caplog.text
     assert "reason=lid_http_auth" not in caplog.text
     assert db["leads"].update_calls == 0
+
+
+
+def test_startup_diagnostics_identify_disabled_executive_capture_without_secrets(
+        rig, monkeypatch, caplog):
+    import asyncio
+    db, _cycle, _client = rig
+    caplog.set_level("INFO")
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", SESSION)
+    monkeypatch.setenv(EXEC_ENV, session_config(capture_enabled=False))
+    asyncio.run(audit.executive_audit_readiness_probe())
+    assert "EXEC_AUDIT_READY session=" + SESSION + " state=session_capture_disabled" in caplog.text
+    assert SECRET not in caplog.text
+    assert TOKEN not in caplog.text
+    monkeypatch.setenv(EXEC_ENV, session_config(capture_enabled=True))
+    asyncio.run(audit.executive_audit_readiness_probe())
+    assert "EXEC_AUDIT_READY session=" + SESSION + " state=capture_ready" in caplog.text
+    assert db["leads"].update_calls == 0
+
+
+def test_startup_diagnostics_distinguish_global_write_gate_and_ignore_invalid_allowlist(
+        rig, monkeypatch, caplog):
+    import asyncio
+    db, _cycle, _client = rig
+    caplog.set_level("INFO")
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", SESSION)
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0")
+    asyncio.run(audit.executive_audit_readiness_probe())
+    assert "state=global_write_disabled" in caplog.text
+    caplog.clear()
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", SESSION + "," + SESSION)
+    asyncio.run(audit.executive_audit_readiness_probe())
+    assert "EXEC_AUDIT_READY" not in caplog.text
+    assert db["leads"].update_calls == 0

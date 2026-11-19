@@ -1823,7 +1823,9 @@ def send_one(db, *, lead_id: str, campaign_id: str,
 
 
 def active_context(db, *, phone: str, message: str = "", now=None,
-                   for_tracking: bool = False) -> dict | None:
+                   for_tracking: bool = False,
+                   source_session_id: str | None = None,
+                   assignment_cycle_id: str | None = None) -> dict | None:
     """Resolve a SENT campaign; persistence never depends on chatbot context flag.
 
     for_tracking is read-only and only for attributing real inbound replies or
@@ -1860,6 +1862,15 @@ def active_context(db, *, phone: str, message: str = "", now=None,
         x for x in (lead.get("price_drop_v2") or {}).get("campaigns") or []
         if x.get("status") in ("SENT", "RESPONDED")
         and str(x.get("provider_message_id") or "").strip()
+        and (
+            (x.get("outbound_transport") == "executive_whatsapp"
+             and source_session_id is not None
+             and str(x.get("wasender_session_id") or "") == str(source_session_id)
+             and (assignment_cycle_id is None or
+                  str(x.get("assignment_cycle_id") or "") == str(assignment_cycle_id)))
+            if source_session_id is not None
+            else x.get("outbound_transport") != "executive_whatsapp"
+        )
         and isinstance(x.get("sent_at"), datetime)
         and isinstance(x.get("expires_at"), datetime)
         and utc(x["sent_at"]) <= now < utc(x["expires_at"])
@@ -1882,7 +1893,7 @@ def active_context(db, *, phone: str, message: str = "", now=None,
                 now=now, expected_authorization_id=expected_authorization_id,
                 allow_consumed=True,
             )
-    if lead_must_not_be_contacted(lead):
+    if lead_must_not_be_contacted(lead) and not for_tracking:
         if (not campaign.get("test_mode") or qa_reauthorization is None):
             return None
     code = campaign["property_code"]
@@ -1928,7 +1939,9 @@ def active_context(db, *, phone: str, message: str = "", now=None,
 
 
 def record_inbound(db, *, phone: str, provider_message_id: str,
-                   text: str, now=None) -> dict:
+                   text: str, now=None,
+                   source_session_id: str | None = None,
+                   assignment_cycle_id: str | None = None) -> dict:
     """Classify campaign replies directly on the lead without new collections."""
     if not provider_message_id or not text or not text.strip():
         return {"status": "NOT_CAMPAIGN_REPLY"}
@@ -1942,7 +1955,9 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
         return {"status": "DUPLICATE_IGNORED"}
     # A reply to a stored, accepted SENT campaign is an auditable customer
     # action regardless of the *server's* conversational context toggle.
-    ctx = active_context(db, phone=phone, message=text, now=now, for_tracking=True)
+    ctx = active_context(db, phone=phone, message=text, now=now,
+                         for_tracking=True, source_session_id=source_session_id,
+                         assignment_cycle_id=assignment_cycle_id)
     if not ctx:
         return {"status": "NOT_CAMPAIGN_REPLY"}
     now = utc(now or datetime.now(timezone.utc))
@@ -2103,15 +2118,19 @@ def record_inbound(db, *, phone: str, provider_message_id: str,
             else:
                 update["$set"][f"{field}.notifications.property_executive.status"] = "FROZEN_ADMIN_ONLY"
         update["$set"][f"{field}.has_positive_response"] = True
-    result = db[LEADS].update_one(
-        {"_id": lead["_id"],
-         "price_drop_v2.processed_inbound_provider_ids": {
-             "$ne": str(provider_message_id),
-         },
-         f"{field}.campaign_id": cid,
-         f"{field}.status": {"$in": ["SENT", "RESPONDED"]}},
-        update,
-    )
+    match = {"_id": lead["_id"],
+             "price_drop_v2.processed_inbound_provider_ids": {
+                 "$ne": str(provider_message_id),
+             },
+             f"{field}.campaign_id": cid,
+             f"{field}.status": {"$in": ["SENT", "RESPONDED"]}}
+    if source_session_id is not None:
+        match[f"{field}.wasender_session_id"] = str(source_session_id)
+        if assignment_cycle_id is not None:
+            match[f"{field}.assignment_cycle_id"] = str(assignment_cycle_id)
+    else:
+        match[f"{field}.outbound_transport"] = {"$ne": "executive_whatsapp"}
+    result = db[LEADS].update_one(match, update)
     if result.modified_count != 1:
         return {"status": "DUPLICATE_IGNORED"}
     return {"status": "ATTRIBUTED", "campaign_id": cid,

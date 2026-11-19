@@ -538,6 +538,49 @@ def _handle_from_storage(session: dict, payload: dict, write: bool) -> str:
     return _handle_authorized(get_db(), session, payload, write=write)
 
 
+def _diagnostic_readiness_session_ids() -> list[str]:
+    """Explicitly opted-in session IDs only; avoid scanning all executive accounts."""
+    raw = os.getenv(_DIAGNOSTIC_FLAG, "")
+    if not raw or len(raw) > 128:
+        return []
+    values = [item.strip() for item in raw.split(",")]
+    if (len(values) > 6 or len(values) != len(set(values))
+            or any(not _SESSION_ID.fullmatch(item) for item in values)):
+        return []
+    return values
+
+
+def _readiness_state(session: dict | None) -> str:
+    """Non-secret configuration health; not a statement about provider delivery."""
+    if session is None:
+        return "session_unavailable"
+    if os.getenv("PROCASA_EXEC_AUDIT_ENABLED", "0") != "1":
+        return "audit_disabled"
+    if os.getenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0") != "1":
+        return "global_write_disabled"
+    if session.get("capture_enabled") is not True:
+        return "session_capture_disabled"
+    return "capture_ready"
+
+
+@router.on_event("startup")
+async def executive_audit_readiness_probe() -> None:
+    """Startup-only, read-only and private-data-free configuration check.
+
+    This does not alter capture permission, save events, call WaSender or
+    touch the chatbot. A transient DB failure never prevents the service
+    from starting and remains visible as a non-secret reason code.
+    """
+    for session_id in _diagnostic_readiness_session_ids():
+        try:
+            session = await asyncio.to_thread(_session_from_storage, session_id)
+        except Exception:
+            state = "storage_unavailable"
+        else:
+            state = _readiness_state(session)
+        logger.info("EXEC_AUDIT_READY session=%s state=%s", session_id, state)
+
+
 @router.post("/webhook/ejecutivos/{session_id}")
 async def executive_session_audit(
     session_id: str,

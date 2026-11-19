@@ -241,3 +241,99 @@ def test_stop_on_executive_channel_is_still_attributed_after_global_suppression(
     final = db["leads"].find_one({"_id": LEAD})
     assert final["price_drop_v2"]["campaigns"][0]["status"] == "OPTED_OUT"
     assert final["conversation_status"] == "STOPPED_BY_CLIENT"
+
+
+def _approved_real_send_rig(monkeypatch):
+    db, lead = _context()
+    monkeypatch.setenv(v2.SEND_FLAG, "true")
+    monkeypatch.setenv(v2.CONTEXT_FLAG, "true")
+    monkeypatch.delenv("RENDER", raising=False)
+    monkeypatch.delenv("RENDER_SERVICE_ID", raising=False)
+    monkeypatch.setattr(v2, "_real_campaign_send_blocker", lambda *a, **k: None)
+    monkeypatch.setattr(v2, "_text_sender_window_blocker", lambda *a, **k: None)
+    monkeypatch.setattr(v2, "_verified_campaign_price", lambda *a, **k: None)
+    route = {
+        "channel": "executive_whatsapp", "session_id": SID,
+        "executive_id": str(USER), "assignment_cycle_id": "cycle-1",
+        "user_oid": USER, "api_token": "not-real-key",
+    }
+    monkeypatch.setattr(routing, "resolve_route", lambda *a, **k: route)
+    monkeypatch.setattr(routing, "owner_still_current", lambda *a, **k: True)
+    return db, lead, route
+
+
+def test_webhook_echo_before_provider_acceptance_reconciles_one_canonical_message(monkeypatch):
+    db, lead, route = _approved_real_send_rig(monkeypatch)
+    existing = db["leads"].find_one({"_id": LEAD})
+    text = existing["price_drop_v2"]["campaigns"][0]["outbound_message"]
+    db["leads"].update_one({"_id": LEAD}, {"$push": {
+        "messages": {
+            "message_id": "preexisting-echo-1",
+            "provider_message_id": "provider-webhook-key-1",
+            "channel": "executive_whatsapp",
+            "source": "whatsapp_direct", "role": "agent",
+            "wasender_session_id": SID,
+            "assigned_executive_id": str(USER),
+            "assignment_cycle_id": "cycle-1",
+            "content": text, "timestamp": NOW.isoformat(),
+        },
+    }})
+    monkeypatch.setattr(routing, "send_with_executive_route",
+                        lambda *a, **k: {
+                            "success": True, "provider_message_id": "api-different-1",
+                            "delivery_status": "accepted", "provider_called": True,
+                        })
+    outcome = v2.send_one(
+        db, lead_id=str(LEAD), campaign_id=CAMPAIGN,
+        now=NOW, executive_transport_enabled=True,
+    )
+    assert outcome["status"] == "SENT"
+    final = db["leads"].find_one({"_id": LEAD})
+    assert len(final["messages"]) == 1
+    row = final["messages"][0]
+    assert row["provider_message_id"] == "provider-webhook-key-1"
+    assert row["crm_api_provider_message_id"] == "api-different-1"
+    assert row["source"] == "price_drop_campaign_api"
+    assert row["metadata"]["campaign_id"] == CAMPAIGN
+    assert final["price_drop_v2"]["campaigns"][0]["provider_message_id"] == "api-different-1"
+
+
+def test_reassignment_after_claim_never_sends_from_previous_executive(monkeypatch):
+    db, lead, route = _approved_real_send_rig(monkeypatch)
+    monkeypatch.setattr(routing, "owner_still_current", lambda *a, **k: False)
+    monkeypatch.setattr(routing, "send_with_executive_route",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("no provider call if reassigned")))
+    outcome = v2.send_one(
+        db, lead_id=str(LEAD), campaign_id=CAMPAIGN,
+        now=NOW, executive_transport_enabled=True,
+    )
+    assert outcome["status"] == "FAILED"
+    assert outcome["provider_attempted"] is False
+    lead_after = db["leads"].find_one({"_id": LEAD})
+    assert lead_after["price_drop_v2"]["campaigns"][0]["status"] == "FAILED"
+    assert lead_after["messages"] == []
+
+
+def test_late_webhook_echo_matches_accepted_campaign_without_second_append():
+    from chatbot.executive_whatsapp_echo import find_unique_echo_match
+    existing = [{
+        "message_id": "campaign-m-1", "provider_message_id": "api-accepted",
+        "source": "price_drop_campaign_api", "channel": "executive_whatsapp",
+        "role": "assistant", "content": "Texto rebaja",
+        "assigned_executive_id": str(USER),
+        "assignment_cycle_id": "cycle-1",
+        "wasender_session_id": SID,
+        "timestamp": NOW.isoformat(),
+    }]
+    match = find_unique_echo_match(
+        existing, source="price_drop_campaign_api", content="Texto rebaja",
+        session_id=SID, cycle_id="cycle-1", owner_id=str(USER),
+        occurred_at=NOW + timedelta(seconds=4),
+    )
+    assert match is existing[0]
+    assert find_unique_echo_match(
+        existing, source="price_drop_campaign_api", content="Texto rebaja",
+        session_id="133523", cycle_id="cycle-1", owner_id=str(USER),
+        occurred_at=NOW,
+    ) is None

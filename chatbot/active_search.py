@@ -65,9 +65,9 @@ _EXCLUSIVE_TYPE = re.compile(
 # Keep the buyer's landmark in text form until an administrator verifies location.
 # Never infer a commune, distance, or coordinates from an informal school name.
 _PROXIMITY_TARGET = re.compile(
-    r"\\b(?:busco|buscando|necesito|quiero|prefiero)\\b.{0,85}?"
-    r"\\b(?:mas\\s+cerca|cerca)\\s+(?:de|del)\\s+"
-    r"([a-z0-9]+(?:\\s+[a-z0-9]+){0,7})"
+    r"\b(?:busco|buscando|necesito|quiero|prefiero)\b.{0,85}?"
+    r"\b(?:mas\s+cerca|cerca)\s+(?:de|del)\s+"
+    r"([a-z0-9]+(?:\s+[a-z0-9]+){0,7})"
 )
 _VALID_COMMUNES = tuple(sorted(COMMUNE_OFFICIAL_NAMES.keys(), key=len, reverse=True))
 

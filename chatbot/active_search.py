@@ -53,6 +53,15 @@ _TYPE = (
 _QUESTION_PROPERTY = re.compile(
     r"\b(?:prefieres?|buscas?|necesitas?)\b.*\b(?:casa|departamento|depto)\b"
 )
+# Referring to a property is not a new buyer preference.
+_REFERENCE_QUESTION = re.compile(
+    r"\b(?:de que|de cual|cual|que)\s+(?:casa|departamento|depto)\s+"
+    r"(?:hablamos|hablas|es|se trata|te refieres)\b"
+)
+_EXCLUSIVE_TYPE = re.compile(
+    r"\b(?:solo|solamente|unicamente|exclusivamente)\s+"
+    r"(?:una?\s+)?(?:casas?|departamentos?|deptos?)\b"
+)
 _VALID_COMMUNES = tuple(sorted(COMMUNE_OFFICIAL_NAMES.keys(), key=len, reverse=True))
 
 
@@ -177,7 +186,8 @@ def capture_active_search(
         # started in the office, even without repeating "busco".
         budget = _max_clp(body, already_searching=explicit or started)
         areas = _communes(body) if explicit or started else []
-        types = [kind for kind, pattern in _TYPE if pattern.search(body)]
+        types = ([] if _REFERENCE_QUESTION.search(body) else
+                 [kind for kind, pattern in _TYPE if pattern.search(body)])
         # "casa" alone is a preference correction only inside a live search;
         # do not infer searches from unrelated one-word answers.
         if started or (explicit and (budget or areas or types)):
@@ -192,8 +202,25 @@ def capture_active_search(
                 criteria["comunas"] = areas
                 evidence["comunas"] = {"source": channel, "message_id": message_id}
             if types:
-                criteria["property_types"] = types
-                evidence["property_types"] = {"source": channel, "message_id": message_id}
+                prior_types = list(criteria.get("property_types") or [])
+                exclusive = bool(_EXCLUSIVE_TYPE.search(body))
+                # "casa porfis" after "casa o departamento" is a preference,
+                # not a cancellation of the previously accepted alternative.
+                if not prior_types or len(types) > 1 or exclusive:
+                    accepted = types
+                else:
+                    accepted = list(dict.fromkeys(prior_types + types))
+                if accepted != prior_types:
+                    criteria["property_types"] = accepted
+                    evidence["property_types"] = {"source": channel, "message_id": message_id}
+                if len(types) == 1:
+                    criteria["preferred_property_type"] = types[0]
+                    evidence["preferred_property_type"] = {
+                        "source": channel, "message_id": message_id,
+                    }
+                elif criteria.get("preferred_property_type") not in accepted:
+                    criteria.pop("preferred_property_type", None)
+                    evidence.pop("preferred_property_type", None)
             if re.search(r"\b(?:arriendo|arrendar|alquilar)\b", body):
                 criteria["operation"] = "ARRIENDO"
                 evidence["operation"] = {"source": channel, "message_id": message_id}

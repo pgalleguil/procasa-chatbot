@@ -9,6 +9,7 @@ executive's credentials live in their OWN named Render JSON variable.
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
 import json
 import logging
 import os
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 _SESSION_ID = re.compile(r"^[1-9][0-9]{0,17}$")
 _LID = re.compile(r"^[0-9]{8,25}@lid$")
 _ALLOWED_EVENTS = frozenset({"messages.upsert", "messages.received"})
+_LID_DIAG_SESSION: ContextVar[str] = ContextVar("exec_lid_diag_session", default="")
 
 _DIAGNOSTIC_FLAG = "PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS"
 # These fixed reason codes are the ONLY values ever emitted. Neither content,
@@ -48,6 +50,9 @@ _DIAGNOSTIC_REASONS = frozenset({
     "peer_not_authorized", "text_unavailable", "capture_disabled",
     "session_inactive", "stored", "echo_reconciled",
     "duplicate_or_reassigned", "stale", "unverified_timestamp", "invalid_id",
+    "lid_token_unavailable", "lid_mapping_unavailable", "lid_response_invalid",
+    "lid_transport_error", "lid_http_auth", "lid_http_not_found",
+    "lid_http_rate_limit", "lid_http_server", "lid_http_other", "lid_resolved",
 })
 
 
@@ -67,6 +72,12 @@ def _audit_diagnostic(session: dict, reason: str) -> None:
     sid = str(session.get("session_id") or "")
     if sid in values:
         logger.info("EXEC_AUDIT_DIAG session=%s reason=%s", sid, reason)
+
+
+def _lid_diagnostic(reason: str) -> None:
+    sid = _LID_DIAG_SESSION.get()
+    if sid:
+        _audit_diagnostic({"session_id": sid}, reason)
 
 
 def _ignored(session: dict, reason: str) -> str:
@@ -243,8 +254,14 @@ def _event_metadata(payload: dict) -> tuple[dict, dict, bool] | None:
 
 
 def _pn_from_lid(lid: str, token: str | None) -> str | None:
-    """Resolve transient addressing metadata; never log unknown/private IDs."""
-    if not token or not _LID.fullmatch(lid):
+    """Resolve LID using this session's key; diagnose only fixed transport codes.
+
+    No token, LID, remote phone, provider body or customer metadata is logged.
+    """
+    if not token:
+        _lid_diagnostic("lid_token_unavailable")
+        return None
+    if not _LID.fullmatch(lid):
         return None
     try:
         with httpx.Client(timeout=4.0, follow_redirects=False) as client:
@@ -254,12 +271,29 @@ def _pn_from_lid(lid: str, token: str | None) -> str | None:
                 headers={"Authorization": "Bearer " + token},
             )
         if result.status_code != 200:
+            status = result.status_code
+            reason = (
+                "lid_http_auth" if status in (401, 403) else
+                "lid_http_not_found" if status == 404 else
+                "lid_http_rate_limit" if status == 429 else
+                "lid_http_server" if 500 <= status < 600 else
+                "lid_http_other"
+            )
+            _lid_diagnostic(reason)
             return None
         data = result.json()
-        pn = (data.get("data") or {}).get("pn") if isinstance(data, dict) else None
-        phone = _phone_number_from_jid(pn)
-        return phone if has_real_phone(phone) else None
+        nested = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(nested, dict):
+            _lid_diagnostic("lid_response_invalid")
+            return None
+        phone = _phone_number_from_jid(nested.get("pn"))
+        if not phone or not has_real_phone(phone):
+            _lid_diagnostic("lid_mapping_unavailable")
+            return None
+        _lid_diagnostic("lid_resolved")
+        return phone
     except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        _lid_diagnostic("lid_transport_error")
         return None
 
 
@@ -456,7 +490,13 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
     meta = _event_metadata(payload)
     if meta is None:
         return _ignored(session, _metadata_skip_reason(payload))
-    phone, lid = _peer_phone(meta, session.get("token"))
+    # Context-local diagnostic applies only to this signed executive event.
+    # It is reset immediately to avoid cross-request attribution in the pool.
+    marker = _LID_DIAG_SESSION.set(str(session["session_id"]))
+    try:
+        phone, lid = _peer_phone(meta, session.get("token"))
+    finally:
+        _LID_DIAG_SESSION.reset(marker)
     if not phone or not has_real_phone(phone):
         # Distinguish a @lid that WaSender could not resolve from an event
         # lacking any usable remote address; neither identifier is logged.

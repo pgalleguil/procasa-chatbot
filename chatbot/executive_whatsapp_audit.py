@@ -132,14 +132,24 @@ def _variable_name_for_executive(name: object) -> str | None:
 
 
 def _capture_enabled_for_session(session_id: str, configured: bool) -> bool:
-    """Explicit non-secret session allowlist; fail closed if malformed.
+    """Preserve all established capture gates; add opt-in for named sessions only.
 
-    When present, the allowlist is authoritative for ALL sessions, including
-    those whose legacy secret JSON sets capture_enabled=true. This permits
-    changing capture without reading, retyping or exposing webhook credentials.
-    Receipt and signature checks remain independent; global write must also be
-    enabled and lead ownership must be verified for every message.
+    An additional explicit allowlist is a narrow operator override for a
+    session whose credential JSON cannot safely be read or rewritten from
+    administration tools. Existing sessions retain their current behavior.
+    Both the global write flag and current-assignment filter still apply.
+    Malformed additions grant no new permission.
     """
+    extra_raw = os.getenv("PROCASA_EXEC_AUDIT_CAPTURE_EXTRA_SESSION_IDS", "")
+    if extra_raw and len(extra_raw) <= 128:
+        extras = [value.strip() for value in extra_raw.split(",")]
+        if (len(extras) <= 6 and len(extras) == len(set(extras))
+                and all(_SESSION_ID.fullmatch(value) for value in extras)
+                and session_id in extras):
+            return True
+
+    # Original authoritative per-session allowlist remains intact for
+    # every session not named in the explicit additional opt-in.
     raw = os.getenv("PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS", "")
     if not raw:
         return configured

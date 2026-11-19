@@ -152,3 +152,17 @@ def test_review_queue_is_gated_by_environment(monkeypatch):
                          owner_id="hernan-id", search=search(), now=NOW)
     assert db.crm_tasks.count_documents({}) == 2
     assert db.crm_tasks.count_documents({"recipient_role": "admin"}) == 1
+
+
+def test_portal_undecided_duplicate_of_human_broker_is_vetoed():
+    db = mongomock.MongoClient().sourcing
+    undecided = listing("4110707", price=75_000_000)
+    undecided["url"] = "https://www.toctoc.com/propiedades/casa/maipu/casas-esquilo-2706/4110707"
+    known_broker = listing("112885892", price=75_000_000,
+                           mgmt={"estado_captacion": "Corredor"})
+    known_broker["source_portal"] = "chilepropiedades"
+    known_broker["url"] = "https://chilepropiedades.cl/ver-publicacion/venta/maipu/casa/esquilo-2706/112885892"
+    db.propiedades_captacion.insert_many([undecided, known_broker])
+    out = find_demand_captation_candidates(db, search())
+    assert out["candidates"] == []
+    assert out["excluded"]["CROSS_PORTAL_VETO"] == 1

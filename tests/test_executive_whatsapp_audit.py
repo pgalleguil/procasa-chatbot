@@ -540,3 +540,73 @@ def test_new_identical_whatsapp_message_after_echo_is_not_suppressed():
                                     parsed=parsed, lead=db.leads.find_one({"_id": lead_id}),
                                     cycle=active) == "stored"
     assert len(db.leads.find_one({"_id": lead_id})["messages"]) == 2
+
+
+
+def test_optional_diagnostics_explain_private_rejection_without_private_data(
+        rig, monkeypatch, caplog):
+    db, cycle, client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", SESSION)
+    caplog.set_level("INFO")
+    private_text = "SECRET_UNRELATED_CONVERSATION"
+    assert post(client, event(
+        from_me=True, phone=PRIVATE, text=private_text,
+    )).json()["status"] == "ignored"
+    assert "EXEC_AUDIT_DIAG session=" + SESSION + " reason=peer_not_authorized" in caplog.text
+    assert PRIVATE not in caplog.text
+    assert private_text not in caplog.text
+    # Only an anonymous reason code, not even a hash of the remote peer.
+    assert post(client, event(
+        from_me=False, jid="121212121@g.us", text="SECRET_GROUP",
+    )).json()["status"] == "ignored"
+    assert "reason=non_direct_chat" in caplog.text
+    assert "SECRET_GROUP" not in caplog.text
+    assert db["leads"].update_calls == 0
+
+
+def test_diagnostics_are_off_by_default_or_other_session(rig, monkeypatch, caplog):
+    db, cycle, client = rig
+    monkeypatch.delenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", raising=False)
+    caplog.set_level("INFO")
+    assert post(client, event(from_me=True, phone=PRIVATE)).json()["status"] == "ignored"
+    assert "EXEC_AUDIT_DIAG" not in caplog.text
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", "133517")
+    assert post(client, event(from_me=True, phone=PRIVATE)).json()["status"] == "ignored"
+    assert "EXEC_AUDIT_DIAG" not in caplog.text
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", SESSION + "," + SESSION)
+    assert post(client, event(from_me=True, phone=PRIVATE)).json()["status"] == "ignored"
+    assert "EXEC_AUDIT_DIAG" not in caplog.text
+
+
+def test_diagnostics_show_authorized_delivery_and_write_gate_without_content(
+        rig, monkeypatch, caplog):
+    db, cycle, client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", SESSION)
+    caplog.set_level("INFO")
+    secret_content = "CONFIDENTIAL_LEAD_TEXT"
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0")
+    assert post(client, event(from_me=True, text=secret_content)).json()["status"] == "dry_run"
+    assert "reason=capture_disabled" in caplog.text
+    assert secret_content not in caplog.text
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "1")
+    assert post(client, event(from_me=True, text=secret_content)).json()["status"] == "stored"
+    assert "reason=stored" in caplog.text
+    assert secret_content not in caplog.text
+    assert db["leads"].update_calls == 1
+
+
+def test_diagnostics_distinguish_unsupported_webhook_shape_and_unresolved_lid(
+        rig, monkeypatch, caplog):
+    db, cycle, client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", SESSION)
+    monkeypatch.setattr(audit, "_pn_from_lid", lambda lid, token: None)
+    caplog.set_level("INFO")
+    body = event(from_me=True, text="PRIVATE_LID",
+                 jid="123456789012@lid")
+    assert post(client, body).json()["status"] == "ignored"
+    assert "reason=peer_lid_unresolved" in caplog.text
+    assert "PRIVATE_LID" not in caplog.text
+    assert "123456789012@lid" not in caplog.text
+    body = {"event": "session.status", "data": {"status": "connected"}}
+    assert post(client, body).json()["status"] == "ignored"
+    assert "reason=event_unsupported" in caplog.text

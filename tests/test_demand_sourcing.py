@@ -6,6 +6,7 @@ from bson import ObjectId
 from chatbot.demand_sourcing import (
     find_demand_captation_candidates, ensure_admin_demand_review,
 )
+from chatbot.demand_sourcing_engine import ensure_indexes, index_external_listing
 
 NOW = datetime(2026, 11, 18, 22, 0, tzinfo=timezone.utc)
 
@@ -75,6 +76,7 @@ def test_diana_sourcing_prefers_unassigned_houses_and_uses_history():
 
 def test_admin_queue_is_idempotent_and_does_not_send_or_assign():
     db = mongomock.MongoClient().sourcing
+    ensure_indexes(db)
     lead_id = ObjectId()
     db.leads.insert_one({
         "_id": lead_id, "ejecutivo_asignado": "Hernán Castro",
@@ -84,7 +86,10 @@ def test_admin_queue_is_idempotent_and_does_not_send_or_assign():
         },
         "commercial_intelligence": {"active_search": search()},
     })
-    db.propiedades_captacion.insert_one(listing("good"))
+    source_listing = listing("good")
+    db.propiedades_captacion.insert_one(source_listing)
+    index_external_listing(db, db.propiedades_captacion.find_one({"listing_id": "good"}),
+                           observed_at=NOW, now=NOW)
     first = ensure_admin_demand_review(
         db, lead_id=lead_id, owner_id="hernan-id",
         cycle_id="cycle1", search=search(), now=NOW,

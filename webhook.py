@@ -1754,6 +1754,9 @@ app.include_router(visitas_router)
 from api_crm_weekly_report import router as crm_weekly_router
 app.include_router(crm_weekly_router)
 
+from api_demand_sourcing import router as demand_sourcing_router
+app.include_router(demand_sourcing_router)
+
 from owner_portal.router import router as owner_portal_router
 app.include_router(owner_portal_router)
 

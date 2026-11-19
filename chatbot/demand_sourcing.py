@@ -43,12 +43,22 @@ def _fold(value: Any) -> str:
 
 
 def _note_text(doc: dict) -> str:
-    # Notes are internal-only inputs. Never persist them in review task payloads.
-    notes = ((doc.get("gestion") or {}).get("notas") or [])
-    return "\n".join(
-        str(item.get("content") or "") for item in notes
-        if isinstance(item, dict)
-    )
+    # Embedded human notes, activities and state changes all inform the veto.
+    # Never persist this text in catalog, task, alert or candidate payloads.
+    management = doc.get("gestion") or {}
+    values = []
+    for field in ("notas", "actividades", "status_history"):
+        for item in management.get(field) or []:
+            if isinstance(item, dict):
+                values.extend(
+                    str(item.get(key) or "")
+                    for key in ("content", "nota", "resultado", "descripcion",
+                                "estado", "status", "new_status", "previous_status")
+                    if item.get(key)
+                )
+            elif isinstance(item, str):
+                values.append(item)
+    return "\n".join(values)
 
 
 def _commune_regex(names: list[str]) -> str:
@@ -102,6 +112,18 @@ def _policy(doc: dict) -> str:
             or classification.get("professional_hard_veto") is True
             or status in _TERMINAL):
         return "EXCLUDED_BROKER_OR_TERMINAL"
+    management = doc.get("gestion") or {}
+    historical_statuses = []
+    for entry in management.get("status_history") or []:
+        if isinstance(entry, dict):
+            historical_statuses.extend(
+                _fold(entry.get(key)) for key in ("estado", "status", "new_status")
+                if entry.get(key)
+            )
+        elif isinstance(entry, str):
+            historical_statuses.append(_fold(entry))
+    if any(value in _TERMINAL for value in historical_statuses):
+        return "EXCLUDED_HUMAN_HISTORY_VETO"
     if (doc.get("precio_validacion") or "").upper().startswith("INVALID"):
         return "EXCLUDED_INVALID_PRICE"
     description = _fold(" ".join(str(doc.get(field) or "") for field in
@@ -109,8 +131,10 @@ def _policy(doc: dict) -> str:
     notes = _fold(_note_text(doc))
     if _DNC.search(description) or _DNC.search(notes):
         return "EXCLUDED_DO_NOT_CONTACT"
-    if status == "no interesado" or _TERMS.search(description) or _TERMS.search(notes):
+    if _TERMS.search(description) or _TERMS.search(notes):
         return "ADMIN_REVIEW_TERMS"
+    if status == "no interesado":
+        return "ADMIN_REVIEW_NOT_INTERESTED"
     if status in _EXISTING:
         return "EXISTING_MANAGEMENT"
     return "VERIFY_OWNER"
@@ -245,7 +269,15 @@ def ensure_admin_demand_review(
         ",".join(sorted(criteria.get("property_types") or [])),
     ])
     identity = "demand_sourcing:" + sha256(signature.encode()).hexdigest()[:32]
-    candidates = find_demand_captation_candidates(db, search, limit=12)
+    # Per-lead reviews must consult the shared indexed catalog. The bounded
+    # raw-source screener above remains available for explicit offline audits,
+    # but is never run from this buyer/message path.
+    try:
+        from .demand_sourcing_engine import screen_indexed_external_candidates
+        candidates = screen_indexed_external_candidates(db, search, limit=12)
+    except Exception:
+        candidates = {"candidates": [], "excluded": {}, "scanned": 0,
+                      "catalog_ready": False}
     timestamp = now or datetime.now(timezone.utc)
     record = {
         "_id": identity, "task_id": identity, "type": TASK_TYPE,
@@ -276,6 +308,7 @@ def ensure_admin_demand_review(
         "candidate_refs": candidates["candidates"],
         "screened_count": candidates["scanned"],
         "excluded_counts": candidates["excluded"],
+        "catalog_ready": candidates.get("catalog_ready", False),
     }
     db["crm_tasks"].update_one(
         {"_id": identity}, {"$setOnInsert": record}, upsert=True,

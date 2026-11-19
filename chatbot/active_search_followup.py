@@ -89,11 +89,25 @@ def ensure_followup_task(
         {"_id": identity},
         {"$setOnInsert": record}, upsert=True,
     )
-    if not matches:
-        # Admin review is feature-gated and never sends or reassigns.
-        # It creates a database queue record, not an immediate WhatsApp alert.
-        import os
-        if os.getenv("PROCASA_DEMAND_SOURCING_ENABLED", "0") == "1":
+    # Permanent case/index integration remains opt-in until the CRM admin UI
+    # and the separate worker are configured. It creates no customer/owner
+    # messages, does not change assignment, and only enqueues Mongo jobs.
+    import os
+    if os.getenv("PROCASA_DEMAND_SOURCING_ENABLED", "0") == "1":
+        try:
+            from .demand_sourcing_engine import ensure_demand_case
+            ensure_demand_case(
+                db, lead_id=lead_id, cycle_id=cycle_id,
+                owner_id=owner_id, search=search, now=now,
+            )
+        except Exception as exc:
+            # The buyer follow-up is already persisted. A sourcing subsystem
+            # error cannot block or roll back normal CRM work.
+            import logging
+            logging.getLogger(__name__).warning(
+                "DEMAND_SOURCING case_upsert_error=%s", type(exc).__name__,
+            )
+        if not matches:
             from .demand_sourcing import ensure_admin_demand_review
             ensure_admin_demand_review(
                 db, lead_id=lead_id, cycle_id=cycle_id,

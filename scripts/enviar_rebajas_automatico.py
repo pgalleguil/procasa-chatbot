@@ -199,7 +199,8 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
         start_time=day_time(9), end_time=day_time(20),
         allowed_weekdays="MON,TUE,WED,THU,FRI",
         timezone_name="America/Santiago",
-        progress: Callable[[str], None] | None = None):
+        progress: Callable[[str], None] | None = None,
+        use_executive_sessions: bool = False):
     if not 1 <= max_messages <= cli.MAX_MESSAGES_PER_RUN:
         raise ValueError("max_messages_must_be_within_provider_run_limit")
     cli.validate_limits(max_messages, min_delay, max_delay,
@@ -226,7 +227,8 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
               "required": max_messages,  # legacy report key, not an exact-batch requirement
               "recipients": preview, **counters,
               "approval": "AUTOMATIC_AFTER_PROPERTY_INQUIRY_VERIFICATION",
-              "manual_approval_per_message": False, "attempts": 0}
+              "manual_approval_per_message": False, "attempts": 0,
+              "executive_routing_requested": bool(use_executive_sessions)}
     if not execute:
         return report
     if not selected:
@@ -287,6 +289,7 @@ def run(db, *, execute=False, max_messages=20, max_age_days=0,
         allowed_weekdays=allowed_weekdays, timezone_name=timezone_name,
         temperature_filter="ALL", lead_max_age_days=max_age_days,
         enforce_campaign_filters=True, already_confirmed=True,
+        use_executive_sessions=use_executive_sessions,
     )
     return {**report, "status": outcome.get("status"),
             "sending_selected": len(selected),

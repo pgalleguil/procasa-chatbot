@@ -1034,6 +1034,7 @@ def execute_campaign(
     progress_total_limit: int | None = None,
     display_max_messages: int | None = None,
     pending_campaigns: dict[str, set[str]] | None = None,
+    use_executive_sessions: bool = False,
 ) -> dict[str, Any]:
     validate_limits(max_messages, min_delay_seconds, max_delay_seconds,
                     provider_plan=provider_plan, daily_cap=daily_provider_cap)
@@ -1279,6 +1280,7 @@ def execute_campaign(
                 temperature_filter_override=temperature_filter,
                 lead_max_age_days_override=lead_max_age_days,
                 enforce_campaign_filters=enforce_campaign_filters,
+                executive_transport_enabled=use_executive_sessions,
             )
             status = str(outcome.get("status") or "UNKNOWN")
             provider_status = str(outcome.get("provider_status") or "unknown").lower()
@@ -1758,6 +1760,7 @@ def execute_approved_batch(
     progress_path: str | Path | None = None,
     publication_verifier: Callable[..., Any] = verify_current_listing,
     progress_fn: Callable[[str], None] | None = None,
+    use_executive_sessions: bool = False,
 ) -> dict[str, Any]:
     """Shared paced sender for pilot rows, resumed batches and portfolio campaigns."""
     validate_limits(max_messages, min_delay_seconds, max_delay_seconds,
@@ -1862,6 +1865,7 @@ def execute_approved_batch(
             display_max_messages=max_messages,
             pause_after_last=position < len(campaign_items) - 1,
             progress_fn=progress_fn,
+            use_executive_sessions=use_executive_sessions,
         )
         outcomes.append({"campaign_id": cid, **outcome})
         total_attempts += int(outcome.get("attempts") or 0)
@@ -2622,6 +2626,10 @@ def main(argv: list[str] | None = None) -> int:
                     min_delay=args.min_delay_seconds,
                     max_delay=args.max_delay_seconds,
                     daily_provider_cap=args.daily_provider_cap,
+                    use_executive_sessions=(
+                        os.getenv("PRICE_DROP_EXECUTIVE_SEND_ENABLED", "0")
+                        .strip().lower() in {"1", "true", "yes"}
+                    ),
                     progress=auto_progress,
                 )
             except Exception as exc:

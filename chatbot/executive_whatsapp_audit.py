@@ -275,7 +275,8 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
             for previous in stored.get("messages", [])
         ):
             return "duplicate_or_reassigned"
-        for original_source in ("crm_manual_api", "crm_hot_auto_api"):
+        for original_source in ("crm_manual_api", "crm_hot_auto_api",
+                                "price_drop_campaign_api"):
             match = find_unique_echo_match(
                 stored.get("messages") or [],
                 source=original_source, content=parsed["content"],
@@ -366,6 +367,22 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
             },
         },
     )
+    if result.modified_count == 1 and not parsed["from_me"]:
+        # A campaign sent from this executive's session must receive the
+        # same reply classification/STOP audit as an office-origin campaign,
+        # but only for the SAME authenticated session and active CRM cycle.
+        # The canonical inbound message is already present in leads.messages.
+        try:
+            from .price_drop_leads_v2 import record_inbound
+            record_inbound(
+                db, phone=phone,
+                provider_message_id=provider_id,
+                text=parsed["content"], now=occurred,
+                source_session_id=str(session["session_id"]),
+                assignment_cycle_id=cycle_id,
+            )
+        except Exception:
+            logger.warning("EXEC_AUDIT campaign_reply_attribution_failed")
     return "stored" if result.modified_count == 1 else "duplicate_or_reassigned"
 
 

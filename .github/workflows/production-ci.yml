@@ -66,6 +66,7 @@ jobs:
               tests/test_price_drop_inbound_readiness_audit.py
               tests/test_price_drop_export_recovery.py
               tests/test_auto_rebajas_pilot.py
+              tests/test_price_drop_executive_routing.py
               tests/test_price_drop_inbound_reengagement.py
               tests/test_wasender_webhook_signature_compat.py
               tests/test_wasender_webhook_unauthorized_response.py

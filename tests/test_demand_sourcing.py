@@ -154,6 +154,22 @@ def test_review_queue_is_gated_by_environment(monkeypatch):
     assert db.crm_tasks.count_documents({"recipient_role": "admin"}) == 1
 
 
+def test_broker_effective_veto_and_alternate_description_are_respected():
+    db = mongomock.MongoClient().sourcing
+    effective_broker = listing("effective", klass="INCIERTO")
+    effective_broker["classification"]["effective_state"] = "CORREDOR_SEGURO"
+    hard_veto = listing("veto", klass="INCIERTO")
+    hard_veto["classification"]["hard_broker_veto"] = True
+    blocked = listing("description", klass="INCIERTO")
+    blocked["description"] = ""
+    blocked["descripcion"] = "Dueño, pero corredoras abstenerse"
+    allowed = listing("allowed", klass="INCIERTO")
+    db.propiedades_captacion.insert_many([effective_broker, hard_veto, blocked, allowed])
+    result = find_demand_captation_candidates(db, search())
+    assert [x["listing_id"] for x in result["candidates"]] == ["allowed"]
+    assert result["excluded"]["EXCLUDED_DO_NOT_CONTACT"] == 1
+
+
 def test_portal_undecided_duplicate_of_human_broker_is_vetoed():
     db = mongomock.MongoClient().sourcing
     undecided = listing("4110707", price=75_000_000)

@@ -62,6 +62,13 @@ _EXCLUSIVE_TYPE = re.compile(
     r"\b(?:solo|solamente|unicamente|exclusivamente)\s+"
     r"(?:una?\s+)?(?:casas?|departamentos?|deptos?)\b"
 )
+# Keep the buyer's landmark in text form until an administrator verifies location.
+# Never infer a commune, distance, or coordinates from an informal school name.
+_PROXIMITY_TARGET = re.compile(
+    r"\\b(?:busco|buscando|necesito|quiero|prefiero)\\b.{0,85}?"
+    r"\\b(?:mas\\s+cerca|cerca)\\s+(?:de|del)\\s+"
+    r"([a-z0-9]+(?:\\s+[a-z0-9]+){0,7})"
+)
 _VALID_COMMUNES = tuple(sorted(COMMUNE_OFFICIAL_NAMES.keys(), key=len, reverse=True))
 
 
@@ -186,11 +193,12 @@ def capture_active_search(
         # started in the office, even without repeating "busco".
         budget = _max_clp(body, already_searching=explicit or started)
         areas = _communes(body) if explicit or started else []
+        proximity = _PROXIMITY_TARGET.search(body)
         types = ([] if _REFERENCE_QUESTION.search(body) else
                  [kind for kind, pattern in _TYPE if pattern.search(body)])
         # "casa" alone is a preference correction only inside a live search;
         # do not infer searches from unrelated one-word answers.
-        if started or (explicit and (budget or areas or types)):
+        if started or (explicit and (budget or areas or types or proximity)):
             explicit = True
             status = STATUS_ACTIVE
             if channel not in sources:
@@ -201,6 +209,17 @@ def capture_active_search(
             if areas:
                 criteria["comunas"] = areas
                 evidence["comunas"] = {"source": channel, "message_id": message_id}
+            if proximity:
+                label = proximity.group(1).strip()
+                # A landmark is not a verified address and must never drive
+                # direct geospatial scraping without human geocoding.
+                targets = list(criteria.get("location_targets") or [])
+                if label not in targets:
+                    criteria["location_targets"] = (targets + [label])[-3:]
+                    evidence["location_targets"] = {
+                        "source": channel, "message_id": message_id,
+                        "verification": "HUMAN_GEOCODING_REQUIRED",
+                    }
             if types:
                 prior_types = list(criteria.get("property_types") or [])
                 exclusive = bool(_EXCLUSIVE_TYPE.search(body))
@@ -244,8 +263,10 @@ def capture_active_search(
         "field_evidence": evidence, "source_channels": sources,
         "excluded_property_codes": excluded[:12],
         "last_customer_at": newest, "opt_out": opt_out,
-        "followup_required": status == STATUS_ACTIVE and bool(criteria.get("max_price_clp"))
-                             and bool(criteria.get("comunas")),
+        "followup_required": (status == STATUS_ACTIVE
+                              and ((bool(criteria.get("max_price_clp"))
+                                    and bool(criteria.get("comunas")))
+                                   or bool(criteria.get("location_targets")))),
     }
 
 

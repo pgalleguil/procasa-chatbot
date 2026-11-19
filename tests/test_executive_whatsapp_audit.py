@@ -610,3 +610,55 @@ def test_diagnostics_distinguish_unsupported_webhook_shape_and_unresolved_lid(
     body = {"event": "session.status", "data": {"status": "connected"}}
     assert post(client, body).json()["status"] == "ignored"
     assert "reason=event_unsupported" in caplog.text
+
+
+
+def test_lid_diagnostic_classifies_provider_auth_failure_without_logging_private_ids(
+        rig, monkeypatch, caplog):
+    db, _cycle, client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", SESSION)
+    caplog.set_level("INFO")
+    class MockClient:
+        def __init__(self, **_kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return None
+        def get(self, url, headers):
+            assert "pn-from-lid/" in url
+            assert headers["Authorization"] == "Bearer " + TOKEN
+            return SimpleNamespace(status_code=401)
+    monkeypatch.setattr(audit.httpx, "Client", MockClient)
+    event_text = "PRIVATE_IDENTIFIER_NEVER_LOGGED"
+    assert post(client, event(from_me=True, jid="123456789012@lid",
+                              text=event_text)).json()["status"] == "ignored"
+    assert "reason=lid_http_auth" in caplog.text
+    assert "reason=peer_lid_unresolved" in caplog.text
+    assert "123456789012@lid" not in caplog.text
+    assert event_text not in caplog.text
+    assert TOKEN not in caplog.text
+    assert db["leads"].update_calls == 0
+
+
+def test_lid_diagnostic_distinguishes_unmapped_contact_from_invalid_token(
+        rig, monkeypatch, caplog):
+    db, _cycle, client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", SESSION)
+    caplog.set_level("INFO")
+    class MockClient:
+        def __init__(self, **_kwargs):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *_args):
+            return None
+        def get(self, url, headers):
+            return SimpleNamespace(
+                status_code=200, json=lambda: {"success": True, "data": {"pn": None}},
+            )
+    monkeypatch.setattr(audit.httpx, "Client", MockClient)
+    assert post(client, event(from_me=True, jid="123456789012@lid")).json()["status"] == "ignored"
+    assert "reason=lid_mapping_unavailable" in caplog.text
+    assert "reason=lid_http_auth" not in caplog.text
+    assert db["leads"].update_calls == 0

@@ -890,8 +890,16 @@ def event_message(event: PriceDropEvent, *, last_notice: dict[str, Any] | None =
     current = _decimal(event.current_price)
     if original is None or current is None or not original > current > 0:
         raise DiscoveryError("outreach_price_not_a_reduction")
-    difference = original - current
-    percentage = (difference / original * Decimal("100")).quantize(Decimal("0.01"))
+    # If this customer was already told a price, compare against THAT price,
+    # not an intermediate historical step they never heard about.
+    prior_notified = _decimal((last_notice or {}).get("price"))
+    reference = (
+        prior_notified
+        if prior_notified is not None and prior_notified > current
+        else original
+    )
+    difference = reference - current
+    percentage = (difference / reference * Decimal("100")).quantize(Decimal("0.01"))
     percent_label = str(percentage).replace(".", ",") + "%"
     first = str(recipient_name or "").strip()
     greeting = f"Hola, {first}, ¿cómo estás?" if first else "Hola, ¿cómo estás?"
@@ -903,7 +911,7 @@ def event_message(event: PriceDropEvent, *, last_notice: dict[str, Any] | None =
     return (
         f"{greeting}\n\n"
         f"{opening}\n\n"
-        f"{price_label} bajó de {format_price(event.old_price, event.currency)} "
+        f"{price_label} bajó de {format_price(_number(reference), event.currency)} "
         f"a {format_price(event.current_price, event.currency)}. "
         f"Son {format_price(_number(difference), event.currency)} menos "
         f"({percent_label} de rebaja).\n\n"

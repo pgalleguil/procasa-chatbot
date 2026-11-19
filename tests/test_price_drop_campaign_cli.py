@@ -947,7 +947,9 @@ def test_prepare_new_event_stores_cumulative_history_and_reference_price(monkeyp
     assert campaign["price_reference"] == 2690
     assert [(row["old_price"], row["new_price"])
             for row in campaign["price_history_steps"]] == [(2690, 2590), (2590, 2490)]
-    assert "cuando estaba en UF 2.690" in campaign["outbound_message"]
+    assert "de UF 2.690 a UF 2.490" in campaign["outbound_message"]
+    assert "UF 200 menos" in campaign["outbound_message"]
+    assert "7,43%" in campaign["outbound_message"]
 
 
 def test_prepare_selected_reuses_existing_lead_authorization_without_new_evidence():

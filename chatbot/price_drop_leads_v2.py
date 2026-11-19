@@ -1448,7 +1448,8 @@ def send_one(db, *, lead_id: str, campaign_id: str,
              recovery_journal_path=None,
              temperature_filter_override: str | None = None,
              lead_max_age_days_override: int | None = None,
-             enforce_campaign_filters: bool = False) -> dict:
+             enforce_campaign_filters: bool = False,
+             executive_transport_enabled: bool = False) -> dict:
     """One irreversible attempt; no sender invoked without separate gates."""
     if os.getenv(SEND_FLAG, "").lower() not in {"true", "1", "yes"}:
         return {"status": "DISABLED"}
@@ -1572,6 +1573,13 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     new = c.get("new_price_clp") if currency == "CLP" else c.get("new_price_uf")
     _verified_campaign_price(db, c["property_code"], old, new, currency=currency,
                              operation=str(c.get("operation") or "venta").lower())
+    # Per-recipient transport selection is intentionally restricted to
+    # automatic campaigns and uses a current CRM assignment plus a recently
+    # confirmed executive webhook. Missing/unsafe session -> office WhatsApp.
+    route = None
+    if executive_transport_enabled and not c.get("test_mode") and sender is None:
+        from .price_drop_executive_routing import resolve_route
+        route = resolve_route(db, lead, now=stamp)
     campaign_index = next((i for i, row in enumerate(all_campaigns)
                            if row.get("campaign_id") == campaign_id), None)
     if campaign_index is None:
@@ -1583,7 +1591,17 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     claim_update = {"$set": {
         campaign_path + ".status": "SENDING",
         campaign_path + ".attempted_at": stamp,
+        campaign_path + ".outbound_transport": (
+            "executive_whatsapp" if route else "office_whatsapp"),
     }}
+    if route:
+        send_claim["lifecycle.current_assignment_cycle_id"] = route["assignment_cycle_id"]
+        send_claim["lifecycle.assigned_to_user_id"] = route["executive_id"]
+        claim_update["$set"].update({
+            campaign_path + ".wasender_session_id": route["session_id"],
+            campaign_path + ".assigned_executive_id": route["executive_id"],
+            campaign_path + ".assignment_cycle_id": route["assignment_cycle_id"],
+        })
     if qa_reauthorization is not None:
         auth_rows = ((lead.get("price_drop_v2") or {}).get(
             "qa_reauthorizations") or [])
@@ -1611,8 +1629,30 @@ def send_one(db, *, lead_id: str, campaign_id: str,
     if claimed.modified_count != 1:
         return {"status": "ALREADY_ATTEMPTED"}
     if sender is None:
-        from .whatsapp_client import send_whatsapp_message_detailed_sync
-        sender = send_whatsapp_message_detailed_sync
+        if route:
+            from .price_drop_executive_routing import (
+                owner_still_current, send_with_executive_route,
+            )
+            # The CRM owner may have changed even after we claimed SENDING.
+            # Fail without a provider attempt; never send from a stale owner.
+            if not owner_still_current(db, lead, route):
+                db[LEADS].update_one(
+                    {"_id": lead["_id"],
+                     ROOT: {"$elemMatch": {"campaign_id": campaign_id,
+                                           "status": "SENDING"}}},
+                    {"$set": {
+                        campaign_path + ".status": "FAILED",
+                        campaign_path + ".provider_status": "assignment_changed_before_send",
+                    }},
+                )
+                return {"status": "FAILED", "provider_status": "assignment_changed_before_send",
+                        "provider_attempted": False}
+            sender = lambda number, text: send_with_executive_route(
+                route, number, text,
+            )
+        else:
+            from .whatsapp_client import send_whatsapp_message_detailed_sync
+            sender = send_whatsapp_message_detailed_sync
     try:
         receipt = sender(c["phone_normalized"], c["outbound_message"])
     except Exception:
@@ -1659,6 +1699,15 @@ def send_one(db, *, lead_id: str, campaign_id: str,
             "role": "assistant", "content": c["outbound_message"],
             "provider_message_id": receipt["provider_message_id"],
             "delivery_status": "accepted", "timestamp": stamp.isoformat(),
+            **({
+                "message_id": str(uuid4()),
+                "channel": "executive_whatsapp",
+                "source": "price_drop_campaign_api",
+                "actor_type": "campaign_automation",
+                "assigned_executive_id": route["executive_id"],
+                "assignment_cycle_id": route["assignment_cycle_id"],
+                "wasender_session_id": route["session_id"],
+            } if route else {}),
             "metadata": {
                 "tipo": "price_drop_outreach", "campaign_id": campaign_id,
                 "price_drop_event_id": str(c.get("event_id") or campaign_id),
@@ -1679,12 +1728,51 @@ def send_one(db, *, lead_id: str, campaign_id: str,
             },
         }
         try:
-            persisted = db[LEADS].update_one(
-                {"_id": lead["_id"],
-                 ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "SENDING"}},
-                 "messages.provider_message_id": {"$ne": receipt["provider_message_id"]}},
-                {"$set": set_fields, "$push": {"messages": message}},
-            )
+            # A signed outgoing webhook can win the race against the send API
+            # response, with a DIFFERENT provider ID for the same message.
+            # Reconcile the existing authorized executive message rather than
+            # appending a second record for this same WhatsApp transmission.
+            echo = None
+            if route:
+                from .executive_whatsapp_echo import find_unique_echo_match
+                fresh = db[LEADS].find_one(
+                    {"_id": lead["_id"]}, {"messages": 1}) or {}
+                echo = find_unique_echo_match(
+                    fresh.get("messages") or [],
+                    source="whatsapp_direct", content=c["outbound_message"],
+                    session_id=route["session_id"],
+                    cycle_id=route["assignment_cycle_id"],
+                    owner_id=route["executive_id"],
+                    occurred_at=stamp,
+                )
+            if echo:
+                updated = db[LEADS].update_one({
+                    "_id": lead["_id"],
+                    "lifecycle.current_assignment_cycle_id": route["assignment_cycle_id"],
+                    "lifecycle.assigned_to_user_id": route["executive_id"],
+                    ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "SENDING"}},
+                    "messages": {"$elemMatch": {
+                        "message_id": echo["message_id"],
+                        "crm_api_provider_message_id": {"$exists": False},
+                    }},
+                }, {"$set": {
+                    **set_fields,
+                    "messages.$.crm_api_provider_message_id": receipt["provider_message_id"],
+                    "messages.$.source": "price_drop_campaign_api",
+                    "messages.$.role": "assistant",
+                    "messages.$.actor_type": "campaign_automation",
+                    "messages.$.metadata": message["metadata"],
+                }})
+                if updated.modified_count != 1:
+                    raise RuntimeError("accepted_executive_echo_persistence_conflict")
+                persisted = updated
+            else:
+                persisted = db[LEADS].update_one(
+                    {"_id": lead["_id"],
+                     ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "SENDING"}},
+                     "messages.provider_message_id": {"$ne": receipt["provider_message_id"]}},
+                    {"$set": set_fields, "$push": {"messages": message}},
+                )
             if persisted.modified_count != 1:
                 # A genuine WaSender echo can win the race and append first.
                 echo = db[LEADS].find_one(

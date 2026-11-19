@@ -93,8 +93,6 @@ def _metadata_skip_reason(payload: dict) -> str:
     key = msg.get("key")
     if not isinstance(key, dict) or type(key.get("fromMe")) is not bool:
         return "direction_missing"
-    if data.get("event") == "messages.received" and key["fromMe"]:
-        return "event_direction_mismatch"
     if payload.get("event") == "messages.received" and key["fromMe"]:
         return "event_direction_mismatch"
     vals = (key.get("remoteJid"), key.get("remoteJidAlt"),

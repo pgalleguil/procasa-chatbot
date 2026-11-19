@@ -37,6 +37,72 @@ _SESSION_ID = re.compile(r"^[1-9][0-9]{0,17}$")
 _LID = re.compile(r"^[0-9]{8,25}@lid$")
 _ALLOWED_EVENTS = frozenset({"messages.upsert", "messages.received"})
 
+_DIAGNOSTIC_FLAG = "PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS"
+# These fixed reason codes are the ONLY values ever emitted. Neither content,
+# customer identifiers, chat IDs nor provider payloads are logged.
+_DIAGNOSTIC_REASONS = frozenset({
+    "event_unsupported", "data_missing", "message_shape_unknown",
+    "message_batch_unsupported", "direction_missing", "non_direct_chat",
+    "event_direction_mismatch", "metadata_other",
+    "peer_phone_unresolved", "peer_lid_unresolved",
+    "peer_not_authorized", "text_unavailable", "capture_disabled",
+    "session_inactive", "stored", "echo_reconciled",
+    "duplicate_or_reassigned", "stale", "unverified_timestamp", "invalid_id",
+})
+
+
+def _audit_diagnostic(session: dict, reason: str) -> None:
+    """Optional metadata-only diagnosis, explicitly restricted to named sessions.
+
+    The flag contains session IDs, not customer phone numbers. This function
+    neither stores private-chat metadata nor copies payloads to application logs.
+    """
+    raw = os.getenv(_DIAGNOSTIC_FLAG, "")
+    if not raw or len(raw) > 128 or reason not in _DIAGNOSTIC_REASONS:
+        return
+    values = [item.strip() for item in raw.split(",")]
+    if (len(values) > 6 or len(values) != len(set(values))
+            or any(not _SESSION_ID.fullmatch(item) for item in values)):
+        return
+    sid = str(session.get("session_id") or "")
+    if sid in values:
+        logger.info("EXEC_AUDIT_DIAG session=%s reason=%s", sid, reason)
+
+
+def _ignored(session: dict, reason: str) -> str:
+    _audit_diagnostic(session, reason)
+    return "ignored"
+
+
+def _metadata_skip_reason(payload: dict) -> str:
+    """Explain shape rejection using only enum codes, not payload values."""
+    if payload.get("event") not in _ALLOWED_EVENTS:
+        return "event_unsupported"
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return "data_missing"
+    msg = data.get("messages")
+    if msg is None and isinstance(data.get("key"), dict):
+        msg = data
+    if isinstance(msg, list):
+        if len(msg) != 1:
+            return "message_batch_unsupported"
+        msg = msg[0]
+    if not isinstance(msg, dict):
+        return "message_shape_unknown"
+    key = msg.get("key")
+    if not isinstance(key, dict) or type(key.get("fromMe")) is not bool:
+        return "direction_missing"
+    if payload.get("event") == "messages.received" and key["fromMe"]:
+        return "event_direction_mismatch"
+    vals = (key.get("remoteJid"), key.get("remoteJidAlt"),
+            msg.get("chatId"), msg.get("from"))
+    if any(("@g.us" in str(v or "") or "@newsletter" in str(v or "")
+            or "@broadcast" in str(v or "")) for v in vals):
+        return "non_direct_chat"
+    return "metadata_other"
+
+
 
 def _variable_name_for_executive(name: object) -> str | None:
     """Human-readable, deterministic one-secret-per-executive Render key.
@@ -389,19 +455,23 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
 def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
     meta = _event_metadata(payload)
     if meta is None:
-        return "ignored"
+        return _ignored(session, _metadata_skip_reason(payload))
     phone, lid = _peer_phone(meta, session.get("token"))
     if not phone or not has_real_phone(phone):
-        return "ignored"
+        # Distinguish a @lid that WaSender could not resolve from an event
+        # lacking any usable remote address; neither identifier is logged.
+        reason = "peer_lid_unresolved" if _remote_lid(meta[0], meta[1]) else "peer_phone_unresolved"
+        return _ignored(session, reason)
     matched = _authorized_lead(db, phone=phone, user_id=session["user_id"])
     if matched is None:
-        return "ignored"
+        return _ignored(session, "peer_not_authorized")
     lead, cycle = matched
     # Read message text only after exact-session, phone and ownership checks.
     parsed = _parse_message(payload, phone, lid)
     if parsed is None:
-        return "ignored"
+        return _ignored(session, "text_unavailable")
     if not write:
+        _audit_diagnostic(session, "capture_disabled")
         return "dry_run"
     # Repeat active-user guard immediately before the single document write.
     still_active = db["usuarios"].find_one({
@@ -409,10 +479,13 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
         "wasender.session_id": {"$in": [session["session_id"], int(session["session_id"])]},
     }, {"_id": 1})
     if not still_active:
+        _audit_diagnostic(session, "session_inactive")
         return "inactive_session"
-    return _record_authorized(
+    result = _record_authorized(
         db, session=session, phone=phone, parsed=parsed, lead=lead, cycle=cycle
     )
+    _audit_diagnostic(session, result)
+    return result
 
 
 def _session_from_storage(session_id: str) -> dict | None:

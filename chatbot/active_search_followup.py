@@ -31,16 +31,21 @@ def _criteria_note(search: dict, matches: list[dict]) -> str:
         kind = "departamento"
     else:
         kind = "casa o departamento"
-    amount = int(c.get("max_price_clp") or 0)
-    budget = "$" + f"{amount:,}".replace(",", ".")
-    area = " o ".join(c.get("comunas") or [])
+    amount = c.get("max_price_clp")
+    budget = ("hasta $" + f"{amount:,}".replace(",", ".")
+              if isinstance(amount, int) and amount > 0 else "presupuesto por confirmar")
+    area = " o ".join(c.get("comunas") or []) or "comuna por confirmar"
+    landmarks = c.get("location_targets") or []
+    reference = (" Referencia geográfica (sin validar): " +
+                 ", ".join(landmarks[:3]) + ". Requiere verificación humana."
+                 if landmarks else "")
     if not matches:
-        return (f"Búsqueda activa: {kind}, hasta {budget}, en {area}. "
-                "No hay coincidencias en la cartera verificada; "
-                "hacer seguimiento y revisar próximas altas o rebajas.")
+        return (f"Búsqueda activa: {kind}, {budget}, en {area}." + reference +
+                " Sin coincidencias verificadas; revisar búsqueda histórica y "
+                "confirmar datos faltantes antes de ofrecer.")
     ids = ", ".join(x["property_code"] for x in matches[:5])
-    return (f"Búsqueda activa: {kind}, hasta {budget}, en {area}. "
-            f"Revisar opciones internas {ids} y ofrecer únicamente después "
+    return (f"Búsqueda activa: {kind}, {budget}, en {area}." + reference +
+            f" Revisar opciones internas {ids} y ofrecer únicamente después "
             "de confirmar disponibilidad, precio y autorización de contacto.")
 
 

@@ -696,3 +696,48 @@ def test_startup_diagnostics_distinguish_global_write_gate_and_ignore_invalid_al
     asyncio.run(audit.executive_audit_readiness_probe())
     assert "EXEC_AUDIT_READY" not in caplog.text
     assert db["leads"].update_calls == 0
+
+
+
+def test_explicit_extra_capture_enables_only_named_session_without_rewriting_credentials(
+        rig, monkeypatch):
+    db, _cycle, client = rig
+    # Reproduce Mariela's production failure: a valid signed session with
+    # capture disabled and another executive on the original allowlist.
+    monkeypatch.setenv(EXEC_ENV, session_config(capture_enabled=False))
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS", "133517")
+    assert post(client, event(from_me=True, msg_id="before-opt-in")).json()["status"] == "dry_run"
+    assert db["leads"].update_calls == 0
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_EXTRA_SESSION_IDS", SESSION)
+    assert audit._session(db, SESSION)["capture_enabled"] is True
+    assert post(client, event(from_me=True, msg_id="after-opt-in")).json()["status"] == "stored"
+    assert db["leads"].update_calls == 1
+    # Hernan's existing capture remains enabled; everyone else stays unchanged.
+    assert audit._capture_enabled_for_session("133517", False) is True
+    assert audit._capture_enabled_for_session("133523", False) is False
+    # Executive webhook must still strictly exclude an unrelated private peer.
+    assert post(client, event(from_me=True, phone=PRIVATE, msg_id="private")).json()["status"] == "ignored"
+    assert db["leads"].update_calls == 1
+
+
+def test_extra_capture_optin_never_bypasses_global_write_gate(rig, monkeypatch):
+    db, _cycle, client = rig
+    monkeypatch.setenv(EXEC_ENV, session_config(capture_enabled=False))
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_EXTRA_SESSION_IDS", SESSION)
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0")
+    assert post(client, event(from_me=True)).json()["status"] == "dry_run"
+    assert db["leads"].update_calls == 0
+
+
+@pytest.mark.parametrize("invalid", [
+    "bad", "133286,133286", "133286,", " 133286,133286 ",
+    "a" * 129, "0", "133286;133517",
+])
+def test_malformed_extra_capture_grants_no_new_access(rig, monkeypatch, invalid):
+    db, _cycle, client = rig
+    monkeypatch.setenv(EXEC_ENV, session_config(capture_enabled=False))
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS", "133517")
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_EXTRA_SESSION_IDS", invalid)
+    assert audit._capture_enabled_for_session(SESSION, False) is False
+    assert post(client, event(from_me=True)).json()["status"] == "dry_run"
+    assert db["leads"].update_calls == 0

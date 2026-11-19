@@ -1,3 +1,56 @@
+# ORDEN PRIORITARIA A CODEX — MOTOR PERMANENTE DE OPORTUNIDADES (19-11-2026)
+
+**COMENZAR A CODIFICAR, NO ENTREGAR SOLO UN PLAN.** Casos Diana y Karina son pruebas, NO la arquitectura: construir infraestructura siempre preparada para todos los ejecutivos y leads comerciales asignados. Cuando llega una necesidad, el administrador debe ver candidatos ya indexados. No lanzar scraping completo ni leer todo MongoDB por cada lead.
+
+## A. Catálogo compartido SIEMPRE PREPARADO
+- Crear/reutilizar índice de búsqueda materializado de stock propio (universo_cartera_prop360) y externo (propiedades_captacion). Mantener separados sus estados comercializables: un anuncio externo nunca equivale a mandato PROCASA. Campos mínimos: identidad canónica, fuente+listing_id, operación, tipo, comuna, zona/geo validada, atributos, precio normalizado y moneda/UF fecha, estado publicado, clasificación, decisiones humanas, ejecutivo captador, timestamps de verificación, vetos, dedup y versión.
+- Backfill progresivo por lotes + mantenimiento incremental con marca de agua/eventos de altas, rebajas, bajas, cambios de precio y de gestión. Índices Mongo compuestos por operación/comuna/tipo/precio/estado/fecha; no scans globales por webhook. Comprobar selectividad/costos con explain, y manejar reinicio/checkpoints.
+- Deduplicación global entre portales por URL canónica, ID, dirección+unidad, anunciante/teléfono seguro y evidencias; casos dudosos a revisión. Una decisión humana Corredor/No contactar/Descartado tiene precedencia sobre portal y aplica a duplicados vinculados. Conservar gestión de otros ejecutivos y objeciones comerciales sin reasignar.
+- Mantener vigencia por atributo: last_seen_at, last_price_verified_at, last_availability_verified_at, owner_verified_at, commercial_authorization_at; expiración configurable. Stale necesita revalidación, no es una oferta lista.
+- Scheduler ligero y un worker de scraper aislado actualizan SOLO segmentos de demanda activa y candidatos prioritarios; cuota y caché por fuente, horario, costos y retentativas. No scraping indiscriminado permanente ni bypass de bloqueos de sitios; APIs oficiales si existen.
+
+## B. Motor permanente de DEMANDA
+- Cada conversación comercial de WhatsApp oficina o ejecutivo asignado produce/actualiza un demand_case por lead + assignment_cycle_id + revisión. Conservar evidencia, presupuesto duro, tipos aceptables vs preferido, operación, comunas, referencias escolares/geográficas pendientes de validar, consentimiento y excluidos. No procesar mensajes privados, bots o ecos; datos del formulario de portal no son confirmación WhatsApp.
+- Con necesidades incompletas crear NEEDS_CRITERIA_REVIEW y una alerta de qué falta; no dejar el caso invisible. Validar referencia «San Fco Javier» antes de geocodificar o buscar por proximidad.
+- Crear grupos de búsquedas por firma de segmento de demanda, sin PII. Si 10 leads piden lo mismo, programar 1 job de captación para el segmento/ventana, y cruzar candidatos individualmente con tope exacto y estado de cada comprador. Mantener correlación lead-ejecutivo ciclo vigente.
+- Matching BIDIRECCIONAL: (1) llega demanda -> consultar catálogo indexado y mostrar shortlist inmediata -> encolar refinamiento si es necesario; (2) entra nueva propiedad/mandato/rebaja -> cruzar con TODAS las búsquedas activas compatibles y abrir alertas nuevas; (3) cambio humano precio/disponibilidad/veto -> invalidar candidatos en tiempo útil; (4) cambio ejecutivo/cierre de búsqueda -> respetar nuevo ciclo.
+- Estado match: PROCASE_VERIFICADO, EXTERNO_PENDIENTE_IDENTIDAD, EXTERNO_PENDIENTE_PRECIO, EN_GESTION_OTRO, EXCLUIDO, RECOMENDABLE_SIN_ENVIO. Nunca ofrecer externo sin dueño autorizado, disponibilidad/precio recientes y acuerdo comercial registrado.
+
+## C. EXPERIENCIA DEL ADMINISTRADOR — NO USAR POWERSHELL
+- Alerta REAL y deduplicada: "comprador activo sin oferta" / "nueva alternativa posible" con deep link a bandeja de administración. No confundir documento crm_tasks con mensaje entregado: outbox de envío y estados pending/sent/failed, logs sin PII.
+- Bandeja «Captación por demanda» con NUEVAS, REQUIERE_DATOS, RESULTADOS_LISTOS, BUSCANDO, EN_VERIFICACION, EN_GESTION, ERROR, RESUELTAS. Filtros por ejecutivo, prioridad, comuna, presupuesto y antigüedad.
+- Al abrir caso mostrar inmediatamente candidatos PROCASA, candidatos históricos externos, hallazgos nuevos y vetados en columnas distintas; mostrar motivo/fecha/confianza y cumplimiento de restricciones. Botones FUNCIONALES: Buscar ahora, Ajustar filtros, Confirmar ubicación, Validar, Descartar, Coordinar, Entregar a ejecutivo, Reintentar, Cerrar.
+- Buscar ahora solo encola actualización acotada, nunca ejecuta Playwright dentro de API; ver jobs queued/running/completed/failed, fuente, cobertura, conteo, quota, last success, caché y antigüedad. Si ya existe job equivalente, adjuntar caso y reutilizar resultados.
+- Ejecutivo responsable del comprador recibe prioridad sobre nuevas propiedades sin ejecutivo captador, pero fichas de otros ejecutivos quedan en coordinación interna. No modificar SLA/comisiones ni enviar WhatsApp a propietarios/leads de forma automática.
+
+## D. INFRASTRUCTURA Y RESILIENCIA
+- API webhooks/CRM y scraper deben estar desacoplados: worker separado del servidor procasa-chatbot-yr8d, jobs Mongo con lease/timeout/heartbeat, retries backoff, dead-letter, idempotencia, locks y límites de concurrencia. No crear servicios pagos ni desplegar sin autorización. Si el entorno no tiene worker real, implementar ejecutable y configuración reproducible, CI y documentar bloqueo operativo exacto.
+- No crear un segundo repositorio/scraper: integrar EXISTENTES scraper_yapo/run_owner_hunt.py y scrapers/scraper_toctoc/run_toctoc.py. En TocToc el precio CLI no necesariamente filtra discovery; confirmar en la ficha. En Yapo CLI no existe tipo/precio: adaptar con parámetros comprobados, no inventar URLs. Preservar captaciones y decisiones humanas.
+- Seguridad RBAC/CSRF, clientes solo personal autorizado, mínima PII en logs y colas, no divulgar identidad/datos de demanda a anunciantes ni portales, no canjes entre corredoras piloto.
+- Medir latencia desde WhatsApp hasta caso/alerta, tiempo hasta primera coincidencia indexada, revalidaciones pendientes, propiedades externas verificadas, gestión/captación, tasa de reuso de jobs, errores, recursos y costos; no afirmar rendimiento sin benchmarks.
+- Backfill seguro por lotes de búsquedas comerciales activas anteriores que todavía no tengan perfil, validando chats asignados y ciclo. Persistir cambios nuevos incrementalmente.
+
+## ORDEN IMPLEMENTACIÓN, SIN BLOQUEAR POR DISEÑO
+P0: índice incremental preparado + matching instantáneo + casos por lead + alertas reales + bandeja admin + Buscar ahora encola job idempotente + resultados históricos. Debe servir para todos los ejecutivos desde el primer MVP.
+P1: adaptadores Yapo/TocToc + worker aislado + jobs agrupados por firma de demanda + scheduler por segmentos de interés.
+P1: matching inverso por alta/rebaja/verificación y avisos proactivos + reintentos de prospectos/casos estancados.
+P2: backfill controlado, monitoreo, caducidad avanzada y optimización. No cerrar issue hasta circuito usable y pruebas completas, aunque P0 sea un PR funcional por separado.
+
+## PRUEBAS DE ACEPTACIÓN OBLIGATORIAS
+1. 10 compradores similares => 1 job por firma/fuente/ventana, no 10 scrapers; cada uno respeta su presupuesto duro y propietario comercial.
+2. 1 nueva propiedad compatible => cruce inverso con 3 compradores => 3 relaciones internas y avisos deduplicados sin repetir spam.
+3. Webhook repetido 5 veces => 1 caso actualizado, 0 jobs/alertas duplicadas.
+4. Cambio de ciclo/ejecutivo o presupuesto mientras scraper corre => ningún candidato se entrega con criterios/ciclo viejos.
+5. Duplicado Esquilo 2706: correlacionar listing 4110707 con 112885892 de gestión humana Corredor => NO asignar ni ofrecer. Caso Diana: casa preferida, depto aceptable, Maipú/Pudahuel, máximo $97M y código 17184 descartado.
+6. Caso Karina: ubicación «más cerca del San Fco Javier» sin geocódigo confirmado => caso de revisión visible con datos faltantes; no inventar radio, zona ni presupuesto WhatsApp.
+7. Proveedor externo 429/offline => webhooks WaSender y CRM no se bloquean; UI indica cache/estado real y retry.
+8. Prueba E2E con datos sintéticos: conversación -> caso -> alerta -> shortlist instantánea -> Buscar ahora -> worker de prueba -> candidato -> humano verifica -> entrega interna, sin envíos externos.
+9. CI green, auth y pruebas de carga acotada; documentar qué está construido vs desplegado, costos, switches y rollback.
+
+**Empezar por P0 con commits reales EN LA RAMA DEL PR #245. No responder solo con arquitectura ni crear otro ticket. No fusionar o desplegar producción, ni contactar clientes/anunciantes.**
+
+---
+
 # Orden de ejecución para Codex: captación dirigida centralizada (PROCASA)
 
 **Objetivo no negociable:** convertir necesidades inmobiliarias detectadas en los WhatsApp comerciales de ejecutivos y en el chatbot de oficina en búsquedas de propiedades centralizadas, accionables y trazables. El administrador debe recibir una alerta con enlace directo al caso; **sin ejecutar PowerShell ni introducir filtros nuevamente** debe poder revisar candidatos históricos, pulsar **Buscar ahora** (job asíncrono) para Yapo/TocToc, aprobar una oportunidad y entregar su gestión al ejecutivo del comprador. Automatizar la búsqueda, **no** el contacto a compradores o propietarios.

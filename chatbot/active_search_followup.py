@@ -84,6 +84,16 @@ def ensure_followup_task(
         {"_id": identity},
         {"$setOnInsert": record}, upsert=True,
     )
+    if not matches:
+        # Admin review is feature-gated and never sends or reassigns.
+        # It creates a database queue record, not an immediate WhatsApp alert.
+        import os
+        if os.getenv("PROCASA_DEMAND_SOURCING_ENABLED", "0") == "1":
+            from .demand_sourcing import ensure_admin_demand_review
+            ensure_admin_demand_review(
+                db, lead_id=lead_id, cycle_id=cycle_id,
+                owner_id=owner_id, search=search, now=now,
+            )
     if matches:
         # The waiting task is superseded by a match-specific action. A human
         # already-completed task is never reopened or rewritten.

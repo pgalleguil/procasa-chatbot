@@ -796,11 +796,17 @@ def test_message_personalization_and_deterministic_variants_include_verified_fac
     assert candidate["first_name"] == "Carolina"
     variant = cli.message_variant_id(str(lead_id), event.event_id)
     message = cli.event_message(event, recipient_name=candidate["first_name"], variant_id=variant)
-    assert "Hola, Carolina." in message
+    assert "Hola, Carolina, ¿cómo estás?" in message
     assert "PROCASA" in message and "6436" in message
     assert "UF 2.790" in message and "UF 2.690" in message
     assert "UF 100" in message and event.listing_url in message
-    assert "no recibir más avisos" in message
+    assert "no te escribimos más" in message
+    assert "de rebaja" in message
+    assert "3,58%" in message
+    assert "propiedad código" not in message.lower()
+    assert "historial registra" not in message.lower()
+    assert "última rebaja" not in message.lower()
+    assert "fecha" not in message.lower()
     assert variant == cli.message_variant_id(str(lead_id), event.event_id)
     generic = cli.event_message(event, recipient_name=None, variant_id="rebaja_v2")
     assert "Hola, ¿cómo estás?" in generic

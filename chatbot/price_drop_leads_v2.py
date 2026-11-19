@@ -12,6 +12,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
+from uuid import uuid4
 
 from pymongo import ReturnDocument
 
@@ -1746,22 +1747,27 @@ def send_one(db, *, lead_id: str, campaign_id: str,
                     occurred_at=stamp,
                 )
             if echo:
+                echo_indices = [
+                    i for i, row in enumerate(fresh.get("messages") or [])
+                    if isinstance(row, dict) and row.get("message_id") == echo["message_id"]
+                ]
+                if len(echo_indices) != 1:
+                    raise RuntimeError("accepted_executive_echo_index_ambiguous")
+                echo_prefix = "messages." + str(echo_indices[0])
                 updated = db[LEADS].update_one({
                     "_id": lead["_id"],
                     "lifecycle.current_assignment_cycle_id": route["assignment_cycle_id"],
                     "lifecycle.assigned_to_user_id": route["executive_id"],
                     ROOT: {"$elemMatch": {"campaign_id": campaign_id, "status": "SENDING"}},
-                    "messages": {"$elemMatch": {
-                        "message_id": echo["message_id"],
-                        "crm_api_provider_message_id": {"$exists": False},
-                    }},
+                    echo_prefix + ".message_id": echo["message_id"],
+                    echo_prefix + ".crm_api_provider_message_id": {"$exists": False},
                 }, {"$set": {
                     **set_fields,
-                    "messages.$.crm_api_provider_message_id": receipt["provider_message_id"],
-                    "messages.$.source": "price_drop_campaign_api",
-                    "messages.$.role": "assistant",
-                    "messages.$.actor_type": "campaign_automation",
-                    "messages.$.metadata": message["metadata"],
+                    echo_prefix + ".crm_api_provider_message_id": receipt["provider_message_id"],
+                    echo_prefix + ".source": "price_drop_campaign_api",
+                    echo_prefix + ".role": "assistant",
+                    echo_prefix + ".actor_type": "campaign_automation",
+                    echo_prefix + ".metadata": message["metadata"],
                 }})
                 if updated.modified_count != 1:
                     raise RuntimeError("accepted_executive_echo_persistence_conflict")

@@ -855,16 +855,16 @@ def format_price(value: int | float, currency: str) -> str:
 
 MESSAGE_VARIANTS = {
     "rebaja_v1": {
-        "opening": "Te escribimos de PROCASA porque consultaste por la propiedad código {code}.",
-        "question": "¿Te gustaría conocer más sobre esta propiedad?",
+        "opening": "Te escribo de PROCASA porque me acordé de la propiedad que habías consultado.",
+        "question": "¿Te gustaría que coordinemos una visita?",
     },
     "rebaja_v2": {
-        "opening": "En PROCASA retomamos tu consulta por la propiedad código {code} para compartirte su precio actualizado.",
-        "question": "¿Quieres que te contemos más sobre la propiedad?",
+        "opening": "Soy de PROCASA. Quería contarte una novedad de la propiedad que habías visto con nosotros.",
+        "question": "¿Te gustaría ir a verla?",
     },
     "rebaja_v3": {
-        "opening": "Vimos tu consulta anterior por la propiedad código {code}. Te contactamos desde PROCASA porque su precio cambió.",
-        "question": "¿Te interesa revisar esta alternativa?",
+        "opening": "¿Te acuerdas de la propiedad que nos consultaste? Te escribo de PROCASA porque ajustaron su precio.",
+        "question": "¿Te interesa que coordinemos una visita?",
     },
 }
 
@@ -879,33 +879,35 @@ def event_message(event: PriceDropEvent, *, last_notice: dict[str, Any] | None =
                   history: list[PriceDropEvent] | None = None,
                   recipient_name: str | None = None,
                   variant_id: str = "rebaja_v1") -> str:
+    """Short, personable follow-up. Detailed dates and property IDs stay in CRM only.
+
+    The percentage is based on the exact displayed old/current prices; never
+    imply a larger discount or introduce unrelated historical price changes.
+    """
     if variant_id not in MESSAGE_VARIANTS:
         raise DiscoveryError("message_variant_id_invalid")
-    rows = sorted(history or [event], key=lambda row: row.dropped_at)
-    rows = [row for row in rows if row.dropped_at <= event.dropped_at]
-    changes = " y ".join(
-        f"{r.dropped_at.astimezone(CHILE_TZ).strftime('%d/%m/%Y')}: "
-        f"{format_price(r.old_price, r.currency)} a {format_price(r.new_price, r.currency)}"
-        for r in rows
-    )
-    prior = (last_notice or {}).get("price")
+    original = _decimal(event.old_price)
+    current = _decimal(event.current_price)
+    if original is None or current is None or not original > current > 0:
+        raise DiscoveryError("outreach_price_not_a_reduction")
+    difference = original - current
+    percentage = (difference / original * Decimal("100")).quantize(Decimal("0.01"))
+    percent_label = str(percentage).replace(".", ",") + "%"
     first = str(recipient_name or "").strip()
-    greeting = f"Hola, {first}." if first else "Hola, ¿cómo estás?"
-    opening = MESSAGE_VARIANTS[variant_id]["opening"].format(code=event.property_code)
-    opening += (" Se trata de un arriendo." if event.operation == "Arriendo"
-                else " Se trata de una venta.")
-    if prior is not None:
-        opening += f" Desde el aviso cuando estaba en {format_price(prior, event.currency)}, "
-    else:
-        opening += " El historial registra estos cambios: "
-    reduction = f"{format_price(event.difference, event.currency)} menos"
+    greeting = f"Hola, {first}, ¿cómo estás?" if first else "Hola, ¿cómo estás?"
+    opening = MESSAGE_VARIANTS[variant_id]["opening"]
+    price_label = (
+        "El arriendo mensual" if event.operation == "Arriendo"
+        else "El precio de venta"
+    )
     return (
-        greeting + " 😊\n\n" + opening + changes + ". "
-        f"La última rebaja fue de {format_price(event.old_price, event.currency)} a "
-        f"{format_price(event.new_price, event.currency)}, es decir, {reduction}. "
-        f"El {'arriendo mensual' if event.operation == 'Arriendo' else 'precio de venta'} "
-        f"publicado hoy es {format_price(event.current_price, event.currency)}.\n\n"
-        f"Publicación: {event.listing_url}\n\n"
-        f"{MESSAGE_VARIANTS[variant_id]['question']} "
-        "Si prefieres no recibir más avisos, dínoslo."
+        f"{greeting}\n\n"
+        f"{opening}\n\n"
+        f"{price_label} bajó de {format_price(event.old_price, event.currency)} "
+        f"a {format_price(event.current_price, event.currency)}. "
+        f"Son {format_price(_number(difference), event.currency)} menos "
+        f"({percent_label} de rebaja).\n\n"
+        f"Te dejo el enlace por si quieres verla de nuevo:\n{event.listing_url}\n\n"
+        f"{MESSAGE_VARIANTS[variant_id]['question']}\n\n"
+        "Si ya no estás buscando, dime y no te escribimos más por este tema."
     )

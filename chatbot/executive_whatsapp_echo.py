@@ -61,7 +61,10 @@ def find_unique_echo_match(
             continue
         if not message.get("message_id") or not message.get("provider_message_id"):
             continue
-        if message.get("role") != ("assistant" if source == "crm_hot_auto_api" else "agent"):
+        if message.get("role") != (
+            "assistant" if source in {"crm_hot_auto_api", "price_drop_campaign_api"}
+            else "agent"
+        ):
             continue
         if _normalized(message.get("content")) != _normalized(content):
             continue
@@ -70,7 +73,8 @@ def find_unique_echo_match(
             continue
         # Each correspondence can claim only one echo; a later genuine
         # identical message must remain a separate event.
-        if source in {"crm_manual_api", "crm_hot_auto_api"}:
+        if source in {"crm_manual_api", "crm_hot_auto_api",
+                      "price_drop_campaign_api"}:
             if message.get("provider_echo_message_id"):
                 continue
         elif source == "whatsapp_direct":

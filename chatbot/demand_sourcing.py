@@ -11,6 +11,7 @@ import unicodedata
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any
+from urllib.parse import urlsplit
 
 TASK_TYPE = "DEMAND_SOURCING_ADMIN_REVIEW"
 _TERMINAL = {
@@ -77,7 +78,16 @@ def _class(doc: dict) -> str:
 def _signature(doc: dict) -> str:
     address = _fold(doc.get("direccion_exacta"))
     if len(address) >= 9 and re.search(r"\d", address):
-        return "address:" + re.sub(r"[^a-z0-9]", "", address) + ":" + _fold(doc.get("comuna"))
+        return "street:" + re.sub(r"[^a-z0-9]", "", address) + ":" + _fold(doc.get("comuna"))
+    # Some portals omit direccion_exacta while URLs preserve street+number.
+    # Only use a slug as an identity when it contains a street number.
+    url = str(doc.get("canonical_url") or doc.get("url") or "")
+    parts = urlsplit(url).path.strip("/").split("/")
+    last = parts[-1] if parts else ""
+    street = parts[-2] if len(parts) > 1 and last.isdigit() else last
+    street = re.sub(r"^(?:casas?|departamentos?|deptos?)-", "", _fold(street))
+    if len(street) >= 8 and re.search(r"\d", street):
+        return "street:" + re.sub(r"[^a-z0-9]", "", street) + ":" + _fold(doc.get("comuna"))
     return "listing:" + str(doc.get("source_portal") or "") + ":" + str(doc.get("listing_id") or "")
 
 
@@ -133,7 +143,7 @@ def find_demand_captation_candidates(
         "precio_validacion": 1, "classification": 1, "gestion": 1,
         "description": 1, "updated_at": 1,
     }
-    results, excluded, signatures = [], {}, set()
+    results, excluded, signatures, veto_signatures = [], {}, set(), set()
     cursor = db["propiedades_captacion"].find(query, fields).limit(
         max(1, min(max_scan, 1000))
     )
@@ -141,10 +151,14 @@ def find_demand_captation_candidates(
     for doc in cursor:
         count += 1
         policy = _policy(doc)
+        signature = _signature(doc)
         if policy.startswith("EXCLUDED"):
             excluded[policy] = excluded.get(policy, 0) + 1
+            # A broker / do-not-contact decision for the same street+number
+            # also blocks an otherwise uncertain cross-portal duplicate.
+            if signature.startswith("street:"):
+                veto_signatures.add(signature)
             continue
-        signature = _signature(doc)
         if signature in signatures:
             excluded["DUPLICATE"] = excluded.get("DUPLICATE", 0) + 1
             continue
@@ -176,7 +190,14 @@ def find_demand_captation_candidates(
             "decision": policy,
             "priority_score": score,
             "verification": "RECHECK_PRICE_OWNER_AND_AVAILABILITY",
+            "_signature": signature,
         })
+    if veto_signatures:
+        original = len(results)
+        results = [x for x in results if x["_signature"] not in veto_signatures]
+        excluded["CROSS_PORTAL_VETO"] = original - len(results)
+    for row in results:
+        row.pop("_signature", None)
     results.sort(key=lambda p: (-p["priority_score"], p["price_clp_reference"],
                                 p["portal"], p["listing_id"]))
     return {"candidates": results[:max(1, min(limit, 30))],

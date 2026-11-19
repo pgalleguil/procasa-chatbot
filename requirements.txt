@@ -6,6 +6,8 @@ jinja2==3.1.6
 premailer==3.10.0
 uvicorn[standard]==0.38.0
 requests==2.32.5
+# Usado por la resolucion de enlaces de propiedades durante respuestas del chatbot.
+beautifulsoup4==4.12.3
 pymongo==4.15.3
 python-dotenv==1.0.1
 pytz==2024.1

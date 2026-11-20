@@ -646,3 +646,41 @@ def test_sender_identity_error_blocks_send_before_provider_post(context, monkeyp
         )
     assert not db[outgoing.OUTBOX].docs
     assert not db["leads"].document["messages"]
+
+
+def test_crm_manual_whatsapp_availability_always_returns_link(monkeypatch):
+    """Even a linked executive's cached CRM tab must select wa.me, not the API."""
+    import asyncio
+    from chatbot import crm_executive_outbound_api as api
+    async def auth(_request):
+        return {"_id": ObjectId(OWNER), "rol": "agente"}
+    monkeypatch.setattr(api, "_user", auth)
+    result = asyncio.run(api.crm_executive_whatsapp_available(object(), str(LEAD_ID)))
+    assert result == {"available": False, "method": "wa_me"}
+
+
+def test_crm_manual_whatsapp_direct_api_post_is_blocked_before_provider_call(monkeypatch):
+    """Server-side kill switch, independent of browser state or feature flags."""
+    import asyncio
+    from fastapi import HTTPException
+    from chatbot import crm_executive_outbound_api as api
+    async def auth(_request):
+        return {"_id": ObjectId(OWNER), "rol": "agente"}
+    monkeypatch.setattr(api, "_user", auth)
+    monkeypatch.setenv("PROCASA_EXEC_CRM_DIRECT_SEND_ENABLED", "1")
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(api.crm_executive_whatsapp_send(object()))
+    assert e.value.status_code == 409
+    assert e.value.detail == "crm_manual_link_only"
+
+
+def test_crm_lead_detail_whatsapp_link_only_in_browser():
+    """The green button must open a prefilled link, not issue a provider POST."""
+    from pathlib import Path
+    text = (Path(__file__).resolve().parent.parent / "templates" /
+            "crm_lead_detail.html").read_text(encoding="utf-8")
+    assert "https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}" in text
+    assert "window.open(url, '_blank')" in text
+    assert "Abrir WhatsApp" in text
+    assert "fetch('/api/crm/executive-whatsapp/send'" not in text
+    assert "fetch('/api/crm/executive-whatsapp/available/" not in text

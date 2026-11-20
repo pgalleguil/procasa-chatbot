@@ -97,6 +97,28 @@ def eligible_manual_session(db, *, lead: dict, actor_user_id: str) -> dict:
     return {"cycle": cycle, "recipient": recipient, "session": session}
 
 
+def _provider_rejection_reason(http_status: int, body: dict) -> str:
+    """Stable non-PII reason code; never persist raw WaSender errors."""
+    if http_status in (401, 403):
+        return "authentication"
+    if http_status == 402:
+        return "subscription"
+    if http_status == 429:
+        return "rate_limit"
+    raw = str(body.get("message") or "")[:300].lower() if isinstance(body, dict) else ""
+    if any(term in raw for term in ("not connected", "disconnected", "session inactive", "session is offline")):
+        return "session_disconnected"
+    if any(term in raw for term in ("subscription", "trial limit", "plan limit", "no active plan")):
+        return "subscription"
+    if any(term in raw for term in ("rate limit", "too many requests", "account protection")):
+        return "rate_limit"
+    if any(term in raw for term in ("not on whatsapp", "not registered", "invalid phone", "invalid recipient")):
+        return "invalid_recipient"
+    if http_status in (400, 422):
+        return "invalid_request"
+    return "provider_rejected"
+
+
 def _credited_first_management(db, *, lead_id, actor_user_id: str,
                                cycle_id: str, session_id: str,
                                provider_message_id: str) -> str:
@@ -168,30 +190,48 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     url = Config.WASENDER_BASE_URL.rstrip("/") + "/send-message"
     headers = {"Authorization": "Bearer " + session["token"], "Content-Type": "application/json"}
     do_post = post or requests.post
+    http_status, reason = None, None
     try:
         response = do_post(
             url, json={"to": info["recipient"], "text": message},
             headers=headers, timeout=15,
         )
-        body = response.json() if response.content else {}
+        http_status = response.status_code
+        try:
+            body = response.json() if response.content else {}
+        except (ValueError, TypeError):
+            body = {}
         if not isinstance(body, dict):
             body = {}
-        ok = response.status_code in (200, 201) and body.get("success") is True
+        ok = http_status in (200, 201) and body.get("success") is True
         pid = _provider_message_id(body) if ok else None
-        if not ok:
-            state = "rejected"
-        elif not pid:
-            state = "accepted_without_provider_id"
+        if ok:
+            state = "accepted" if pid else "accepted_without_provider_id"
+        elif http_status in (200, 201, 202, 204) and body.get("success") is not False:
+            # A 2xx without a parseable success flag is not a proven rejection.
+            state, reason = "delivery_unknown", "provider_response_unverifiable"
+        elif http_status in (408, 425) or http_status >= 500:
+            # A server error can occur after a provider accepted the request.
+            # Never re-dispatch automatically when acceptance is uncertain.
+            state, reason = "delivery_unknown", "provider_unavailable"
         else:
-            state = "accepted"
-    except Exception:
-        # Never retry unknown delivery automatically.
-        state, pid = "delivery_unknown", None
+            state = "rejected"
+            reason = _provider_rejection_reason(http_status, body)
+    except Exception as exc:
+        # A network exception may occur after the provider accepted delivery.
+        # Preserve idempotency and log only the exception CLASS, never contents.
+        state, pid, reason = "delivery_unknown", None, "transport_uncertain"
+        logger.warning("CRM_EXEC_WA_SEND session=%s state=delivery_unknown exception_type=%s",
+                       sid, type(exc).__name__)
     db[OUTBOX].update_one({"_id": identity}, {"$set": {
-        "state": state, "provider_message_id": pid, "provider_result_at": datetime.now(timezone.utc),
+        "state": state, "provider_message_id": pid,
+        "provider_result_at": datetime.now(timezone.utc),
+        "provider_http_status": http_status, "provider_error_reason": reason,
     }})
     if state != "accepted":
-        return {"status": state}
+        logger.warning("CRM_EXEC_WA_SEND session=%s state=%s http_status=%s reason=%s",
+                       sid, state, http_status, reason)
+        return {"status": state, **({"reason_code": reason} if state == "rejected" else {})}
     # A signed messages.upsert webhook can arrive before the send-message API
     # response. Reconcile it instead of writing a second canonical row.
     fresh = db["leads"].find_one({"_id": oid}) or {}

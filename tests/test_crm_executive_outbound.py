@@ -264,3 +264,95 @@ def test_webhook_echo_before_api_acceptance_does_not_create_duplicate(context, m
     assert messages[0]["provider_message_id"] == "3EB0ECHO"
     assert messages[0]["crm_api_provider_message_id"] == "api-98648827"
     assert next(iter(db[outgoing.OUTBOX].docs.values()))["canonical_recorded"] is True
+
+
+@pytest.mark.parametrize(
+    "http_status,body,expected",
+    [
+        (401, {"success": False, "message": "Unauthorized"}, "authentication"),
+        (402, {"success": False, "message": "Subscription expired"}, "subscription"),
+        (429, {"success": False, "message": "Too many requests"}, "rate_limit"),
+        (400, {"success": False, "message": "Session is not connected"}, "session_disconnected"),
+        (422, {"success": False, "message": "Recipient not on WhatsApp"}, "invalid_recipient"),
+        (400, {"success": False, "message": "Validation failed"}, "invalid_request"),
+        (409, {"success": False, "message": "Other error"}, "provider_rejected"),
+    ],
+)
+def test_provider_rejections_are_classified_with_safe_codes_only(
+        context, http_status, body, expected):
+    db, _ = context
+    def post(*_a, **_kw):
+        return SimpleNamespace(status_code=http_status, content=b"error", json=lambda: body)
+    result = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-code-test", post=post,
+    )
+    assert result == {"status": "rejected", "reason_code": expected}
+    saved = next(iter(db[outgoing.OUTBOX].docs.values()))
+    assert saved["provider_http_status"] == http_status
+    assert saved["provider_error_reason"] == expected
+    assert saved["provider_message_id"] is None
+    assert not db["leads"].document["messages"]
+    assert "Authorization" not in str(saved)
+    assert "private-session-token" not in str(saved)
+
+
+def test_server_error_cannot_be_retried_when_provider_delivery_is_uncertain(context):
+    db, _ = context
+    calls = []
+    def post(*_a, **_kw):
+        calls.append(1)
+        return SimpleNamespace(
+            status_code=503, content=b"error",
+            json=lambda: {"success": False, "message": "Temporary outage"},
+        )
+    first = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-server-5xx", post=post,
+    )
+    second = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-server-5xx", post=post,
+    )
+    assert first == {"status": "delivery_unknown"}
+    assert second["status"] == "duplicate"
+    assert second["previous_state"] == "delivery_unknown"
+    assert len(calls) == 1
+    saved = next(iter(db[outgoing.OUTBOX].docs.values()))
+    assert saved["provider_http_status"] == 503
+    assert saved["provider_error_reason"] == "provider_unavailable"
+    assert not db["leads"].document["messages"]
+
+
+def test_non_json_provider_rejection_keeps_http_diagnostics(context):
+    db, _ = context
+    result = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-non-json", post=lambda *_a, **_kw: SimpleNamespace(
+            status_code=400, content=b"invalid", json=lambda: (_ for _ in ()).throw(ValueError("bad json")),
+        ),
+    )
+    assert result == {"status": "rejected", "reason_code": "invalid_request"}
+    assert next(iter(db[outgoing.OUTBOX].docs.values()))["provider_http_status"] == 400
+
+
+def test_ambiguous_success_http_without_provider_receipt_is_not_retryable(context):
+    db, _ = context
+    attempts = []
+    def post(*_a, **_kw):
+        attempts.append(1)
+        return SimpleNamespace(status_code=200, content=b"not-json",
+                               json=lambda: (_ for _ in ()).throw(ValueError("not json")))
+    first = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-ambiguous-2xx", post=post,
+    )
+    second = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-ambiguous-2xx", post=post,
+    )
+    assert first == {"status": "delivery_unknown"}
+    assert second["status"] == "duplicate"
+    assert len(attempts) == 1
+    assert next(iter(db[outgoing.OUTBOX].docs.values()))["provider_error_reason"] == "provider_response_unverifiable"
+    assert not db["leads"].document["messages"]

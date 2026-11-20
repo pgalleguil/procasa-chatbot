@@ -5635,9 +5635,34 @@
                                     idempotency_key: idempotency
                                 })
                             });
-                            const result = await response.json();
+                            const result = await response.json().catch(() => ({}));
                             if (!response.ok || result.status !== 'accepted') {
-                                throw new Error(result.detail || result.status || 'provider_unconfirmed');
+                                const detail = typeof result.detail === 'string' ? result.detail : '';
+                                if (response.status === 502 && detail.startsWith('provider_rejected:')) {
+                                    // WaSender definitively rejected this attempt. A NEW deliberate
+                                    // click may use a new key; never retry automatically.
+                                    window.crmExecutiveOutboundAttemptKey = null;
+                                    const reason = detail.split(':')[1];
+                                    const reasons = {
+                                        authentication: 'La sesión necesita revisar sus credenciales.',
+                                        subscription: 'Revisa la suscripción o el límite del plan WaSender.',
+                                        rate_limit: 'WaSender está limitando los envíos; no insistas repetidamente.',
+                                        session_disconnected: 'La sesión de WhatsApp está desconectada.',
+                                        invalid_recipient: 'El número no es válido o no está habilitado para WhatsApp.',
+                                        invalid_request: 'WaSender rechazó el formato o los datos de la solicitud.',
+                                        provider_rejected: 'Revisa la sesión o el estado del destinatario en WaSender.'
+                                    };
+                                    throw new Error('WaSender rechazó el mensaje. ' +
+                                        (reasons[reason] || reasons.provider_rejected) +
+                                        ' No se registró como enviado en el CRM.');
+                                }
+                                if (result.status === 'duplicate' && result.previous_state === 'rejected') {
+                                    window.crmExecutiveOutboundAttemptKey = null;
+                                    throw new Error('Este intento ya había sido rechazado. Revisa WaSender antes de efectuar uno nuevo.');
+                                }
+                                // In a timeout, a 5xx or an accepted-but-unrecorded message,
+                                // retain the key to block duplicate delivery.
+                                throw new Error('No se pudo confirmar el resultado del envío. Revisa el historial del CRM y WaSender antes de volver a intentar.');
                             }
                             // The backend writes the canonical SEND_WA_LEAD
                             // management event only after provider acceptance
@@ -5650,7 +5675,9 @@
                                 ? 'Mensaje aceptado por WaSender y guardado. La primera gestión ya consta en el CRM y el SLA está detenido. La entrega final puede tardar.'
                                 : 'Mensaje aceptado por WaSender y guardado. No se pudo confirmar que el SLA se haya detenido; revisa el estado de gestión del lead.');
                         } catch (err) {
-                            alert('No se pudo confirmar el envío por API. Revisa el estado en el CRM antes de intentar enviarlo de nuevo.');
+                            alert(err instanceof Error && err.message
+                                ? err.message
+                                : 'No se pudo confirmar el envío por API. Revisa el CRM antes de intentar enviarlo de nuevo.');
                         } finally {
                             btn.dataset.sending = '';
                             btn.disabled = false;

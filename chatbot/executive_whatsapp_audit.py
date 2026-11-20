@@ -493,6 +493,25 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
             )
         except Exception:
             logger.warning("EXEC_AUDIT campaign_reply_attribution_failed")
+    if result.modified_count == 1 and parsed["from_me"]:
+        # A signed, authorized, persisted HUMAN outgoing WhatsApp counts as
+        # first management, even when the message was sent directly from the
+        # executive's phone instead of the CRM send button.
+        try:
+            from .crm_verified_whatsapp_sla import credit_verified_outbound
+            outcome = credit_verified_outbound(
+                db, lead_id=lead["_id"],
+                assignment_cycle_id=cycle_id, actor_user_id=actor,
+                session_id=str(session["session_id"]),
+                provider_message_id=provider_id,
+            )
+            logger.info("EXEC_WA_SLA status=%s session=%s", outcome,
+                        session["session_id"])
+        except Exception:
+            # Never lose an already-persisted WhatsApp message or ask the
+            # provider to replay it because the SLA management write failed.
+            logger.warning("EXEC_WA_SLA status=failed session=%s",
+                           session["session_id"])
     return "stored" if result.modified_count == 1 else "duplicate_or_reassigned"
 
 

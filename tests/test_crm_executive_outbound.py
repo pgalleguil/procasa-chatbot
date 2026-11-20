@@ -93,6 +93,7 @@ def context(monkeypatch):
         "session_id": sid, "user_id": OWNER, "capture_enabled": True, "token": "private-session-token",
     })
     monkeypatch.setattr(outgoing, "lead_must_not_be_contacted", lambda _: False)
+    monkeypatch.setattr(outgoing, "credit_verified_outbound", lambda *_a, **_kw: "credited")
     return db, cycle
 
 
@@ -148,7 +149,8 @@ def test_provider_accepted_stores_one_manual_message_and_no_sla_side_effect(cont
         message="Hola, recibí tu consulta", idempotency_key="request-1234",
         post=post,
     )
-    assert result == {"status": "accepted", "provider_message_id": "WA-PROVIDER-1", "recorded": True}
+    assert result == {"status": "accepted", "provider_message_id": "WA-PROVIDER-1", "recorded": True,
+                      "sla_management": "credited"}
     assert len(calls) == 1
     assert calls[0][0].endswith("/send-message")
     assert calls[0][1]["json"] == {"to": "+56996762064", "text": "Hola, recibí tu consulta"}
@@ -255,7 +257,8 @@ def test_webhook_echo_before_api_acceptance_does_not_create_duplicate(context, m
         message="Hola, recibí tu consulta", idempotency_key="request-echo-first",
         post=lambda *_a, **_kw: _response(msg="api-98648827"),
     )
-    assert result == {"status": "accepted", "provider_message_id": "api-98648827", "recorded": True}
+    assert result == {"status": "accepted", "provider_message_id": "api-98648827", "recorded": True,
+                      "sla_management": "credited"}
     messages = coll.find_one({"_id": LEAD_ID})["messages"]
     assert len(messages) == 1
     assert messages[0]["provider_message_id"] == "3EB0ECHO"

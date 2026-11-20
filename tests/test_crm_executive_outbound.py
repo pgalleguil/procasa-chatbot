@@ -356,3 +356,155 @@ def test_ambiguous_success_http_without_provider_receipt_is_not_retryable(contex
     assert len(attempts) == 1
     assert next(iter(db[outgoing.OUTBOX].docs.values()))["provider_error_reason"] == "provider_response_unverifiable"
     assert not db["leads"].document["messages"]
+
+
+SUPERVISOR = str(ObjectId("69796bc5bbebf240378eb73a"))
+
+
+class UsersWithSupervisor(Users):
+    def find_one(self, query, projection):
+        if str(query.get("_id")) == SUPERVISOR:
+            return {"_id": ObjectId(SUPERVISOR), "rol": "supervisor", "is_active": True}
+        return super().find_one(query, projection)
+
+
+def _enable_supervised_outbound(context, monkeypatch):
+    db, cycle = context
+    db["usuarios"] = UsersWithSupervisor()
+    monkeypatch.setattr(
+        outgoing, "resolve_crm_lead_access_context",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            access_allowed=True, action_permissions={"contact_whatsapp": True},
+        ),
+    )
+    return db, cycle
+
+
+def test_supervisor_send_uses_only_current_owner_session_and_preserves_real_actor(context, monkeypatch):
+    db, _ = _enable_supervised_outbound(context, monkeypatch)
+    admin = {"_id": ObjectId(SUPERVISOR), "rol": "supervisor"}
+    info = outgoing.eligible_requester_session(
+        db, lead=db["leads"].document, requester_user=admin,
+    )
+    assert info["owner_id"] == OWNER
+    assert info["requester_id"] == SUPERVISOR
+    assert info["delegated"] is True
+    assert info["session"]["session_id"] == "133517"
+    calls = []
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return _response(msg="WA-SUPERVISOR-1")
+    result = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, requester_user=admin,
+        message="Hola, atención comercial", idempotency_key="admin-request-1234",
+        post=post,
+    )
+    assert result == {
+        "status": "accepted", "provider_message_id": "WA-SUPERVISOR-1",
+        "recorded": True, "delegated": True, "sla_management": "delegated",
+    }
+    assert len(calls) == 1
+    assert calls[0][0].endswith("/send-message")
+    assert calls[0][1]["headers"]["Authorization"] == "Bearer private-session-token"
+    assert calls[0][1]["json"]["to"] == "+56996762064"
+    record = db["leads"].document["messages"][0]
+    assert record["role"] == "agent"
+    assert record["actor_type"] == "human_supervisor"
+    assert record["actor_id"] == SUPERVISOR
+    assert record["assigned_executive_id"] == OWNER
+    assert record["initiated_by_user_id"] == SUPERVISOR
+    assert record["source"] == "crm_admin_delegated_api"
+    assert record["wasender_session_id"] == "133517"
+    assert record["provider_message_id"] == "WA-SUPERVISOR-1"
+    dispatch = next(iter(db[outgoing.OUTBOX].docs.values()))
+    assert dispatch["executive_id"] == OWNER
+    assert dispatch["initiated_by_user_id"] == SUPERVISOR
+    assert dispatch["mode"] == "manual_crm_admin_delegated"
+
+
+@pytest.mark.parametrize("role", ["agente", "viewer", "customer", "", None])
+def test_other_users_cannot_dispatch_from_another_executive_phone(context, monkeypatch, role):
+    db, _ = _enable_supervised_outbound(context, monkeypatch)
+    requester = {"_id": ObjectId(SUPERVISOR), "rol": role}
+    with pytest.raises(outgoing.OutboundBlocked, match="requester_not_authorized"):
+        outgoing.send_manual(
+            db, lead_id=LEAD_ID, actor_user_id=OWNER,
+            requester_user=requester, message="No enviar",
+            idempotency_key="no-cross-user-send",
+            post=lambda *_a, **_kw: pytest.fail("unauthorized external send"),
+        )
+    assert not db[outgoing.OUTBOX].docs
+
+
+def test_supervisor_role_checked_against_database_not_client_snapshot(context, monkeypatch):
+    db, _ = _enable_supervised_outbound(context, monkeypatch)
+    class DowngradedUsers(Users):
+        def find_one(self, query, projection):
+            if str(query.get("_id")) == SUPERVISOR:
+                return {"_id": ObjectId(SUPERVISOR), "rol": "agente", "is_active": True}
+            return super().find_one(query, projection)
+    db["usuarios"] = DowngradedUsers()
+    with pytest.raises(outgoing.OutboundBlocked, match="requester_not_authorized"):
+        outgoing.eligible_requester_session(
+            db, lead=db["leads"].document,
+            requester_user={"_id": ObjectId(SUPERVISOR), "rol": "supervisor"},
+        )
+
+
+def test_supervisor_does_not_override_canonical_crm_access_denial(context, monkeypatch):
+    db, _ = _enable_supervised_outbound(context, monkeypatch)
+    monkeypatch.setattr(
+        outgoing, "resolve_crm_lead_access_context",
+        lambda *_a, **_kw: SimpleNamespace(
+            access_allowed=False, action_permissions={"contact_whatsapp": False},
+        ),
+    )
+    with pytest.raises(outgoing.OutboundBlocked, match="requester_not_authorized"):
+        outgoing.eligible_requester_session(
+            db, lead=db["leads"].document,
+            requester_user={"_id": ObjectId(SUPERVISOR), "rol": "supervisor"},
+        )
+
+
+def test_supervisor_cannot_send_after_ownership_changes_before_provider_boundary(context, monkeypatch):
+    db, cycle = _enable_supervised_outbound(context, monkeypatch)
+    admin = {"_id": ObjectId(SUPERVISOR), "rol": "supervisor"}
+    counts = 0
+    def current_cycle(_db, _id):
+        nonlocal counts
+        counts += 1
+        # The first two reads resolve the initiating owner; subsequent reads
+        # revalidate immediately before the external HTTP request.
+        if counts > 2:
+            return dict(cycle, assigned_to_user_id="other-owner")
+        return cycle
+    monkeypatch.setattr(outgoing, "active_assignment_cycle", current_cycle)
+    result = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, requester_user=admin,
+        message="No enviar tras reasignación", idempotency_key="admin-reassigned-1234",
+        post=lambda *_a, **_kw: pytest.fail("stale lead was contacted"),
+    )
+    assert result == {"status": "blocked", "reason": "current_assignment_required"}
+    assert not db["leads"].document["messages"]
+
+
+def test_supervisor_cannot_bypass_optout_or_missing_owner_session(context, monkeypatch):
+    db, _ = _enable_supervised_outbound(context, monkeypatch)
+    admin = {"_id": ObjectId(SUPERVISOR), "rol": "supervisor"}
+    monkeypatch.setattr(outgoing, "lead_must_not_be_contacted", lambda _: True)
+    with pytest.raises(outgoing.OutboundBlocked, match="customer_contact_blocked"):
+        outgoing.send_manual(
+            db, lead_id=LEAD_ID, actor_user_id=OWNER,
+            requester_user=admin, message="Bloqueado",
+            idempotency_key="admin-optout-1234",
+            post=lambda *_a, **_kw: pytest.fail("optout bypassed"),
+        )
+    monkeypatch.setattr(outgoing, "lead_must_not_be_contacted", lambda _: False)
+    monkeypatch.setenv("PROCASA_EXEC_CRM_SEND_SESSION_IDS", "133526")
+    with pytest.raises(outgoing.OutboundBlocked, match="executive_session_not_enabled"):
+        outgoing.send_manual(
+            db, lead_id=LEAD_ID, actor_user_id=OWNER,
+            requester_user=admin, message="Bloqueado",
+            idempotency_key="admin-disabled-1234",
+            post=lambda *_a, **_kw: pytest.fail("unlinked session sent"),
+        )

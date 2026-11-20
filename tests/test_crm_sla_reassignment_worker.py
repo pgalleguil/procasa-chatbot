@@ -290,7 +290,7 @@ def test_confirmed_human_management_protects_even_after_breach():
     exact = {"lead_id": "lead-1", "type": "CALL_COMPLETED_LEAD", "actor": "owner",
              "actor_type": "human", "confirmed": True, "timestamp": deadline}
     after = {"lead_id": "lead-1", "type": "SEND_WA_LEAD", "actor": "owner",
-             "actor_type": "human", "timestamp": deadline + timedelta(seconds=1)}
+             "actor_type": "human", "confirmed": True, "timestamp": deadline + timedelta(seconds=1)}
     for event, expected_protected in ((before, 1), (exact, 1), (after, 1)):
         kwargs = base_kwargs([row], [lead(1)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
         kwargs["context"] = context([row], [lead(1)], events={"lead-1": [event]})

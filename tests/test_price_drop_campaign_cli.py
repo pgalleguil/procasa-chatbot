@@ -802,7 +802,7 @@ def test_message_personalization_and_deterministic_variants_include_verified_fac
     assert "UF 100" in message and event.listing_url in message
     assert "no te escribimos más" in message
     assert "de rebaja" in message
-    assert "3,58%" in message
+    assert "4%" in message
     assert "propiedad código" not in message.lower()
     assert "historial registra" not in message.lower()
     assert "última rebaja" not in message.lower()

@@ -23,7 +23,7 @@ from .crm_metrics import (
     active_assignment_cycle, coerce_utc_datetime,
     resolve_cycle_sla_temperature,
 )
-from .crm_executive_outbound import OUTBOX, OutboundBlocked
+from .crm_executive_outbound import OUTBOX, OutboundBlocked, verify_provider_sender_identity
 from .executive_whatsapp_audit import _session, _authorized_lead
 from .phone_utils import normalize_phone_strict
 from .price_drop_campaign_classifier import lead_must_not_be_contacted
@@ -461,7 +461,7 @@ def eligible_hot_auto(db, *, lead: dict, cycle: dict, now: datetime) -> dict:
         raise OutboundBlocked("owner_invalid")
     user = db["usuarios"].find_one(
         {"_id": ObjectId(owner), "is_active": True, "rol": "agente"},
-        {"_id": 1, "nombre": 1, "wasender.session_id": 1},
+        {"_id": 1, "nombre": 1, "telefono": 1, "wasender.session_id": 1},
     )
     if not user:
         raise OutboundBlocked("executive_not_active")
@@ -471,6 +471,11 @@ def eligible_hot_auto(db, *, lead: dict, cycle: dict, now: datetime) -> dict:
     session = _session(db, sid)
     if not session or session.get("user_id") != owner or not session.get("capture_enabled"):
         raise OutboundBlocked("session_not_ready")
+    try:
+        verify_provider_sender_identity(session, expected_phone=user.get("telefono"))
+    except OutboundBlocked as exc:
+        logger.warning("EXEC_WA_SENDER_GUARD session=%s status=%s", sid, exc.code)
+        raise
     return {
         "owner": owner, "cycle_id": cycle_id, "session": session,
         "recipient": phone, "message": _message_for(lead, user.get("nombre"), assigned_at=assigned, now=now),

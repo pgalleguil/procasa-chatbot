@@ -1769,6 +1769,11 @@ def _normalize_unsent_approved_percentages(db: Any, selected: dict[str, set[str]
             before = str(row["campaign"].get("outbound_message") or "")
             after = _normalize_approved_discount_percentage(before)
             if before != after:
+                # Never change the approved copy after any provider attempt.
+                if any(row["campaign"].get(field) for field in (
+                    "attempted_at", "sent_at", "provider_message_id", "provider_status",
+                )):
+                    raise CliError("approved_message_had_provider_attempt_review_required")
                 repairs.append((cid, row["lead"]["_id"], before, after))
     if not repairs:
         return

@@ -2,6 +2,9 @@
 
 DRY-RUN by default. Only active, unique manual leads are eligible.
 Requires --execute AND --expected-ready N for any writes.
+Optional --skip-reviewed AND --expected-review M permits repairing ONLY
+safe eligible leads while retaining all review-required cases untouched.
+Both ready and review counts must match exactly; otherwise no writes occur.
 
 Examples:
   python -m scripts.repair_manual_cycle_mirrors --owner-id <MongoObjectId> --since 2026-11-19
@@ -43,6 +46,7 @@ def _since_utc(value: str) -> datetime:
 def audit_and_repair(
     db, *, owner_id: str, since: datetime, execute: bool = False,
     expected_ready: int | None = None, max_cycles: int = 50,
+    skip_reviewed: bool = False, expected_review: int | None = None,
 ) -> dict:
     if not ObjectId.is_valid(owner_id):
         return {"status": "BLOCKED", "reason": "invalid_owner_id"}
@@ -133,18 +137,23 @@ def audit_and_repair(
         "inspected": len(checked), "ready": ready_count,
         "already_correct": sum(1 for x in checked if x["status"] == "already_correct"),
         "review_required": review_count, "modified": 0,
+        "review_skipped": 0,
         "leads": checked,
     }
     if not execute:
         return report
     if (
         expected_ready is None or int(expected_ready) < 1
-        or ready_count != int(expected_ready) or review_count > 0
+        or ready_count != int(expected_ready)
+        or (review_count > 0 and not skip_reviewed)
+        or (skip_reviewed and (expected_review is None
+                              or int(expected_review) != review_count))
     ):
-        report["reason"] = "explicit_expected_ready_mismatch_or_review"
+        report["reason"] = "explicit_counts_mismatch_or_review"
         return report
 
     report["status"] = "COMPLETED"
+    report["review_skipped"] = review_count if skip_reviewed else 0
     for lid, cycle, phone in ready_rows:
         if db["leads"].count_documents(
             {"phone": {"$in": list(phone_identity_variants(phone))}}, limit=2,
@@ -182,6 +191,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-cycles", type=int, default=50)
     parser.add_argument("--expected-ready", type=int)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--skip-reviewed", action="store_true",
+                        help="Skip review-required records (requires --expected-review exact count)")
+    parser.add_argument("--expected-review", type=int)
     args = parser.parse_args(argv)
     try:
         since = _since_utc(args.since)
@@ -194,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
             get_db(), owner_id=args.owner_id, since=since,
             execute=args.execute, expected_ready=args.expected_ready,
             max_cycles=args.max_cycles,
+            skip_reviewed=args.skip_reviewed, expected_review=args.expected_review,
         )
     except Exception as exc:
         # Never log the connection string, customer data or WhatsApp payloads.

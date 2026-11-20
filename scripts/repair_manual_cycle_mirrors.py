@@ -16,21 +16,19 @@ import argparse
 from datetime import date, datetime, time, timezone
 import json
 import os
-from zoneinfo import ZoneInfo
 
 from bson import ObjectId
 
 from chatbot.crm_manual_cycle_mirror import persist_manual_cycle_mirror
+from chatbot.constants import CHILE_TZ
 from chatbot.crm_assignment_integrity import assignment_context
 from chatbot.executive_whatsapp_audit import _authorized_lead
 from chatbot.phone_utils import has_real_phone, normalize_phone_strict, phone_identity_variants
 
-CHILE = ZoneInfo("America/Santiago")
-
 
 def _since_utc(value: str) -> datetime:
     day = date.fromisoformat(value)
-    return datetime.combine(day, time.min, tzinfo=CHILE).astimezone(timezone.utc)
+    return CHILE_TZ.localize(datetime.combine(day, time.min)).astimezone(timezone.utc)
 
 
 def audit_and_repair(

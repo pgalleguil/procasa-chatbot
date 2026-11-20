@@ -125,6 +125,7 @@ jobs:
               tests/test_crm_management_sla.py
               tests/test_crm_admin_cycle_inbox.py
               tests/test_sla_business_minutes.py
+              tests/test_business_calendar_fast_span.py
           - suite: P0 CRM assignment integrity and lead inbox
             tests: >-
               tests/test_p0_repair_17252.py

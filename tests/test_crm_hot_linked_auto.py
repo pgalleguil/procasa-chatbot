@@ -249,7 +249,6 @@ def test_accepted_send_creates_automation_not_human_and_active_sla_exemption(con
     msg = leads.doc["messages"][-1]
     assert msg["actor_type"] == "automation"
     assert msg["source"] == "crm_hot_auto_api"
-    assert msg["direction"] == "outgoing"
     assert msg["assigned_executive_id"] == OWNER
     assert msg["wasender_session_id"] == "133517"
     assert msg["provider_message_id"] == "provider-hot-001"

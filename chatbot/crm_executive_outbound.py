@@ -54,7 +54,7 @@ def _enabled_session_ids() -> set[str]:
 # Two sessions have a documented cross-sender discrepancy in the provider logs.
 # Never allow an unaudited API key to emit messages under either identity.
 _PROTECTED_SENDER_SESSIONS = frozenset({"133517", "133526"})
-_WA_USER_JID = re.compile(r"^([1-9][0-9]{7,14})(?::[0-9]{1,5})?@(s\\.whatsapp\\.net|c\\.us)$")
+_WA_USER_JID = re.compile(r"^([1-9][0-9]{7,14})(?::[0-9]{1,5})?@(s\.whatsapp\.net|c\.us)$")
 
 
 def verify_provider_sender_identity(session: dict, *, expected_phone: str, get=None) -> None:

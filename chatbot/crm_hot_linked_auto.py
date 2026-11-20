@@ -543,7 +543,6 @@ def send_hot_auto(db, *, lead_id, post=None, now=None) -> dict:
     msg = {
         "message_id": str(uuid4()), "lead_id": str(lead_id),
         "conversation_id": lead.get("conversation_id"), "role": "assistant",
-        "direction": "outgoing",
         "actor_type": "automation", "actor_id": owner,
         "assigned_executive_id": owner, "assignment_cycle_id": cycle_id,
         "channel": "executive_whatsapp", "source": "crm_hot_auto_api",
@@ -583,7 +582,6 @@ def send_hot_auto(db, *, lead_id, post=None, now=None) -> dict:
         }, {"$set": {
             "messages.$.actor_type": "automation",
             "messages.$.role": "assistant",
-            "messages.$.direction": "outgoing",
             "messages.$.source": "crm_hot_auto_api",
             "messages.$.automatic": True,
         }})

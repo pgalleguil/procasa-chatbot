@@ -244,7 +244,45 @@ def test_human_protection_is_not_invented_for_automatic_activity():
     assert late_human_result["iteration"]["would_reassign"] == 1
 
 
-def test_human_management_at_or_before_breach_protects_but_late_does_not():
+@pytest.mark.parametrize("marker_field", ["first_contact_attempt_at", "first_valid_management_at"])
+def test_preassignment_legacy_lifecycle_marker_matches_executor_safety_gate(marker_field):
+    row = cycle(1)
+    fixture_lead = lead(1, stage="VISIT_SCHEDULED")
+    fixture_lead["lifecycle"][marker_field] = row["assigned_at"] - timedelta(days=1)
+    direct = _management_protection(
+        row, fixture_lead, [], [], breach_at=NOW - timedelta(hours=1),
+    )
+    assert direct.protected is True
+    assert direct.current_stop_at is None
+    assert direct.first_human_at is None
+    assert direct.human_before_breach is False
+    assert f"legacy_preassignment:lifecycle.{marker_field}" in direct.evidence_types
+
+    kwargs = base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
+    result = run(**kwargs)
+    assert result["iteration"]["would_reassign"] == 0
+    assert result["iteration"]["protected_skipped"] == 1
+    assert result["decisions"] == []
+    assert result["evaluations"][0]["exclusion_reason"] == "PROTECTED_BY_MANAGEMENT"
+
+
+def test_late_lifecycle_whatsapp_contact_does_not_repeat_reassignment_attempt():
+    row = cycle(1)
+    fixture_lead = lead(1)
+    expiration = canonical_expiration_recheck(row, fixture_lead, now=NOW)
+    assert expiration.expired is True
+    assert expiration.breach_at is not None
+    fixture_lead["lifecycle"]["first_contact_attempt_at"] = expiration.breach_at + timedelta(seconds=1)
+    kwargs = base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
+    result = run(**kwargs)
+    assert result["iteration"]["canonically_expired"] == 1
+    assert result["iteration"]["protected_skipped"] == 1
+    assert result["iteration"]["would_reassign"] == 0
+    assert result["decisions"] == []
+    assert result["evaluations"][0]["exclusion_reason"] == "PROTECTED_BY_MANAGEMENT"
+
+
+def test_confirmed_human_management_protects_even_after_breach():
     row = cycle(1)
     deadline = datetime(2026, 9, 10, 15, 0, tzinfo=UTC)
     before = {"lead_id": "lead-1", "type": "SEND_WA_LEAD", "actor": "owner",
@@ -252,8 +290,8 @@ def test_human_management_at_or_before_breach_protects_but_late_does_not():
     exact = {"lead_id": "lead-1", "type": "CALL_COMPLETED_LEAD", "actor": "owner",
              "actor_type": "human", "confirmed": True, "timestamp": deadline}
     after = {"lead_id": "lead-1", "type": "SEND_WA_LEAD", "actor": "owner",
-             "actor_type": "human", "timestamp": deadline + timedelta(seconds=1)}
-    for event, expected_protected in ((before, 1), (exact, 1), (after, 0)):
+             "actor_type": "human", "confirmed": True, "timestamp": deadline + timedelta(seconds=1)}
+    for event, expected_protected in ((before, 1), (exact, 1), (after, 1)):
         kwargs = base_kwargs([row], [lead(1)], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
         kwargs["context"] = context([row], [lead(1)], events={"lead-1": [event]})
         result = run(**kwargs)
@@ -326,7 +364,7 @@ def test_management_evidence_from_another_assignment_cycle_does_not_protect_curr
     assert protection.protected is False
 
 
-def test_post_breach_human_management_remains_executor_race_protection_only():
+def test_post_breach_human_management_protects_worker_and_executor():
     row = cycle(1)
     deadline = datetime(2026, 9, 10, 15, 0, tzinfo=UTC)
     event = {
@@ -347,7 +385,8 @@ def test_post_breach_human_management_remains_executor_race_protection_only():
     )
 
     assert worker.human_after_breach is True
-    assert worker.protected is False
+    assert worker.human_before_breach is False
+    assert worker.protected is True
     assert executor_predeadline is None
     assert executor_race is not None
 
@@ -708,7 +747,7 @@ def test_6414_maria_without_delivery_is_awaiting_notification_not_sla_active():
     assert result["evaluations"][0]["exclusion_reason"] == "NOT_ACTUALLY_EXPIRED"
 
 
-def test_71c2_late_management_is_attendance_evidence_not_retroactive_protection():
+def test_71c2_late_management_protects_assignment_without_erasing_sla_breach():
     row, fixture_lead = _acceptance_reassignment_fixture(
         "71c2", "fixture-cycle-71c2", number=1, previous=["previous-owner"],
     )
@@ -723,8 +762,9 @@ def test_71c2_late_management_is_attendance_evidence_not_retroactive_protection(
     )
     assert expiration.expired is True
     assert protection.human_after_breach is True
+    assert protection.human_before_breach is False
     assert protection.human_evidence_count == 1
-    assert protection.protected is False
+    assert protection.protected is True
 
 
 def test_counter_two_does_not_require_supervisor_by_itself():

@@ -207,6 +207,9 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         pid = _provider_message_id(body) if ok else None
         if ok:
             state = "accepted" if pid else "accepted_without_provider_id"
+        elif http_status in (200, 201, 202, 204) and body.get("success") is not False:
+            # A 2xx without a parseable success flag is not a proven rejection.
+            state, reason = "delivery_unknown", "provider_response_unverifiable"
         elif http_status in (408, 425) or http_status >= 500:
             # A server error can occur after a provider accepted the request.
             # Never re-dispatch automatically when acceptance is uncertain.

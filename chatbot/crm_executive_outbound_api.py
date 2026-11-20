@@ -64,7 +64,8 @@ async def crm_executive_whatsapp_send(request: Request):
     except OutboundBlocked as exc:
         raise HTTPException(status_code=409, detail=exc.code) from None
     if result.get("status") == "accepted" and result.get("recorded") is True:
-        return {"status": "accepted", "provider_message_id": result["provider_message_id"]}
+        return {"status": "accepted", "provider_message_id": result["provider_message_id"],
+                "sla_management": result.get("sla_management", "unverified")}
     if result.get("status") == "duplicate":
         return {"status": "duplicate", "previous_state": result.get("previous_state")}
     if result.get("status") in ("accepted", "accepted_without_provider_id", "delivery_unknown"):

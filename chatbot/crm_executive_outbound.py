@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from hashlib import sha256
+import logging
 import os
 import re
 from uuid import uuid4
@@ -16,6 +17,7 @@ from pymongo.errors import DuplicateKeyError
 import requests
 
 from .crm_metrics import active_assignment_cycle
+from .crm_verified_whatsapp_sla import credit_verified_outbound
 from .executive_whatsapp_audit import _session, _authorized_lead
 from .executive_whatsapp_echo import find_unique_echo_match
 from config import Config
@@ -24,6 +26,7 @@ from .price_drop_campaign_classifier import lead_must_not_be_contacted
 from .whatsapp_client import normalize_whatsapp_recipient, _provider_message_id
 
 OUTBOX = "crm_executive_whatsapp_dispatches"
+logger = logging.getLogger(__name__)
 MAX_MESSAGE_CHARS = 2000
 _SEND_IDS = re.compile(r"^[1-9][0-9]{0,17}$")
 _REQUEST_ID = re.compile(r"^[0-9a-zA-Z_-]{8,100}$")
@@ -92,6 +95,22 @@ def eligible_manual_session(db, *, lead: dict, actor_user_id: str) -> dict:
     if not session or session.get("user_id") != owner or not session.get("capture_enabled"):
         raise OutboundBlocked("executive_session_not_ready")
     return {"cycle": cycle, "recipient": recipient, "session": session}
+
+
+def _credited_first_management(db, *, lead_id, actor_user_id: str,
+                               cycle_id: str, session_id: str,
+                               provider_message_id: str) -> str:
+    """Only the exact persisted provider-confirmed human send can stop SLA."""
+    try:
+        return credit_verified_outbound(
+            db, lead_id=lead_id, assignment_cycle_id=cycle_id,
+            actor_user_id=actor_user_id, session_id=session_id,
+            provider_message_id=provider_message_id,
+        )
+    except Exception:
+        # Never replay a successful WhatsApp send because CRM SLA state failed.
+        logger.warning("CRM_EXEC_WA_SLA status=failed")
+        return "failed"
 
 
 def send_manual(db, *, lead_id, actor_user_id: str, message: str,
@@ -196,7 +215,10 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         db[OUTBOX].update_one({"_id": identity}, {"$set": {
             "canonical_recorded": accepted,
         }})
-        return {"status": "accepted", "provider_message_id": pid, "recorded": accepted}
+        return {"status": "accepted", "provider_message_id": pid, "recorded": accepted,
+                "sla_management": (_credited_first_management(
+                    db, lead_id=oid, actor_user_id=owner, cycle_id=cycle_id,
+                    session_id=sid, provider_message_id=pid) if accepted else "unverified")}
     # CAS prevents writing an executive message into a reassigned lead.
     entry = {
         "message_id": str(uuid4()), "lead_id": str(oid),
@@ -228,4 +250,8 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         "canonical_recorded": result.modified_count == 1,
     }})
     return {"status": "accepted", "provider_message_id": pid,
-            "recorded": result.modified_count == 1}
+            "recorded": result.modified_count == 1,
+            "sla_management": (_credited_first_management(
+                db, lead_id=oid, actor_user_id=owner, cycle_id=cycle_id,
+                session_id=sid, provider_message_id=pid)
+                if result.modified_count == 1 else "unverified")}

@@ -5639,16 +5639,16 @@
                             if (!response.ok || result.status !== 'accepted') {
                                 throw new Error(result.detail || result.status || 'provider_unconfirmed');
                             }
-                            logAction('SEND_WA_LEAD', {
-                                target_person: 'lead',
-                                template_used: currentTemplateLabel,
-                                is_modified: wasModified,
-                                confirmed: true,
-                                provider_message_id: result.provider_message_id
-                            }, 'lead');
+                            // The backend writes the canonical SEND_WA_LEAD
+                            // management event only after provider acceptance
+                            // AND persistence. Avoid a second telemetry event.
                             window.crmExecutiveOutboundAttemptKey = null;
                             hideModal();
-                            alert('Mensaje aceptado por WaSender desde el teléfono del ejecutivo. La entrega final puede tardar.');
+                            await refreshDetailManagementState();
+                            const slaConfirmed = ['credited', 'already_managed'].includes(result.sla_management);
+                            alert(slaConfirmed
+                                ? 'Mensaje aceptado por WaSender y guardado. La primera gestión ya consta en el CRM y el SLA está detenido. La entrega final puede tardar.'
+                                : 'Mensaje aceptado por WaSender y guardado. No se pudo confirmar que el SLA se haya detenido; revisa el estado de gestión del lead.');
                         } catch (err) {
                             alert('No se pudo confirmar el envío por API. Revisa el estado en el CRM antes de intentar enviarlo de nuevo.');
                         } finally {

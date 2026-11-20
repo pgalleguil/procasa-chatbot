@@ -51,6 +51,50 @@ def _enabled_session_ids() -> set[str]:
     return set(ids)
 
 
+# Two sessions have a documented cross-sender discrepancy in the provider logs.
+# Never allow an unaudited API key to emit messages under either identity.
+_PROTECTED_SENDER_SESSIONS = frozenset({"133517", "133526"})
+_WA_USER_JID = re.compile(r"^([1-9][0-9]{7,14})(?::[0-9]{1,5})?@(s\\.whatsapp\\.net|c\\.us)$")
+
+
+def verify_provider_sender_identity(session: dict, *, expected_phone: str, get=None) -> None:
+    """Read-only, fail-closed sender attestation before any provider SEND.
+
+    WaSender /api/user is scoped to the bearer session token. The session_id
+    stored in our own credential JSON is NOT a provider-side binding proof.
+    No API token, provider user ID, phone or personal details are ever logged.
+    """
+    sid = str((session or {}).get("session_id") or "")
+    if sid not in _PROTECTED_SENDER_SESSIONS:
+        return
+    token = str((session or {}).get("token") or "")
+    digits = re.sub(r"[^0-9]", "", str(expected_phone or ""))
+    if not token or not re.fullmatch(r"56[0-9]{9}", digits):
+        raise OutboundBlocked("sender_identity_unverified")
+    try:
+        response = (get or requests.get)(
+            Config.WASENDER_BASE_URL.rstrip("/") + "/user",
+            headers={"Authorization": "Bearer " + token},
+            timeout=6,
+        )
+        if response.status_code != 200:
+            raise OutboundBlocked("sender_identity_unverified")
+        body = response.json()
+    except OutboundBlocked:
+        raise
+    except Exception:
+        raise OutboundBlocked("sender_identity_unverified") from None
+    if not isinstance(body, dict) or body.get("success") is not True:
+        raise OutboundBlocked("sender_identity_unverified")
+    data = body.get("data")
+    actual_jid = data.get("id") if isinstance(data, dict) else None
+    match = _WA_USER_JID.fullmatch(actual_jid) if isinstance(actual_jid, str) else None
+    if not match:
+        raise OutboundBlocked("sender_identity_unverified")
+    if match.group(1) != digits:
+        raise OutboundBlocked("sender_identity_mismatch")
+
+
 def eligible_manual_session(db, *, lead: dict, actor_user_id: str) -> dict:
     """Resolve a single current owner and configured WaSender session, no secrets leaked."""
     if os.getenv("PROCASA_EXEC_CRM_DIRECT_SEND_ENABLED", "0") != "1":
@@ -86,7 +130,7 @@ def eligible_manual_session(db, *, lead: dict, actor_user_id: str) -> dict:
         raise OutboundBlocked("invalid_owner_id") from None
     user = db["usuarios"].find_one(
         {"_id": oid, "rol": "agente", "is_active": True},
-        {"_id": 1, "wasender.session_id": 1},
+        {"_id": 1, "telefono": 1, "wasender.session_id": 1},
     )
     if not user:
         raise OutboundBlocked("executive_inactive")
@@ -96,6 +140,11 @@ def eligible_manual_session(db, *, lead: dict, actor_user_id: str) -> dict:
     session = _session(db, sid)
     if not session or session.get("user_id") != owner or not session.get("capture_enabled"):
         raise OutboundBlocked("executive_session_not_ready")
+    try:
+        verify_provider_sender_identity(session, expected_phone=user.get("telefono"))
+    except OutboundBlocked as exc:
+        logger.warning("EXEC_WA_SENDER_GUARD session=%s status=%s", sid, exc.code)
+        raise
     return {"cycle": cycle, "recipient": recipient, "session": session}
 
 

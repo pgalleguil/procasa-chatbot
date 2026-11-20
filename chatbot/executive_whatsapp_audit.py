@@ -512,6 +512,15 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
         # lacking any usable remote address; neither identifier is logged.
         reason = "peer_lid_unresolved" if _remote_lid(meta[0], meta[1]) else "peer_phone_unresolved"
         return _ignored(session, reason)
+    # One opted-in supervisor test may observe only direction metadata from
+    # this signed webhook. The personal conversation is never written to leads.
+    if os.getenv("PROCASA_EXEC_E2E_PROBE_ENABLED") == "1":
+        try:
+            from .executive_whatsapp_e2e_probe import observe_signed_event
+            observe_signed_event(db, session, phone, from_me=meta[2])
+        except Exception:
+            logger.warning("EXEC_E2E_PROBE session=%s stage=observation_error",
+                           session["session_id"])
     matched = _authorized_lead(db, phone=phone, user_id=session["user_id"])
     if matched is None:
         return _ignored(session, "peer_not_authorized")
@@ -589,6 +598,24 @@ async def executive_audit_readiness_probe() -> None:
         else:
             state = _readiness_state(session)
         logger.info("EXEC_AUDIT_READY session=%s state=%s", session_id, state)
+
+
+@router.on_event("startup")
+async def executive_whatsapp_e2e_startup() -> None:
+    """Explicitly enabled once-only live probe; never part of normal startup."""
+    if os.getenv("PROCASA_EXEC_E2E_PROBE_ENABLED") != "1":
+        return
+
+    def send_once():
+        from .storage import get_db
+        from .executive_whatsapp_e2e_probe import run_once
+        run_once(get_db(), _session)
+
+    try:
+        await asyncio.to_thread(send_once)
+    except Exception:
+        # Probe failures must not stop CRM, office bot or other executives.
+        logger.warning("EXEC_E2E_PROBE session=133526 stage=startup_error")
 
 
 @router.post("/webhook/ejecutivos/{session_id}")

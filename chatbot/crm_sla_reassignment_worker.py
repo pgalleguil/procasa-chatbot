@@ -796,6 +796,11 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
         if protection_type:
             human_times.append(occurred)
             evidence_types.append(f"result:{normalized or protection_type.lower()}")
+    # The transaction executor conservatively honours legacy lead-level
+    # lifecycle markers even when the recorded timestamp predates this cycle.
+    # Do not count these as current-cycle SLA management or change its breach;
+    # but do avoid proposing a transaction that the executor will always abort.
+    legacy_lifecycle_protection = False
     persisted = [
         ("cycle.first_valid_management_at", _utc(cycle.get("first_valid_management_at"))),
         ("cycle.first_contact_attempt_at", _utc(cycle.get("first_contact_attempt_at"))),
@@ -808,6 +813,11 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
             stop_times.append(value)
             human_times.append(value)
             evidence_types.append(f"persisted:{field}")
+        elif value and field.startswith("lifecycle."):
+            # Old lead-wide marker: executor still treats it as a hard guard.
+            # Keep the old timestamp out of the current-cycle SLA counters.
+            legacy_lifecycle_protection = True
+            evidence_types.append(f"legacy_preassignment:{field}")
     first_human = min(human_times) if human_times else None
     current_stop = min(stop_times) if stop_times else None
     human_before = bool(breach_at and any(value <= breach_at for value in human_times))
@@ -818,7 +828,7 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
         # must protect a still-active assignment from a new reassignment.
         # The executor's final transaction gate already rejects such cases;
         # excluding them here avoids repeated would_reassign/abort cycles.
-        protected=bool(human_times) or completed_marker,
+        protected=bool(human_times) or completed_marker or legacy_lifecycle_protection,
         human_evidence_count=len(human_times),
         current_stop_at=current_stop,
         first_human_at=first_human,

@@ -5801,6 +5801,7 @@
 
         let lastActivity = Date.now();
         let lastRenewal = Date.now();
+        let sessionRenewalInFlight = false;
 
         function updateActivity() { lastActivity = Date.now(); }
         ['mousemove', 'click', 'keydown', 'scroll', 'touchstart'].forEach(evt => document.addEventListener(evt, updateActivity));
@@ -5831,10 +5832,21 @@
             } catch (e) { console.error("Session modal error", e); }
 
             // 3. PASSIVE RENEWAL (Keep-Alive)
-            if (idleTime < RENEWAL_INTERVAL && (now - lastRenewal) > RENEWAL_INTERVAL) {
+            if (!sessionRenewalInFlight && idleTime < RENEWAL_INTERVAL && (now - lastRenewal) > RENEWAL_INTERVAL) {
+                // Record the attempt before the network call: a rejected/failed
+                // renewal must never repeat every five seconds.
+                lastRenewal = now;
+                sessionRenewalInFlight = true;
                 fetch('/api/session/renew', { method: 'POST' })
-                    .then(res => { if (res.ok) lastRenewal = now; })
-                    .catch(err => console.error("Session renew failed", err));
+                    .then(res => {
+                        if (res.status === 401 || res.status === 403) {
+                            // Session really expired. Do not retain a stale CRM page
+                            // or continue hammering the secured renewal endpoint.
+                            window.location.replace('/logout?reason=timeout');
+                        }
+                    })
+                    .catch(err => console.error("Session renew failed", err))
+                    .finally(() => { sessionRenewalInFlight = false; });
             }
         }, 5000);
     </script>

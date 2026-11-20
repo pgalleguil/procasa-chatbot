@@ -311,7 +311,7 @@ def _display(event: PriceDropEvent, interested: int | None = None) -> str:
     local = event.dropped_at.astimezone(CHILE_TZ)
     return (f"{event.property_code} | {event.operation} | {event.property_type} | {event.comuna} | "
             f"{format_price(event.old_price,event.currency)} → "
-            f"{format_price(event.new_price,event.currency)} (-{format_percentage(event.percent_reduction)}) | "
+            f"{format_price(event.new_price,event.currency)} ({format_percentage(event.percent_reduction)} de rebaja) | "
             f"{local:%d/%m/%Y %H:%M %Z}{tail}")
 
 

@@ -1833,6 +1833,36 @@ def _policy_selection(lead_row: dict[str, Any], cycle: Mapping[str, Any], *, bra
     return {"winner": None, "scored": [], "hard_excluded": [], "selection_reason": branch}
 
 
+def _evaluate_sla_cycle_cpu_only(
+    cycle: Mapping[str, Any],
+    lead: Mapping[str, Any],
+    *,
+    now: datetime,
+    snapshot: Mapping[str, Any],
+    state_counts: Mapping[str, int],
+    events: list[Mapping[str, Any]],
+    results: list[Mapping[str, Any]],
+    active_cycles: list[Mapping[str, Any]],
+) -> tuple[CanonicalExpiration, ManagementProtection, dict[str, Any], str]:
+    """Pure candidate preparation; no Mongo access, sends, or business writes.
+
+    This includes Chilean business-time calculation and territorial profile
+    normalization, which must not execute on the asyncio event-loop thread.
+    Executor CAS/SLA protections remain the authoritative live decision.
+    """
+    expiration = canonical_expiration_recheck(cycle, lead, now=now)
+    protection = _management_protection(
+        cycle, lead, events, results, breach_at=expiration.breach_at,
+    )
+    policy_row = _policy_row(
+        cycle, lead, snapshot, state_counts=state_counts,
+    )
+    owner_issue = _owner_cycle_issue(
+        cycle, lead, active_cycles, snapshot.get("users_by_id") or {},
+    )
+    return expiration, protection, policy_row, owner_issue
+
+
 async def run_sla_reassignment_worker_iteration(
     db: Any = None,
     *,
@@ -1967,7 +1997,12 @@ async def run_sla_reassignment_worker_iteration(
         result.scanned = len(cycles)
         cycle_only_pre_cutover: dict[str, CanonicalExpiration] = {}
         for cycle in cycles:
-            expiration = _cycle_only_pre_cutover_expiration(cycle, now=as_of, cutover=cutover)
+            # Can recalculate months of historical Chilean business minutes:
+            # keep this pure CPU pass off the web/WhatsApp asyncio loop.
+            expiration = await asyncio.to_thread(
+                _cycle_only_pre_cutover_expiration,
+                cycle, now=as_of, cutover=cutover,
+            )
             if expiration is not None:
                 cycle_only_pre_cutover[_text(cycle.get("assignment_cycle_id"))] = expiration
         if context is None:
@@ -2050,12 +2085,16 @@ async def run_sla_reassignment_worker_iteration(
             lead, lead_lookup_status = _resolve_lead_from_context(context, cycle.get("lead_id"))
             if lead:
                 try:
-                    exp = canonical_expiration_recheck(cycle, lead, now=as_of)
                     events = (context.get("events_by_lead") or {}).get(_text(cycle.get("lead_id")), [])
                     results = (context.get("results_by_cycle") or {}).get(_text(cycle.get("assignment_cycle_id")), [])
-                    protection = _management_protection(cycle, lead, events, results, breach_at=exp.breach_at)
-                    row = _policy_row(cycle, lead, snapshot, state_counts=_state_counts(shadow_state))
-                    lead_rows.append((row, cycle, exp, protection, _owner_cycle_issue(cycle, lead, (context.get("active_cycles_by_lead") or {}).get(_text(cycle.get("lead_id")), [cycle]), snapshot.get("users_by_id") or {})))
+                    exp, protection, row, owner_issue = await asyncio.to_thread(
+                        _evaluate_sla_cycle_cpu_only,
+                        cycle, lead, now=as_of, snapshot=snapshot,
+                        state_counts=_state_counts(shadow_state),
+                        events=events, results=results,
+                        active_cycles=(context.get("active_cycles_by_lead") or {}).get(_text(cycle.get("lead_id")), [cycle]),
+                    )
+                    lead_rows.append((row, cycle, exp, protection, owner_issue))
                     protection_by_cycle[_text(cycle.get("assignment_cycle_id"))] = protection
                     if row.get("policy_category") == REGION_JPC_MARIA_HERNAN:
                         future_jpc_count += 1
@@ -2072,7 +2111,10 @@ async def run_sla_reassignment_worker_iteration(
                     # absent or stored under a different BSON representation.
                     lead_rows.append(({}, cycle, pre_cutover_expiration, ManagementProtection(False), "PRE_CUTOVER_NO_LEAD"))
                 else:
-                    lead_rows.append(({}, cycle, canonical_expiration_recheck(cycle, None, now=as_of), ManagementProtection(False), "DATA_OR_CYCLE_ISSUE_LEAD_NOT_FOUND"))
+                    missing_expiration = await asyncio.to_thread(
+                        canonical_expiration_recheck, cycle, None, now=as_of,
+                    )
+                    lead_rows.append(({}, cycle, missing_expiration, ManagementProtection(False), "DATA_OR_CYCLE_ISSUE_LEAD_NOT_FOUND"))
                     result.errors += 1
                     result.error_codes.append("LEAD_NOT_FOUND")
                     issue_result = await _record_missing_lead_issue(

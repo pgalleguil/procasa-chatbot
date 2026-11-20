@@ -139,6 +139,7 @@ jobs:
               tests/test_mongo_client_resilience.py
               tests/test_executive_pilot_webhook.py
               tests/test_executive_whatsapp_audit.py
+              tests/test_manual_cycle_owner_mirror.py
               tests/test_executive_whatsapp_e2e_probe.py
               tests/test_executive_conversation_intelligence.py
               tests/test_executive_opportunities.py

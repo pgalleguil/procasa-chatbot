@@ -71,6 +71,44 @@ def next_business_slot_utc(value: datetime, *, start_hour: int = 9,
     return _local_boundary(target_date, start_hour).astimezone(timezone.utc)
 
 
+def _business_weekdays_inclusive(first: date, last: date) -> int:
+    """Count business dates in [first, last] without iterating over every day.
+
+    This uses the same country_holidays('CL', observed=True) cache as
+    is_business_day; only public-holiday dates are inspected individually.
+    """
+    if first > last:
+        return 0
+    days = (last - first).days + 1
+    whole_weeks, extra_days = divmod(days, 7)
+    workdays = whole_weeks * 5 + sum(
+        (first.weekday() + offset) % 7 in BUSINESS_DAYS
+        for offset in range(extra_days)
+    )
+    seen_holidays = set()
+    for year in range(first.year, last.year + 1):
+        for holiday in _chile_holidays(year):
+            if first <= holiday <= last and holiday.weekday() in BUSINESS_DAYS:
+                seen_holidays.add(holiday)
+    return max(workdays - len(seen_holidays), 0)
+
+
+def _partial_business_minutes(
+    day: date, first: datetime, last: datetime, *,
+    start_hour: int, end_hour: int,
+) -> float:
+    """Exact original single-day clamp, preserving local-boundary behavior."""
+    if not is_business_day(day):
+        return 0.0
+    opening = _local_boundary(day, start_hour)
+    closing = _local_boundary(day, end_hour)
+    period_start = max(first, opening)
+    period_end = min(last, closing)
+    if period_start < period_end:
+        return (period_end - period_start).total_seconds() / 60.0
+    return 0.0
+
+
 def calculate_business_minutes(start_dt: datetime, end_dt: datetime, *,
                                start_hour: int = BUSINESS_START_HOUR,
                                end_hour: int = BUSINESS_END_HOUR) -> float:
@@ -86,18 +124,31 @@ def calculate_business_minutes(start_dt: datetime, end_dt: datetime, *,
     if start >= end:
         return 0.0
 
-    total_minutes = 0.0
-    current_date = start.date()
-    while current_date <= end.date():
-        if is_business_day(current_date):
-            opening = _local_boundary(current_date, start_hour)
-            closing = _local_boundary(current_date, end_hour)
-            period_start = max(start, opening)
-            period_end = min(end, closing)
-            if period_start < period_end:
-                total_minutes += (period_end - period_start).total_seconds() / 60.0
-        current_date += timedelta(days=1)
-    return total_minutes
+    first_day, last_day = start.date(), end.date()
+    if first_day == last_day:
+        return _partial_business_minutes(
+            first_day, start, end,
+            start_hour=start_hour, end_hour=end_hour,
+        )
+
+    # Only the two edge dates depend on the exact clock times. Every complete
+    # interior business day contributes the same hour window; count weekdays
+    # and Chilean holidays arithmetically instead of iterating over months or
+    # years of historical SLA cycles on the asyncio event loop.
+    minutes = _partial_business_minutes(
+        first_day, start, end,
+        start_hour=start_hour, end_hour=end_hour,
+    ) + _partial_business_minutes(
+        last_day, start, end,
+        start_hour=start_hour, end_hour=end_hour,
+    )
+    if (last_day - first_day).days > 1 and start_hour < end_hour:
+        interior_days = _business_weekdays_inclusive(
+            first_day + timedelta(days=1),
+            last_day - timedelta(days=1),
+        )
+        minutes += interior_days * (end_hour - start_hour) * 60.0
+    return minutes
 
 
 def add_business_minutes(start_dt: datetime, minutes_to_add: float, *,

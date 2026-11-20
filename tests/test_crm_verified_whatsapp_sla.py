@@ -161,6 +161,9 @@ def test_direct_crm_api_send_accepted_and_saved_stops_sla(data, monkeypatch):
         db["crm_assignment_cycles"].find_one({"assignment_cycle_id": CYCLE_ID}),
     ))
     monkeypatch.setattr(outgoing, "lead_must_not_be_contacted", lambda _lead: False)
+    # The integration test uses an in-memory provider receipt; never call WaSender.
+    # Provider identity validation is tested separately with synthetic /api/user.
+    monkeypatch.setattr(outgoing, "verify_provider_sender_identity", lambda *_a, **_kw: None)
 
     response = SimpleNamespace(
         status_code=200, content=b"{}", json=lambda: {

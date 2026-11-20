@@ -576,6 +576,93 @@ def _chatbot_owner_findings(lead: Mapping[str, Any], cycles: list[dict[str, Any]
     return []
 
 
+def persist_assignment_integrity_alerts(
+    db: Any, findings: list[dict[str, Any]], *, detected_at: datetime,
+    detection_run_id: str, batch_size: int = 100,
+) -> int:
+    """Batch the existing three ordered alert operations without changing them.
+
+    Each operation has the same filter/update/upsert semantics as
+    record_assignment_integrity_alert.  Ordered bulk writes reduce network
+    round-trips; each alert remains idempotent for the audit run identifier.
+    No lead, assignment cycle or commercial document is mutated here.
+    """
+    if not findings:
+        return 0
+
+    collection = db[ALERT_COLLECTION]
+    bulk_write = getattr(collection, "bulk_write", None)
+    # Some lightweight test doubles (notably mongomock with newer PyMongo)
+    # do not implement PyMongo's bulk protocol.  Preserve the original path.
+    if not callable(bulk_write) or type(collection).__module__.startswith("mongomock"):
+        for finding in findings:
+            record_assignment_integrity_alert(
+                db, lead_id=finding.get("lead_id"),
+                issue_code=str(finding["issue_code"]), evidence=finding,
+                detected_at=detected_at, detection_run_id=detection_run_id,
+            )
+        return len(findings)
+
+    from pymongo import UpdateOne
+    from pymongo.errors import BulkWriteError
+
+    size = max(1, min(int(batch_size), 250))
+    for offset in range(0, len(findings), size):
+        chunk = findings[offset:offset + size]
+        operations = []
+        for finding in chunk:
+            lead_id = finding.get("lead_id")
+            issue_code = str(finding["issue_code"])
+            evidence = dict(finding)
+            digest = hashlib.sha256(
+                (str(lead_id) + "|" + issue_code + "|" + str(evidence.get("signature") or ""))
+                .encode("utf-8", "replace")
+            ).hexdigest()[:24]
+            alert_id = f"assignment-integrity:{digest}"
+            insert_fields = {
+                "lead_id": lead_id,
+                "issue_code": issue_code,
+                "severity": "P0",
+                "status": "open",
+                "first_detected_at": detected_at,
+                "evidence": evidence,
+                "review_required": True,
+                "observations": 0,
+            }
+            # Preserve strict order: create if absent, increment once per
+            # detection_run_id, then refresh the last-seen timestamp.
+            operations.extend([
+                UpdateOne({"_id": alert_id}, {"$setOnInsert": insert_fields}, upsert=True),
+                UpdateOne(
+                    {"_id": alert_id, "last_observation_run_id": {"$ne": detection_run_id}},
+                    {"$set": {
+                        "last_detected_at": detected_at,
+                        "last_observation_run_id": detection_run_id,
+                    }, "$inc": {"observations": 1}},
+                ),
+                UpdateOne(
+                    {"_id": alert_id, "last_observation_run_id": detection_run_id},
+                    {"$set": {"last_detected_at": detected_at}},
+                ),
+            ])
+        try:
+            bulk_write(operations, ordered=True)
+        except BulkWriteError as exc:
+            # Concurrent auditors may race on a unique _id insert.  The
+            # sequential contract already handles that race.  Replay only
+            # duplicate-key batches; operations are idempotent for run_id.
+            errors = (exc.details or {}).get("writeErrors") or []
+            if not errors or any(error.get("code") != 11000 for error in errors):
+                raise
+            for finding in chunk:
+                record_assignment_integrity_alert(
+                    db, lead_id=finding.get("lead_id"),
+                    issue_code=str(finding["issue_code"]), evidence=finding,
+                    detected_at=detected_at, detection_run_id=detection_run_id,
+                )
+    return len(findings)
+
+
 def reconcile_assignment_integrity(
     db: Any,
     *,
@@ -746,12 +833,10 @@ def reconcile_assignment_integrity(
     persisted = 0
     if persist_alerts:
         detection_run_id = detection_run_id or uuid.uuid4().hex
-        for finding in finding_rows:
-            record_assignment_integrity_alert(
-                db, lead_id=finding.get("lead_id"), issue_code=str(finding["issue_code"]),
-                evidence=finding, detected_at=current, detection_run_id=detection_run_id,
-            )
-            persisted += 1
+        persisted = persist_assignment_integrity_alerts(
+            db, finding_rows, detected_at=current,
+            detection_run_id=detection_run_id,
+        )
     report = {
         "status": "completed",
         "lookback_days": lookback_days,

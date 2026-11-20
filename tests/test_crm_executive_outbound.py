@@ -508,3 +508,65 @@ def test_supervisor_cannot_bypass_optout_or_missing_owner_session(context, monke
             idempotency_key="admin-disabled-1234",
             post=lambda *_a, **_kw: pytest.fail("unlinked session sent"),
         )
+
+
+def test_supervisor_webhook_first_reconciles_single_canonical_row(context, monkeypatch):
+    import mongomock
+    db, cycle = _enable_supervised_outbound(context, monkeypatch)
+    admin = {"_id": ObjectId(SUPERVISOR), "rol": "supervisor"}
+    lead_copy = deepcopy(db["leads"].document)
+    lead_copy["messages"] = [{
+        "message_id": "webhook-before-supervisor",
+        "role": "agent", "actor_type": "human_agent",
+        "source": "whatsapp_direct", "channel": "executive_whatsapp",
+        "wasender_session_id": "133517", "assigned_executive_id": OWNER,
+        "assignment_cycle_id": CYCLE, "provider_message_id": "3EB0SUPERVISOR",
+        "content": "Hola, revisamos la propiedad",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }]
+    coll = mongomock.MongoClient().test.supervisor_echo
+    coll.insert_one(lead_copy)
+    db["leads"] = coll
+    monkeypatch.setattr(outgoing, "_authorized_lead", lambda _db, phone, user_id: (
+        coll.find_one({"_id": LEAD_ID}), cycle,
+    ))
+    result = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER,
+        requester_user=admin, message="Hola, revisamos la propiedad",
+        idempotency_key="supervisor-echo-1234",
+        post=lambda *_a, **_kw: _response(msg="api-echo-receipt"),
+    )
+    assert result["status"] == "accepted"
+    assert result["recorded"] is True
+    assert result["delegated"] is True
+    msgs = coll.find_one({"_id": LEAD_ID})["messages"]
+    assert len(msgs) == 1
+    assert msgs[0]["source"] == "crm_admin_delegated_api"
+    assert msgs[0]["actor_type"] == "human_supervisor"
+    assert msgs[0]["actor_id"] == SUPERVISOR
+    assert msgs[0]["crm_api_provider_message_id"] == "api-echo-receipt"
+
+
+def test_supervised_api_message_echo_is_reconciled_without_duplicate():
+    from chatbot.executive_whatsapp_echo import find_unique_echo_match
+    original = {
+        "message_id": "api-before-webhook", "role": "agent",
+        "actor_type": "human_supervisor", "actor_id": SUPERVISOR,
+        "assigned_executive_id": OWNER, "assignment_cycle_id": CYCLE,
+        "source": "crm_admin_delegated_api", "channel": "executive_whatsapp",
+        "wasender_session_id": "133517", "provider_message_id": "api-receipt",
+        "content": "Hola, mensaje supervisado",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    matched = find_unique_echo_match(
+        [original], source="crm_admin_delegated_api",
+        content="Hola, mensaje supervisado", session_id="133517",
+        cycle_id=CYCLE, owner_id=OWNER, occurred_at=datetime.now(timezone.utc),
+    )
+    assert matched == original
+    original["provider_echo_message_id"] = "3EB0WEBHOOK"
+    assert find_unique_echo_match(
+        [original], source="crm_admin_delegated_api",
+        content="Hola, mensaje supervisado", session_id="133517",
+        cycle_id=CYCLE, owner_id=OWNER, occurred_at=datetime.now(timezone.utc),
+    ) is None

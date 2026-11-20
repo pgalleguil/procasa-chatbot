@@ -295,12 +295,20 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     # A signed messages.upsert webhook can arrive before the send-message API
     # response. Reconcile it instead of writing a second canonical row.
     fresh = db["leads"].find_one({"_id": oid}) or {}
-    echo = find_unique_echo_match(
-        fresh.get("messages") or [],
-        source="whatsapp_direct", content=message,
-        session_id=sid, cycle_id=cycle_id, owner_id=owner,
-        occurred_at=datetime.now(timezone.utc),
-    )
+    # A signed webhook may have persisted the outgoing message before the API
+    # receipt; reconcile either signed direct or supervised attribution.
+    echo = None
+    for candidate_source in (
+        ("crm_admin_delegated_api", "whatsapp_direct") if delegated else ("whatsapp_direct",)
+    ):
+        echo = find_unique_echo_match(
+            fresh.get("messages") or [],
+            source=candidate_source, content=message,
+            session_id=sid, cycle_id=cycle_id, owner_id=owner,
+            occurred_at=datetime.now(timezone.utc),
+        )
+        if echo:
+            break
     if echo:
         echo_fields = {"messages.$.crm_api_provider_message_id": pid}
         if delegated:

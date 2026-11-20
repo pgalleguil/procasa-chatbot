@@ -498,6 +498,30 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                 lead_id, exec_name, property_code,
             )
             raise RuntimeError("manual lead cycle was not created")
+        if cycle_id and not reused_active_cycle:
+            from .crm_manual_cycle_mirror import persist_manual_cycle_mirror
+            mirrored = persist_manual_cycle_mirror(
+                db, lead_id=ObjectId(lead_id), cycle=cycle,
+                owner_name=exec_name,
+            )
+            if not mirrored:
+                from .crm_assignment_integrity import record_assignment_integrity_alert
+                record_assignment_integrity_alert(
+                    db, lead_id=ObjectId(lead_id),
+                    issue_code="manual_cycle_owner_mirror_incomplete",
+                    evidence={"cycle_id": cycle_id,
+                              "signature": f"{lead_id}:{cycle_id}"},
+                )
+                logger.error(
+                    "[MANUAL_CREATE] owner_cycle_mirror_missing lead_id=%s cycle_id=%s",
+                    lead_id, cycle_id,
+                )
+                return {
+                    "status": "review_required",
+                    "message": "El lead fue creado, pero su asignación requiere revisión antes de continuar.",
+                    "lead_id": lead_id, "assignment_cycle_id": cycle_id,
+                }
+
         source_event_id = f"manual_lead:{lead_id}:{cycle_id}" if cycle_id else None
         notification = None
         if cycle_id and not reused_active_cycle:

@@ -173,7 +173,7 @@ def test_candidate_query_excludes_only_cycles_already_hard_protected():
     rows[6]["sla_first_management_status"] = "pending"
     db["crm_assignment_cycles"].insert_many(rows)
 
-    query = _candidate_query_superset(CUTOVER)
+    query = _candidate_query_superset(datetime(2026, 9, 1, tzinfo=UTC))
     result = sorted(row["assignment_cycle_id"] for row in db["crm_assignment_cycles"].find(query))
     assert result == ["cycle-1", "cycle-6", "cycle-7"]
     # A late-but-still-relevant human action is not treated as an SLA success.

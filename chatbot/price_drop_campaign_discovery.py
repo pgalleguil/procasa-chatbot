@@ -6,7 +6,7 @@ import hashlib
 import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Callable, Iterable
 from time import sleep
 
@@ -853,6 +853,14 @@ def format_price(value: int | float, currency: str) -> str:
     return ("UF " + rendered) if currency == "UF" else (chr(36) + rendered)
 
 
+def format_percentage(value: int | float | Decimal) -> str:
+    """Render discount percentages as whole numbers, half-up (e.g. 27,00% -> 27%)."""
+    percentage = _decimal(value)
+    if percentage is None:
+        raise DiscoveryError("percentage_invalid")
+    return f"{percentage.quantize(Decimal('1'), rounding=ROUND_HALF_UP)}%"
+
+
 MESSAGE_VARIANTS = {
     "rebaja_v1": {
         "opening": "Te escribo de PROCASA porque me acordé de la propiedad que habías consultado.",
@@ -899,8 +907,8 @@ def event_message(event: PriceDropEvent, *, last_notice: dict[str, Any] | None =
         else original
     )
     difference = reference - current
-    percentage = (difference / reference * Decimal("100")).quantize(Decimal("0.01"))
-    percent_label = str(percentage).replace(".", ",") + "%"
+    percentage = difference / reference * Decimal("100")
+    percent_label = format_percentage(percentage)
     first = str(recipient_name or "").strip()
     greeting = f"Hola, {first}, ¿cómo estás?" if first else "Hola, ¿cómo estás?"
     opening = MESSAGE_VARIANTS[variant_id]["opening"]

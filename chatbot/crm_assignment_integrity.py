@@ -658,8 +658,15 @@ def reconcile_assignment_integrity(
         lead_key = str(row.get("lead_id") or "")
         if lead_key:
             grouped.setdefault(lead_key, []).append(row)
+    # Avoid constructing a full-list fallback for every lead.  dict.setdefault
+    # evaluates its default argument even when the key is already present;
+    # that previously caused an O(leads * cycles) traversal each audit run.
+    candidate_rows_by_lead: dict[str, list[dict[str, Any]]] = {}
+    for row in candidate_rows:
+        candidate_rows_by_lead.setdefault(str(row.get("lead_id")), []).append(row)
     for key in candidate_leads:
-        grouped.setdefault(key, [row for row in candidate_rows if str(row.get("lead_id")) == key])
+        if key not in grouped:
+            grouped[key] = candidate_rows_by_lead.get(key, [])
 
     lead_projection = {
         "_id": 1, "lifecycle": 1, "ejecutivo_asignado": 1,
@@ -697,6 +704,15 @@ def reconcile_assignment_integrity(
         "recipient_user_id": 1, "actually_delivered": 1,
     }).limit(max(int(limit), 1))) if all_cycle_ids else []
 
+    # Index notifications once, rather than scanning the complete notification
+    # history for each lead.  Preserve the original order and both identity
+    # forms used by _notification_findings (single cycle or digest cycle IDs).
+    notifications_by_cycle: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    for index, notification in enumerate(notifications):
+        linked_ids = [notification.get("assignment_cycle_id"), *(notification.get("assignment_cycle_ids") or [])]
+        for cycle_id in {str(value) for value in linked_ids if value not in (None, "")}:
+            notifications_by_cycle.setdefault(cycle_id, []).append((index, notification))
+
     finding_rows: list[dict[str, Any]] = []
     leads_checked = 0
     for key, cycle_rows in grouped.items():
@@ -717,8 +733,14 @@ def reconcile_assignment_integrity(
                 })
             finding_rows.extend(_chatbot_owner_findings(lead, cycle_rows, integrity))
         finding_rows.extend(_transition_findings(db, lead_id, cycle_rows))
+        matching_notifications: dict[int, dict[str, Any]] = {}
+        for cycle in cycle_rows:
+            cycle_id = str(cycle.get("assignment_cycle_id") or "")
+            for index, notification in notifications_by_cycle.get(cycle_id, ()):
+                matching_notifications[index] = notification
         finding_rows.extend(_notification_findings(
-            db, lead_id, cycle_rows, notifications=notifications,
+            db, lead_id, cycle_rows,
+            notifications=[matching_notifications[index] for index in sorted(matching_notifications)],
         ))
 
     persisted = 0

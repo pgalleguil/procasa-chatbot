@@ -45,6 +45,15 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
                             "customer_contact_blocked", "contact_not_verified",
                             "ambiguous_or_unassigned_lead", "executive_inactive"):
                 method = "blocked"
+            elif exc.code == "executive_session_not_enabled":
+                # A registered but temporarily disabled/disallowed linked phone
+                # should NOT silently fall back to a different WhatsApp sender.
+                owner = str((lead or {}).get("lifecycle", {}).get("assigned_to_user_id") or "")
+                profile = db["usuarios"].find_one(
+                    {"_id": ObjectId(owner)}, {"wasender.session_id": 1},
+                ) if ObjectId.is_valid(owner) else None
+                sid = (profile or {}).get("wasender") or {}
+                method = "blocked" if sid.get("session_id") else "wa_me"
             else:
                 method = "wa_me"
             return {"available": False, "method": method}

@@ -156,6 +156,7 @@ def test_provider_accepted_stores_one_manual_message_and_no_sla_side_effect(cont
     messages = db["leads"].document["messages"]
     assert len(messages) == 1
     assert messages[0]["source"] == "crm_manual_api"
+    assert messages[0]["direction"] == "outgoing"
     assert messages[0]["actor_type"] == "human_agent"
     assert messages[0]["assigned_executive_id"] == OWNER
     assert messages[0]["provider_message_id"] == "WA-PROVIDER-1"

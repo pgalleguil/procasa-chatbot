@@ -305,12 +305,12 @@ def _history_steps(db: Any, event: PriceDropEvent,
 
 
 def _display(event: PriceDropEvent, interested: int | None = None) -> str:
-    from chatbot.price_drop_campaign_discovery import format_price
+    from chatbot.price_drop_campaign_discovery import format_price, format_percentage
     tail = "" if interested is None else f" | leads elegibles: {interested}"
     local = event.dropped_at.astimezone(CHILE_TZ)
     return (f"{event.property_code} | {event.operation} | {event.property_type} | {event.comuna} | "
             f"{format_price(event.old_price,event.currency)} → "
-            f"{format_price(event.new_price,event.currency)} (-{event.percent_reduction:.2f}%) | "
+            f"{format_price(event.new_price,event.currency)} (-{format_percentage(event.percent_reduction)}) | "
             f"{local:%d/%m/%Y %H:%M %Z}{tail}")
 
 
@@ -1224,8 +1224,14 @@ def execute_campaign(
                     "attempts": 0, "pending": len(entries)}
         run_limit = min(max_messages, max(daily_provider_cap - daily_before, 0))
         if run_limit == 0:
+            print(f"PROCASA — cupo operativo WaSender agotado: {daily_before} "
+                  f"intentos de API en las últimas 24 horas; límite configurado: {daily_provider_cap}. "
+                  "No se enviaron mensajes. Las campañas permanecen aprobadas y pendientes.")
             return {"status": "BLOCKED", "reason": "daily_provider_limit_reached",
-                    "attempts": 0, "pending": len(entries)}
+                    "attempts": 0, "pending": len(entries),
+                    "daily_attempts_before": daily_before,
+                    "daily_provider_cap": daily_provider_cap,
+                    "daily_capacity_remaining": 0}
         batch_pending_initial = pending_campaign_count()
         for index, entry in enumerate(entries):
             if attempts >= max_messages:
@@ -1874,7 +1880,10 @@ def execute_approved_batch(
                           for item_id, item_ids in campaign_items)
             return {"status": outcome.get("status"), "attempts": total_attempts,
                     "pending": pending, "campaign_results": outcomes,
-                    "publication_checks": publication_checks}
+                    "publication_checks": publication_checks,
+                    "daily_attempts_before": outcome.get("daily_attempts_before"),
+                    "daily_provider_cap": outcome.get("daily_provider_cap"),
+                    "daily_capacity_remaining": outcome.get("daily_capacity_remaining")}
     pending = sum(len(_entries(db, cid, ("APPROVED",), ids))
                   for cid, ids in campaign_items)
     return {"status": "LIMIT_REACHED" if pending else "COMPLETED",

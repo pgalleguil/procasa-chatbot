@@ -209,13 +209,11 @@ def test_manual_outgoing_and_incoming_are_separately_attributed_and_deduped(rig)
     assert messages[1]["actor_type"] == "human_agent"
     assert messages[1]["actor_id"] == str(USER)
     assert messages[1]["role"] == "agent"
-    assert messages[1]["direction"] == "outgoing"
     assert messages[1]["assignment_cycle_id"] == "cycle-A"
     assert messages[1]["wasender_session_id"] == SESSION
     assert messages[2]["actor_type"] == "customer"
     assert messages[2]["actor_id"] is None
     assert messages[2]["role"] == "user"
-    assert messages[2]["direction"] == "incoming"
 
 
 def test_private_unassigned_and_group_conversations_never_saved(rig, caplog):

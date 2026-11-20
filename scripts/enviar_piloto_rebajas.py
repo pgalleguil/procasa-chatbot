@@ -11,6 +11,7 @@ import sys
 import time
 from collections import Counter
 from dataclasses import replace
+from decimal import Decimal
 from datetime import datetime, time as day_time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -33,7 +34,7 @@ from chatbot import price_drop_leads_v2 as v2
 from chatbot.price_drop_campaign_discovery import (
     CHILE_TZ, HISTORY_COLLECTION, LEADS_COLLECTION, PriceDropEvent,
     discover_price_drops, event_message, find_candidates_for_event,
-    format_price, message_variant_id, parse_aware_datetime, stable_event_id,
+    format_price, format_percentage, message_variant_id, parse_aware_datetime, stable_event_id,
 )
 from chatbot.price_drop_campaign_filters import (
     CampaignFilterError, effective_temperature, lead_age_details,
@@ -1745,6 +1746,49 @@ def _approved_campaign_batch(
     return result
 
 
+
+_APPROVED_DECIMAL_PERCENT = re.compile(r"\\((\\d{1,3}),(\\d{2})% de rebaja\\)")
+
+
+def _normalize_approved_discount_percentage(message: str) -> str:
+    """Cosmetic-only normalization of legacy unsent, approved campaign copy."""
+    return _APPROVED_DECIMAL_PERCENT.sub(
+        lambda match: "(" + format_percentage(
+            Decimal(f"{match.group(1)}.{match.group(2)}")
+        ) + " de rebaja)",
+        message,
+    )
+
+
+def _normalize_unsent_approved_percentages(db: Any, selected: dict[str, set[str]],
+                                           *, now: datetime) -> None:
+    """Correct only the percentage in APPROVED/unsent copy; backup before writes."""
+    repairs = []
+    for cid, ids in selected.items():
+        for row in _entries(db, cid, ("APPROVED",), ids):
+            before = str(row["campaign"].get("outbound_message") or "")
+            after = _normalize_approved_discount_percentage(before)
+            if before != after:
+                repairs.append((cid, row["lead"]["_id"], before, after))
+    if not repairs:
+        return
+    backup = _backup_leads(db, list(dict.fromkeys(lead_id for _, lead_id, _, _ in repairs)))
+    for cid, lead_id, before, after in repairs:
+        result = db[LEADS_COLLECTION].update_one(
+            {"_id": lead_id, v2.ROOT: {"$elemMatch": {
+                "campaign_id": cid, "status": "APPROVED", "outbound_message": before,
+            }}},
+            {"$set": {
+                f"{v2.ROOT}.$.outbound_message": after,
+                f"{v2.ROOT}.$.percent_format_adjusted_at": now,
+            }},
+        )
+        if result.modified_count != 1:
+            raise CliError("approved_percent_normalization_concurrent_change_review_required")
+    print(f"PROCASA — {len(repairs)} mensaje(s) pendientes normalizados a porcentaje entero. "
+          f"Respaldo previo: {backup}")
+
+
 def execute_approved_batch(
     db: Any, *, campaigns: dict[str, set[str]] | None = None,
     campaign_id: str | None = None, include_pilot: bool = False,
@@ -1778,6 +1822,7 @@ def execute_approved_batch(
     if not selected:
         return {"status": "NO_APPROVED_RECIPIENTS", "attempts": 0, "pending": 0}
 
+    _normalize_unsent_approved_percentages(db, selected, now=now_fn())
     approved_rows: dict[str, list[dict[str, Any]]] = {}
     snapshots: dict[str, dict[str, str]] = {}
     expected_by_campaign: dict[str, dict[str, dict[str, Any]]] = {}

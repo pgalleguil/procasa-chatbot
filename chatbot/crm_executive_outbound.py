@@ -17,6 +17,8 @@ from pymongo.errors import DuplicateKeyError
 import requests
 
 from .crm_metrics import active_assignment_cycle
+from .crm_lead_access import resolve_crm_lead_access_context
+from .crm_permissions import can_administer_leads
 from .crm_verified_whatsapp_sla import credit_verified_outbound
 from .executive_whatsapp_audit import _session, _authorized_lead
 from .executive_whatsapp_echo import find_unique_echo_match
@@ -97,6 +99,47 @@ def eligible_manual_session(db, *, lead: dict, actor_user_id: str) -> dict:
     return {"cycle": cycle, "recipient": recipient, "session": session}
 
 
+def eligible_requester_session(db, *, lead: dict, requester_user: dict) -> dict:
+    """Authorize the logged-in owner or an active CRM supervisor to use the owner's session.
+
+    A supervisor may initiate outreach ONLY to the single lead of the current
+    executive, and never select a sender/session from the browser. All normal
+    owner/cycle, phone, consent and provider gates still run.
+    """
+    if not isinstance(lead, dict) or lead.get("_id") is None:
+        raise OutboundBlocked("lead_missing")
+    requester_id = str((requester_user or {}).get("_id") or "")
+    if not ObjectId.is_valid(requester_id):
+        raise OutboundBlocked("requester_not_authorized")
+    cycle = active_assignment_cycle(db, lead["_id"])
+    if not cycle or cycle.get("cycle_status") not in (None, "active") or cycle.get("unassigned_at") is not None:
+        raise OutboundBlocked("current_assignment_required")
+    owner_id = str(cycle.get("assigned_to_user_id") or "")
+    if not ObjectId.is_valid(owner_id):
+        raise OutboundBlocked("current_assignment_required")
+    delegated = requester_id != owner_id
+    if delegated:
+        if not can_administer_leads((requester_user or {}).get("rol")):
+            raise OutboundBlocked("requester_not_authorized")
+        verified_admin = db["usuarios"].find_one(
+            {"_id": ObjectId(requester_id), "is_active": True},
+            {"_id": 1, "rol": 1},
+        )
+        if not verified_admin or not can_administer_leads(verified_admin.get("rol")):
+            raise OutboundBlocked("requester_not_authorized")
+        access = resolve_crm_lead_access_context(
+            db, user=verified_admin, lead=lead, security_enabled=True,
+        )
+        if not access.access_allowed or not access.action_permissions.get("contact_whatsapp"):
+            raise OutboundBlocked("requester_not_authorized")
+    info = eligible_manual_session(db, lead=lead, actor_user_id=owner_id)
+    return {
+        **info, "owner_id": owner_id, "requester_id": requester_id,
+        "delegated": delegated,
+        "sender_name": str((lead.get("lifecycle") or {}).get("assigned_to_display_name") or "ejecutivo asignado")[:90],
+    }
+
+
 def _provider_rejection_reason(http_status: int, body: dict) -> str:
     """Stable non-PII reason code; never persist raw WaSender errors."""
     if http_status in (401, 403):
@@ -136,7 +179,8 @@ def _credited_first_management(db, *, lead_id, actor_user_id: str,
 
 
 def send_manual(db, *, lead_id, actor_user_id: str, message: str,
-                idempotency_key: str, post=None, now=None) -> dict:
+                idempotency_key: str, post=None, now=None,
+                requester_user: dict | None = None) -> dict:
     """One provider call for one idempotency key; never retry an uncertain send.
 
     A known-accepted send is appended to the canonical lead with the actual
@@ -150,7 +194,15 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         raise OutboundBlocked("invalid_lead_id")
     oid = ObjectId(str(lead_id))
     lead = db["leads"].find_one({"_id": oid})
-    info = eligible_manual_session(db, lead=lead, actor_user_id=actor_user_id)
+    info = (
+        eligible_requester_session(db, lead=lead, requester_user=requester_user)
+        if requester_user is not None else
+        eligible_manual_session(db, lead=lead, actor_user_id=actor_user_id)
+    )
+    if requester_user is not None and info["owner_id"] != str(actor_user_id):
+        raise OutboundBlocked("requester_not_authorized")
+    delegated = bool(info.get("delegated"))
+    requester_id = str(info.get("requester_id") or actor_user_id)
     session, cycle = info["session"], info["cycle"]
     owner, cycle_id = str(actor_user_id), str(cycle["assignment_cycle_id"])
     sid = str(session["session_id"])
@@ -164,7 +216,9 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         "_id": identity,
         "lead_id": oid, "assignment_cycle_id": cycle_id,
         "executive_id": owner, "session_id": sid,
-        "mode": "manual_crm", "state": "provider_attempt",
+        "mode": "manual_crm_admin_delegated" if delegated else "manual_crm",
+        "initiated_by_user_id": requester_id,
+        "state": "provider_attempt",
         "attempted_at": utc_now,
         "content_sha256": sha256(message.encode("utf-8")).hexdigest(),
     }
@@ -179,8 +233,14 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     # Revalidate immediately before crossing the irreversible provider boundary.
     try:
         current = db["leads"].find_one({"_id": oid})
-        current_info = eligible_manual_session(db, lead=current, actor_user_id=owner)
-        if str(current_info["cycle"]["assignment_cycle_id"]) != cycle_id:
+        current_info = (
+            eligible_requester_session(db, lead=current, requester_user=requester_user)
+            if requester_user is not None else
+            eligible_manual_session(db, lead=current, actor_user_id=owner)
+        )
+        if (str(current_info["cycle"]["assignment_cycle_id"]) != cycle_id
+                or (requester_user is not None
+                    and (current_info["owner_id"] != owner or bool(current_info["delegated"]) != delegated))):
             raise OutboundBlocked("assignment_changed")
     except OutboundBlocked as exc:
         db[OUTBOX].update_one({"_id": identity}, {"$set": {
@@ -242,6 +302,14 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         occurred_at=datetime.now(timezone.utc),
     )
     if echo:
+        echo_fields = {"messages.$.crm_api_provider_message_id": pid}
+        if delegated:
+            echo_fields.update({
+                "messages.$.source": "crm_admin_delegated_api",
+                "messages.$.actor_type": "human_supervisor",
+                "messages.$.actor_id": requester_id,
+                "messages.$.initiated_by_user_id": requester_id,
+            })
         merged = db["leads"].update_one({
             "_id": oid, "phone": lead["phone"],
             "lifecycle.current_assignment_cycle_id": cycle_id,
@@ -250,15 +318,17 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
                 "message_id": echo["message_id"],
                 "crm_api_provider_message_id": {"$exists": False},
             }},
-        }, {"$set": {"messages.$.crm_api_provider_message_id": pid}})
+        }, {"$set": echo_fields})
         accepted = merged.modified_count == 1
         db[OUTBOX].update_one({"_id": identity}, {"$set": {
             "canonical_recorded": accepted,
         }})
         return {"status": "accepted", "provider_message_id": pid, "recorded": accepted,
-                "sla_management": (_credited_first_management(
-                    db, lead_id=oid, actor_user_id=owner, cycle_id=cycle_id,
-                    session_id=sid, provider_message_id=pid) if accepted else "unverified")}
+                **({"delegated": True} if delegated else {}),
+                "sla_management": ("delegated" if delegated and accepted else
+                    _credited_first_management(
+                        db, lead_id=oid, actor_user_id=owner, cycle_id=cycle_id,
+                        session_id=sid, provider_message_id=pid) if accepted else "unverified")}
     # CAS prevents writing an executive message into a reassigned lead.
     entry = {
         "message_id": str(uuid4()), "lead_id": str(oid),
@@ -271,6 +341,13 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         "content": message, "timestamp": datetime.now(timezone.utc).isoformat(),
         "timestamp_source": "crm_api_accepted",
     }
+    if delegated:
+        entry.update({
+            "source": "crm_admin_delegated_api",
+            "actor_type": "human_supervisor",
+            "actor_id": requester_id,
+            "initiated_by_user_id": requester_id,
+        })
     result = db["leads"].update_one({
         "_id": oid, "phone": lead["phone"],
         "lifecycle.current_assignment_cycle_id": cycle_id,
@@ -291,7 +368,9 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     }})
     return {"status": "accepted", "provider_message_id": pid,
             "recorded": result.modified_count == 1,
-            "sla_management": (_credited_first_management(
-                db, lead_id=oid, actor_user_id=owner, cycle_id=cycle_id,
-                session_id=sid, provider_message_id=pid)
+            **({"delegated": True} if delegated else {}),
+            "sla_management": ("delegated" if delegated and result.modified_count == 1 else
+                _credited_first_management(
+                    db, lead_id=oid, actor_user_id=owner, cycle_id=cycle_id,
+                    session_id=sid, provider_message_id=pid)
                 if result.modified_count == 1 else "unverified")}

@@ -348,6 +348,16 @@ def _candidate_query_superset(current_policy_since: datetime) -> dict[str, Any]:
         "assignment_cycle_id": {"$exists": True, "$ne": None},
         "lead_id": {"$exists": True, "$ne": None},
         "assigned_at": {"$exists": True, "$ne": None},
+        # These authoritative cycle-level markers are unconditional hard
+        # protections in the guarded transaction executor.  Do not repeatedly
+        # read, hydrate, score or attempt to reassign such cycles.  Both null
+        # and missing/legacy empty strings remain eligible for evaluation.
+        # Other evidence (lead lifecycle, events, management results) is still
+        # checked by the worker and executor as before.
+        "first_valid_management_at": {"$in": [None, ""]},
+        "first_contact_attempt_at": {"$in": [None, ""]},
+        "reassignment_protection_at": {"$in": [None, ""]},
+        "sla_first_management_status": {"$ne": "completed"},
         "$and": [
             {
                 "$or": [

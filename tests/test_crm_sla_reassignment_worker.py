@@ -23,6 +23,7 @@ from chatbot.crm_sla_reassignment_worker import (
     R2_HISTORY_WINDOW,
     SLAReassignmentShadowEvaluation,
     _batch_context,
+    _candidate_query_superset,
     _awaiting_owner_notification,
     _lead_lookup_variants,
     _management_protection,
@@ -158,6 +159,25 @@ def test_missing_cutover_fails_closed():
         Config.CRM_SLA_REASSIGNMENT_SHADOW_ENABLED = old_shadow
         Config.CRM_SLA_REASSIGNMENT_CUTOVER_AT = old_cutover
     assert result["status"] == "fatal_configuration_error"
+
+
+def test_candidate_query_excludes_only_cycles_already_hard_protected():
+    """Cycle-level hard stops are never transaction-eligible, so skip them in Mongo."""
+    db = mongomock.MongoClient().sla_filter_protected
+    rows = [cycle(i) for i in range(1, 8)]
+    rows[1]["first_valid_management_at"] = NOW
+    rows[2]["first_contact_attempt_at"] = NOW
+    rows[3]["reassignment_protection_at"] = NOW
+    rows[4]["sla_first_management_status"] = "completed"
+    rows[5]["first_contact_attempt_at"] = ""
+    rows[6]["sla_first_management_status"] = "pending"
+    db["crm_assignment_cycles"].insert_many(rows)
+
+    query = _candidate_query_superset(datetime(2026, 9, 1, tzinfo=UTC))
+    result = sorted(row["assignment_cycle_id"] for row in db["crm_assignment_cycles"].find(query))
+    assert result == ["cycle-1", "cycle-6", "cycle-7"]
+    # A late-but-still-relevant human action is not treated as an SLA success.
+    assert rows[1]["assigned_at"] < rows[1]["first_valid_management_at"]
 
 
 def test_scanner_is_superset_and_keyset_pagination_is_stable():

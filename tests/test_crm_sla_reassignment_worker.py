@@ -244,6 +244,28 @@ def test_human_protection_is_not_invented_for_automatic_activity():
     assert late_human_result["iteration"]["would_reassign"] == 1
 
 
+@pytest.mark.parametrize("marker_field", ["first_contact_attempt_at", "first_valid_management_at"])
+def test_preassignment_legacy_lifecycle_marker_matches_executor_safety_gate(marker_field):
+    row = cycle(1)
+    fixture_lead = lead(1, stage="VISIT_SCHEDULED")
+    fixture_lead["lifecycle"][marker_field] = row["assigned_at"] - timedelta(days=1)
+    direct = _management_protection(
+        row, fixture_lead, [], [], breach_at=NOW - timedelta(hours=1),
+    )
+    assert direct.protected is True
+    assert direct.current_stop_at is None
+    assert direct.first_human_at is None
+    assert direct.human_before_breach is False
+    assert f"legacy_preassignment:lifecycle.{marker_field}" in direct.evidence_types
+
+    kwargs = base_kwargs([row], [fixture_lead], cutover_at=datetime(2026, 9, 1, tzinfo=UTC))
+    result = run(**kwargs)
+    assert result["iteration"]["would_reassign"] == 0
+    assert result["iteration"]["protected_skipped"] == 1
+    assert result["decisions"] == []
+    assert result["evaluations"][0]["exclusion_reason"] == "PROTECTED_BY_MANAGEMENT"
+
+
 def test_late_lifecycle_whatsapp_contact_does_not_repeat_reassignment_attempt():
     row = cycle(1)
     fixture_lead = lead(1)

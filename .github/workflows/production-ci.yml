@@ -193,6 +193,7 @@ jobs:
               tests/test_dashboard_swr_cache.py
               tests/test_dashboard_cache_bandwidth.py
               tests/test_release_info.py
+              tests/test_crm_session_renewal_backoff.py
     steps:
       - uses: actions/checkout@v4
         with:

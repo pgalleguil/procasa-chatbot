@@ -858,7 +858,10 @@ def format_percentage(value: int | float | Decimal) -> str:
     percentage = _decimal(value)
     if percentage is None:
         raise DiscoveryError("percentage_invalid")
-    return f"{percentage.quantize(Decimal('1'), rounding=ROUND_HALF_UP)}%"
+    rounded = percentage.quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+    if percentage > 0 and rounded == 0:
+        return "<1%"  # Never claim that a positive discount is zero.
+    return f"{rounded}%"
 
 
 MESSAGE_VARIANTS = {

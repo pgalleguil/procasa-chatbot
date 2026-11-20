@@ -802,7 +802,7 @@ def test_message_personalization_and_deterministic_variants_include_verified_fac
     assert "UF 100" in message and event.listing_url in message
     assert "no te escribimos más" in message
     assert "de rebaja" in message
-    assert "3,58%" in message
+    assert "4%" in message
     assert "propiedad código" not in message.lower()
     assert "historial registra" not in message.lower()
     assert "última rebaja" not in message.lower()
@@ -949,7 +949,7 @@ def test_prepare_new_event_stores_cumulative_history_and_reference_price(monkeyp
             for row in campaign["price_history_steps"]] == [(2690, 2590), (2590, 2490)]
     assert "de UF 2.690 a UF 2.490" in campaign["outbound_message"]
     assert "UF 200 menos" in campaign["outbound_message"]
-    assert "7,43%" in campaign["outbound_message"]
+    assert "7%" in campaign["outbound_message"]
 
 
 def test_prepare_selected_reuses_existing_lead_authorization_without_new_evidence():
@@ -2571,7 +2571,7 @@ def test_short_customer_message_percentage_and_no_internal_history():
         )
         assert "Hola, María, ¿cómo estás?" in msg
         assert "UF 5.123" in msg and "UF 5.074" in msg
-        assert "UF 49" in msg and "0,96%" in msg
+        assert "UF 49" in msg and "1%" in msg
         assert "https://www.procasa.cl/6377" in msg
         assert "visita" in msg or "ir a verla" in msg
         assert "no te escribimos más" in msg
@@ -2595,7 +2595,7 @@ def test_customer_message_uses_rental_monthly_price_and_clp_discount():
     msg = event_message(rental, variant_id="rebaja_v1")
     assert "arriendo mensual" in msg.lower()
     assert "$435.000" in msg and "$400.000" in msg
-    assert "$35.000" in msg and "8,05%" in msg
+    assert "$35.000" in msg and "8%" in msg
     assert "Hola, ¿cómo estás?" in msg
 
 
@@ -2607,6 +2607,6 @@ def test_customer_message_does_not_exaggerate_small_drop_or_wrong_current_price(
         event, old_price=4075, new_price=4057, current_price=4057,
         difference=18,
     )
-    assert "0,44%" in event_message(tiny)
+    assert "<1% de rebaja" in event_message(tiny)
     with pytest.raises(DiscoveryError, match="outreach_price_not_a_reduction"):
         event_message(replace(tiny, current_price=4080))

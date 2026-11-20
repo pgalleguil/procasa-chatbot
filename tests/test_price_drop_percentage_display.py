@@ -47,6 +47,7 @@ def test_whatsapp_message_has_no_percentage_decimals():
     (27.5, "28%"),
     (27.6, "28%"),
     (0.5, "1%"),
+    (0.44, "<1%"),
 ])
 def test_percentage_round_half_up(raw, expected):
     assert format_percentage(raw) == expected
@@ -54,7 +55,7 @@ def test_percentage_round_half_up(raw, expected):
 
 def test_operator_discovery_display_uses_whole_percent():
     rendered = _display(_event())
-    assert "(-27%)" in rendered
+    assert "(27% de rebaja)" in rendered
     assert "27.00%" not in rendered
 
 def test_old_approved_unsent_message_is_normalized_with_backup(monkeypatch, tmp_path):

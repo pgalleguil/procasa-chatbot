@@ -17,7 +17,8 @@ from .crm_assignment_integrity import active_assignment_cycles
 
 
 def persist_manual_cycle_mirror(
-    db: Any, *, lead_id: ObjectId, cycle: Mapping[str, Any], owner_name: str
+    db: Any, *, lead_id: ObjectId, cycle: Mapping[str, Any], owner_name: str,
+    dry_run: bool = False,
 ) -> bool:
     owner_id = str(cycle.get("assigned_to_user_id") or "").strip()
     cycle_id = str(cycle.get("assignment_cycle_id") or "").strip()
@@ -101,6 +102,9 @@ def persist_manual_cycle_mirror(
     }
     if cycle.get("sla_started_at") is not None:
         update["lifecycle.sla_started_at"] = cycle["sla_started_at"]
+
+    if dry_run:
+        return True
 
     result = db["leads"].update_one({
         "_id": lead_id,

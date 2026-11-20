@@ -56,3 +56,41 @@ def test_operator_discovery_display_uses_whole_percent():
     rendered = _display(_event())
     assert "(-27%)" in rendered
     assert "27.00%" not in rendered
+
+def test_old_approved_unsent_message_is_normalized_with_backup(monkeypatch, tmp_path):
+    from bson import ObjectId
+    import mongomock
+    from scripts import enviar_piloto_rebajas as cli
+
+    db = mongomock.MongoClient()["URLS"]
+    lead_id = ObjectId()
+    campaign_id = "rebaja_16544_test"
+    original = event_message(_event()).replace("(27% de rebaja)", "(27,00% de rebaja)")
+    db["leads"].insert_one({
+        "_id": lead_id,
+        "phone": "+56911119942",
+        "price_drop_v2": {"campaigns": [
+            {"campaign_id": campaign_id, "status": "APPROVED",
+             "outbound_message": original},
+            {"campaign_id": "rebaja_already_sent", "status": "SENT",
+             "outbound_message": original},
+        ]},
+    })
+    backup_calls = []
+    monkeypatch.setattr(cli, "_backup_leads", lambda _db, ids: (
+        backup_calls.append(ids) or tmp_path / "backup.json"
+    ))
+    cli._normalize_unsent_approved_percentages(
+        db, {campaign_id: {str(lead_id)}},
+        now=datetime(2026, 11, 20, tzinfo=timezone.utc),
+    )
+    rows = db["leads"].find_one({"_id": lead_id})["price_drop_v2"]["campaigns"]
+    assert "(27% de rebaja)" in rows[0]["outbound_message"]
+    assert "(27,00% de rebaja)" in rows[1]["outbound_message"]
+    assert rows[0]["status"] == "APPROVED"
+    assert len(backup_calls) == 1
+    cli._normalize_unsent_approved_percentages(
+        db, {campaign_id: {str(lead_id)}},
+        now=datetime(2026, 11, 20, tzinfo=timezone.utc),
+    )
+    assert len(backup_calls) == 1

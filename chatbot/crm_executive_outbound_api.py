@@ -68,6 +68,14 @@ async def crm_executive_whatsapp_send(request: Request):
                 "sla_management": result.get("sla_management", "unverified")}
     if result.get("status") == "duplicate":
         return {"status": "duplicate", "previous_state": result.get("previous_state")}
+    if result.get("status") == "rejected":
+        # Only our stable, non-PII classification reaches the browser.
+        reason = result.get("reason_code") or "provider_rejected"
+        allowed = {"authentication", "subscription", "rate_limit", "session_disconnected",
+                   "invalid_recipient", "invalid_request", "provider_rejected"}
+        if reason not in allowed:
+            reason = "provider_rejected"
+        raise HTTPException(status_code=502, detail=f"provider_rejected:{reason}")
     if result.get("status") in ("accepted", "accepted_without_provider_id", "delivery_unknown"):
         raise HTTPException(status_code=503, detail="provider_delivery_unconfirmed")
     raise HTTPException(status_code=502, detail="provider_send_failed")

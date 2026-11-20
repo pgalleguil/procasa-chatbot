@@ -18,6 +18,15 @@ import json
 import os
 
 from bson import ObjectId
+from dotenv import load_dotenv
+
+# Load the same PROCASA .env used by the existing PowerShell workflows
+# BEFORE importing chatbot modules that may initialize Config.
+_env_path = os.getenv("PRICE_DROP_ENV_FILE")
+if _env_path:
+    load_dotenv(_env_path)
+else:
+    load_dotenv()
 
 from chatbot.crm_manual_cycle_mirror import persist_manual_cycle_mirror
 from chatbot.constants import CHILE_TZ
@@ -179,12 +188,6 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError:
         print(json.dumps({"status": "BLOCKED", "reason": "invalid_since"}))
         return 1
-    env = os.getenv("PRICE_DROP_ENV_FILE") or ""
-    from dotenv import load_dotenv
-    if env:
-        load_dotenv(env)
-    else:
-        load_dotenv()
     from chatbot.storage import get_db
     try:
         result = audit_and_repair(

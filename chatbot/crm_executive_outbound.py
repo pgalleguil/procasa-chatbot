@@ -191,7 +191,8 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
                 "message_id": echo["message_id"],
                 "crm_api_provider_message_id": {"$exists": False},
             }},
-        }, {"$set": {"messages.$.crm_api_provider_message_id": pid}})
+        }, {"$set": {"messages.$.crm_api_provider_message_id": pid,
+                    "messages.$.direction": "outgoing"}})
         accepted = merged.modified_count == 1
         db[OUTBOX].update_one({"_id": identity}, {"$set": {
             "canonical_recorded": accepted,
@@ -201,7 +202,8 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     entry = {
         "message_id": str(uuid4()), "lead_id": str(oid),
         "conversation_id": lead.get("conversation_id"),
-        "role": "agent", "actor_type": "human_agent", "actor_id": owner,
+        "role": "agent", "direction": "outgoing",
+        "actor_type": "human_agent", "actor_id": owner,
         "assigned_executive_id": owner,
         "assignment_cycle_id": cycle_id,
         "channel": "executive_whatsapp", "source": "crm_manual_api",

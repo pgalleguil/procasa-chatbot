@@ -1747,7 +1747,7 @@ def _approved_campaign_batch(
 
 
 
-_APPROVED_DECIMAL_PERCENT = re.compile(r"\\((\\d{1,3}),(\\d{2})% de rebaja\\)")
+_APPROVED_DECIMAL_PERCENT = re.compile(r"\((\d{1,3}),(\d{2})% de rebaja\)")
 
 
 def _normalize_approved_discount_percentage(message: str) -> str:

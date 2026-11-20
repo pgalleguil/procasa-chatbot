@@ -31,16 +31,21 @@ def _criteria_note(search: dict, matches: list[dict]) -> str:
         kind = "departamento"
     else:
         kind = "casa o departamento"
-    amount = int(c.get("max_price_clp") or 0)
-    budget = "$" + f"{amount:,}".replace(",", ".")
-    area = " o ".join(c.get("comunas") or [])
+    amount = c.get("max_price_clp")
+    budget = ("hasta $" + f"{amount:,}".replace(",", ".")
+              if isinstance(amount, int) and amount > 0 else "presupuesto por confirmar")
+    area = " o ".join(c.get("comunas") or []) or "comuna por confirmar"
+    landmarks = c.get("location_targets") or []
+    reference = (" Referencia geográfica (sin validar): " +
+                 ", ".join(landmarks[:3]) + ". Requiere verificación humana."
+                 if landmarks else "")
     if not matches:
-        return (f"Búsqueda activa: {kind}, hasta {budget}, en {area}. "
-                "No hay coincidencias en la cartera verificada; "
-                "hacer seguimiento y revisar próximas altas o rebajas.")
+        return (f"Búsqueda activa: {kind}, {budget}, en {area}." + reference +
+                " Sin coincidencias verificadas; revisar búsqueda histórica y "
+                "confirmar datos faltantes antes de ofrecer.")
     ids = ", ".join(x["property_code"] for x in matches[:5])
-    return (f"Búsqueda activa: {kind}, hasta {budget}, en {area}. "
-            f"Revisar opciones internas {ids} y ofrecer únicamente después "
+    return (f"Búsqueda activa: {kind}, {budget}, en {area}." + reference +
+            f" Revisar opciones internas {ids} y ofrecer únicamente después "
             "de confirmar disponibilidad, precio y autorización de contacto.")
 
 
@@ -84,6 +89,30 @@ def ensure_followup_task(
         {"_id": identity},
         {"$setOnInsert": record}, upsert=True,
     )
+    # Permanent case/index integration remains opt-in until the CRM admin UI
+    # and the separate worker are configured. It creates no customer/owner
+    # messages, does not change assignment, and only enqueues Mongo jobs.
+    import os
+    if os.getenv("PROCASA_DEMAND_SOURCING_ENABLED", "0") == "1":
+        try:
+            from .demand_sourcing_engine import ensure_demand_case
+            ensure_demand_case(
+                db, lead_id=lead_id, cycle_id=cycle_id,
+                owner_id=owner_id, search=search, now=now,
+            )
+        except Exception as exc:
+            # The buyer follow-up is already persisted. A sourcing subsystem
+            # error cannot block or roll back normal CRM work.
+            import logging
+            logging.getLogger(__name__).warning(
+                "DEMAND_SOURCING case_upsert_error=%s", type(exc).__name__,
+            )
+        if not matches:
+            from .demand_sourcing import ensure_admin_demand_review
+            ensure_admin_demand_review(
+                db, lead_id=lead_id, cycle_id=cycle_id,
+                owner_id=owner_id, search=search, now=now,
+            )
     if matches:
         # The waiting task is superseded by a match-specific action. A human
         # already-completed task is never reopened or rewritten.

@@ -8,7 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SCRAPER_MODULES = PROJECT_ROOT / "scraper"
+if str(SCRAPER_MODULES) not in sys.path:
+    sys.path.insert(0, str(SCRAPER_MODULES))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(1, str(PROJECT_ROOT))
 
 from classifier_rules import (
     build_deepseek_context,
@@ -96,6 +101,7 @@ def _build_parser() -> argparse.ArgumentParser:
     process.add_argument("--write-db", action="store_true", help="Write results to MongoDB")
     process.add_argument("--dry-run", action="store_true", help="Do not write to MongoDB")
     process.add_argument("--no-llm", action="store_true", help="Disable DeepSeek calls")
+    process.add_argument("--skip-reports", action="store_true", help="Do not export CSV/summary reports")
 
     run_full = subparsers.add_parser("run-full", help="Discover and process in one step")
     run_full.add_argument("--start-url", action="append", default=[], help="Starting Yapo search URL")
@@ -108,6 +114,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_full.add_argument("--write-db", action="store_true", help="Write results to MongoDB")
     run_full.add_argument("--dry-run", action="store_true", help="Do not write to MongoDB")
     run_full.add_argument("--no-llm", action="store_true", help="Disable DeepSeek calls")
+    run_full.add_argument("--skip-reports", action="store_true", help="Do not export CSV/summary reports")
     run_full.add_argument("--target-commune", action="append", default=[], help="Keep only listings whose search tile matches this commune")
 
     export = subparsers.add_parser("export", help="Export CSV and summary for a batch")
@@ -344,7 +351,8 @@ def _cmd_process(args: argparse.Namespace, config: AppConfig) -> int:
     processed = _process_batch(slice_records, config, no_llm=args.no_llm, write_db=args.write_db and not args.dry_run)
     processed_path = _processed_path(config, batch_id)
     _save_json(processed_path, processed)
-    export_batch_reports(processed, batch_id, config)
+    if not args.skip_reports:
+        export_batch_reports(processed, batch_id, config)
     if args.write_db and not args.dry_run and processed:
         _run_post_scrape_distribution()
     print(json.dumps({"batch_id": batch_id, "processed": len(processed), "path": str(processed_path)}, ensure_ascii=False, indent=2))
@@ -370,7 +378,8 @@ def _cmd_run_full(args: argparse.Namespace, config: AppConfig) -> int:
     processed = _process_batch(slice_records, config, no_llm=args.no_llm, write_db=args.write_db and not args.dry_run)
     processed_path = _processed_path(config, batch_id)
     _save_json(processed_path, processed)
-    export_batch_reports(processed, batch_id, config)
+    if not args.skip_reports:
+        export_batch_reports(processed, batch_id, config)
     if args.write_db and not args.dry_run and processed:
         _run_post_scrape_distribution()
     print(

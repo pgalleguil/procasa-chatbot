@@ -53,7 +53,8 @@ def test_diana_full_office_and_executive_chat_preserves_buyer_search():
     assert search["followup_required"] is True
     assert search["criteria"]["max_price_clp"] == 97_000_000
     assert search["criteria"]["comunas"] == ["Pudahuel", "Maipú"]
-    assert search["criteria"]["property_types"] == ["CASA"]
+    assert search["criteria"]["property_types"] == ["CASA", "DEPARTAMENTO"]
+    assert search["criteria"]["preferred_property_type"] == "CASA"
     assert search["criteria"]["operation"] == "VENTA"
     assert "17184" in search["excluded_property_codes"]
     assert search["source_channels"] == ["office_whatsapp", "executive_whatsapp"]
@@ -69,7 +70,8 @@ def test_short_executive_confirmation_updates_prior_office_search():
     assert prior["criteria"]["property_types"] == ["CASA", "DEPARTAMENTO"]
     updated = classify([executive("casa", 3), executive("gracias", 4)], prior=prior)
     assert updated["status"] == "ACTIVE"
-    assert updated["criteria"]["property_types"] == ["CASA"]
+    assert updated["criteria"]["property_types"] == ["CASA", "DEPARTAMENTO"]
+    assert updated["criteria"]["preferred_property_type"] == "CASA"
     assert updated["criteria"]["max_price_clp"] == 97_000_000
     assert updated["criteria"]["comunas"] == ["Pudahuel", "Maipú"]
 
@@ -227,7 +229,8 @@ def test_existing_diana_classification_is_repaired_without_new_customer_message(
     assert profile["status"] == "ACTIVE"
     assert profile["criteria"]["max_price_clp"] == 97_000_000
     assert profile["criteria"]["comunas"] == ["Pudahuel", "Maipú"]
-    assert profile["criteria"]["property_types"] == ["CASA"]
+    assert profile["criteria"]["property_types"] == ["CASA", "DEPARTAMENTO"]
+    assert profile["criteria"]["preferred_property_type"] == "CASA"
     assert profile["match_status"] == "WAITING_INVENTORY"
     assert saved["commercial_intelligence"]["summary"]["followup_search_required"]
     assert saved["commercial_intelligence"]["summary"]["executive_management"]["case_type"] == "BUSQUEDA_ACTIVA_ALTERNATIVAS"
@@ -235,3 +238,63 @@ def test_existing_diana_classification_is_repaired_without_new_customer_message(
     # An inventory refresh must not recreate the profile or duplicate tasks.
     assert worker.backfill_missing_active_searches(db, limit=2)["repaired"] == 0
     assert db.crm_tasks.count_documents({}) == 1
+
+def test_karina_landmark_is_queued_without_inventing_budget_or_commune(monkeypatch):
+    # Real buyer wording. A landmark is a human verification cue, not a
+    # licence to infer geographical radius or scrape the wrong neighborhood.
+    search = classify([
+        executive("Pero me di cuenta que está más cerca del Pumahue", 1),
+        executive("Busco algo más cerca del San Fco Javier", 2),
+        executive("Tiene algo?", 3),
+    ])
+    assert search["status"] == "ACTIVE"
+    assert search["followup_required"] is True
+    assert search["criteria"]["location_targets"] == ["san fco javier"]
+    assert "max_price_clp" not in search["criteria"]
+    assert "comunas" not in search["criteria"]
+    assert "pumahue" not in str(search["criteria"])
+    assert search["field_evidence"]["location_targets"]["verification"] == "HUMAN_GEOCODING_REQUIRED"
+    db = mongomock.MongoClient().landmark
+    lead_id = ObjectId()
+    db.leads.insert_one({
+        "_id": lead_id, "ejecutivo_asignado": "Hernán Castro",
+        "lifecycle": {"assigned_to_user_id": OWNER,
+                      "current_assignment_cycle_id": CYCLE},
+        "commercial_intelligence": {"active_search": search},
+    })
+    monkeypatch.setenv("PROCASA_DEMAND_SOURCING_ENABLED", "1")
+    task_id = ensure_followup_task(db, lead_id=lead_id,
+                                  cycle_id=CYCLE, owner_id=OWNER,
+                                  search=search, now=NOW)
+    task = db.crm_tasks.find_one({"_id": task_id})
+    assert task["type"] == "SEARCH_ALTERNATIVES"
+    assert "san fco javier" in task["note"]
+    assert "presupuesto por confirmar" in task["note"]
+    review = db.crm_tasks.find_one({"type": "DEMAND_SOURCING_ADMIN_REVIEW"})
+    assert review["buyer_executive_name"] == "Hernán Castro"
+    assert review["candidate_refs"] == []
+    assert review["review_scope"] == "LOCATION_OR_BUDGET_NEEDS_HUMAN_VERIFICATION"
+    assert review["contact_approved"] is False
+
+
+def test_reference_question_cannot_override_office_preference():
+    prior = classify([
+        office("ando buscando casa o departamento de 97 millones maximo", 1),
+        office("en pudahuel o maipu", 2),
+        office("casa porfis", 3),
+    ])
+    preferred_source = prior["field_evidence"]["preferred_property_type"]
+    updated = classify([executive("hola de que casa hablamos?", 4)], prior=prior)
+    assert updated["criteria"]["property_types"] == ["CASA", "DEPARTAMENTO"]
+    assert updated["criteria"]["preferred_property_type"] == "CASA"
+    assert updated["field_evidence"]["preferred_property_type"] == preferred_source
+
+
+def test_exclusive_type_is_a_hard_constraint():
+    profile = classify([
+        office("busco casa o departamento de 97 millones en Maipú", 1),
+        office("solo casas", 2),
+    ])
+    assert profile["criteria"]["property_types"] == ["CASA"]
+    assert profile["criteria"]["preferred_property_type"] == "CASA"
+

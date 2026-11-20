@@ -853,7 +853,7 @@ def _run_post_scrape_distribution():
 
 def cmd_run_full(args, config):
     from proxy_manager import ProxyManager
-    batch_id = config.generate_batch_id()
+    batch_id = args.batch_id or config.generate_batch_id()
     print(f"Batch: {batch_id}")
     
     proxy_manager = None

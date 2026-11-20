@@ -93,6 +93,7 @@ def context(monkeypatch):
         "session_id": sid, "user_id": OWNER, "capture_enabled": True, "token": "private-session-token",
     })
     monkeypatch.setattr(outgoing, "lead_must_not_be_contacted", lambda _: False)
+    monkeypatch.setattr(outgoing, "verify_provider_sender_identity", lambda *_a, **_kw: None)
     monkeypatch.setattr(outgoing, "credit_verified_outbound", lambda *_a, **_kw: "credited")
     return db, cycle
 
@@ -570,3 +571,78 @@ def test_supervised_api_message_echo_is_reconciled_without_duplicate():
         content="Hola, mensaje supervisado", session_id="133517",
         cycle_id=CYCLE, owner_id=OWNER, occurred_at=datetime.now(timezone.utc),
     ) is None
+
+
+# Provider identity checks are READ ONLY; never send a test WhatsApp.
+def test_sender_attestation_accepts_matching_provider_jid():
+    provider = SimpleNamespace(
+        status_code=200, json=lambda: {
+            "success": True,
+            "data": {"id": "56984037477:12@s.whatsapp.net", "name": "Hernán"},
+        },
+    )
+    seen = []
+    def get(url, **kwargs):
+        seen.append((url, kwargs))
+        return provider
+    outgoing.verify_provider_sender_identity(
+        {"session_id": "133517", "token": "secret-only-in-memory"},
+        expected_phone="+56984037477", get=get,
+    )
+    assert len(seen) == 1
+    assert seen[0][0].endswith("/user")
+    assert seen[0][1]["headers"]["Authorization"] == "Bearer secret-only-in-memory"
+
+
+def test_sender_attestation_rejects_crossed_mariela_token():
+    def wrong_user(*_args, **_kwargs):
+        return SimpleNamespace(
+            status_code=200,
+            json=lambda: {"success": True, "data": {"id": "56938725886@s.whatsapp.net"}},
+        )
+    with pytest.raises(outgoing.OutboundBlocked, match="sender_identity_mismatch"):
+        outgoing.verify_provider_sender_identity(
+            {"session_id": "133517", "token": "not-a-real-key"},
+            expected_phone="+56984037477", get=wrong_user,
+        )
+
+
+@pytest.mark.parametrize("provider", [
+    SimpleNamespace(status_code=401, json=lambda: {}),
+    SimpleNamespace(status_code=200, json=lambda: {"success": False}),
+    SimpleNamespace(status_code=200, json=lambda: {"success": True, "data": {}}),
+    SimpleNamespace(status_code=200, json=lambda: {"success": True, "data": {"id": "not-a-phone@lid"}}),
+])
+def test_sender_attestation_fails_closed_without_verified_provider_identity(provider):
+    with pytest.raises(outgoing.OutboundBlocked, match="sender_identity_unverified"):
+        outgoing.verify_provider_sender_identity(
+            {"session_id": "133526", "token": "not-a-real-key"},
+            expected_phone="+56938725886",
+            get=lambda *_a, **_kw: provider,
+        )
+
+
+def test_sender_attestation_transport_failure_fails_closed():
+    def unavailable(*_a, **_kw):
+        raise TimeoutError("synthetic - never logged")
+    with pytest.raises(outgoing.OutboundBlocked, match="sender_identity_unverified"):
+        outgoing.verify_provider_sender_identity(
+            {"session_id": "133517", "token": "not-a-real-key"},
+            expected_phone="+56984037477", get=unavailable,
+        )
+
+
+def test_sender_identity_error_blocks_send_before_provider_post(context, monkeypatch):
+    db, _ = context
+    def identity_mismatch(*_a, **_kw):
+        raise outgoing.OutboundBlocked("sender_identity_mismatch")
+    monkeypatch.setattr(outgoing, "verify_provider_sender_identity", identity_mismatch)
+    with pytest.raises(outgoing.OutboundBlocked, match="sender_identity_mismatch"):
+        outgoing.send_manual(
+            db, lead_id=LEAD_ID, actor_user_id=OWNER,
+            message="No enviar por token cruzado",
+            idempotency_key="cross-sender-block-1234",
+            post=lambda *_a, **_kw: pytest.fail("wrong account sent WhatsApp"),
+        )
+    assert not db[outgoing.OUTBOX].docs
+    assert not db["leads"].document["messages"]

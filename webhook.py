@@ -8136,7 +8136,7 @@ async def event_loop_monitor_loop():
         while True:
             try:
                 probe.pulse()
-            start = time.monotonic()
+                start = time.monotonic()
                 await asyncio.sleep(1.0)
                 duration = time.monotonic() - start
                 lag_ms = (duration - 1.0) * 1000

@@ -169,6 +169,7 @@ def context(monkeypatch):
         "token": "executive-token-only",
     })
     monkeypatch.setattr(hot, "lead_must_not_be_contacted", lambda _: False)
+    monkeypatch.setattr(hot, "verify_provider_sender_identity", lambda *_a, **_kw: None)
     return db, leads, cycles
 
 
@@ -744,3 +745,13 @@ def test_hot_greeting_without_topics_does_not_claim_to_review_chat(context):
     assert greeting.endswith("¿Te parece si seguimos por aquí?")
     assert "Revisé" not in greeting
     assert "asistente" not in greeting
+
+
+def test_hot_auto_wrong_sender_token_is_blocked_without_provider_send(context, monkeypatch):
+    db, leads, cycles = context
+    def mismatched(*_a, **_kw):
+        raise hot.OutboundBlocked("sender_identity_mismatch")
+    monkeypatch.setattr(hot, "verify_provider_sender_identity", mismatched)
+    with pytest.raises(hot.OutboundBlocked, match="sender_identity_mismatch"):
+        hot.eligible_hot_auto(db, lead=leads.doc, cycle=cycles.doc, now=NOW)
+    assert not db[hot.OUTBOX].docs

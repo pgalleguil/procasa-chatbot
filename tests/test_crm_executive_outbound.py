@@ -578,7 +578,7 @@ def test_sender_attestation_accepts_matching_provider_jid():
     provider = SimpleNamespace(
         status_code=200, json=lambda: {
             "success": True,
-            "data": {"id": "56984037477:12@s.whatsapp.net", "name": "Hernán"},
+            "data": {"id": "56911112222:12@s.whatsapp.net", "name": "Hernán"},
         },
     )
     seen = []
@@ -587,7 +587,7 @@ def test_sender_attestation_accepts_matching_provider_jid():
         return provider
     outgoing.verify_provider_sender_identity(
         {"session_id": "133517", "token": "secret-only-in-memory"},
-        expected_phone="+56984037477", get=get,
+        expected_phone="+56911112222", get=get,
     )
     assert len(seen) == 1
     assert seen[0][0].endswith("/user")
@@ -598,12 +598,12 @@ def test_sender_attestation_rejects_crossed_mariela_token():
     def wrong_user(*_args, **_kwargs):
         return SimpleNamespace(
             status_code=200,
-            json=lambda: {"success": True, "data": {"id": "56938725886@s.whatsapp.net"}},
+            json=lambda: {"success": True, "data": {"id": "56933334444@s.whatsapp.net"}},
         )
     with pytest.raises(outgoing.OutboundBlocked, match="sender_identity_mismatch"):
         outgoing.verify_provider_sender_identity(
             {"session_id": "133517", "token": "not-a-real-key"},
-            expected_phone="+56984037477", get=wrong_user,
+            expected_phone="+56911112222", get=wrong_user,
         )
 
 
@@ -617,7 +617,7 @@ def test_sender_attestation_fails_closed_without_verified_provider_identity(prov
     with pytest.raises(outgoing.OutboundBlocked, match="sender_identity_unverified"):
         outgoing.verify_provider_sender_identity(
             {"session_id": "133526", "token": "not-a-real-key"},
-            expected_phone="+56938725886",
+            expected_phone="+56933334444",
             get=lambda *_a, **_kw: provider,
         )
 
@@ -628,7 +628,7 @@ def test_sender_attestation_transport_failure_fails_closed():
     with pytest.raises(outgoing.OutboundBlocked, match="sender_identity_unverified"):
         outgoing.verify_provider_sender_identity(
             {"session_id": "133517", "token": "not-a-real-key"},
-            expected_phone="+56984037477", get=unavailable,
+            expected_phone="+56911112222", get=unavailable,
         )
 
 

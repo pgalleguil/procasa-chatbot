@@ -210,6 +210,33 @@ def test_canonical_expiration_ignores_inconsistent_persisted_deadline():
     assert expiry.breach_at is not None
 
 
+def test_expensive_sla_policy_preparation_does_not_run_on_event_loop_thread(monkeypatch):
+    """Scheduling evidence: pure SLA CPU and profile work must run off-loop."""
+    import threading
+    from chatbot import crm_sla_reassignment_worker as worker
+
+    seen_threads = []
+    original_policy = worker._policy_row
+    original_pre_cutover = worker._cycle_only_pre_cutover_expiration
+
+    def observed_policy(*args, **kwargs):
+        seen_threads.append(("policy", threading.current_thread().name))
+        return original_policy(*args, **kwargs)
+
+    def observed_pre_cutover(*args, **kwargs):
+        seen_threads.append(("pre_cutover", threading.current_thread().name))
+        return original_pre_cutover(*args, **kwargs)
+
+    monkeypatch.setattr(worker, "_policy_row", observed_policy)
+    monkeypatch.setattr(worker, "_cycle_only_pre_cutover_expiration", observed_pre_cutover)
+    row = cycle(1)
+    output = run(**base_kwargs([row], [lead(1)]))
+
+    assert output["iteration"]["scanned"] == 1
+    assert {name for name, _ in seen_threads} == {"policy", "pre_cutover"}
+    assert all(thread_name != "MainThread" for _, thread_name in seen_threads)
+
+
 def test_pre_cutover_is_skipped_even_when_currently_expired():
     row = cycle(1, assigned_at=datetime(2026, 9, 1, 12, 0, tzinfo=UTC))
     result = run(**base_kwargs([row], [lead(1)]))

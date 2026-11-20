@@ -32,6 +32,110 @@ def _lead(db, lead_id="lead-p0", **extra):
     return lead
 
 
+
+def test_integrity_bulk_alert_writes_match_original_and_keep_retry_idempotency():
+    """An ordered bulk only groups exact existing operations into fewer calls."""
+    from datetime import timedelta
+    from chatbot import crm_assignment_integrity as integrity
+
+    class RecordingBulkCollection:
+        def __init__(self, underlying):
+            self.underlying = underlying
+            self.bulk_calls = 0
+
+        def bulk_write(self, operations, *, ordered):
+            assert ordered is True
+            self.bulk_calls += 1
+            for op in operations:
+                self.underlying.update_one(op._filter, op._doc, upsert=op._upsert)
+
+    class DBProxy:
+        def __init__(self, inner):
+            self.inner = inner
+            self.bulk = RecordingBulkCollection(inner[integrity.ALERT_COLLECTION])
+
+        def __getitem__(self, name):
+            return self.bulk if name == integrity.ALERT_COLLECTION else self.inner[name]
+
+    bulk_mongo = mongomock.MongoClient().audit_bulk
+    sequential_mongo = mongomock.MongoClient().audit_serial
+    proxy = DBProxy(bulk_mongo)
+    when = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+    next_when = when + timedelta(minutes=1)
+    findings = [
+        {"lead_id": "one", "issue_code": "canonical_cycle_mirror_inconsistency",
+         "signature": "cycle-one", "issues": ["cycle_pointer_mismatch"]},
+        {"lead_id": "two", "issue_code": "owner_change_without_authorization",
+         "signature": "cycle-two"},
+    ]
+
+    for audit_time, run_id in [(when, "run-a"), (next_when, "run-a"), (next_when, "run-b")]:
+        assert integrity.persist_assignment_integrity_alerts(
+            proxy, findings, detected_at=audit_time,
+            detection_run_id=run_id, batch_size=2,
+        ) == len(findings)
+        for finding in findings:
+            integrity.record_assignment_integrity_alert(
+                sequential_mongo, lead_id=finding["lead_id"],
+                issue_code=finding["issue_code"], evidence=finding,
+                detected_at=audit_time, detection_run_id=run_id,
+            )
+
+    assert proxy.bulk.bulk_calls == 3
+    actual = sorted(list(bulk_mongo[integrity.ALERT_COLLECTION].find()), key=lambda x: x["_id"])
+    expected = sorted(list(sequential_mongo[integrity.ALERT_COLLECTION].find()), key=lambda x: x["_id"])
+    assert actual == expected
+    assert [item["observations"] for item in actual] == [2, 2]
+
+
+def test_integrity_reconciler_notification_index_preserves_all_findings(monkeypatch):
+    """Unrelated notification history must not be inspected once per lead."""
+    from chatbot import crm_assignment_integrity as integrity
+
+    db = mongomock.MongoClient().integrity_notification_index
+    now = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+    for lead_id, cycle_id in (("lead-a", "cycle-a"), ("lead-b", "cycle-b")):
+        db["leads"].insert_one({
+            "_id": lead_id, "ejecutivo_asignado": "Executive",
+            "prospecto": {"ejecutivo": "Executive"},
+            "lifecycle": {"current_assignment_cycle_id": cycle_id, "assignment_cycle_id": cycle_id},
+        })
+        db["crm_assignment_cycles"].insert_one({
+            "lead_id": lead_id, "assignment_cycle_id": cycle_id,
+            "cycle_status": "active", "unassigned_at": None,
+            "assigned_at": now, "assigned_to_user_id": "owner",
+            "assigned_to_display_name": "Executive",
+        })
+    db["crm_notifications_v1"].insert_many([
+        {"_id": "n-a", "assignment_cycle_id": "cycle-a",
+         "notification_type": "lead_assignment_hot", "state": "sent",
+         "recipient_user_id": "owner"},
+        {"_id": "n-bad", "assignment_cycle_ids": ["cycle-a", "cycle-b"],
+         "digest_type": "non_hot_digest_v1", "state": "sent",
+         "recipient_user_id": "other"},
+        {"_id": "n-b", "assignment_cycle_id": "cycle-b",
+         "notification_type": "lead_assignment_hot", "state": "sent",
+         "recipient_user_id": "owner"},
+    ])
+
+    original = integrity._notification_findings
+    calls = []
+
+    def observe(db_arg, lead_id, cycle_rows, *, notifications=None):
+        calls.append((lead_id, tuple(row["_id"] for row in notifications)))
+        return original(db_arg, lead_id, cycle_rows, notifications=notifications)
+
+    monkeypatch.setattr(integrity, "_notification_findings", observe)
+    report = reconcile_assignment_integrity(db, now=now, persist_alerts=False)
+    assert report["leads_checked"] == 2
+    assert len(calls) == 2
+    assert calls[0] == ("lead-a", ("n-a", "n-bad"))
+    assert calls[1] == ("lead-b", ("n-bad", "n-b"))
+    issue_codes = {finding["issue_code"] for finding in report["finding_rows"]}
+    assert "notification_recipient_mismatch_for_assignment_cycle" in issue_codes
+    assert "duplicate_delivered_notifications_for_assignment_cycle" in issue_codes
+
+
 def test_prop360_and_whatsapp_race_creates_only_one_active_cycle():
     db = mongomock.MongoClient().incident
     lead = _lead(db)

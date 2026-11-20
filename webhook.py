@@ -8126,75 +8126,85 @@ async def event_loop_monitor_loop():
     Monitor global del event loop. Mide el lag real para detectar operaciones bloqueantes.
     """
     logger.info("[EVENT_LOOP_MONITOR] Iniciando monitor de lag...")
-    while True:
-        try:
-            start = time.time()
-            await asyncio.sleep(1.0)
-            duration = time.time() - start
-            lag_ms = (duration - 1.0) * 1000
-            
-            if lag_ms > 1000:
-                observability_mark("event_loop_blocked")
-                logger.error(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
-                logger.critical(
-                    f"[CRITICAL] [ASYNC_VIOLATION] type=event_loop_blocked lag_ms={lag_ms:.0f} "
-                    f"op=none collection=none caller=event_loop_monitor_loop trace=none "
-                    f"impact=HIGH action_required=true async_context=true thread_type=main safe=false"
-                )
-                recent = observability_event_loop_blocked_recent(10)
-                if recent > 3:
-                    logger.critical(
-                        f"[CRITICAL] [EVENT_LOOP_SATURATED] count={recent} window=10s action=INVESTIGATE_BLOCKING_CALLS"
-                    )
-                # Dump completo solo en bloqueos severos para evitar ruido excesivo.
-                if lag_ms > 5000:
-                    now = time.time()
-                    for task in asyncio.all_tasks():
-                        if task.done():
-                            continue
-                        coro = task.get_coro()
-                        task_name = task.get_name()
-                        state = "cancelled" if task.cancelled() else "pending"
-                        stack_frames = task.get_stack(limit=8)
-                        stack_text = ""
-                        if stack_frames:
-                            stack_text = "".join(traceback.format_list(traceback.extract_stack(stack_frames[-1])))
-                        logger.error(
-                            f"[EVENT_LOOP_TASK_DUMP] name={task_name} coro={getattr(coro, '__qualname__', str(coro))} "
-                            f"state={state} ts={now:.3f} stack={stack_text[:1200]}"
-                        )
-            elif lag_ms > 250:
-                logger.warning(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
-                observability_mark("event_loop_blocked")
-                logger.critical(
-                    f"[CRITICAL] [ASYNC_VIOLATION] type=event_loop_blocked lag_ms={lag_ms:.0f} "
-                    f"op=none collection=none caller=event_loop_monitor_loop trace=none "
-                    f"impact=HIGH action_required=true async_context=true thread_type=main safe=false"
-                )
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"[EVENT_LOOP_MONITOR] Error: {e}")
-            await asyncio.sleep(5)
-        if int(time.time()) % 60 == 0:
+    # Observe the actual event-loop thread *while* delayed, not after it has
+    # resumed. Only a filename/function/line snapshot is logged, max 1/minute.
+    # Does not inspect payloads, change workers, send WhatsApp or access Mongo.
+    from chatbot.event_loop_stall_probe import EventLoopStallProbe
+    probe = EventLoopStallProbe(threading.get_ident(), logger=logger)
+    probe.start()
+    try:
+        while True:
             try:
-                snap = observability_snapshot_and_reset()
-                status_level = "OK" if snap["mongo_sync_on_loop"] == 0 and snap["event_loop_blocked"] == 0 else "DEGRADED"
-                if snap["mongo_sync_on_loop"] > 5 or snap["event_loop_blocked"] > 5:
-                    status_level = "CRITICAL"
-                # Solo loguear en INFO/WARNING si hay degradación; OK va a DEBUG para no contaminar
-                summary_msg = (
-                    f"[HEALTH_SUMMARY]\nmongo_sync_on_loop={snap['mongo_sync_on_loop']}\n"
-                    f"event_loop_blocked={snap['event_loop_blocked']}\nstatus={status_level}"
-                )
-                if status_level == "CRITICAL":
-                    logger.error(summary_msg)
-                elif status_level == "DEGRADED":
-                    logger.warning(summary_msg)
-                else:
-                    logger.debug(summary_msg)
-            except Exception:
-                logger.exception("[HEALTH_SUMMARY] error=failed_to_emit")
+                probe.pulse()
+            start = time.monotonic()
+                await asyncio.sleep(1.0)
+                duration = time.monotonic() - start
+                lag_ms = (duration - 1.0) * 1000
+            
+                if lag_ms > 1000:
+                    observability_mark("event_loop_blocked")
+                    logger.error(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
+                    logger.critical(
+                        f"[CRITICAL] [ASYNC_VIOLATION] type=event_loop_blocked lag_ms={lag_ms:.0f} "
+                        f"op=none collection=none caller=event_loop_monitor_loop trace=none "
+                        f"impact=HIGH action_required=true async_context=true thread_type=main safe=false"
+                    )
+                    recent = observability_event_loop_blocked_recent(10)
+                    if recent > 3:
+                        logger.critical(
+                            f"[CRITICAL] [EVENT_LOOP_SATURATED] count={recent} window=10s action=INVESTIGATE_BLOCKING_CALLS"
+                        )
+                    # Dump completo solo en bloqueos severos para evitar ruido excesivo.
+                    if lag_ms > 5000:
+                        now = time.time()
+                        for task in asyncio.all_tasks():
+                            if task.done():
+                                continue
+                            coro = task.get_coro()
+                            task_name = task.get_name()
+                            state = "cancelled" if task.cancelled() else "pending"
+                            stack_frames = task.get_stack(limit=8)
+                            stack_text = ""
+                            if stack_frames:
+                                stack_text = "".join(traceback.format_list(traceback.extract_stack(stack_frames[-1])))
+                            logger.error(
+                                f"[EVENT_LOOP_TASK_DUMP] name={task_name} coro={getattr(coro, '__qualname__', str(coro))} "
+                                f"state={state} ts={now:.3f} stack={stack_text[:1200]}"
+                            )
+                elif lag_ms > 250:
+                    logger.warning(f"[EVENT_LOOP_BLOCKED] lag={lag_ms:.0f}ms possible_blocking_operation=true")
+                    observability_mark("event_loop_blocked")
+                    logger.critical(
+                        f"[CRITICAL] [ASYNC_VIOLATION] type=event_loop_blocked lag_ms={lag_ms:.0f} "
+                        f"op=none collection=none caller=event_loop_monitor_loop trace=none "
+                        f"impact=HIGH action_required=true async_context=true thread_type=main safe=false"
+                    )
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[EVENT_LOOP_MONITOR] Error: {e}")
+                await asyncio.sleep(5)
+            if int(time.time()) % 60 == 0:
+                try:
+                    snap = observability_snapshot_and_reset()
+                    status_level = "OK" if snap["mongo_sync_on_loop"] == 0 and snap["event_loop_blocked"] == 0 else "DEGRADED"
+                    if snap["mongo_sync_on_loop"] > 5 or snap["event_loop_blocked"] > 5:
+                        status_level = "CRITICAL"
+                    # Solo loguear en INFO/WARNING si hay degradación; OK va a DEBUG para no contaminar
+                    summary_msg = (
+                        f"[HEALTH_SUMMARY]\nmongo_sync_on_loop={snap['mongo_sync_on_loop']}\n"
+                        f"event_loop_blocked={snap['event_loop_blocked']}\nstatus={status_level}"
+                    )
+                    if status_level == "CRITICAL":
+                        logger.error(summary_msg)
+                    elif status_level == "DEGRADED":
+                        logger.warning(summary_msg)
+                    else:
+                        logger.debug(summary_msg)
+                except Exception:
+                    logger.exception("[HEALTH_SUMMARY] error=failed_to_emit")
+    finally:
+        probe.stop()
 
 async def threadpool_forensics_loop():
     """Forensics de threadpools: tamaño, ocupación aproximada y cola."""

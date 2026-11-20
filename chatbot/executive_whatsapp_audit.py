@@ -405,10 +405,12 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
                 }, {"$set": {
                     "messages.$.provider_echo_message_id": provider_id,
                     "messages.$.provider_echo_at": occurred.isoformat(),
+                    "messages.$.direction": "outgoing",
                 }})
                 return "echo_reconciled" if reconciled.modified_count == 1 else "duplicate_or_reassigned"
     entry = {
         "role": "agent" if parsed["from_me"] else "user",
+        "direction": "outgoing" if parsed["from_me"] else "incoming",
         "content": parsed["content"],
         "timestamp": occurred.isoformat(),
         "message_id": str(uuid4()),

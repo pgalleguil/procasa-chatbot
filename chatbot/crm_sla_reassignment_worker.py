@@ -814,9 +814,11 @@ def _management_protection(cycle: Mapping[str, Any], lead: Mapping[str, Any] | N
     human_after = bool(breach_at and any(value > breach_at for value in human_times))
     completed_marker = is_first_sla_management_completed(cycle, results, events)
     return ManagementProtection(
-        # A late human action remains audit evidence, but cannot retroactively
-        # protect a deadline that the worker was already entitled to enforce.
-        protected=(completed_marker or human_before) if breach_at else bool(human_times),
+        # A late human action cannot erase an already-breached SLA, but it
+        # must protect a still-active assignment from a new reassignment.
+        # The executor's final transaction gate already rejects such cases;
+        # excluding them here avoids repeated would_reassign/abort cycles.
+        protected=bool(human_times) or completed_marker,
         human_evidence_count=len(human_times),
         current_stop_at=current_stop,
         first_human_at=first_human,

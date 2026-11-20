@@ -6,7 +6,7 @@ from bson import ObjectId
 from fastapi import APIRouter, HTTPException, Request
 
 from .crm_executive_outbound import (
-    OutboundBlocked, eligible_manual_session, send_manual,
+    OutboundBlocked, eligible_requester_session, send_manual,
 )
 
 router = APIRouter()
@@ -32,12 +32,31 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
         db = get_db()
         lead = db["leads"].find_one({"_id": ObjectId(lead_id)})
         try:
-            info = eligible_manual_session(
-                db, lead=lead, actor_user_id=str(user.get("_id") or ""),
-            )
-            return {"available": True, "method": "executive_wasender_api"}
-        except OutboundBlocked:
-            return {"available": False, "method": "wa_me"}
+            info = eligible_requester_session(db, lead=lead, requester_user=user)
+            return {
+                "available": True, "method": "executive_wasender_api",
+                "delegated": info["delegated"], "sender_name": info["sender_name"],
+            }
+        except OutboundBlocked as exc:
+            # A configured sender with a failing gate must never silently
+            # switch to wa.me and bypass canonical API logging.
+            if exc.code in ("requester_not_authorized", "current_assignment_required",
+                            "executive_session_not_ready", "crm_direct_send_disabled",
+                            "customer_contact_blocked", "contact_not_verified",
+                            "ambiguous_or_unassigned_lead", "executive_inactive"):
+                method = "blocked"
+            elif exc.code == "executive_session_not_enabled":
+                # A registered but temporarily disabled/disallowed linked phone
+                # should NOT silently fall back to a different WhatsApp sender.
+                owner = str((lead or {}).get("lifecycle", {}).get("assigned_to_user_id") or "")
+                profile = db["usuarios"].find_one(
+                    {"_id": ObjectId(owner)}, {"wasender.session_id": 1},
+                ) if ObjectId.is_valid(owner) else None
+                sid = (profile or {}).get("wasender") or {}
+                method = "blocked" if sid.get("session_id") else "wa_me"
+            else:
+                method = "wa_me"
+            return {"available": False, "method": method}
 
     return await asyncio.to_thread(resolve)
 
@@ -54,9 +73,14 @@ async def crm_executive_whatsapp_send(request: Request):
     from .storage import get_db
 
     def invoke():
+        db = get_db()
+        if not ObjectId.is_valid(str(data["lead_id"])):
+            raise OutboundBlocked("invalid_lead_id")
+        lead = db["leads"].find_one({"_id": ObjectId(str(data["lead_id"]))})
+        info = eligible_requester_session(db, lead=lead, requester_user=user)
         return send_manual(
-            get_db(), lead_id=data["lead_id"],
-            actor_user_id=str(user.get("_id") or ""),
+            db, lead_id=data["lead_id"], actor_user_id=info["owner_id"],
+            requester_user=user,
             message=data["text"], idempotency_key=data["idempotency_key"],
         )
     try:
@@ -65,6 +89,7 @@ async def crm_executive_whatsapp_send(request: Request):
         raise HTTPException(status_code=409, detail=exc.code) from None
     if result.get("status") == "accepted" and result.get("recorded") is True:
         return {"status": "accepted", "provider_message_id": result["provider_message_id"],
+                "delegated": bool(result.get("delegated")),
                 "sla_management": result.get("sla_management", "unverified")}
     if result.get("status") == "duplicate":
         return {"status": "duplicate", "previous_state": result.get("previous_state")}

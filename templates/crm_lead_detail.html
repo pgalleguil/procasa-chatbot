@@ -5330,17 +5330,34 @@
             // Trust only the authenticated server capability check, not a
             // browser-supplied executive/session identifier or phone number.
             window.crmExecutiveDirectReady = false;
+            window.crmExecutiveWaMethod = target === 'lead' && newChannel === 'wa' ? 'checking' : 'wa_me';
+            window.crmExecutiveWaDelegated = false;
+            window.crmExecutiveWaSenderName = '';
             window.crmExecutiveOutboundAttemptKey = null;
             if (target === 'lead' && newChannel === 'wa') {
                 fetch('/api/crm/executive-whatsapp/available/{{ lead_id }}', {
                     credentials: 'same-origin'
-                }).then(r => r.ok ? r.json() : {available: false})
-                  .then(result => {
+                }).then(r => {
+                    if (!r.ok) throw new Error('availability_http_error');
+                    return r.json();
+                }).then(result => {
                     if (currentCommTarget === 'lead' && currentCommChannel === 'wa') {
                         window.crmExecutiveDirectReady = result.available === true;
-                        updateSendLink('lead', semState.currentCategory || 'contacto');
+                        window.crmExecutiveWaMethod = result.available === true
+                            ? 'executive_wasender_api'
+                            : result.method === 'wa_me' ? 'wa_me' : 'blocked';
+                        window.crmExecutiveWaDelegated = result.delegated === true;
+                        window.crmExecutiveWaSenderName = String(result.sender_name || '');
+                        updateSendLink('lead', semState.currentCategory || 'stage1');
                     }
-                  }).catch(() => { window.crmExecutiveDirectReady = false; });
+                }).catch(() => {
+                    if (currentCommTarget === 'lead' && currentCommChannel === 'wa') {
+                        // A failed API readiness check must not silently open wa.me.
+                        window.crmExecutiveWaMethod = 'blocked';
+                        window.crmExecutiveDirectReady = false;
+                        updateSendLink('lead', semState.currentCategory || 'stage1');
+                    }
+                });
             }
 
             // UX FIX: Clear message if switching target (Lead/Owner) OR channel (WA/Email)
@@ -5550,13 +5567,19 @@
             }
 
             // --- Standard Channel Logic ---
-            const directExecutiveWhatsApp = (
-                target === 'lead' && currentCommChannel === 'wa'
-                && window.crmExecutiveDirectReady === true
-            );
+            const leadWhatsApp = target === 'lead' && currentCommChannel === 'wa';
+            const whatsappMode = leadWhatsApp ? window.crmExecutiveWaMethod : 'wa_me';
+            const directExecutiveWhatsApp = leadWhatsApp && whatsappMode === 'executive_wasender_api';
+            const whatsappNotReady = leadWhatsApp && ['checking', 'blocked'].includes(whatsappMode);
             if (currentCommChannel === 'wa') {
-                btn.innerHTML = directExecutiveWhatsApp
-                    ? '<i class="fa-brands fa-whatsapp me-1"></i> Enviar desde mi WhatsApp'
+                btn.innerHTML = whatsappMode === 'checking'
+                    ? '<i class="fa-solid fa-spinner fa-spin me-1"></i> Verificando WaSender'
+                    : whatsappMode === 'blocked'
+                    ? '<i class="fa-solid fa-circle-exclamation me-1"></i> Envío API no disponible'
+                    : directExecutiveWhatsApp
+                    ? '<i class="fa-brands fa-whatsapp me-1"></i> ' +
+                      (window.crmExecutiveWaDelegated ? 'Enviar por WaSender de ' +
+                          (window.crmExecutiveWaSenderName || 'ejecutivo asignado') : 'Enviar desde mi WhatsApp')
                     : '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-envelope me-1"></i> Abrir Correo';
@@ -5564,7 +5587,7 @@
 
             // Validation for standard modes
             const hasMessage = msgBody.value.trim().length > 0;
-            if (hasMessage) {
+            if (hasMessage && !whatsappNotReady) {
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 if (currentCommChannel === 'wa') {
@@ -5587,6 +5610,11 @@
             btn.onclick = async function (e) {
                 e.preventDefault();
                 if (btn.dataset.sending === '1') return;
+                if (target === 'lead' && currentCommChannel === 'wa'
+                    && ['checking', 'blocked'].includes(window.crmExecutiveWaMethod)) {
+                    alert('El envío por WaSender no está disponible. No se abrirá WhatsApp externo.');
+                    return;
+                }
 
                 // 1. Obtener mensaje
                 const finalMsg = msgBody.value;
@@ -5671,7 +5699,9 @@
                             hideModal();
                             await refreshDetailManagementState();
                             const slaConfirmed = ['credited', 'already_managed'].includes(result.sla_management);
-                            alert(slaConfirmed
+                            alert(result.delegated === true
+                                ? 'Mensaje aceptado por WaSender desde el WhatsApp del ejecutivo asignado, guardado en el lead y atribuido a la gestión del supervisor. La entrega final puede tardar.'
+                                : slaConfirmed
                                 ? 'Mensaje aceptado por WaSender y guardado. La primera gestión ya consta en el CRM y el SLA está detenido. La entrega final puede tardar.'
                                 : 'Mensaje aceptado por WaSender y guardado. No se pudo confirmar que el SLA se haya detenido; revisa el estado de gestión del lead.');
                         } catch (err) {

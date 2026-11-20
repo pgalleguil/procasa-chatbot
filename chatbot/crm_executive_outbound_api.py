@@ -43,7 +43,8 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
             if exc.code in ("requester_not_authorized", "current_assignment_required",
                             "executive_session_not_ready", "crm_direct_send_disabled",
                             "customer_contact_blocked", "contact_not_verified",
-                            "ambiguous_or_unassigned_lead", "executive_inactive"):
+                            "ambiguous_or_unassigned_lead", "executive_inactive",
+                            "sender_identity_mismatch", "sender_identity_unverified"):
                 method = "blocked"
             elif exc.code == "executive_session_not_enabled":
                 # A registered but temporarily disabled/disallowed linked phone
@@ -56,7 +57,12 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
                 method = "blocked" if sid.get("session_id") else "wa_me"
             else:
                 method = "wa_me"
-            return {"available": False, "method": method}
+            return {
+                "available": False, "method": method,
+                "reason_code": exc.code if exc.code in {
+                    "sender_identity_mismatch", "sender_identity_unverified",
+                } else None,
+            }
 
     return await asyncio.to_thread(resolve)
 

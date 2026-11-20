@@ -334,3 +334,25 @@ def test_non_json_provider_rejection_keeps_http_diagnostics(context):
     )
     assert result == {"status": "rejected", "reason_code": "invalid_request"}
     assert next(iter(db[outgoing.OUTBOX].docs.values()))["provider_http_status"] == 400
+
+
+def test_ambiguous_success_http_without_provider_receipt_is_not_retryable(context):
+    db, _ = context
+    attempts = []
+    def post(*_a, **_kw):
+        attempts.append(1)
+        return SimpleNamespace(status_code=200, content=b"not-json",
+                               json=lambda: (_ for _ in ()).throw(ValueError("not json")))
+    first = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-ambiguous-2xx", post=post,
+    )
+    second = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-ambiguous-2xx", post=post,
+    )
+    assert first == {"status": "delivery_unknown"}
+    assert second["status"] == "duplicate"
+    assert len(attempts) == 1
+    assert next(iter(db[outgoing.OUTBOX].docs.values()))["provider_error_reason"] == "provider_response_unverifiable"
+    assert not db["leads"].document["messages"]

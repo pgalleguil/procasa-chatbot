@@ -42,7 +42,8 @@ def credit_verified_outbound(db, *, lead_id, assignment_cycle_id: str,
         "assigned_executive_id": owner,
         "assignment_cycle_id": cycle_id,
         "wasender_session_id": session,
-        "provider_message_id": provider_id,
+        "$or": [{"provider_message_id": provider_id},
+                {"crm_api_provider_message_id": provider_id}],
         "timestamp_source": {"$in": ["provider", "crm_api_accepted"]},
     }
     lead = db["leads"].find_one({

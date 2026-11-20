@@ -33,6 +33,61 @@ def _lead(db, lead_id="lead-p0", **extra):
 
 
 
+def test_integrity_bulk_alert_writes_match_original_and_keep_retry_idempotency():
+    """An ordered bulk only groups exact existing operations into fewer calls."""
+    from datetime import timedelta
+    from chatbot import crm_assignment_integrity as integrity
+
+    class RecordingBulkCollection:
+        def __init__(self, underlying):
+            self.underlying = underlying
+            self.bulk_calls = 0
+
+        def bulk_write(self, operations, *, ordered):
+            assert ordered is True
+            self.bulk_calls += 1
+            for op in operations:
+                self.underlying.update_one(op._filter, op._doc, upsert=op._upsert)
+
+    class DBProxy:
+        def __init__(self, inner):
+            self.inner = inner
+            self.bulk = RecordingBulkCollection(inner[integrity.ALERT_COLLECTION])
+
+        def __getitem__(self, name):
+            return self.bulk if name == integrity.ALERT_COLLECTION else self.inner[name]
+
+    bulk_mongo = mongomock.MongoClient().audit_bulk
+    sequential_mongo = mongomock.MongoClient().audit_serial
+    proxy = DBProxy(bulk_mongo)
+    when = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)
+    next_when = when + timedelta(minutes=1)
+    findings = [
+        {"lead_id": "one", "issue_code": "canonical_cycle_mirror_inconsistency",
+         "signature": "cycle-one", "issues": ["cycle_pointer_mismatch"]},
+        {"lead_id": "two", "issue_code": "owner_change_without_authorization",
+         "signature": "cycle-two"},
+    ]
+
+    for audit_time, run_id in [(when, "run-a"), (next_when, "run-a"), (next_when, "run-b")]:
+        assert integrity.persist_assignment_integrity_alerts(
+            proxy, findings, detected_at=audit_time,
+            detection_run_id=run_id, batch_size=2,
+        ) == len(findings)
+        for finding in findings:
+            integrity.record_assignment_integrity_alert(
+                sequential_mongo, lead_id=finding["lead_id"],
+                issue_code=finding["issue_code"], evidence=finding,
+                detected_at=audit_time, detection_run_id=run_id,
+            )
+
+    assert proxy.bulk.bulk_calls == 3
+    actual = sorted(list(bulk_mongo[integrity.ALERT_COLLECTION].find()), key=lambda x: x["_id"])
+    expected = sorted(list(sequential_mongo[integrity.ALERT_COLLECTION].find()), key=lambda x: x["_id"])
+    assert actual == expected
+    assert [item["observations"] for item in actual] == [2, 2]
+
+
 def test_integrity_reconciler_notification_index_preserves_all_findings(monkeypatch):
     """Unrelated notification history must not be inspected once per lead."""
     from chatbot import crm_assignment_integrity as integrity

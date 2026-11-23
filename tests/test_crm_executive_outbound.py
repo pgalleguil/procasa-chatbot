@@ -983,3 +983,214 @@ def test_crm_lead_detail_uses_api_only_for_pablo_link_for_everyone_else():
     assert "fetch('/api/crm/executive-whatsapp/available/" in text
     assert "window.crmExecutiveWaMethod !== 'executive_wasender_api'" in text
     assert "window.crmExecutiveOutboundAttemptKey" in text
+
+
+# Mariela is a second independently enabled pilot, not a global CRM rollout.
+@pytest.fixture
+def mariela_crm_api_rig(monkeypatch):
+    import mongomock
+    from chatbot import crm_executive_outbound_api as api
+    from chatbot import storage
+    db = mongomock.MongoClient().test
+    owner = api._MARIELA_USER_ID
+    session_id = api._MARIELA_SESSION
+    lead_id = ObjectId("6b046d3e1318876d74b06aee")
+    cycle_id = "mariela-cycle-20261123"
+    phone = "+56996762064"
+    db["leads"].insert_one({
+        "_id": lead_id, "phone": phone, "messages": [],
+        "lifecycle": {"assigned_to_user_id": owner,
+                      "current_assignment_cycle_id": cycle_id},
+    })
+    db["usuarios"].insert_one({
+        "_id": ObjectId(owner), "nombre": api._MARIELA_NAME,
+        "rol": "agente", "is_active": True,
+        "telefono": "+56938725886", "wasender": {"session_id": 133526},
+    })
+    cycle = {
+        "lead_id": lead_id, "assignment_cycle_id": cycle_id,
+        "assigned_to_user_id": owner, "cycle_status": "active",
+        "unassigned_at": None,
+    }
+    db["crm_assignment_cycles"].insert_one(cycle)
+    monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_MARIELA_CRM_WASENDER_API_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_CRM_DIRECT_SEND_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_CRM_SEND_SESSION_IDS", "133286")
+    monkeypatch.setattr(storage, "get_db", lambda: db)
+    monkeypatch.setattr(outgoing, "active_assignment_cycle",
+                        lambda _db, lid: cycle if lid == lead_id else None)
+    monkeypatch.setattr(outgoing, "_authorized_lead",
+                        lambda _db, phone, user_id:
+                        (db["leads"].find_one({"_id": lead_id}), cycle)
+                        if user_id == owner else None)
+    monkeypatch.setattr(outgoing, "_session",
+                        lambda _db, sid: {
+                            "session_id": sid, "user_id": owner,
+                            "capture_enabled": True, "token": "mariela-test-token",
+                        } if sid == session_id else None)
+    attested = []
+    def verify(session, *, expected_phone, force=False, get=None):
+        attested.append((session["session_id"], expected_phone, force))
+    monkeypatch.setattr(outgoing, "verify_provider_sender_identity", verify)
+    monkeypatch.setattr(api, "verify_provider_sender_identity", verify)
+    monkeypatch.setattr(api, "_session_status", lambda s, get=None: "connected")
+    monkeypatch.setattr(outgoing, "credit_verified_outbound", lambda *_a, **_kw: "credited")
+    user = db["usuarios"].find_one({"_id": ObjectId(owner)})
+    return api, db, user, lead_id, cycle_id, attested
+
+
+def test_mariela_flag_preserves_pablo_and_does_not_enable_other_agents(monkeypatch):
+    from chatbot import crm_executive_outbound_api as api
+    monkeypatch.setenv("PROCASA_EXEC_CRM_SEND_SESSION_IDS", "133286")
+    monkeypatch.delenv("PROCASA_MARIELA_CRM_WASENDER_API_ENABLED", raising=False)
+    monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
+    mariela = {"_id": ObjectId(api._MARIELA_USER_ID), "nombre": api._MARIELA_NAME,
+               "rol": "agente"}
+    pablo = {"_id": ObjectId(api._PABLO_USER_ID), "nombre": api._PABLO_NAME,
+             "rol": "agente"}
+    assert api._profile(mariela) is None
+    assert api._profile(pablo)["session"] == "133286"
+    assert outgoing._enabled_session_ids() == {"133286"}
+    monkeypatch.setenv("PROCASA_MARIELA_CRM_WASENDER_API_ENABLED", "1")
+    assert outgoing._enabled_session_ids() == {"133286", "133526"}
+    assert api._profile(mariela) == {
+        "id": api._MARIELA_USER_ID, "name": api._MARIELA_NAME,
+        "session": "133526",
+    }
+    assert api._profile({**mariela, "_id": ObjectId()}) is None
+    assert api._profile({**mariela, "nombre": "Erika Garrido"}) is None
+    assert api._profile({**mariela, "rol": "admin"}) is None
+    assert api._profile({"_id": ObjectId(), "nombre": "Susana Ensignia",
+                         "rol": "agente"}) is None
+
+
+def test_mariela_pilot_api_send_persists_only_her_sender_and_is_idempotent(
+        mariela_crm_api_rig, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    api, db, mariela, lead_id, cycle_id, attested = mariela_crm_api_rig
+    async def auth(_request):
+        return mariela
+    monkeypatch.setattr(api, "_user", auth)
+    seen = []
+    def safe_send(url, **kwargs):
+        seen.append((url, kwargs))
+        return SimpleNamespace(status_code=200, content=b"ok",
+            json=lambda: {"success": True, "data": {"msgId": "mariela-provider-001"}})
+    monkeypatch.setattr(outgoing.requests, "post", safe_send)
+    assert asyncio.run(api.crm_executive_whatsapp_available(object(), str(lead_id))) == {
+        "method": "executive_wasender_api", "available": True,
+    }
+    class Request:
+        async def json(self):
+            return {"lead_id": str(lead_id), "text": "Hola, prueba simulada",
+                    "idempotency_key": "mariela-message-idempotent-01"}
+    first = asyncio.run(api.crm_executive_whatsapp_send(Request()))
+    assert first["status"] == "accepted" and first["recorded"] is True
+    second = asyncio.run(api.crm_executive_whatsapp_send(Request()))
+    assert second["status"] == "duplicate"
+    assert len(seen) == 1
+    assert seen[0][0].endswith("/send-message")
+    assert seen[0][1]["headers"]["Authorization"] == "Bearer mariela-test-token"
+    assert seen[0][1]["json"]["to"] == "+56996762064"
+    msg = db["leads"].find_one({"_id": lead_id})["messages"]
+    assert len(msg) == 1
+    assert msg[0]["source"] == "crm_manual_api"
+    assert msg[0]["actor_id"] == api._MARIELA_USER_ID
+    assert msg[0]["assigned_executive_id"] == api._MARIELA_USER_ID
+    assert msg[0]["wasender_session_id"] == "133526"
+    assert msg[0]["provider_message_id"] == "mariela-provider-001"
+    assert db[outgoing.OUTBOX].count_documents({"state": "accepted", "canonical_recorded": True}) == 1
+    assert attested and all(x[0] == "133526" and x[1] == "+56938725886" for x in attested)
+
+
+def test_mariela_cannot_send_to_unassigned_lead_or_wrong_session(
+        mariela_crm_api_rig, monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    api, db, mariela, lead_id, cycle_id, _ = mariela_crm_api_rig
+    async def auth(_request):
+        return mariela
+    monkeypatch.setattr(api, "_user", auth)
+    fake_lead = db["leads"].find_one({"_id": lead_id})
+    fake_lead["lifecycle"]["assigned_to_user_id"] = api._PABLO_USER_ID
+    db["leads"].replace_one({"_id": lead_id}, fake_lead)
+    state = asyncio.run(api.crm_executive_whatsapp_available(object(), str(lead_id)))
+    assert state["method"] == "blocked"
+    assert db[outgoing.OUTBOX].count_documents({}) == 0
+    # Also refuse a token linked to the wrong session, without posting.
+    fake_lead["lifecycle"]["assigned_to_user_id"] = api._MARIELA_USER_ID
+    db["leads"].replace_one({"_id": lead_id}, fake_lead)
+    monkeypatch.setattr(outgoing, "_session",
+                        lambda db, sid: {"session_id": "133286",
+                                         "user_id": api._MARIELA_USER_ID,
+                                         "capture_enabled": True, "token": "wrong"}
+                        if sid == "133526" else None)
+    state = asyncio.run(api.crm_executive_whatsapp_available(object(), str(lead_id)))
+    assert state["method"] == "wa_me" and state["fallback"] is True
+    assert db[outgoing.OUTBOX].count_documents({}) == 0
+
+
+def test_mariela_off_preserves_manual_web_and_blocks_post(
+        mariela_crm_api_rig, monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    api, db, mariela, lead_id, _, _ = mariela_crm_api_rig
+    monkeypatch.setenv("PROCASA_MARIELA_CRM_WASENDER_API_ENABLED", "0")
+    async def auth(_request):
+        return mariela
+    monkeypatch.setattr(api, "_user", auth)
+    assert asyncio.run(api.crm_executive_whatsapp_available(object(), str(lead_id))) == {
+        "available": False, "method": "wa_me", "fallback": True,
+    }
+    class Request:
+        async def json(self):
+            return {"lead_id": str(lead_id), "text": "no send",
+                    "idempotency_key": "mariela-disabled-key"}
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(api.crm_executive_whatsapp_send(Request()))
+    assert err.value.status_code == 403
+    assert db[outgoing.OUTBOX].count_documents({}) == 0
+
+
+def test_mariela_unconfirmed_dispatch_is_scoped_and_no_manual_retry(
+        mariela_crm_api_rig):
+    api, db, mariela, lead_id, cycle_id, _ = mariela_crm_api_rig
+    db[outgoing.OUTBOX].insert_one({
+        "_id": "uncertain", "lead_id": lead_id,
+        "assignment_cycle_id": cycle_id,
+        "executive_id": api._MARIELA_USER_ID,
+        "state": "delivery_unknown", "session_id": "133526",
+    })
+    assert api._assess(db, user=mariela, lead_id=str(lead_id)) == {
+        "method": "blocked", "available": False,
+        "reason": "delivery_unconfirmed",
+    }
+    row = db[api._INCIDENTS].find_one({"reason": "delivery_unconfirmed"})
+    assert row["executive_user_id"] == api._MARIELA_USER_ID
+    assert row["session_id"] == "133526"
+    assert db[outgoing.OUTBOX].count_documents({}) == 1
+
+
+def test_mariela_disconnect_triggers_her_own_alert_and_safe_manual_fallback(
+        mariela_crm_api_rig, monkeypatch):
+    api, db, mariela, lead_id, _, _ = mariela_crm_api_rig
+    monkeypatch.setattr(api, "_session_status", lambda *_a, **_kw: "disconnected")
+    assert api._assess(db, user=mariela, lead_id=str(lead_id)) == {
+        "method": "wa_me", "available": False, "fallback": True,
+        "reason": "session_unavailable",
+    }
+    incident = db[api._INCIDENTS].find_one({"reason": "disconnected"})
+    assert incident["executive_user_id"] == api._MARIELA_USER_ID
+    assert incident["session_id"] == "133526"
+    assert db[api._INCIDENTS].count_documents({"executive_user_id": api._PABLO_USER_ID}) == 0
+
+
+def test_crm_mariela_button_is_scoped_to_exact_two_pilot_user_names():
+    from pathlib import Path
+    text = (Path(__file__).resolve().parent.parent /
+            "templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    assert "['Pablo Galleguillos', 'Mariela Arriagada']" in text
+    assert "fetch('/api/crm/executive-whatsapp/available/" in text
+    assert "fetch('/api/crm/executive-whatsapp/send'" in text

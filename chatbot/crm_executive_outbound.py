@@ -48,7 +48,12 @@ def _enabled_session_ids() -> set[str]:
     if (len(ids) > 10 or len(ids) != len(set(ids))
             or any(_SEND_IDS.fullmatch(x) is None for x in ids)):
         return set()
-    return set(ids)
+    allowed = set(ids)
+    # Only Mariela's dedicated opt-in adds her session. Do NOT modify the
+    # shared Render allowlist or authorize other executive tokens.
+    if os.getenv("PROCASA_MARIELA_CRM_WASENDER_API_ENABLED", "0") == "1":
+        allowed.add("133526")
+    return allowed
 
 
 # Two sessions have a documented cross-sender discrepancy in the provider logs.

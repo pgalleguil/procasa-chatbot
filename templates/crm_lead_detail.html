@@ -3990,8 +3990,8 @@
 
         // --- DATOS DEL CONTEXTO ---
         // Pilot UI hint only. The backend does not trust this value and checks
-        // immutable authenticated user ID + the exact WaSender session.
-        window.crmPabloApiPilot = {{ 'true' if user_name == 'Pablo Galleguillos' else 'false' }};
+        // immutable authenticated user ID, per-user opt-in and the exact WaSender session.
+        window.crmPabloApiPilot = {{ 'true' if user_name in ['Pablo Galleguillos', 'Mariela Arriagada'] else 'false' }};
         const leadData = {
             id: "{{ lead_id }}",
             nombre: "{{ lead.nombre }}",

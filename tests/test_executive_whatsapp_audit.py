@@ -138,6 +138,7 @@ def rig(monkeypatch):
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_ENABLED", "1")
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "1")
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_REVERSE_LID_ENABLED", "0")
+    audit._REVERSE_LID_CACHE.clear()
     monkeypatch.setenv(EXEC_ENV, session_config())
     app = FastAPI()
     app.include_router(audit.router)

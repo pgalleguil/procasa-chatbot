@@ -9,6 +9,9 @@ executive's credentials live in their OWN named Render JSON variable.
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import time
 from contextvars import ContextVar
 import json
 import logging
@@ -36,8 +39,10 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 _SESSION_ID = re.compile(r"^[1-9][0-9]{0,17}$")
 _LID = re.compile(r"^[0-9]{8,25}@lid$")
-_ALLOWED_EVENTS = frozenset({"messages.upsert", "messages.received"})
+_ALLOWED_EVENTS = frozenset({"messages.upsert", "messages.received", "message.sent"})
 _LID_DIAG_SESSION: ContextVar[str] = ContextVar("exec_lid_diag_session", default="")
+_REVERSE_LID_CACHE: dict[tuple[str, str, int], tuple[float, str | None]] = {}
+_REVERSE_LID_LOCK = threading.Lock()
 
 _DIAGNOSTIC_FLAG = "PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS"
 # These fixed reason codes are the ONLY values ever emitted. Neither content,
@@ -45,13 +50,15 @@ _DIAGNOSTIC_FLAG = "PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS"
 _DIAGNOSTIC_REASONS = frozenset({
     "event_unsupported", "data_missing", "message_shape_unknown",
     "message_batch_unsupported", "direction_missing", "non_direct_chat",
-    "event_direction_mismatch", "metadata_other",
+    "event_direction_mismatch", "outbound_not_confirmed", "metadata_other",
     "peer_phone_unresolved", "peer_lid_unresolved",
     "peer_not_authorized", "text_unavailable", "capture_disabled",
     "session_inactive", "stored", "echo_reconciled",
     "duplicate_or_reassigned", "stale", "unverified_timestamp", "invalid_id",
     "lid_token_unavailable", "lid_mapping_unavailable", "lid_response_invalid",
     "lid_transport_error", "lid_http_auth", "lid_http_not_found",
+    "lid_reverse_verified", "lid_reverse_miss", "lid_reverse_failed",
+    "lid_verified_cached",
     "lid_http_rate_limit", "lid_http_server", "lid_http_other", "lid_resolved",
 })
 
@@ -85,6 +92,38 @@ def _ignored(session: dict, reason: str) -> str:
     return "ignored"
 
 
+def _normalize_message_sent(payload: dict) -> dict:
+    """Normalize the two documented signed outbound payload shapes.
+
+    The flat success receipt implies outgoing only when status is explicitly
+    sent/delivered/read and contains a message ID, recipient and text.
+    Both shapes still pass the exact active-lead/session authorization.
+    """
+    if payload.get("event") != "message.sent":
+        return payload
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return payload
+    if isinstance(data.get("messages"), (dict, list)) or isinstance(data.get("key"), dict):
+        return payload
+    status = str(data.get("status") or "").strip().lower()
+    message_id = data.get("id")
+    peer = data.get("to")
+    content = data.get("content")
+    if (status not in ("sent", "delivered", "read")
+            or not isinstance(message_id, str) or not message_id.strip()
+            or not isinstance(peer, str) or not peer.strip()
+            or not isinstance(content, str) or not content.strip()):
+        return payload
+    # Keep the signed payload's original event and timestamp. Do not create a
+    # synthetic provider timestamp: _record_authorized will require a real one.
+    msg = {
+        "key": {"id": message_id, "fromMe": True, "remoteJid": peer},
+        "messageBody": content,
+    }
+    return {**payload, "data": {"messages": msg, "success": True}}
+
+
 def _metadata_skip_reason(payload: dict) -> str:
     """Explain shape rejection using only enum codes, not payload values."""
     if payload.get("event") not in _ALLOWED_EVENTS:
@@ -106,6 +145,11 @@ def _metadata_skip_reason(payload: dict) -> str:
         return "direction_missing"
     if payload.get("event") == "messages.received" and key["fromMe"]:
         return "event_direction_mismatch"
+    if payload.get("event") == "message.sent":
+        if not key["fromMe"]:
+            return "event_direction_mismatch"
+        if data.get("success") is False or str(data.get("status") or "").lower() in ("failed", "error"):
+            return "outbound_not_confirmed"
     vals = (key.get("remoteJid"), key.get("remoteJidAlt"),
             msg.get("chatId"), msg.get("from"))
     if any(("@g.us" in str(v or "") or "@newsletter" in str(v or "")
@@ -254,6 +298,12 @@ def _event_metadata(payload: dict) -> tuple[dict, dict, bool] | None:
         return None
     if event == "messages.received" and key["fromMe"]:
         return None
+    if event == "message.sent":
+        # Never attribute failed sends or inbound messages as an executive send.
+        if not key["fromMe"] or data.get("success") is False:
+            return None
+        if str(data.get("status") or "").lower() in ("failed", "error"):
+            return None
     # Nonpersonal conversations and newsletters never enter CRM.
     vals = (key.get("remoteJid"), key.get("remoteJidAlt"),
             message.get("chatId"), message.get("from"))
@@ -318,6 +368,121 @@ def _peer_phone(meta: tuple[dict, dict, bool], token: str | None) -> tuple[str |
     return None, None
 
 
+def _strict_remote_lid(key: dict, message: dict) -> str | None:
+    """Only the chat address is a peer LID; message.from can be our own LID."""
+    for value in (key.get("remoteJidAlt"), key.get("remoteJid"),
+                  message.get("chatId")):
+        lid = str(value or "").strip()
+        if _LID.fullmatch(lid):
+            return lid
+    return None
+
+
+def _lid_from_pn(phone: str, token: str | None) -> str | None:
+    """Independent, read-only reverse verification of one authorized lead PN.
+
+    This never queries arbitrary private contacts or stores provider responses.
+    """
+    if not token or not has_real_phone(phone):
+        return None
+    try:
+        pn = phone.lstrip("+") + "@s.whatsapp.net"
+        with httpx.Client(timeout=2.0, follow_redirects=False) as client:
+            response = client.get(
+                "https://www.wasenderapi.com/api/lid-from-pn/" +
+                quote(pn, safe="@"),
+                headers={"Authorization": "Bearer " + token},
+            )
+        if response.status_code != 200:
+            return None
+        body = response.json()
+        data = body.get("data") if isinstance(body, dict) and body.get("success") is True else None
+        lid = str(data.get("lid") or "") if isinstance(data, dict) else ""
+        return lid if _LID.fullmatch(lid) else None
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def _cached_lid_from_pn(phone: str, session: dict) -> str | None:
+    """Short-lived per-session lookup cache to protect provider rate limits."""
+    token = session.get("token")
+    if not token:
+        return None
+    key = (str(session["session_id"]), phone, hash(token))
+    now = time.monotonic()
+    with _REVERSE_LID_LOCK:
+        previous = _REVERSE_LID_CACHE.get(key)
+        if previous and previous[0] > now:
+            return previous[1]
+    value = _lid_from_pn(phone, token)
+    with _REVERSE_LID_LOCK:
+        if len(_REVERSE_LID_CACHE) >= 512:
+            _REVERSE_LID_CACHE.clear()
+        _REVERSE_LID_CACHE[key] = (time.monotonic() + (600 if value else 20), value)
+    return value
+
+
+def _verified_lid_phone(db, *, session: dict, lid: str) -> str | None:
+    """Match a remote LID only against leads already assigned to this executive.
+
+    Cached mappings were written ONLY after a signed, authorized message with
+    trustworthy provider time. For a new conversation, query a bounded cohort
+    of the most recently created assigned leads with the provider's inverse API.
+    Every match is reauthorized against the active assignment cycle.
+    Never fetch content from or persist a private/unmatched chat.
+    """
+    if not _LID.fullmatch(lid) or os.getenv("PROCASA_EXEC_AUDIT_REVERSE_LID_ENABLED", "1") != "1":
+        return None
+    owner = session["user_id"]
+    cached = list(db["leads"].find({
+        "lifecycle.assigned_to_user_id": owner,
+        "whatsapp_verified_lid.session_id": session["session_id"],
+        "whatsapp_verified_lid.lid": lid,
+    }, {"_id": 1, "phone": 1}).limit(2))
+    if len(cached) > 1:
+        return None
+    if len(cached) == 1:
+        phone = normalize_phone_strict(cached[0].get("phone"))
+        matched = _authorized_lead(db, phone=phone, user_id=owner) if phone else None
+        if matched and matched[0]["_id"] == cached[0]["_id"]:
+            _lid_diagnostic("lid_verified_cached")
+            return phone
+
+    # Restrict all provider lookups to already assigned business leads. Limit
+    # synchronous work to avoid blocking the webhook for old/unrelated LIDs.
+    recent = list(db["leads"].find({
+        "lifecycle.assigned_to_user_id": owner,
+        "lifecycle.current_assignment_cycle_id": {"$exists": True},
+        "phone": {"$type": "string"},
+    }, {"_id": 1, "phone": 1}).sort("_id", -1).limit(12))
+    candidates = []
+    seen = set()
+    for item in recent:
+        phone = normalize_phone_strict(item.get("phone"))
+        if not phone or phone in seen or not has_real_phone(phone):
+            continue
+        seen.add(phone)
+        verified = _authorized_lead(db, phone=phone, user_id=owner)
+        if verified and verified[0]["_id"] == item["_id"]:
+            candidates.append(phone)
+    if not candidates:
+        _lid_diagnostic("lid_reverse_miss")
+        return None
+    # Concurrency makes the 12 checked candidate leads a bounded network
+    # operation. No chat content, message IDs or unassigned contacts are read.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        observed = list(pool.map(
+            lambda candidate: _cached_lid_from_pn(candidate, session),
+            candidates,
+        ))
+    matches = [pn for pn, reported in zip(candidates, observed) if reported == lid]
+    if len(matches) == 1:
+        _lid_diagnostic("lid_reverse_verified")
+        return matches[0]
+    _lid_diagnostic("lid_reverse_miss" if not matches else "lid_reverse_failed")
+    return None
+
+
 def _authorized_lead(db, *, phone: str, user_id: str):
     """Match only one unambiguous canonical lead owned by this executive.
 
@@ -357,7 +522,8 @@ def _authorized_lead(db, *, phone: str, user_id: str):
 
 
 def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
-                       lead: dict, cycle: dict) -> str:
+                       lead: dict, cycle: dict,
+                       verified_lid: str | None = None) -> str:
     """Atomic compare-and-append; preserve previous chatbot/agent history."""
     timestamp = parsed.get("timestamp")
     occurred = coerce_utc_datetime(timestamp)
@@ -474,6 +640,12 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
                 "commercial_intelligence.pending_session_id": session["session_id"],
                 "commercial_intelligence.pending_at": datetime.now(timezone.utc),
                 **suppression,
+                **({"whatsapp_verified_lid": {
+                    "session_id": str(session["session_id"]),
+                    "lid": verified_lid,
+                    "cycle_id": cycle_id,
+                    "verified_at": occurred,
+                }} if verified_lid and _LID.fullmatch(verified_lid) else {}),
             },
         },
     )
@@ -516,6 +688,7 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
 
 
 def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
+    payload = _normalize_message_sent(payload)
     meta = _event_metadata(payload)
     if meta is None:
         return _ignored(session, _metadata_skip_reason(payload))
@@ -524,6 +697,14 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
     marker = _LID_DIAG_SESSION.set(str(session["session_id"]))
     try:
         phone, lid = _peer_phone(meta, session.get("token"))
+        if not phone:
+            # Identity fallback: exact equality of reverse PN->LID for an
+            # assigned lead. Never guess from phone fragments or message text.
+            peer_lid = _strict_remote_lid(meta[0], meta[1])
+            if peer_lid:
+                phone = _verified_lid_phone(db, session=session, lid=peer_lid)
+                if phone:
+                    lid = peer_lid
     finally:
         _LID_DIAG_SESSION.reset(marker)
     if not phone or not has_real_phone(phone):
@@ -545,7 +726,11 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
         return _ignored(session, "peer_not_authorized")
     lead, cycle = matched
     # Read message text only after exact-session, phone and ownership checks.
-    parsed = _parse_message(payload, phone, lid)
+    # Reuse the strict shared parser for the provider's documented direct-key
+    # message.sent envelope, without widening the office bot\u0027s webhook.
+    parse_payload = ({**payload, "event": "messages.upsert"}
+                     if payload.get("event") == "message.sent" else payload)
+    parsed = _parse_message(parse_payload, phone, lid)
     if parsed is None:
         return _ignored(session, "text_unavailable")
     if not write:
@@ -559,8 +744,10 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
     if not still_active:
         _audit_diagnostic(session, "session_inactive")
         return "inactive_session"
+    verified_lid = _strict_remote_lid(meta[0], meta[1])
     result = _record_authorized(
-        db, session=session, phone=phone, parsed=parsed, lead=lead, cycle=cycle
+        db, session=session, phone=phone, parsed=parsed, lead=lead, cycle=cycle,
+        verified_lid=verified_lid,
     )
     _audit_diagnostic(session, result)
     return result

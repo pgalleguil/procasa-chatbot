@@ -691,8 +691,12 @@ def test_pablo_pilot_available_and_manual_send_is_scoped_and_idempotent(monkeypa
     async def auth(_request):
         return user
     monkeypatch.setattr(api, "_user", auth)
-    db = object()
+    import mongomock
+    db = mongomock.MongoClient().test
+    db["leads"].insert_one({"_id": LEAD_ID, "lifecycle": {
+        "current_assignment_cycle_id": CYCLE}})
     monkeypatch.setattr(storage, "get_db", lambda: db)
+    monkeypatch.setattr(api, "_session_status", lambda _session, get=None: "connected")
     checks = []
     def eligible(given_db, *, user, lead_id):
         checks.append((given_db, str(user["_id"]), lead_id))
@@ -738,22 +742,27 @@ def test_pablo_pilot_fails_closed_when_session_or_lead_not_ready(monkeypatch):
     async def auth(_request):
         return user
     monkeypatch.setattr(api, "_user", auth)
-    monkeypatch.setattr(storage, "get_db", lambda: object())
+    import mongomock
+    db = mongomock.MongoClient().test
+    db["leads"].insert_one({"_id": LEAD_ID, "lifecycle": {
+        "current_assignment_cycle_id": CYCLE}})
+    monkeypatch.setattr(storage, "get_db", lambda: db)
     def fail(_db, *, user, lead_id):
         raise outgoing.OutboundBlocked("pilot_session_mismatch")
     monkeypatch.setattr(api, "_eligible_pablo", fail)
     monkeypatch.setattr(api, "send_manual",
                         lambda *_a, **_k: pytest.fail("No provider POST"))
     assert asyncio.run(api.crm_executive_whatsapp_available(object(), str(LEAD_ID))) == {
-        "available": False, "method": "blocked",
+        "available": False, "method": "wa_me",
+        "fallback": True, "reason": "session_unavailable",
     }
     class Request:
         async def json(self):
             return {"lead_id": str(LEAD_ID), "text": "Hola",
                     "idempotency_key": "attempt-12345"}
-    with pytest.raises(HTTPException) as exc:
-        asyncio.run(api.crm_executive_whatsapp_send(Request()))
-    assert exc.value.status_code == 409
+    assert asyncio.run(api.crm_executive_whatsapp_send(Request())) == {
+        "status": "manual_fallback", "method": "wa_me",
+    }
 
 
 def test_pablo_pilot_attests_own_phone_not_erika_account(monkeypatch):
@@ -778,6 +787,188 @@ def test_pablo_pilot_attests_own_phone_not_erika_account(monkeypatch):
     info = api._eligible_pablo(db, user=user, lead_id=str(LEAD_ID))
     assert info["session"]["session_id"] == "133286"
     assert attested == [("133286", "+56912345678", True)]
+
+
+
+@pytest.fixture
+def pablo_fallback_context(monkeypatch):
+    import mongomock
+    from chatbot import crm_executive_outbound_api as api, storage
+
+    db = mongomock.MongoClient().test
+    db["leads"].insert_one({"_id": LEAD_ID, "phone": "+56996762064", "lifecycle": {
+        "assigned_to_user_id": api._PABLO_USER_ID,
+        "current_assignment_cycle_id": CYCLE,
+    }})
+    user = {"_id": ObjectId(api._PABLO_USER_ID),
+            "nombre": api._PABLO_NAME, "rol": "agente"}
+    monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
+    monkeypatch.setattr(storage, "get_db", lambda: db)
+    monkeypatch.setattr(api, "_eligible_pablo", lambda _db, *, user, lead_id:
+                        {"session": {"session_id": "133286", "token": "fake-token"}})
+    return api, db, user
+
+
+@pytest.mark.parametrize("status", ["disconnected", "need_scan", "logged_out",
+                                    "connecting", "unavailable", "expired"])
+def test_preflight_offline_offers_manual_link_without_provider_send(
+        pablo_fallback_context, monkeypatch, status):
+    api, db, user = pablo_fallback_context
+    monkeypatch.setattr(api, "_session_status", lambda session, get=None: status)
+    assessed = api._assess(db, user=user, lead_id=str(LEAD_ID))
+    assert assessed == {
+        "available": False, "method": "wa_me", "fallback": True,
+        "reason": "session_unavailable",
+    }
+    assert db[api._INCIDENTS].count_documents({"status": "open"}) == 1
+    assert db[api.OUTBOX].count_documents({}) == 0
+
+
+def test_connected_session_resolves_preflight_incident(
+        pablo_fallback_context, monkeypatch):
+    api, db, user = pablo_fallback_context
+    monkeypatch.setattr(api, "_session_status",
+                        lambda session, get=None: "disconnected")
+    api._assess(db, user=user, lead_id=str(LEAD_ID))
+    monkeypatch.setattr(api, "_session_status",
+                        lambda session, get=None: "connected")
+    assert api._assess(db, user=user, lead_id=str(LEAD_ID)) == {
+        "available": True, "method": "executive_wasender_api",
+    }
+    assert db[api._INCIDENTS].count_documents({"status": "open"}) == 0
+    assert db[api._INCIDENTS].count_documents({"status": "resolved"}) == 1
+
+
+def test_uncertain_send_blocks_repeated_api_and_manual_fallback(
+        pablo_fallback_context, monkeypatch):
+    api, db, user = pablo_fallback_context
+    monkeypatch.setattr(api, "_session_status",
+                        lambda session, get=None: "connected")
+    db[api.OUTBOX].insert_one({
+        "_id": "lost_response", "lead_id": LEAD_ID,
+        "assignment_cycle_id": CYCLE,
+        "executive_id": api._PABLO_USER_ID, "state": "delivery_unknown",
+    })
+    assert api._assess(db, user=user, lead_id=str(LEAD_ID)) == {
+        "method": "blocked", "available": False,
+        "reason": "delivery_unconfirmed",
+    }
+    assert db[api._INCIDENTS].count_documents({"reason": "delivery_unconfirmed"}) == 1
+
+
+def test_absent_or_wrong_owner_is_blocked_without_manual_bypass(
+        pablo_fallback_context, monkeypatch):
+    api, db, user = pablo_fallback_context
+    def forbidden(_db, *, user, lead_id):
+        raise outgoing.OutboundBlocked("customer_contact_blocked")
+    monkeypatch.setattr(api, "_eligible_pablo", forbidden)
+    assert api._assess(db, user=user, lead_id=str(LEAD_ID)) == {
+        "available": False, "method": "blocked", "reason": "not_authorized",
+    }
+    assert db[api._INCIDENTS].count_documents({}) == 0
+
+
+def test_status_endpoint_handles_malformed_nonjson_and_disconnected(monkeypatch):
+    from chatbot import crm_executive_outbound_api as api
+    from types import SimpleNamespace
+
+    session = {"session_id": "133286", "token": "secret-must-not-log"}
+    response = lambda body, http=200: SimpleNamespace(
+        status_code=http, json=lambda: body,
+    )
+    assert api._session_status(session, get=lambda *a, **kw: response(
+        {"status": "connected"})) == "connected"
+    assert api._session_status(session, get=lambda *a, **kw: response(
+        {"status": "need_scan"})) == "need_scan"
+    assert api._session_status(session, get=lambda *a, **kw: response(
+        {"status": "connected"}, 503)) == "unavailable"
+    assert api._session_status(session, get=lambda *a, **kw: response(
+        {"status": "not_valid"})) == "unavailable"
+    assert api._session_status(session, get=lambda *a, **kw:
+                               (_ for _ in ()).throw(ValueError("bad JSON"))) == "unavailable"
+
+
+def test_explicit_provider_rejection_unlocks_manual_fallback_only_after_attempt(
+        pablo_fallback_context, monkeypatch):
+    import asyncio
+    from chatbot import storage
+    api, db, user = pablo_fallback_context
+    async def auth(_request):
+        return user
+    monkeypatch.setattr(api, "_user", auth)
+    monkeypatch.setattr(api, "_session_status", lambda session, get=None: "connected")
+    calls = []
+    def send(_db, **kw):
+        calls.append(kw)
+        return {"status": "rejected", "reason_code": "session_disconnected"}
+    monkeypatch.setattr(api, "send_manual", send)
+    class Request:
+        async def json(self):
+            return {"lead_id": str(LEAD_ID), "text": "Hola",
+                    "idempotency_key": "rejected-once-12345"}
+    result = asyncio.run(api.crm_executive_whatsapp_send(Request()))
+    assert result == {"status": "manual_fallback", "method": "wa_me"}
+    assert len(calls) == 1
+    assert db[api._INCIDENTS].count_documents({"status": "open"}) == 1
+
+
+def test_unknown_provider_result_is_never_manual_fallback(
+        pablo_fallback_context, monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    api, db, user = pablo_fallback_context
+    async def auth(_request):
+        return user
+    monkeypatch.setattr(api, "_user", auth)
+    monkeypatch.setattr(api, "_session_status", lambda session, get=None: "connected")
+    monkeypatch.setattr(api, "send_manual",
+                        lambda _db, **kw: {"status": "delivery_unknown"})
+    class Request:
+        async def json(self):
+            return {"lead_id": str(LEAD_ID), "text": "Hola",
+                    "idempotency_key": "uncertain-once-1234"}
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(api.crm_executive_whatsapp_send(Request()))
+    assert err.value.status_code == 503
+    assert err.value.detail == {"code": "delivery_unconfirmed"}
+    assert db[api._INCIDENTS].count_documents({"reason": "delivery_unconfirmed"}) == 1
+
+
+def test_admin_incidents_read_only_admin_and_deduplicated(
+        pablo_fallback_context, monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    api, db, user = pablo_fallback_context
+    api._incident(db, lead_id=str(LEAD_ID), reason="disconnected", phase="preflight")
+    api._incident(db, lead_id=str(LEAD_ID), reason="disconnected", phase="preflight")
+    assert db[api._INCIDENTS].count_documents({}) == 1
+    async def auth_admin(_request):
+        return {"_id": ObjectId(), "rol": "supervisor"}
+    monkeypatch.setattr(api, "_user", auth_admin)
+    result = asyncio.run(api.crm_executive_whatsapp_admin_incidents(object()))
+    assert result["count"] == 1
+    assert result["incidents"][0]["occurrences"] == 2
+    assert result["incidents"][0]["lead_id"] == str(LEAD_ID)
+    async def auth_exec(_request):
+        return user
+    monkeypatch.setattr(api, "_user", auth_exec)
+    with pytest.raises(HTTPException) as err:
+        asyncio.run(api.crm_executive_whatsapp_admin_incidents(object()))
+    assert err.value.status_code == 403
+
+
+def test_admin_banner_and_manual_fallback_are_scoped_in_templates():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    detail = (root / "templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    lead_list = (root / "templates/crm_leads_list.html").read_text(encoding="utf-8")
+    assert "window.crmExecutiveWaMethod = 'wa_me'" in detail
+    assert "result.status === 'manual_fallback'" in detail
+    assert "No repitas el envío" in detail
+    assert "window.open(url, '_blank')" in detail
+    assert "crmWhatsAppIncidents" in lead_list
+    assert "can_administer_leads" in lead_list
+    assert "/api/crm/executive-whatsapp/incidents" in lead_list
 
 
 def test_crm_lead_detail_uses_api_only_for_pablo_link_for_everyone_else():

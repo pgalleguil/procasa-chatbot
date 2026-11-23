@@ -556,7 +556,7 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
         return _ignored(session, "peer_not_authorized")
     lead, cycle = matched
     # Read message text only after exact-session, phone and ownership checks.
-    # Reuse the strict shared parser for the provider\u0027s documented direct-key
+    # Reuse the strict shared parser for the provider's documented direct-key
     # message.sent envelope, without widening the office bot\u0027s webhook.
     parse_payload = ({**payload, "event": "messages.upsert"}
                      if payload.get("event") == "message.sent" else payload)

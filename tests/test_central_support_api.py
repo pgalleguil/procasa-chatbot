@@ -37,9 +37,11 @@ def db():
             "opt_out": False, "criteria": {"parking_required": True},
         }},
     })
-    instance.crm_tasks.insert_one({
+    instance.crm_central_support_tasks.insert_one({
         "_id": TASK, "task_id": TASK, "lead_id": LEAD,
-        "assignment_cycle_id": CYCLE, "assigned_to_user_id": str(OWNER),
+        "assignment_cycle_id": CYCLE,
+        "related_executive_user_id": str(OWNER),
+        "recipient_user_id": str(PABLO),
         "phone": "+56911112222", "agent": "Hernán Castro",
         "type": "SEARCH_ALTERNATIVES", "source": "verified_active_search",
         "status": "pending", "note": "Estacionamiento necesario.",
@@ -51,6 +53,14 @@ def db():
 @pytest.fixture
 def user():
     return {"_id": PABLO, "nombre": "Pablo Galleguillos", "rol": "agente"}
+
+
+def test_executive_crm_tasks_are_never_created_for_support_requests(db):
+    assert db.crm_tasks.count_documents({}) == 0
+    assert db.crm_central_support_tasks.count_documents({
+        "recipient_user_id": str(PABLO),
+        "related_executive_user_id": str(OWNER),
+    }) == 1
 
 
 def test_support_view_requires_exact_verified_pablo_and_opt_in(db, user, monkeypatch):
@@ -102,7 +112,7 @@ def test_explicit_operator_send_uses_current_owner_and_verifies_recording(db, us
     assert calls[0]["actor_user_id"] == str(OWNER)
     assert calls[0]["requester_user"] is user
     assert calls[0]["central_support"] is True
-    assert db.crm_tasks.find_one({"_id": TASK})["last_central_send_provider_id"] == "provider-123"
+    assert db.crm_central_support_tasks.find_one({"_id": TASK})["last_central_send_provider_id"] == "provider-123"
 
 
 @pytest.mark.parametrize("change", [

@@ -216,6 +216,55 @@ def test_manual_outgoing_and_incoming_are_separately_attributed_and_deduped(rig)
     assert messages[2]["role"] == "user"
 
 
+def test_message_sent_direct_envelope_is_saved_and_deduped_against_upsert(rig):
+    db, cycle, client = rig
+    sent = event(from_me=True, event_name="message.sent",
+                 msg_id="manual-sent-001", text="Respuesta comercial")
+    direct = sent["data"].pop("messages")
+    sent["data"].update({"key": direct["key"],
+                         "message": {"conversation": "Respuesta comercial"},
+                         "success": True})
+    assert post(client, sent).json()["status"] == "stored"
+    # The same provider ID can also arrive through messages.upsert.
+    duplicate = event(from_me=True, msg_id="manual-sent-001",
+                      text="Respuesta comercial")
+    assert post(client, duplicate).json()["status"] == "duplicate_or_reassigned"
+    entries = db["leads"].lead["messages"]
+    assert len(entries) == 2
+    assert entries[-1]["role"] == "agent"
+    assert entries[-1]["source"] == "whatsapp_direct"
+    assert entries[-1]["provider_message_id"] == "manual-sent-001"
+
+
+@pytest.mark.parametrize("from_me,success,status", [
+    (False, True, None),
+    (True, False, None),
+    (True, None, "failed"),
+    (True, None, "error"),
+])
+def test_message_sent_rejects_inbound_and_failed_delivery(rig, from_me, success, status):
+    db, cycle, client = rig
+    p = event(from_me=from_me, event_name="message.sent", msg_id="no-write")
+    if success is not None:
+        p["data"]["success"] = success
+    if status is not None:
+        p["data"]["status"] = status
+    assert post(client, p).json()["status"] == "ignored"
+    assert db["leads"].update_calls == 0
+
+
+def test_message_sent_never_captures_private_contact_or_stale_cycle(rig):
+    db, cycle, client = rig
+    private = event(from_me=True, event_name="message.sent", phone=PRIVATE)
+    private["data"]["success"] = True
+    assert post(client, private).json()["status"] == "ignored"
+    cycle["assigned_to_user_id"] = str(ObjectId("69796bc4bbebf240378eb738"))
+    sent = event(from_me=True, event_name="message.sent", msg_id="old-owner")
+    sent["data"]["success"] = True
+    assert post(client, sent).json()["status"] == "ignored"
+    assert db["leads"].update_calls == 0
+
+
 def test_private_unassigned_and_group_conversations_never_saved(rig, caplog):
     db, cycle, client = rig
     assert post(client, event(from_me=True, phone=PRIVATE,
@@ -297,7 +346,7 @@ def test_malformed_event_and_missing_trustworthy_timestamp_ignored(rig):
     missing = event(from_me=True, msg_id="no-timestamp")
     missing.pop("timestamp")
     assert post(client, missing).json()["status"] == "unverified_timestamp"
-    other = event(from_me=True, event_name="message.sent")
+    other = event(from_me=False, event_name="message.sent")
     assert post(client, other).json()["status"] == "ignored"
     assert db["leads"].update_calls == 0
 

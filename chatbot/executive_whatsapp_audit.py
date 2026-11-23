@@ -18,7 +18,7 @@ import logging
 import os
 import re
 import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -58,7 +58,7 @@ _DIAGNOSTIC_REASONS = frozenset({
     "lid_token_unavailable", "lid_mapping_unavailable", "lid_response_invalid",
     "lid_transport_error", "lid_http_auth", "lid_http_not_found",
     "lid_reverse_verified", "lid_reverse_miss", "lid_reverse_failed",
-    "lid_verified_cached",
+    "lid_verified_cached", "lid_provider_unmapped", "lid_candidate_cohort_exceeded",
     "lid_http_rate_limit", "lid_http_server", "lid_http_other", "lid_resolved",
 })
 
@@ -342,6 +342,12 @@ def _pn_from_lid(lid: str, token: str | None) -> str | None:
             _lid_diagnostic(reason)
             return None
         data = result.json()
+        # WaSender can reply HTTP 200 with success=false and no mapping.
+        # Treat that as an unavailable provider association, not a malformed
+        # webhook; never log the LID, provider body, or customer metadata.
+        if isinstance(data, dict) and data.get("success") is False:
+            _lid_diagnostic("lid_provider_unmapped")
+            return None
         nested = data.get("data") if isinstance(data, dict) else None
         if not isinstance(nested, dict):
             _lid_diagnostic("lid_response_invalid")
@@ -448,13 +454,25 @@ def _verified_lid_phone(db, *, session: dict, lid: str) -> str | None:
             _lid_diagnostic("lid_verified_cached")
             return phone
 
-    # Restrict all provider lookups to already assigned business leads. Limit
-    # synchronous work to avoid blocking the webhook for old/unrelated LIDs.
-    recent = list(db["leads"].find({
+    # Search the CURRENT newly assigned business cohort, not the latest 12
+    # Mongo ObjectIds (which silently omitted assigned leads from the week
+    # sessions were linked). This bounded lookback never scans historical
+    # messages or unassigned personal contacts. A verified mapping persists
+    # beyond the lookback and is still checked against the active cycle.
+    assigned_since = datetime.now(timezone.utc) - timedelta(days=14)
+    cohort = list(db["leads"].find({
         "lifecycle.assigned_to_user_id": owner,
         "lifecycle.current_assignment_cycle_id": {"$exists": True},
+        "lifecycle.assigned_at": {"$gte": assigned_since},
         "phone": {"$type": "string"},
-    }, {"_id": 1, "phone": 1}).sort("_id", -1).limit(12))
+    }, {"_id": 1, "phone": 1, "lifecycle.assigned_at": 1}
+    ).sort("lifecycle.assigned_at", -1).limit(49))
+    # Avoid silently ignoring the 13th-48th business lead; fail closed if
+    # even the bounded recent cohort is too large for safe provider lookups.
+    if len(cohort) > 48:
+        _lid_diagnostic("lid_candidate_cohort_exceeded")
+        return None
+    recent = cohort
     candidates = []
     seen = set()
     for item in recent:
@@ -470,7 +488,7 @@ def _verified_lid_phone(db, *, session: dict, lid: str) -> str | None:
         return None
     # Concurrency makes the 12 checked candidate leads a bounded network
     # operation. No chat content, message IDs or unassigned contacts are read.
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         observed = list(pool.map(
             lambda candidate: _cached_lid_from_pn(candidate, session),
             candidates,

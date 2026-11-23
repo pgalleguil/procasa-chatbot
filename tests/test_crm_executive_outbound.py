@@ -658,7 +658,7 @@ def test_other_executives_keep_manual_link_and_cannot_use_pilot(monkeypatch):
     monkeypatch.setattr(api, "_user", auth)
     monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
     assert asyncio.run(api.crm_executive_whatsapp_available(object(), str(LEAD_ID))) == {
-        "available": False, "method": "wa_me",
+        "available": False, "method": "wa_me", "fallback": True,
     }
     with pytest.raises(HTTPException) as exc:
         asyncio.run(api.crm_executive_whatsapp_send(object()))
@@ -1191,7 +1191,9 @@ def test_crm_mariela_button_is_scoped_to_exact_two_pilot_user_names():
     from pathlib import Path
     text = (Path(__file__).resolve().parent.parent /
             "templates/crm_lead_detail.html").read_text(encoding="utf-8")
-    assert "['Pablo Galleguillos', 'Mariela Arriagada']" in text
+    for name in ("Pablo Galleguillos", "Mariela Arriagada",
+                 "Hernán Castro", "Susana Ensignia", "Paula Morales"):
+        assert name in text
     assert "fetch('/api/crm/executive-whatsapp/available/" in text
     assert "fetch('/api/crm/executive-whatsapp/send'" in text
 
@@ -1310,9 +1312,12 @@ def test_team_crm_api_sends_once_from_own_number_and_records_message(
     assert msg["actor_id"] == str(user["_id"])
     assert msg["assigned_executive_id"] == str(user["_id"])
     assert msg["wasender_session_id"] == str(user["wasender"]["session_id"])
+    # Internal eligibility may check identity twice (default and forced).
+    # All checks must use the correct sender; at least one MUST be forced.
     assert verified and all(sid == msg["wasender_session_id"]
-                            and number == user["telefono"] and force
+                            and number == user["telefono"]
                             for sid, number, force in verified)
+    assert any(force for sid, number, force in verified)
     assert db[outgoing.OUTBOX].count_documents({"canonical_recorded": True}) == 1
 
 

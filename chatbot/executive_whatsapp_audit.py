@@ -488,7 +488,9 @@ def _verified_lid_phone(db, *, session: dict, lid: str) -> str | None:
         return None
     # Concurrency makes the 12 checked candidate leads a bounded network
     # operation. No chat content, message IDs or unassigned contacts are read.
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    # WaSender recommends 1-5 concurrent requests per session. Never burst
+    # eight+ requests while trying to resolve a privacy-sensitive LID.
+    with ThreadPoolExecutor(max_workers=4) as pool:
         observed = list(pool.map(
             lambda candidate: _cached_lid_from_pn(candidate, session),
             candidates,

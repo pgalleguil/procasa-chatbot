@@ -172,10 +172,120 @@ def test_health_probe_checks_own_session_and_phone_only(db, monkeypatch):
     assert alerts._health(db, "133517", "Susana Ensignia") == "owner_phone_unavailable"
 
 
-def test_startup_and_shutdown_register_monitor_without_replacing_other_workers():
+def test_no_scheduled_monitor_or_background_session_polling_in_lifespan():
     from pathlib import Path
     source = (Path(__file__).resolve().parent.parent / "webhook.py").read_text(
         encoding="utf-8")
-    assert "exec_session_alert_task = asyncio.create_task(session_monitor_loop())" in source
-    assert "exec_session_alert_task.cancel()" in source
-    assert "exec_session_alert_task," in source
+    assert "exec_session_alert_task" not in source
+    assert "session_monitor_loop()" not in source
+    # The regular WhatsApp process is unaffected.
+    assert "non_hot_digest_task = asyncio.create_task(non_hot_digest_worker_loop())" in source
+
+
+def test_event_alert_never_queries_other_sessions_and_deduplicates(db, monkeypatch):
+    monkeypatch.setenv(alerts.FLAG, "1")
+    calls = []
+    def never_probe(*_args, **_kwargs):
+        pytest.fail("On-demand notification must not probe WaSender")
+    monkeypatch.setattr(alerts, "_health", never_probe)
+    async def send(number, message):
+        calls.append((number, message))
+        return {"success": True, "provider_message_id": "office-message-1"}
+    first = asyncio.run(alerts.notify_pablo_on_crm_failure(
+        session_id="133517", executive_name="Hernán Castro",
+        reason="session_unavailable", db=db, send=send,
+    ))
+    second = asyncio.run(alerts.notify_pablo_on_crm_failure(
+        session_id="133517", executive_name="Hernán Castro",
+        reason="session_unavailable", db=db, send=send,
+    ))
+    assert first == "accepted" and second == "already_notified"
+    assert len(calls) == 1
+    assert calls[0][0] == alerts.PABLO_PHONE
+    assert "Hernán Castro" in calls[0][1]
+    assert "133517" in calls[0][1]
+    assert db[alerts.STATE_COLLECTION].find_one(
+        {"_id": "133517"})["alert_delivery"] == "accepted"
+    # Recovery occurs after an already-verified connected CRM preflight.
+    alerts.mark_event_recovered(db, session_id="133517")
+    assert db[alerts.STATE_COLLECTION].find_one(
+        {"_id": "133517"})["alert_claimed"] is False
+    third = asyncio.run(alerts.notify_pablo_on_crm_failure(
+        session_id="133517", executive_name="Hernán Castro",
+        reason="session_disconnected", db=db, send=send,
+    ))
+    assert third == "accepted" and len(calls) == 2
+
+
+def test_event_alert_unknown_delivery_must_not_retry(db, monkeypatch):
+    monkeypatch.setenv(alerts.FLAG, "1")
+    attempts = []
+    async def send(number, message):
+        attempts.append(number)
+        return {"success": False, "provider_call_uncertain": True}
+    first = asyncio.run(alerts.notify_pablo_on_crm_failure(
+        session_id="133523", executive_name="Susana Ensignia",
+        reason="session_disconnected", db=db, send=send,
+    ))
+    again = asyncio.run(alerts.notify_pablo_on_crm_failure(
+        session_id="133523", executive_name="Susana Ensignia",
+        reason="session_disconnected", db=db, send=send,
+    ))
+    assert first == "delivery_unknown"
+    assert again == "already_notified"
+    assert attempts == [alerts.PABLO_PHONE]
+
+
+def test_event_alert_refuses_other_recipient_unknown_session_and_non_disconnect(
+        db, monkeypatch):
+    monkeypatch.setenv(alerts.FLAG, "1")
+    calls = []
+    async def send(number, message):
+        calls.append(number)
+        return {"success": True, "provider_message_id": "1"}
+    async def run(**kwargs):
+        return await alerts.notify_pablo_on_crm_failure(db=db, send=send, **kwargs)
+    assert asyncio.run(run(
+        session_id="133517", executive_name="Pablo Galleguillos",
+        reason="session_unavailable",
+    )) == "executive_not_authorized"
+    assert asyncio.run(run(
+        session_id="999999", executive_name="Hernán Castro",
+        reason="session_unavailable",
+    )) == "executive_not_authorized"
+    assert asyncio.run(run(
+        session_id="133517", executive_name="Hernán Castro",
+        reason="delivery_unconfirmed",
+    )) == "reason_not_alertable"
+    assert calls == []
+    db["usuarios"].update_one(
+        {"_id": alerts.PABLO_ID}, {"$set": {"telefono": "+56915555555"}})
+    result = asyncio.run(run(
+        session_id="133517", executive_name="Hernán Castro",
+        reason="session_unavailable",
+    ))
+    assert result == "recipient_unverified"
+    assert calls == []
+
+
+def test_event_alert_disabled_never_does_work(db, monkeypatch):
+    monkeypatch.setenv(alerts.FLAG, "0")
+    calls = []
+    async def send(number, message):
+        calls.append(number)
+        return {"success": True, "provider_message_id": "fake"}
+    assert asyncio.run(alerts.notify_pablo_on_crm_failure(
+        session_id="133517", executive_name="Hernán Castro",
+        reason="session_unavailable", db=db, send=send,
+    )) == "disabled"
+    assert calls == []
+    assert db[alerts.STATE_COLLECTION].count_documents({}) == 0
+
+
+def test_crm_get_preflight_event_is_the_trigger_not_a_timer():
+    from pathlib import Path
+    text = (Path(__file__).resolve().parent.parent /
+            "chatbot/crm_executive_outbound_api.py").read_text(encoding="utf-8")
+    assert "asyncio.create_task(notify_pablo_on_crm_failure(" in text
+    assert "_queue_operator_alert(user=user, reason=\"session_unavailable\")" in text
+    assert "mark_event_recovered(db, session_id=profile[\"session\"])" in text

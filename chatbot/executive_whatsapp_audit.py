@@ -92,6 +92,38 @@ def _ignored(session: dict, reason: str) -> str:
     return "ignored"
 
 
+def _normalize_message_sent(payload: dict) -> dict:
+    """Normalize the two documented signed outbound payload shapes.
+
+    The flat success receipt implies outgoing only when status is explicitly
+    sent/delivered/read and contains a message ID, recipient and text.
+    Both shapes still pass the exact active-lead/session authorization.
+    """
+    if payload.get("event") != "message.sent":
+        return payload
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return payload
+    if isinstance(data.get("messages"), (dict, list)) or isinstance(data.get("key"), dict):
+        return payload
+    status = str(data.get("status") or "").strip().lower()
+    message_id = data.get("id")
+    peer = data.get("to")
+    content = data.get("content")
+    if (status not in ("sent", "delivered", "read")
+            or not isinstance(message_id, str) or not message_id.strip()
+            or not isinstance(peer, str) or not peer.strip()
+            or not isinstance(content, str) or not content.strip()):
+        return payload
+    # Keep the signed payload's original event and timestamp. Do not create a
+    # synthetic provider timestamp: _record_authorized will require a real one.
+    msg = {
+        "key": {"id": message_id, "fromMe": True, "remoteJid": peer},
+        "messageBody": content,
+    }
+    return {**payload, "data": {"messages": msg, "success": True}}
+
+
 def _metadata_skip_reason(payload: dict) -> str:
     """Explain shape rejection using only enum codes, not payload values."""
     if payload.get("event") not in _ALLOWED_EVENTS:
@@ -656,6 +688,7 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
 
 
 def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
+    payload = _normalize_message_sent(payload)
     meta = _event_metadata(payload)
     if meta is None:
         return _ignored(session, _metadata_skip_reason(payload))

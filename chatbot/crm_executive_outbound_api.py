@@ -263,9 +263,13 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
     if not ObjectId.is_valid(lead_id):
         raise HTTPException(status_code=400, detail="lead_id_invalid")
     if _profile(user) is None:
-        # Non-pilot users retain their existing wa.me; Mariela remains manual
-        # while her separate enable flag is disabled.
-        return {"available": False, "method": "wa_me", "fallback": True}
+        # Everyone else retains wa.me; Mariela's UI can still show the safe
+        # manual link when her separate pilot is explicitly switched off.
+        if (str(user.get("_id") or "") == _MARIELA_USER_ID
+                and user.get("nombre") == _MARIELA_NAME
+                and user.get("rol") == "agente"):
+            return {"available": False, "method": "wa_me", "fallback": True}
+        return {"available": False, "method": "wa_me"}
     from .storage import get_db
     return await asyncio.to_thread(lambda: _assess(
         get_db(), user=user, lead_id=lead_id,

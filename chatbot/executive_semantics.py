@@ -111,6 +111,10 @@ def intent(text, previous_agent=""):
                 return "ASK_CONTACT"
     if any(re.search(r'\b(?:tienen (?:otra|otras|algo parecido)|busco (?:otra|otras)|otras? (?:opciones|alternativas)|ahora busco en|mejor en otra comuna)\b', p) and not p.startswith('no ') for p in parts):
         return "ASK_ALTERNATIVES"
+    # Insufficient budget declines this listing, not the entire search.
+    # A subsidy amount is not an approved buying-price ceiling.
+    if re.search(r'\bno (?:tengo|cuento con) (?:el )?presupuesto para (?:eso|esa|ese|esta|este)\b', msg):
+        return "PROPERTY_DECLINED"
     if re.search(r'\b(?:esa|esta|ese|este|la|el) (?:casa|propiedad|opcion|departamento) no me interesa|\bno me interesa (?:esa|esta|ese|este|la|el) (?:casa|propiedad|opcion|departamento)\b', msg):
         return "PROPERTY_DECLINED"
     if any(re.match(r'(?:me interesa|estoy interesad[oa]|sigo interesad[oa])\b', p) for p in parts):

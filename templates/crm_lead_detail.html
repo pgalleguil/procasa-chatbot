@@ -3991,7 +3991,7 @@
         // --- DATOS DEL CONTEXTO ---
         // Pilot UI hint only. The backend does not trust this value and checks
         // immutable authenticated user ID, per-user opt-in and the exact WaSender session.
-        window.crmPabloApiPilot = {{ 'true' if user_name in ['Pablo Galleguillos', 'Mariela Arriagada'] else 'false' }};
+        window.crmPabloApiPilot = {{ 'true' if user_name in ['Pablo Galleguillos', 'Mariela Arriagada', 'Hernán Castro', 'Susana Ensignia', 'Paula Morales'] else 'false' }};
         const leadData = {
             id: "{{ lead_id }}",
             nombre: "{{ lead.nombre }}",
@@ -5333,7 +5333,7 @@
         function openCommPanel(target, defaultChannel = 'wa') {
             const newChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
             // The pilot is presentation-only here: the API enforces the
-            // authenticated Pablo user ID, current owner/cycle and session.
+            // authenticated agent ID, current owner/cycle and verified sender.
             // Other executives always retain the existing wa.me link.
             window.crmExecutiveDirectReady = false;
             window.crmExecutiveWaMethod = (window.crmPabloApiPilot && target === 'lead' && newChannel === 'wa')

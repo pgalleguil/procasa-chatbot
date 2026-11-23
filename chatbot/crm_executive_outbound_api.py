@@ -1,8 +1,8 @@
-"""Two isolated WaSender CRM pilots: Pablo and Mariela, with safe contingency.
+"""Isolated named-executive WaSender CRM API with safe manual contingency.
 
-Every pilot is gated by authenticated identity, dedicated environment enable
-flag, exact provider session and verified sender phone. Others retain wa.me.
-An uncertain provider result never permits automatic or manual retry.
+Every session requires a dedicated opt-in, authenticated agent identity,
+current lead/cycle authorization, and verified provider sender phone.
+Other executives retain wa.me. Uncertain delivery never unlocks re-send.
 """
 from __future__ import annotations
 
@@ -34,6 +34,14 @@ _MARIELA_USER_ID = "6989c6309dd2ba54e478196c"
 _MARIELA_NAME = "Mariela Arriagada"
 _MARIELA_SESSION = "133526"
 _MARIELA_FLAG = "PROCASA_MARIELA_CRM_WASENDER_API_ENABLED"
+_ADDITIONAL_PROFILES = (
+    ("6a681413140190dde11f26d1", "Hernán Castro", "133517",
+     "PROCASA_HERNAN_CRM_WASENDER_API_ENABLED"),
+    ("6989c6309dd2ba54e478196b", "Susana Ensignia", "133523",
+     "PROCASA_SUSANA_CRM_WASENDER_API_ENABLED"),
+    ("699653a96a099d6e9612d519", "Paula Morales", "133527",
+     "PROCASA_PAULA_CRM_WASENDER_API_ENABLED"),
+)
 _INCIDENTS = "crm_executive_whatsapp_incidents"
 _UNCERTAIN_STATES = ("provider_attempt", "delivery_unknown",
                      "accepted_without_provider_id")
@@ -87,6 +95,11 @@ def _profile(user: dict) -> dict | None:
     if _mariela_enabled(user):
         return {"id": _MARIELA_USER_ID, "name": _MARIELA_NAME,
                 "session": _MARIELA_SESSION}
+    for uid, name, session, flag in _ADDITIONAL_PROFILES:
+        if (os.getenv(flag, "0") == "1"
+                and str(user.get("_id") or "") == uid
+                and user.get("nombre") == name and user.get("rol") == "agente"):
+            return {"id": uid, "name": name, "session": session}
     return None
 
 
@@ -239,7 +252,9 @@ def _assess(db, *, user: dict, lead_id: str, get=None) -> dict:
     try:
         info = (_eligible_pablo(db, user=user, lead_id=lead_id)
                 if profile["id"] == _PABLO_USER_ID
-                else _eligible_mariela(db, user=user, lead_id=lead_id))
+                else _eligible_mariela(db, user=user, lead_id=lead_id)
+                if profile["id"] == _MARIELA_USER_ID
+                else _eligible_executive(db, lead_id=lead_id, profile=profile))
     except OutboundBlocked as exc:
         if exc.code in _SAFE_PREFLIGHT_FALLBACK:
             _incident(db, lead_id=lead_id, reason=exc.code,
@@ -263,11 +278,15 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
     if not ObjectId.is_valid(lead_id):
         raise HTTPException(status_code=400, detail="lead_id_invalid")
     if _profile(user) is None:
-        # Everyone else retains wa.me; Mariela's UI can still show the safe
-        # manual link when her separate pilot is explicitly switched off.
-        if (str(user.get("_id") or "") == _MARIELA_USER_ID
-                and user.get("nombre") == _MARIELA_NAME
-                and user.get("rol") == "agente"):
+        # Named but disabled pilots keep the old link; all other agents' UI
+        # is unchanged and this GET never grants their POST permission.
+        known_disabled = (
+            (str(user.get("_id") or "") == _MARIELA_USER_ID
+             and user.get("nombre") == _MARIELA_NAME)
+            or any(str(user.get("_id") or "") == uid and user.get("nombre") == name
+                   for uid, name, _session, _flag in _ADDITIONAL_PROFILES)
+        )
+        if known_disabled and user.get("rol") == "agente":
             return {"available": False, "method": "wa_me", "fallback": True}
         return {"available": False, "method": "wa_me"}
     from .storage import get_db

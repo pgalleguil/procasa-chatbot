@@ -658,7 +658,7 @@ def test_other_executives_keep_manual_link_and_cannot_use_pilot(monkeypatch):
     monkeypatch.setattr(api, "_user", auth)
     monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
     assert asyncio.run(api.crm_executive_whatsapp_available(object(), str(LEAD_ID))) == {
-        "available": False, "method": "wa_me",
+        "available": False, "method": "wa_me", "fallback": True,
     }
     with pytest.raises(HTTPException) as exc:
         asyncio.run(api.crm_executive_whatsapp_send(object()))
@@ -1191,6 +1191,160 @@ def test_crm_mariela_button_is_scoped_to_exact_two_pilot_user_names():
     from pathlib import Path
     text = (Path(__file__).resolve().parent.parent /
             "templates/crm_lead_detail.html").read_text(encoding="utf-8")
-    assert "['Pablo Galleguillos', 'Mariela Arriagada']" in text
+    for name in ("Pablo Galleguillos", "Mariela Arriagada",
+                 "Hernán Castro", "Susana Ensignia", "Paula Morales"):
+        assert name in text
     assert "fetch('/api/crm/executive-whatsapp/available/" in text
     assert "fetch('/api/crm/executive-whatsapp/send'" in text
+
+
+# Each executive must be independently enabled and must use their own sender.
+_NEW_EXECUTIVES = (
+    ("6a681413140190dde11f26d1", "Hernán Castro", "133517",
+     "PROCASA_HERNAN_CRM_WASENDER_API_ENABLED", "+56984037477"),
+    ("6989c6309dd2ba54e478196b", "Susana Ensignia", "133523",
+     "PROCASA_SUSANA_CRM_WASENDER_API_ENABLED", "+56939125978"),
+    ("699653a96a099d6e9612d519", "Paula Morales", "133527",
+     "PROCASA_PAULA_CRM_WASENDER_API_ENABLED", "+56928065512"),
+)
+
+
+@pytest.mark.parametrize("uid,name,sid,flag,phone", _NEW_EXECUTIVES)
+def test_team_api_optin_independent_of_other_executives(
+        monkeypatch, uid, name, sid, flag, phone):
+    from chatbot import crm_executive_outbound_api as api
+    user = {"_id": ObjectId(uid), "nombre": name, "rol": "agente"}
+    monkeypatch.setenv("PROCASA_EXEC_CRM_SEND_SESSION_IDS", "133286")
+    monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_MARIELA_CRM_WASENDER_API_ENABLED", "1")
+    for row in _NEW_EXECUTIVES:
+        monkeypatch.delenv(row[3], raising=False)
+    assert api._profile(user) is None
+    assert outgoing._enabled_session_ids() == {"133286", "133526"}
+    monkeypatch.setenv(flag, "1")
+    assert api._profile(user) == {"id": uid, "name": name, "session": sid}
+    assert outgoing._enabled_session_ids() == {"133286", "133526", sid}
+    assert api._profile({**user, "_id": ObjectId()}) is None
+    assert api._profile({**user, "nombre": "Incorrecta"}) is None
+    assert api._profile({**user, "rol": "supervisor"}) is None
+    monkeypatch.setenv(flag, "true")
+    assert api._profile(user) is None
+
+
+@pytest.fixture
+def team_api_rig(monkeypatch, request):
+    import mongomock
+    from chatbot import crm_executive_outbound_api as api, storage
+    owner, name, sid, flag, phone = request.param
+    db = mongomock.MongoClient().test
+    lead_id = ObjectId("6b046d3e1318876d74b06ae0")
+    cycle_id = "team-cycle-20261123"
+    db["leads"].insert_one({"_id": lead_id, "phone": "+56996762064", "messages": [],
+        "lifecycle": {"assigned_to_user_id": owner,
+                      "current_assignment_cycle_id": cycle_id}})
+    db["usuarios"].insert_one({"_id": ObjectId(owner), "nombre": name,
+        "is_active": True, "rol": "agente", "telefono": phone,
+        "wasender": {"session_id": int(sid)}})
+    cycle = {"lead_id": lead_id, "assignment_cycle_id": cycle_id,
+             "assigned_to_user_id": owner, "unassigned_at": None,
+             "cycle_status": "active"}
+    db["crm_assignment_cycles"].insert_one(cycle)
+    monkeypatch.setenv("PROCASA_EXEC_CRM_DIRECT_SEND_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_CRM_SEND_SESSION_IDS", "133286")
+    for row in _NEW_EXECUTIVES:
+        monkeypatch.delenv(row[3], raising=False)
+    monkeypatch.setenv(flag, "1")
+    monkeypatch.setattr(storage, "get_db", lambda: db)
+    monkeypatch.setattr(outgoing, "active_assignment_cycle",
+                        lambda _db, lid: cycle if lid == lead_id else None)
+    monkeypatch.setattr(outgoing, "_authorized_lead",
+                        lambda _db, phone, user_id:
+                        (db["leads"].find_one({"_id": lead_id}), cycle)
+                        if user_id == owner else None)
+    monkeypatch.setattr(outgoing, "_session",
+                        lambda _db, requested: {
+                            "session_id": sid, "user_id": owner,
+                            "capture_enabled": True, "token": "fake-team-token",
+                        } if requested == sid else None)
+    sender_checks = []
+    def verify(session, *, expected_phone, force=False, get=None):
+        sender_checks.append((session["session_id"], expected_phone, force))
+    monkeypatch.setattr(outgoing, "verify_provider_sender_identity", verify)
+    monkeypatch.setattr(api, "verify_provider_sender_identity", verify)
+    monkeypatch.setattr(api, "_session_status", lambda _session, get=None: "connected")
+    monkeypatch.setattr(outgoing, "credit_verified_outbound", lambda *_a, **_kw: "credited")
+    return api, db, db["usuarios"].find_one({"_id": ObjectId(owner)}), lead_id, cycle_id, sender_checks
+
+
+@pytest.mark.parametrize("team_api_rig", _NEW_EXECUTIVES, indirect=True)
+def test_team_crm_api_sends_once_from_own_number_and_records_message(
+        team_api_rig, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    api, db, user, lead_id, cycle_id, verified = team_api_rig
+    async def auth(_req):
+        return user
+    monkeypatch.setattr(api, "_user", auth)
+    post_calls = []
+    def accepted(url, **kw):
+        post_calls.append((url, kw))
+        return SimpleNamespace(status_code=200, content=b"ok", json=lambda: {
+            "success": True, "data": {"msgId": "test-msg-" + user["nombre"]}})
+    monkeypatch.setattr(outgoing.requests, "post", accepted)
+    available = asyncio.run(api.crm_executive_whatsapp_available(object(), str(lead_id)))
+    assert available == {"available": True, "method": "executive_wasender_api"}
+    class Request:
+        async def json(self):
+            return {"lead_id": str(lead_id), "text": "Simulado, no real",
+                    "idempotency_key": "team-provider-receipt-20261123"}
+    first = asyncio.run(api.crm_executive_whatsapp_send(Request()))
+    second = asyncio.run(api.crm_executive_whatsapp_send(Request()))
+    assert first["status"] == "accepted" and first["recorded"] is True
+    assert second["status"] == "duplicate"
+    assert len(post_calls) == 1
+    assert post_calls[0][0].endswith("/send-message")
+    assert post_calls[0][1]["headers"]["Authorization"] == "Bearer fake-team-token"
+    assert post_calls[0][1]["json"]["to"] == "+56996762064"
+    lead = db["leads"].find_one({"_id": lead_id})
+    assert len(lead["messages"]) == 1
+    msg = lead["messages"][0]
+    assert msg["source"] == "crm_manual_api"
+    assert msg["actor_id"] == str(user["_id"])
+    assert msg["assigned_executive_id"] == str(user["_id"])
+    assert msg["wasender_session_id"] == str(user["wasender"]["session_id"])
+    # Internal eligibility may check identity twice (default and forced).
+    # All checks must use the correct sender; at least one MUST be forced.
+    assert verified and all(sid == msg["wasender_session_id"]
+                            and number == user["telefono"]
+                            for sid, number, force in verified)
+    assert any(force for sid, number, force in verified)
+    assert db[outgoing.OUTBOX].count_documents({"canonical_recorded": True}) == 1
+
+
+@pytest.mark.parametrize("team_api_rig", _NEW_EXECUTIVES, indirect=True)
+def test_team_connection_down_or_uncertain_never_sends_twice(
+        team_api_rig, monkeypatch):
+    api, db, user, lead_id, cycle_id, verified = team_api_rig
+    monkeypatch.setattr(api, "_session_status",
+                        lambda *_a, **_kw: "disconnected")
+    outcome = api._assess(db, user=user, lead_id=str(lead_id))
+    assert outcome == {"method": "wa_me", "available": False,
+                       "fallback": True, "reason": "session_unavailable"}
+    assert db[api._INCIDENTS].find_one({"reason": "disconnected"})["executive_user_id"] == str(user["_id"])
+    db[outgoing.OUTBOX].insert_one({"_id": "uncertain", "lead_id": lead_id,
+        "assignment_cycle_id": cycle_id, "executive_id": str(user["_id"]),
+        "session_id": str(user["wasender"]["session_id"]),
+        "state": "delivery_unknown"})
+    blocked = api._assess(db, user=user, lead_id=str(lead_id))
+    assert blocked == {"method": "blocked", "available": False,
+                       "reason": "delivery_unconfirmed"}
+
+
+def test_team_send_does_not_enable_erika_or_rocio_without_link(monkeypatch):
+    from chatbot import crm_executive_outbound_api as api
+    for row in _NEW_EXECUTIVES:
+        monkeypatch.setenv(row[3], "1")
+    assert api._profile({"_id": ObjectId("6989c6309dd2ba54e478196d"),
+                         "nombre": "Erika Garrido", "rol": "agente"}) is None
+    assert api._profile({"_id": ObjectId("6995e9be6a099d6e9612d120"),
+                         "nombre": "Rocío Aliaga", "rol": "agente"}) is None

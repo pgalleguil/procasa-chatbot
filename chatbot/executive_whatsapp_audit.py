@@ -796,13 +796,17 @@ def _diagnostic_readiness_session_ids() -> list[str]:
     return values
 
 
-def _mariela_provider_readiness(session: dict | None) -> str:
-    """Read-only status + verified sender identity for Mariela, never logs PII.
+def _provider_identity_readiness(session: dict | None, expected_session: str) -> str:
+    """Read-only WaSender identity and health; log only a fixed reason code.
 
-    Session configuration alone cannot prove that the WhatsApp number in the
-    provider actually matches the executive number in MongoDB.
+    No sends, lead conversations, client numbers, provider identifiers or tokens
+    enter the probe logs. The session's executive identity is DB-bound.
     """
     if session is None:
+        return "session_unavailable"
+    if expected_session not in {"133517", "133523", "133526", "133527"}:
+        return "session_unavailable"
+    if str(session.get("session_id") or "") != expected_session:
         return "session_unavailable"
     try:
         from .storage import get_db
@@ -812,7 +816,7 @@ def _mariela_provider_readiness(session: dict | None) -> str:
         from .crm_executive_outbound_api import _session_status
         owner = get_db()["usuarios"].find_one(
             {"_id": session["user_oid"], "rol": "agente", "is_active": True,
-             "wasender.session_id": {"$in": ["133526", 133526]}},
+             "wasender.session_id": {"$in": [expected_session, int(expected_session)]}},
             {"telefono": 1},
         )
         if not owner or not owner.get("telefono"):
@@ -828,6 +832,11 @@ def _mariela_provider_readiness(session: dict | None) -> str:
         return exc.code
     except Exception:
         return "probe_unavailable"
+
+
+def _mariela_provider_readiness(session: dict | None) -> str:
+    """Backwards-compatible Mariela-only probe for existing tests/operations."""
+    return _provider_identity_readiness(session, "133526")
 
 
 def _readiness_state(session: dict | None) -> str:
@@ -860,16 +869,24 @@ async def executive_audit_readiness_probe() -> None:
         else:
             state = _readiness_state(session)
         logger.info("EXEC_AUDIT_READY session=%s state=%s", session_id, state)
-        if session_id == "133526":
-            # Only Mariela: verify live provider connectivity and sender identity
-            # without sending a WhatsApp message or exposing token/phone/JSON.
+        if session_id in {"133517", "133523", "133527", "133526"}:
+            # Only named executive sessions; read-only provider attestation.
+            # No live messages or credentials in diagnostics.
             try:
-                provider_state = await asyncio.to_thread(
-                    _mariela_provider_readiness, session,
-                )
+                if session_id == "133526":
+                    provider_state = await asyncio.to_thread(
+                        _mariela_provider_readiness, session,
+                    )
+                else:
+                    provider_state = await asyncio.to_thread(
+                        _provider_identity_readiness, session, session_id,
+                    )
             except Exception:
                 provider_state = "probe_unavailable"
-            logger.info("MARIELA_PROVIDER_READY session=133526 state=%s", provider_state)
+            if session_id == "133526":
+                logger.info("MARIELA_PROVIDER_READY session=133526 state=%s", provider_state)
+            else:
+                logger.info("EXEC_PROVIDER_READY session=%s state=%s", session_id, provider_state)
 
 
 @router.on_event("startup")

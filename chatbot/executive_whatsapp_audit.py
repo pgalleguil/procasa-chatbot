@@ -176,14 +176,15 @@ def _variable_name_for_executive(name: object) -> str | None:
 
 
 def _capture_enabled_for_session(session_id: str, configured: bool) -> bool:
-    """Preserve all established capture gates; add opt-in for named sessions only.
+    """Preserve existing gates and independently enable only Mariela's session.
 
-    An additional explicit allowlist is a narrow operator override for a
-    session whose credential JSON cannot safely be read or rewritten from
-    administration tools. Existing sessions retain their current behavior.
-    Both the global write flag and current-assignment filter still apply.
-    Malformed additions grant no new permission.
+    Never overwrite a shared capture allowlist (which may contain other agents).
+    An enabled Mariela override still requires the global write flag, signed
+    webhook, active user, current assignment cycle and exact lead/peer match.
     """
+    if (session_id == "133526"
+            and os.getenv("PROCASA_EXEC_AUDIT_MARIELA_133526_CAPTURE_ENABLED", "0") == "1"):
+        return True
     extra_raw = os.getenv("PROCASA_EXEC_AUDIT_CAPTURE_EXTRA_SESSION_IDS", "")
     if extra_raw and len(extra_raw) <= 128:
         extras = [value.strip() for value in extra_raw.split(",")]
@@ -795,6 +796,40 @@ def _diagnostic_readiness_session_ids() -> list[str]:
     return values
 
 
+def _mariela_provider_readiness(session: dict | None) -> str:
+    """Read-only status + verified sender identity for Mariela, never logs PII.
+
+    Session configuration alone cannot prove that the WhatsApp number in the
+    provider actually matches the executive number in MongoDB.
+    """
+    if session is None:
+        return "session_unavailable"
+    try:
+        from .storage import get_db
+        from .crm_executive_outbound import (
+            OutboundBlocked, verify_provider_sender_identity,
+        )
+        from .crm_executive_outbound_api import _session_status
+        owner = get_db()["usuarios"].find_one(
+            {"_id": session["user_oid"], "rol": "agente", "is_active": True,
+             "wasender.session_id": {"$in": ["133526", 133526]}},
+            {"telefono": 1},
+        )
+        if not owner or not owner.get("telefono"):
+            return "owner_phone_unavailable"
+        verify_provider_sender_identity(
+            session, expected_phone=owner["telefono"], force=True,
+        )
+        provider_status = _session_status(session)
+        if provider_status != "connected":
+            return "provider_" + str(provider_status)[:35]
+        return "connected_identity_verified"
+    except OutboundBlocked as exc:
+        return exc.code
+    except Exception:
+        return "probe_unavailable"
+
+
 def _readiness_state(session: dict | None) -> str:
     """Non-secret configuration health; not a statement about provider delivery."""
     if session is None:
@@ -824,6 +859,16 @@ async def executive_audit_readiness_probe() -> None:
         else:
             state = _readiness_state(session)
         logger.info("EXEC_AUDIT_READY session=%s state=%s", session_id, state)
+        if session_id == "133526":
+            # Only Mariela: verify live provider connectivity and sender identity
+            # without sending a WhatsApp message or exposing token/phone/JSON.
+            try:
+                provider_state = await asyncio.to_thread(
+                    _mariela_provider_readiness, session,
+                )
+            except Exception:
+                provider_state = "probe_unavailable"
+            logger.info("MARIELA_PROVIDER_READY session=133526 state=%s", provider_state)
 
 
 @router.on_event("startup")

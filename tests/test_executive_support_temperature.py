@@ -84,7 +84,8 @@ def _support_case(db, *, test=False, opted_out=False):
     return {
         "task_id": "active_search:test12345678901234567890123",
         "type": "SEARCH_ALTERNATIVES", "lead_id": lead_id,
-        "assignment_cycle_id": cycle, "assigned_to_user_id": owner,
+        "assignment_cycle_id": cycle, "related_executive_user_id": owner,
+        "recipient_user_id": "69796bc4bbebf240378eb739",
         "agent": "Ejecutiva Demo", "phone": "56911111111",
         "note": "Buscar una propiedad con estacionamiento, cerca del Metro",
         "property_codes_to_review": [],
@@ -131,6 +132,20 @@ def test_admin_alert_never_contacts_opted_out_or_test_leads(monkeypatch):
             db, task, newly_created=True,
             send=lambda *_: (_ for _ in ()).throw(AssertionError("MUST NOT SEND")),
         ) == "not_eligible"
+    assert db.crm_central_support_alerts.count_documents({}) == 0
+
+
+def test_alert_rejects_executive_as_recipient_even_when_enabled(monkeypatch):
+    from chatbot import central_support_alerts as alerts
+
+    db = mongomock.MongoClient().wrong_recipient
+    task = _support_case(db)
+    task["recipient_user_id"] = "6a681413140190dde11f26d1"
+    monkeypatch.setenv(alerts.ENABLED_FLAG, "1")
+    assert notify_central_support_task(
+        db, task, newly_created=True,
+        send=lambda *_: (_ for _ in ()).throw(AssertionError("MUST NOT SEND")),
+    ) == "not_eligible"
     assert db.crm_central_support_alerts.count_documents({}) == 0
 
 

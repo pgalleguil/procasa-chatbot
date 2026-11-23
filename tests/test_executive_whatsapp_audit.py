@@ -137,6 +137,7 @@ def rig(monkeypatch):
     monkeypatch.setattr(storage, "get_db", lambda: db)
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_ENABLED", "1")
     monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_REVERSE_LID_ENABLED", "0")
     monkeypatch.setenv(EXEC_ENV, session_config())
     app = FastAPI()
     app.include_router(audit.router)
@@ -236,6 +237,7 @@ def test_manual_outgoing_and_incoming_are_separately_attributed_and_deduped(rig)
 
 
 def test_inverse_lid_verification_restores_outgoing_from_assigned_lead(rig, monkeypatch):
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_REVERSE_LID_ENABLED", "1")
     db, cycle, client = rig
     lid = "123456789012345@lid"
     monkeypatch.setattr(audit, "_pn_from_lid", lambda *_: None)
@@ -253,6 +255,7 @@ def test_inverse_lid_verification_restores_outgoing_from_assigned_lead(rig, monk
 
 
 def test_inbound_verified_phone_caches_peer_lid_for_next_outgoing(rig, monkeypatch):
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_REVERSE_LID_ENABLED", "1")
     db, cycle, client = rig
     lid = "123456789012345@lid"
     incoming = event(from_me=False, jid=lid, msg_id="lead-incoming")
@@ -268,6 +271,7 @@ def test_inbound_verified_phone_caches_peer_lid_for_next_outgoing(rig, monkeypat
 
 
 def test_inverse_lid_rejects_unknown_private_lid_and_stale_owner(rig, monkeypatch):
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_REVERSE_LID_ENABLED", "1")
     db, cycle, client = rig
     unknown = "123456789012346@lid"
     monkeypatch.setattr(audit, "_pn_from_lid", lambda *_: None)

@@ -83,7 +83,7 @@ def intent(text, previous_agent=""):
     if not re.match(r'^(?:no |nunca |tampoco )', msg) and re.search(
         r'\b(?:seria ideal si (?:tiene|tienen)|'
         r'(?:tiene|tienen) (?:algo|alguna propiedad) (?:parecido|similar)|'
-        r'busco algo mas cerca de|'
+        r'busco algo mas cerca del|busco algo mas cerca de|'
         r'busco algo (?:parecido|similar|diferente)|'
         r'busco (?:otra|otras) (?:propiedad|casa|departamento|opcion)|'
         r'quiero (?:otra|otras) (?:opcion|alternativa)|'

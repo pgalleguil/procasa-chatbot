@@ -1,4 +1,4 @@
-"""Idempotent human follow-up tasks for buyer-search matches.
+"""Administrator-only central-support tasks for buyer-search matches.
 
 Never sends WhatsApp; a price inferred from UF must be freshly verified
 before offering it. No SLA transitions or contact/marketing permissions change.
@@ -13,6 +13,8 @@ from .active_search import find_matching_inventory
 from .central_support_alerts import notify_central_support_task
 
 TASK_TYPE = "SEARCH_ALTERNATIVES"
+TASKS_COLLECTION = "crm_central_support_tasks"
+ADMIN_USER_ID = "69796bc4bbebf240378eb739"
 ACTIVE = "ACTIVE"
 
 
@@ -65,10 +67,10 @@ def ensure_followup_task(
     db, *, lead_id, cycle_id: str, owner_id: str,
     search: dict, now: datetime | None = None,
 ) -> str | None:
-    """One task per search revision/match set, never blindly resurrect closed.
+    """Only the administrator gets a support task; the lead still belongs to its executive.
 
-    The assigned executive manually approves and delivers an offer. An actual
-    customer send must go through the existing office/CRM authorization flow.
+    Separate storage avoids leaking an extra task into the executive's normal
+    CRM reminders/inbox. A deliberate customer send is independently authorized.
     """
     if (search.get("status") != ACTIVE
             or not search.get("followup_required")
@@ -88,7 +90,8 @@ def ensure_followup_task(
     record = {
         "_id": identity, "task_id": identity,
         "lead_id": lead_id, "assignment_cycle_id": cycle_id,
-        "assigned_to_user_id": owner_id,
+        "related_executive_user_id": owner_id,
+        "recipient_user_id": ADMIN_USER_ID,
         "phone": str(lead.get("phone") or "").replace("+", "").replace(" ", ""),
         "type": TASK_TYPE, "status": "pending",
         "execute_at": now, "created_at": now,
@@ -97,7 +100,7 @@ def ensure_followup_task(
         "property_codes_to_review": [x["property_code"] for x in matches],
         "source": "verified_active_search",
     }
-    result = db["crm_tasks"].update_one(
+    result = db[TASKS_COLLECTION].update_one(
         {"_id": identity},
         {"$setOnInsert": record}, upsert=True,
     )
@@ -113,7 +116,7 @@ def ensure_followup_task(
         # The waiting task is superseded by a match-specific action. A human
         # already-completed task is never reopened or rewritten.
         waiting_id = _task_id(lead_id, cycle_id, [], search.get("criteria"))
-        db["crm_tasks"].update_one(
+        db[TASKS_COLLECTION].update_one(
             {"_id": waiting_id, "status": "pending"},
             {"$set": {"status": "completed", "resolved_at": now,
                       "resolution": "inventory_candidates_found"}},
@@ -124,7 +127,7 @@ def ensure_followup_task(
 def refresh_active_search_batch(
     db, *, limit: int = 20, now: datetime | None = None,
 ) -> dict:
-    """Bounded re-evaluation so new verified inventory can unlock a follow-up.
+    """Bounded re-evaluation so new verified inventory can unlock admin support.
 
     Inbound messages create the original active search; this loop only reads
     that structured profile and the business inventory, not conversations.

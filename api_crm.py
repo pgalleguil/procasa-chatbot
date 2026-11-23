@@ -2265,7 +2265,7 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
     # lead was reassigned. This is one bounded, read-only query per detail page.
     from bson import ObjectId
     actor_ids = set()
-    for msg in lead.get("messages", []):
+    for msg in (lead.get("messages") or []):
         if not isinstance(msg, dict):
             continue
         role = str(msg.get("role") or "").lower()

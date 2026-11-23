@@ -9,6 +9,8 @@ executive's credentials live in their OWN named Render JSON variable.
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from contextvars import ContextVar
 import json
 import logging
@@ -52,6 +54,8 @@ _DIAGNOSTIC_REASONS = frozenset({
     "duplicate_or_reassigned", "stale", "unverified_timestamp", "invalid_id",
     "lid_token_unavailable", "lid_mapping_unavailable", "lid_response_invalid",
     "lid_transport_error", "lid_http_auth", "lid_http_not_found",
+    "lid_reverse_verified", "lid_reverse_miss", "lid_reverse_failed",
+    "lid_verified_cached",
     "lid_http_rate_limit", "lid_http_server", "lid_http_other", "lid_resolved",
 })
 
@@ -329,6 +333,102 @@ def _peer_phone(meta: tuple[dict, dict, bool], token: str | None) -> tuple[str |
     return None, None
 
 
+def _strict_remote_lid(key: dict, message: dict) -> str | None:
+    """Only the chat address is a peer LID; message.from can be our own LID."""
+    for value in (key.get("remoteJidAlt"), key.get("remoteJid"),
+                  message.get("chatId")):
+        lid = str(value or "").strip()
+        if _LID.fullmatch(lid):
+            return lid
+    return None
+
+
+def _lid_from_pn(phone: str, token: str | None) -> str | None:
+    """Independent, read-only reverse verification of one authorized lead PN.
+
+    This never queries arbitrary private contacts or stores provider responses.
+    """
+    if not token or not has_real_phone(phone):
+        return None
+    try:
+        pn = phone.lstrip("+") + "@s.whatsapp.net"
+        with httpx.Client(timeout=2.0, follow_redirects=False) as client:
+            response = client.get(
+                "https://www.wasenderapi.com/api/lid-from-pn/" +
+                quote(pn, safe="@"),
+                headers={"Authorization": "Bearer " + token},
+            )
+        if response.status_code != 200:
+            return None
+        body = response.json()
+        data = body.get("data") if isinstance(body, dict) and body.get("success") is True else None
+        lid = str(data.get("lid") or "") if isinstance(data, dict) else ""
+        return lid if _LID.fullmatch(lid) else None
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def _verified_lid_phone(db, *, session: dict, lid: str) -> str | None:
+    """Match a remote LID only against leads already assigned to this executive.
+
+    Cached mappings were written ONLY after a signed, authorized message with
+    trustworthy provider time. For a new conversation, query a bounded cohort
+    of the most recently created assigned leads with the provider's inverse API.
+    Every match is reauthorized against the active assignment cycle.
+    Never fetch content from or persist a private/unmatched chat.
+    """
+    if not _LID.fullmatch(lid):
+        return None
+    owner = session["user_id"]
+    cached = list(db["leads"].find({
+        "lifecycle.assigned_to_user_id": owner,
+        "whatsapp_verified_lid.session_id": session["session_id"],
+        "whatsapp_verified_lid.lid": lid,
+    }, {"_id": 1, "phone": 1}).limit(2))
+    if len(cached) > 1:
+        return None
+    if len(cached) == 1:
+        phone = normalize_phone_strict(cached[0].get("phone"))
+        matched = _authorized_lead(db, phone=phone, user_id=owner) if phone else None
+        if matched and matched[0]["_id"] == cached[0]["_id"]:
+            _lid_diagnostic("lid_verified_cached")
+            return phone
+
+    # Restrict all provider lookups to already assigned business leads. Limit
+    # synchronous work to avoid blocking the webhook for old/unrelated LIDs.
+    recent = list(db["leads"].find({
+        "lifecycle.assigned_to_user_id": owner,
+        "lifecycle.current_assignment_cycle_id": {"$exists": True},
+        "phone": {"$type": "string"},
+    }, {"_id": 1, "phone": 1}).sort("_id", -1).limit(12))
+    candidates = []
+    seen = set()
+    for item in recent:
+        phone = normalize_phone_strict(item.get("phone"))
+        if not phone or phone in seen or not has_real_phone(phone):
+            continue
+        seen.add(phone)
+        verified = _authorized_lead(db, phone=phone, user_id=owner)
+        if verified and verified[0]["_id"] == item["_id"]:
+            candidates.append(phone)
+    if not candidates:
+        _lid_diagnostic("lid_reverse_miss")
+        return None
+    # Concurrency makes the 12 checked candidate leads a bounded network
+    # operation. No chat content, message IDs or unassigned contacts are read.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        observed = list(pool.map(
+            lambda candidate: _lid_from_pn(candidate, session.get("token")),
+            candidates,
+        ))
+    matches = [pn for pn, reported in zip(candidates, observed) if reported == lid]
+    if len(matches) == 1:
+        _lid_diagnostic("lid_reverse_verified")
+        return matches[0]
+    _lid_diagnostic("lid_reverse_miss" if not matches else "lid_reverse_failed")
+    return None
+
+
 def _authorized_lead(db, *, phone: str, user_id: str):
     """Match only one unambiguous canonical lead owned by this executive.
 
@@ -368,7 +468,8 @@ def _authorized_lead(db, *, phone: str, user_id: str):
 
 
 def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
-                       lead: dict, cycle: dict) -> str:
+                       lead: dict, cycle: dict,
+                       verified_lid: str | None = None) -> str:
     """Atomic compare-and-append; preserve previous chatbot/agent history."""
     timestamp = parsed.get("timestamp")
     occurred = coerce_utc_datetime(timestamp)
@@ -485,6 +586,12 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
                 "commercial_intelligence.pending_session_id": session["session_id"],
                 "commercial_intelligence.pending_at": datetime.now(timezone.utc),
                 **suppression,
+                **({"whatsapp_verified_lid": {
+                    "session_id": str(session["session_id"]),
+                    "lid": verified_lid,
+                    "cycle_id": cycle_id,
+                    "verified_at": occurred,
+                }} if verified_lid and _LID.fullmatch(verified_lid) else {}),
             },
         },
     )
@@ -535,6 +642,14 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
     marker = _LID_DIAG_SESSION.set(str(session["session_id"]))
     try:
         phone, lid = _peer_phone(meta, session.get("token"))
+        if not phone:
+            # Identity fallback: exact equality of reverse PN->LID for an
+            # assigned lead. Never guess from phone fragments or message text.
+            peer_lid = _strict_remote_lid(meta[0], meta[1])
+            if peer_lid:
+                phone = _verified_lid_phone(db, session=session, lid=peer_lid)
+                if phone:
+                    lid = peer_lid
     finally:
         _LID_DIAG_SESSION.reset(marker)
     if not phone or not has_real_phone(phone):
@@ -574,8 +689,10 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
     if not still_active:
         _audit_diagnostic(session, "session_inactive")
         return "inactive_session"
+    verified_lid = _strict_remote_lid(meta[0], meta[1])
     result = _record_authorized(
-        db, session=session, phone=phone, parsed=parsed, lead=lead, cycle=cycle
+        db, session=session, phone=phone, parsed=parsed, lead=lead, cycle=cycle,
+        verified_lid=verified_lid,
     )
     _audit_diagnostic(session, result)
     return result

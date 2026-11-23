@@ -852,6 +852,7 @@ async def executive_audit_readiness_probe() -> None:
     from starting and remains visible as a non-secret reason code.
     """
     for session_id in _diagnostic_readiness_session_ids():
+        session = None
         try:
             session = await asyncio.to_thread(_session_from_storage, session_id)
         except Exception:

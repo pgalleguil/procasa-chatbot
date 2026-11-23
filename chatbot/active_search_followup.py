@@ -57,8 +57,8 @@ def _criteria_note(search: dict, matches: list[dict]) -> str:
                 "No afirmar que no existe stock si faltan comuna o presupuesto.")
     ids = ", ".join(x["property_code"] for x in matches[:5])
     return (prefix + f" Revisar candidatos internos {ids}. "
-            "Confirmar coincidencia de todos los requisitos, precio, "
-            "disponibilidad y permiso de contacto antes de ofrecer.")
+            "Es obligatorio confirmar disponibilidad, precio, coincidencia "
+            "de los requisitos y permiso de contacto antes de ofrecer.")
 
 
 def ensure_followup_task(

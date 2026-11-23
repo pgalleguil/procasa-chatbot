@@ -108,7 +108,7 @@ def _load_window(db, doc):
                 {"$eq": ["$$m.assignment_cycle_id", cycle]},
                 {"$eq": ["$$m.assigned_executive_id", str(lifecycle["assigned_to_user_id"])]},
                 {"$eq": ["$$m.wasender_session_id", str(marker["pending_session_id"])]},
-                {"$in": ["$$m.actor_type", ["customer", "human_agent"]]},
+                {"$in": ["$$m.actor_type", ["customer", "human_agent", "human_supervisor"]]},
             ]}}}}},
         {"$project": {"messages": 1, "position": {"$indexOfArray": ["$messages.message_id", checkpoint]}}},
         {"$project": {
@@ -126,7 +126,19 @@ def _load_window(db, doc):
     batch = pending[:WINDOW]
     doc["_checkpoint_missing"] = row.get("checkpoint_missing", False)
     doc["_processed_cursor"] = batch[-1]["message_id"] if batch else checkpoint
-    doc["messages"] = [{**m, "_context_only": True} for m in row.get("context", [])] + batch
+    # Supervised CRM outreach is a REAL outgoing on this executive's
+    # WaSender session, but the persisted audit actor remains human_supervisor.
+    # Normalize only the *in-memory business interpretation* to human_agent.
+    def classify_actor(row):
+        if (row.get("actor_type") == "human_supervisor"
+                and row.get("source") == "crm_admin_delegated_api"
+                and row.get("initiated_by_user_id")):
+            return {**row, "actor_type": "human_agent"}
+        return row
+    doc["messages"] = [
+        {**classify_actor(m), "_context_only": True}
+        for m in row.get("context", [])
+    ] + [classify_actor(m) for m in batch]
     return True
 
 
@@ -279,7 +291,19 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
         and str(m.get("assignment_cycle_id") or "") == cycle_id
         and str(m.get("assigned_executive_id") or "") == owner
         and str(m.get("wasender_session_id") or "") == session_id
-        and m.get("actor_type") in ("customer", "human_agent")
+        and m.get("actor_type") in ("customer", "human_agent", "human_supervisor")
+    ]
+    # When test doubles pass raw messages directly (without _load_window),
+    # apply the same in-memory supervised actor mapping.
+    turns = [
+        {**m, "actor_type": "human_agent"}
+        if (m.get("actor_type") == "human_supervisor"
+            and m.get("source") == "crm_admin_delegated_api"
+            and m.get("initiated_by_user_id")) else m
+        for m in turns
+        if m.get("actor_type") != "human_supervisor"
+        or (m.get("source") == "crm_admin_delegated_api"
+            and m.get("initiated_by_user_id"))
     ]
     if not turns:
         return _finish(db, doc, summary=None, status="no_eligible_turns")

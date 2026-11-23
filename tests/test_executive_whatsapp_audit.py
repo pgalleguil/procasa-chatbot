@@ -33,6 +33,9 @@ class Cursor(list):
     def limit(self, n):
         return Cursor(self[:n])
 
+    def sort(self, field, order):
+        return Cursor(self)
+
 
 class Users:
     def __init__(self):
@@ -70,6 +73,20 @@ class Leads:
         self.last_mutation = None
 
     def find(self, query, projection):
+        if "whatsapp_verified_lid.lid" in query:
+            mapping = self.lead.get("whatsapp_verified_lid") or {}
+            return Cursor([self.lead] if (
+                mapping.get("lid") == query["whatsapp_verified_lid.lid"]
+                and mapping.get("session_id") == query["whatsapp_verified_lid.session_id"]
+                and query["lifecycle.assigned_to_user_id"]
+                   == self.lead["lifecycle"]["assigned_to_user_id"]
+            ) else [])
+        if "lifecycle.assigned_to_user_id" in query and "phone" in query:
+            # The inverse resolution may probe only assigned business leads.
+            return Cursor([self.lead] if (
+                query["lifecycle.assigned_to_user_id"]
+                    == self.lead["lifecycle"]["assigned_to_user_id"]
+            ) else [])
         return Cursor([self.lead] if self.lead["phone"] in query["phone"]["$in"] else [])
 
     def find_one(self, query, projection=None):
@@ -90,6 +107,8 @@ class Leads:
                for m in self.lead["messages"]):
             return SimpleNamespace(modified_count=0)
         self.lead["messages"].append(entry)
+        if "whatsapp_verified_lid" in mutation.get("$set", {}):
+            self.lead["whatsapp_verified_lid"] = mutation["$set"]["whatsapp_verified_lid"]
         self.last_mutation = mutation
         return SimpleNamespace(modified_count=1)
 
@@ -214,6 +233,51 @@ def test_manual_outgoing_and_incoming_are_separately_attributed_and_deduped(rig)
     assert messages[2]["actor_type"] == "customer"
     assert messages[2]["actor_id"] is None
     assert messages[2]["role"] == "user"
+
+
+def test_inverse_lid_verification_restores_outgoing_from_assigned_lead(rig, monkeypatch):
+    db, cycle, client = rig
+    lid = "123456789012345@lid"
+    monkeypatch.setattr(audit, "_pn_from_lid", lambda *_: None)
+    queried = []
+    def inverse(phone, token):
+        queried.append(phone)
+        return lid if phone == PHONE and token == TOKEN else None
+    monkeypatch.setattr(audit, "_lid_from_pn", inverse)
+    response = post(client, event(from_me=True, jid=lid, msg_id="lid-outgoing"))
+    assert response.json()["status"] == "stored"
+    assert queried == [PHONE]  # Only the user's assigned business lead.
+    assert db["leads"].lead["messages"][-1]["source"] == "whatsapp_direct"
+    assert db["leads"].lead["whatsapp_verified_lid"]["lid"] == lid
+    assert db["leads"].lead["whatsapp_verified_lid"]["cycle_id"] == "cycle-A"
+
+
+def test_inbound_verified_phone_caches_peer_lid_for_next_outgoing(rig, monkeypatch):
+    db, cycle, client = rig
+    lid = "123456789012345@lid"
+    incoming = event(from_me=False, jid=lid, msg_id="lead-incoming")
+    incoming["data"]["messages"]["key"]["senderPn"] = PHONE.lstrip("+") + "@s.whatsapp.net"
+    assert post(client, incoming).json()["status"] == "stored"
+    monkeypatch.setattr(audit, "_pn_from_lid", lambda *_: None)
+    def should_not_call(*_):
+        raise AssertionError("cached signed mapping should avoid reverse provider call")
+    monkeypatch.setattr(audit, "_lid_from_pn", should_not_call)
+    outbound = event(from_me=True, jid=lid, msg_id="reply-after-inbound")
+    assert post(client, outbound).json()["status"] == "stored"
+    assert db["leads"].lead["messages"][-1]["actor_type"] == "human_agent"
+
+
+def test_inverse_lid_rejects_unknown_private_lid_and_stale_owner(rig, monkeypatch):
+    db, cycle, client = rig
+    unknown = "123456789012346@lid"
+    monkeypatch.setattr(audit, "_pn_from_lid", lambda *_: None)
+    monkeypatch.setattr(audit, "_lid_from_pn", lambda *_: "123456789012345@lid")
+    p = event(from_me=True, jid=unknown, msg_id="private-lid")
+    assert post(client, p).json()["status"] == "ignored"
+    cycle["assigned_to_user_id"] = "someone-else"
+    known = event(from_me=True, jid="123456789012345@lid", msg_id="old-cycle")
+    assert post(client, known).json()["status"] == "ignored"
+    assert db["leads"].update_calls == 0
 
 
 def test_message_sent_direct_envelope_is_saved_and_deduped_against_upsert(rig):

@@ -322,6 +322,43 @@ def test_message_sent_rejects_inbound_and_failed_delivery(rig, from_me, success,
     assert db["leads"].update_calls == 0
 
 
+def test_message_sent_flat_documented_receipt_saved_once(rig):
+    db, cycle, client = rig
+    flat = {
+        "event": "message.sent",
+        "timestamp": int(datetime.now(timezone.utc).timestamp()),
+        "data": {
+            "id": "flat-sent-100",
+            "to": PHONE,
+            "status": "sent",
+            "type": "text",
+            "content": "Respuesta desde WhatsApp",
+        },
+    }
+    assert post(client, flat).json()["status"] == "stored"
+    assert post(client, flat).json()["status"] == "duplicate_or_reassigned"
+    assert db["leads"].lead["messages"][-1]["content"] == "Respuesta desde WhatsApp"
+    assert len(db["leads"].lead["messages"]) == 2
+
+
+def test_message_sent_flat_rejects_failed_private_and_missing_sender_evidence(rig):
+    db, cycle, client = rig
+    good = {
+        "event": "message.sent",
+        "timestamp": int(datetime.now(timezone.utc).timestamp()),
+        "data": {"id": "flat-2", "to": PRIVATE, "status": "sent",
+                 "type": "text", "content": "PRIVATE MESSAGE"},
+    }
+    assert post(client, good).json()["status"] == "ignored"
+    good["data"]["to"] = PHONE
+    good["data"]["status"] = "failed"
+    assert post(client, good).json()["status"] == "ignored"
+    good["data"]["status"] = "sent"
+    del good["data"]["id"]
+    assert post(client, good).json()["status"] == "ignored"
+    assert db["leads"].update_calls == 0
+
+
 def test_message_sent_never_captures_private_contact_or_stale_cycle(rig):
     db, cycle, client = rig
     private = event(from_me=True, event_name="message.sent", phone=PRIVATE)

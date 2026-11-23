@@ -18,6 +18,7 @@ from pymongo import ReturnDocument
 from .crm_metrics import active_assignment_cycle
 from .executive_conversation_intelligence import VERSION, classify_hybrid
 from .executive_opportunities import merge_opportunities
+from .executive_temperature import classify_executive_priority
 from .active_search import capture_active_search, find_matching_inventory
 from .active_search_followup import ensure_followup_task, refresh_active_search_batch
 
@@ -324,6 +325,11 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     if doc.get("_checkpoint_missing"):
         summary["needs_review"] = True
         summary["history_incomplete"] = True
+    # Commercial temperature uses durable customer opportunities, never the
+    # office chatbot's initial HOT/COLD or an agent-only message.
+    summary["executive_priority"] = classify_executive_priority(
+        summary, ledger, doc.get("_active_search"),
+    )
     # Revoked capture, reassignment, or a disabled user during a model request
     # must also prevent publishing its result.
     if not _is_authorized(db, doc):

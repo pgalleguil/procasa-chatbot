@@ -1044,3 +1044,67 @@ def test_mariela_startup_probe_reports_provider_only_as_non_secret_state(
     assert TOKEN not in caplog.text
     assert SECRET not in caplog.text
     assert db["leads"].update_calls == 0
+
+
+@pytest.mark.parametrize("session_id", ["133517", "133523", "133527"])
+def test_named_executive_probe_attests_registered_phone_and_connection(
+        rig, monkeypatch, session_id):
+    from chatbot import crm_executive_outbound, crm_executive_outbound_api
+    db, _cycle, _client = rig
+    verified = []
+    def verify(session, *, expected_phone, force=False):
+        verified.append((session["session_id"], expected_phone, force))
+    monkeypatch.setattr(db["usuarios"], "find_one",
+                        lambda *_args, **_kwargs: {"telefono": "+56911112222"})
+    monkeypatch.setattr(crm_executive_outbound, "verify_provider_sender_identity", verify)
+    monkeypatch.setattr(crm_executive_outbound_api, "_session_status",
+                        lambda *_args, **_kwargs: "connected")
+    session = {"user_oid": USER, "session_id": session_id, "token": TOKEN}
+    assert audit._provider_identity_readiness(session, session_id) == "connected_identity_verified"
+    assert verified == [(session_id, "+56911112222", True)]
+    monkeypatch.setattr(crm_executive_outbound_api, "_session_status",
+                        lambda *_args, **_kwargs: "disconnected")
+    assert audit._provider_identity_readiness(session, session_id) == "provider_disconnected"
+    assert audit._provider_identity_readiness(session, "133526") == "session_unavailable"
+
+
+@pytest.mark.parametrize("session_id", ["133517", "133523", "133527"])
+def test_named_executive_provider_sender_mismatch_is_non_send_block(
+        rig, monkeypatch, session_id):
+    from chatbot import crm_executive_outbound, crm_executive_outbound_api
+    db, _cycle, _client = rig
+    monkeypatch.setattr(db["usuarios"], "find_one",
+                        lambda *_args, **_kwargs: {"telefono": "+56911112222"})
+    def mismatch(*_args, **_kwargs):
+        raise crm_executive_outbound.OutboundBlocked("sender_identity_mismatch")
+    monkeypatch.setattr(crm_executive_outbound, "verify_provider_sender_identity", mismatch)
+    def status(*_args, **_kw):
+        pytest.fail("Must not test provider status after wrong-sender identity")
+    monkeypatch.setattr(crm_executive_outbound_api, "_session_status", status)
+    assert audit._provider_identity_readiness(
+        {"user_oid": USER, "session_id": session_id, "token": TOKEN},
+        session_id,
+    ) == "sender_identity_mismatch"
+
+
+def test_named_provider_startup_diagnostics_never_send_or_expose_token(
+        rig, monkeypatch, caplog):
+    import asyncio
+    db, _cycle, _client = rig
+    caplog.set_level("INFO")
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS",
+                       "133517,133523,133526,133527")
+    monkeypatch.setattr(audit, "_session_from_storage",
+                        lambda sid: {"session_id": sid, "capture_enabled": True,
+                                     "token": TOKEN, "user_oid": USER})
+    monkeypatch.setattr(audit, "_provider_identity_readiness",
+                        lambda session, sid: "connected_identity_verified")
+    monkeypatch.setattr(audit, "_mariela_provider_readiness",
+                        lambda session: "connected_identity_verified")
+    asyncio.run(audit.executive_audit_readiness_probe())
+    for sid in ("133517", "133523", "133527"):
+        assert f"EXEC_PROVIDER_READY session={sid} state=connected_identity_verified" in caplog.text
+    assert "MARIELA_PROVIDER_READY session=133526 state=connected_identity_verified" in caplog.text
+    assert TOKEN not in caplog.text
+    assert SECRET not in caplog.text
+    assert db["leads"].update_calls == 0

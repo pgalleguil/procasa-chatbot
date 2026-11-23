@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>PROCASA · Apoyo comercial central</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c1424;--panel:#111f33;--line:#2b405c;--muted:#a7b9ce;--ink:#f0f6ff;--accent:#6ea4ff;--green:#79d9b0;--warn:#ffcf81}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top right,#163055,var(--bg) 55%);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
+    a{color:var(--accent)}main{max-width:1190px;margin:auto;padding:30px 20px 60px}header{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:24px}
+    h1{margin:3px 0 10px;font-size:clamp(1.55rem,3vw,2.2rem)}h2{font-size:1.1rem;margin:0 0 12px}
+    p{margin:6px 0;color:var(--muted)}.brand{font-size:.77rem;letter-spacing:.17em;color:var(--accent);font-weight:800;text-transform:uppercase}
+    .board{display:grid;grid-template-columns:minmax(290px,1fr) minmax(360px,1.2fr);gap:20px}.panel{background:rgba(17,31,51,.96);border:1px solid var(--line);border-radius:18px;padding:22px;box-shadow:0 12px 32px rgba(0,0,0,.1)}
+    .muted{color:var(--muted);font-size:.89rem}.hint{font-size:.86rem;color:var(--muted)}.count{font-size:.86rem;padding:4px 10px;border-radius:12px;border:1px solid var(--line)}
+    button,.pill{border:1px solid var(--line);background:#1b304a;color:var(--ink);border-radius:10px;padding:10px 14px;font:inherit;cursor:pointer}
+    button:hover:not(:disabled){border-color:var(--accent)}button:disabled{opacity:.5;cursor:not-allowed}
+    button.primary{background:#2566bf;border-color:#4387dc;font-weight:750;width:100%;padding:13px}
+    input,textarea{background:#0c192b;color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:12px;width:100%;font:inherit}
+    textarea{min-height:160px;resize:vertical}input:focus,textarea:focus{outline:2px solid #668fed;outline-offset:2px}
+    label{display:block;font-size:.88rem;margin:14px 0 7px;font-weight:650}.toprow{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .task{padding:15px;text-align:left;width:100%;margin-top:10px;border-radius:12px;background:#152941}
+    .task.selected{outline:2px solid var(--accent);border-color:var(--accent)}
+    .tag{color:var(--green);font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+    .task strong,.task .muted{display:block}.task .muted{margin-top:7px}
+    .detail{background:#0d1c30;border:1px solid var(--line);border-radius:12px;padding:15px;margin-top:8px;white-space:pre-wrap;overflow-wrap:anywhere}
+    .confirm{display:flex;gap:12px;align-items:flex-start;font-size:.9rem;color:var(--muted);margin:18px 0}.confirm input{width:20px;height:20px;flex:none;margin:2px 0}
+    .status{padding:12px 14px;border:1px solid var(--line);border-radius:11px;color:var(--muted);margin:14px 0;min-height:44px}.status.error{color:#ffada8;border-color:#7d3d46}.status.success{color:var(--green);border-color:#35675b}
+    .links{display:flex;flex-wrap:wrap;gap:12px;margin-top:11px}.empty{color:var(--muted);padding:18px;border:1px dashed var(--line);border-radius:12px;margin-top:15px}
+    .rules{margin-top:20px;font-size:.86rem}.rules strong{color:var(--ink)}
+    @media(max-width:850px){header{display:block}.board{grid-template-columns:1fr}main{padding:18px 12px} .panel{padding:17px}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="brand">PROCASA / Supervisión comercial</div>
+      <h1>Apoyo central de oportunidades</h1>
+      <p>Necesidades detectadas en conversaciones autorizadas con ejecutivos. Búsqueda asistida y envío controlado desde la sesión del asesor asignado.</p>
+    </div>
+    <div class="links"><a href="/crm">Volver a leads</a><button type="button" id="refresh">Actualizar tareas</button></div>
+  </header>
+  <section class="board">
+    <div class="panel">
+      <div class="toprow"><h2>Solicitudes por atender</h2><span class="count" id="count">—</span></div>
+      <p class="hint">Las tareas nuevas se generan por requisitos de búsqueda, no por una consulta periódica a WaSender.</p>
+      <div id="tasks" aria-live="polite"><div class="empty">Cargando solicitudes verificadas…</div></div>
+    </div>
+    <div class="panel">
+      <h2>Preparar apoyo al ejecutivo</h2>
+      <p class="hint">Selecciona un caso para revisar las características solicitadas y redactar una respuesta comercial. Ningún mensaje se envía sin tu confirmación.</p>
+      <div id="selection" class="detail">Selecciona una solicitud en la columna izquierda.</div>
+      <div class="links" id="links"></div>
+      <label for="message">Mensaje al cliente</label>
+      <textarea id="message" placeholder="Escribe un mensaje personalizado con la propiedad verificada y su enlace público." disabled maxlength="2000"></textarea>
+      <div class="muted">Remitente: exclusivamente el WhatsApp WaSender del ejecutivo actualmente asignado al lead. Se comprueba su identidad en el servidor antes de enviar.</div>
+      <label class="confirm">
+        <input type="checkbox" id="confirm" disabled>
+        <span>He verificado la propiedad propuesta, su disponibilidad, precio y requisitos del cliente. Confirmo enviar este texto desde el número del ejecutivo asignado.</span>
+      </label>
+      <button class="primary" id="send" type="button" disabled>Confirmar y enviar desde WhatsApp del ejecutivo</button>
+      <div class="status" id="status" role="status" aria-live="polite">No se enviarán mensajes automáticamente.</div>
+      <div class="rules"><strong>Control de seguridad:</strong> la sesión se toma del ciclo activo en CRM, no de esta pantalla; un envío de resultado incierto se bloquea para evitar duplicados. Las búsquedas con datos incompletos deben calificarse antes de ofrecer un inmueble.</div>
+    </div>
+  </section>
+</main>
+<script>
+(() => {
+  'use strict';
+  const el = id => document.getElementById(id);
+  const taskContainer=el('tasks'), msg=el('message'), confirm=el('confirm'), send=el('send');
+  const status=el('status');
+  let rows=[],selected=null,requestKey=null,locked=false,sending=false;
+  const txt = (value) => String(value==null ? '' : value);
+  function statusMessage(value,type=''){
+    status.textContent=value;status.className='status'+(type?' '+type:'');
+  }
+  function canSend(){
+    send.disabled = !selected || !msg.value.trim() || !confirm.checked || locked || sending;
+  }
+  function resetDraft(){
+    if(locked)return;
+    requestKey = null;
+    confirm.checked=false;
+    canSend();
+  }
+  function child(parent,tag,textContent,cls=''){
+    const node=document.createElement(tag);
+    if(cls)node.className=cls;
+    node.textContent=txt(textContent);
+    parent.appendChild(node);
+    return node;
+  }
+  function select(item){
+    if(sending)return;
+    selected=item;locked=false;requestKey=null;
+    msg.disabled=false;msg.value='';confirm.disabled=false;confirm.checked=false;
+    el('selection').textContent='';
+    child(el('selection'),'div','Ejecutivo: '+item.executive,'tag');
+    child(el('selection'),'div','Teléfono lead: '+item.phone);
+    child(el('selection'),'div',item.note,'muted');
+    el('links').replaceChildren();
+    const link=child(el('links'),'a','Abrir lead en CRM');
+    link.href='/crm/lead-id/'+encodeURIComponent(item.lead_id);
+    link.target='_blank';link.rel='noopener noreferrer';
+    statusMessage('Revisa el historial y confirma cada característica antes de enviar.');
+    render();canSend();
+  }
+  function render(){
+    taskContainer.replaceChildren();
+    el('count').textContent=rows.length+' tareas';
+    if(!rows.length){child(taskContainer,'div','No hay tareas de búsqueda activas disponibles.','empty');return;}
+    rows.forEach(item=>{
+      const button=child(taskContainer,'button','','task'+(selected&&selected.task_id===item.task_id?' selected':''));
+      button.type='button';
+      child(button,'div',item.executive || 'Ejecutivo asignado','tag');
+      child(button,'strong',item.phone || 'Teléfono no disponible');
+      child(button,'div',item.note,'muted');
+      if(item.property_codes_to_review && item.property_codes_to_review.length){
+        child(button,'div','Candidatos internos (requieren verificación): '+item.property_codes_to_review.join(', '),'muted');
+      }
+      button.addEventListener('click',()=>select(item));
+    });
+  }
+  async function refresh(){
+    if(sending)return;
+    el('refresh').disabled=true;
+    try{
+      const response=await fetch('/api/crm/central-support/tasks',{credentials:'same-origin',headers:{'Accept':'application/json'}});
+      if(!response.ok)throw Error('Acceso o consulta no disponible ('+response.status+').');
+      const body=await response.json();
+      rows=Array.isArray(body.tasks)?body.tasks:[];
+      if(selected){selected=rows.find(x=>x.task_id===selected.task_id)||null;}
+      if(!selected){msg.disabled=true;confirm.disabled=true;send.disabled=true;msg.value='';confirm.checked=false;el('selection').textContent='Selecciona una solicitud en la columna izquierda.';el('links').replaceChildren();}
+      render();
+    }catch(err){statusMessage(err.message,'error');}
+    finally{el('refresh').disabled=false;}
+  }
+  msg.addEventListener('input',resetDraft);
+  confirm.addEventListener('change',canSend);
+  el('refresh').addEventListener('click',refresh);
+  send.addEventListener('click',async()=>{
+    if(send.disabled||!selected||sending)return;
+    sending=true;canSend();
+    if(!requestKey){
+      requestKey='central-'+(crypto.randomUUID?crypto.randomUUID().replace(/-/g,''):String(Date.now())+'-'+String(Math.random()).slice(2));
+    }
+    statusMessage('Verificando autorización, propietario del lead e identidad de WaSender…');
+    try{
+      const response=await fetch('/api/crm/central-support/send',{
+        method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json','Accept':'application/json','X-Requested-With':'XMLHttpRequest'},
+        body:JSON.stringify({lead_id:selected.lead_id,task_id:selected.task_id,text:msg.value,
+          idempotency_key:requestKey,confirmed:true})
+      });
+      const body=await response.json().catch(()=>({}));
+      if(response.ok&&body.status==='accepted'&&body.recorded===true){
+        locked=true;statusMessage('Mensaje aceptado por el proveedor y registrado en el lead. No se enviará una copia.', 'success');
+      }else if(response.ok&&body.status==='duplicate'){
+        locked=true;statusMessage('Ya existe un intento con esta clave. Revisa el CRM antes de cualquier acción adicional.','error');
+      }else{
+        locked=true;statusMessage('No se confirmó el envío ('+txt(body.status||response.status)+'). Revisa WaSender y el CRM; no reintentes automáticamente.','error');
+      }
+    }catch(err){locked=true;statusMessage('Resultado del envío desconocido. No reintentes: verifica en el CRM antes de actuar.','error');}
+    finally{sending=false;canSend();}
+  });
+  refresh();
+})();
+</script>
+</body>
+</html>

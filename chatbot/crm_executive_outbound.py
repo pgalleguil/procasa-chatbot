@@ -57,7 +57,7 @@ _PROTECTED_SENDER_SESSIONS = frozenset({"133517", "133526"})
 _WA_USER_JID = re.compile(r"^([1-9][0-9]{7,14})(?::[0-9]{1,5})?@(s\.whatsapp\.net|c\.us)$")
 
 
-def verify_provider_sender_identity(session: dict, *, expected_phone: str, get=None) -> None:
+def verify_provider_sender_identity(session: dict, *, expected_phone: str, get=None, force: bool = False) -> None:
     """Read-only, fail-closed sender attestation before any provider SEND.
 
     WaSender /api/user is scoped to the bearer session token. The session_id
@@ -65,7 +65,7 @@ def verify_provider_sender_identity(session: dict, *, expected_phone: str, get=N
     No API token, provider user ID, phone or personal details are ever logged.
     """
     sid = str((session or {}).get("session_id") or "")
-    if sid not in _PROTECTED_SENDER_SESSIONS:
+    if not force and sid not in _PROTECTED_SENDER_SESSIONS:
         return
     token = str((session or {}).get("token") or "")
     digits = re.sub(r"[^0-9]", "", str(expected_phone or ""))

@@ -3988,7 +3988,11 @@
         logAction('PAGE_VIEW', { timestamp: new Date().toISOString() });
 
         // --- DATOS DEL CONTEXTO ---
+        // Pilot UI hint only. The backend does not trust this value and checks
+        // immutable authenticated user ID + the exact WaSender session.
+        window.crmPabloApiPilot = {{ 'true' if user_name == 'Pablo Galleguillos' else 'false' }};
         const leadData = {
+            id: "{{ lead_id }}",
             nombre: "{{ lead.nombre }}",
             telefono: "{{ lead.phone }}",
             email: "{{ lead.email }}",
@@ -5327,13 +5331,15 @@
         // --- FUNCIONES SISTEMA DE COMUNICACIÓN (LOGGING CORREGIDO) ---
         function openCommPanel(target, defaultChannel = 'wa') {
             const newChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
-            // Temporary policy: manual CRM WhatsApp opens a compose link only.
-            // No backend API preflight and no automatic WhatsApp send.
+            // The pilot is presentation-only here: the API enforces the
+            // authenticated Pablo user ID, current owner/cycle and session.
+            // Other executives always retain the existing wa.me link.
             window.crmExecutiveDirectReady = false;
-            window.crmExecutiveWaMethod = 'wa_me';
-            window.crmExecutiveWaDelegated = false;
-            window.crmExecutiveWaSenderName = '';
+            window.crmExecutiveWaMethod = (window.crmPabloApiPilot && target === 'lead' && newChannel === 'wa')
+                ? 'checking' : 'wa_me';
             window.crmExecutiveOutboundAttemptKey = null;
+            window.crmExecutiveWaPreflightId = (window.crmExecutiveWaPreflightId || 0) + 1;
+            const thisPreflight = window.crmExecutiveWaPreflightId;
 
             // UX FIX: Clear message if switching target (Lead/Owner) OR channel (WA/Email)
             if (currentCommTarget !== target || currentCommChannel !== newChannel) {
@@ -5390,6 +5396,26 @@
 
             new bootstrap.Modal(document.getElementById('commModal')).show();
             updateSendLink(target, firstTabId);
+            if (window.crmPabloApiPilot && target === 'lead' && newChannel === 'wa') {
+                fetch('/api/crm/executive-whatsapp/available/' + encodeURIComponent(leadData.id), {
+                    headers: {'Accept': 'application/json'},
+                    credentials: 'same-origin'
+                }).then(async response => {
+                    if (!response.ok) throw new Error('preflight_failed');
+                    return response.json();
+                }).then(data => {
+                    if (thisPreflight !== window.crmExecutiveWaPreflightId) return;
+                    window.crmExecutiveWaMethod = data.available && data.method === 'executive_wasender_api'
+                        ? 'executive_wasender_api' : 'blocked';
+                    window.crmExecutiveDirectReady = window.crmExecutiveWaMethod === 'executive_wasender_api';
+                    updateSendLink(currentCommTarget, semState.currentCategory || firstTabId);
+                }).catch(() => {
+                    if (thisPreflight !== window.crmExecutiveWaPreflightId) return;
+                    window.crmExecutiveWaMethod = 'blocked';
+                    window.crmExecutiveDirectReady = false;
+                    updateSendLink(currentCommTarget, semState.currentCategory || firstTabId);
+                });
+            }
 
             // Add real-time validation listener if not already present
             const msgInput = document.getElementById('commMessage');
@@ -5543,7 +5569,13 @@
 
             // --- Standard Channel Logic (manual WhatsApp link) ---
             if (currentCommChannel === 'wa') {
-                btn.innerHTML = '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
+                const useApi = window.crmPabloApiPilot && target === 'lead';
+                const waMethod = window.crmExecutiveWaMethod;
+                btn.innerHTML = useApi
+                    ? (waMethod === 'executive_wasender_api'
+                        ? '<i class="fa-brands fa-whatsapp me-1"></i> Enviar por WaSender'
+                        : waMethod === 'checking' ? 'Verificando sesión…' : 'Envío por API no disponible')
+                    : '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-envelope me-1"></i> Abrir Correo';
             }
@@ -5603,6 +5635,48 @@
                     // --- LÓGICA WHATSAPP con Validación ---
                     if (!phone || phone === 'None' || phone.replace(/\D/g, '').length < 6) {
                         alert("⚠️ Error: El destinatario no tiene un número de teléfono válido registrado.");
+                        return;
+                    }
+                    if (window.crmPabloApiPilot && target === 'lead') {
+                        if (window.crmExecutiveWaMethod !== 'executive_wasender_api') {
+                            alert('No está disponible el envío por WaSender. No se enviará el mensaje ni se abrirá WhatsApp Web.');
+                            return;
+                        }
+                        // Keep this key on errors/timeouts: a second click must
+                        // never create a second send after a network ambiguity.
+                        if (!window.crmExecutiveOutboundAttemptKey) {
+                            window.crmExecutiveOutboundAttemptKey = window.crypto && window.crypto.randomUUID
+                                ? window.crypto.randomUUID().replace(/-/g, '') :
+                                  'crm_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2);
+                        }
+                        btn.dataset.sending = '1';
+                        btn.style.opacity = '0.6';
+                        const key = window.crmExecutiveOutboundAttemptKey;
+                        try {
+                            const response = await fetch('/api/crm/executive-whatsapp/send', {
+                                method: 'POST', credentials: 'same-origin',
+                                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                                body: JSON.stringify({
+                                    lead_id: leadData.id, text: finalMsg, idempotency_key: key
+                                })
+                            });
+                            const result = await response.json().catch(() => ({}));
+                            if (!response.ok) throw new Error(String(result.detail || 'provider_delivery_unconfirmed'));
+                            if (result.status === 'accepted' && result.recorded === true) {
+                                showStrongToast('Aceptado por WaSender',
+                                    'Mensaje registrado en el lead. La entrega al destinatario se comprueba por separado.', 'success');
+                                hideModal();
+                            } else {
+                                showStrongToast('Intento ya registrado',
+                                    'No se reenvió el mensaje. Revisa la conversación antes de volver a intentarlo.', 'warning');
+                            }
+                        } catch (_error) {
+                            showStrongToast('Envío no confirmado',
+                                'No repitas el envío: WaSender pudo haberlo recibido. Revisa el historial o consulta al administrador.', 'error');
+                        } finally {
+                            btn.dataset.sending = '0';
+                            btn.style.opacity = '1';
+                        }
                         return;
                     }
                     const cleanPhone = phone.replace(/\D/g, '');

@@ -648,39 +648,123 @@ def test_sender_identity_error_blocks_send_before_provider_post(context, monkeyp
     assert not db["leads"].document["messages"]
 
 
-def test_crm_manual_whatsapp_availability_always_returns_link(monkeypatch):
-    """Even a linked executive's cached CRM tab must select wa.me, not the API."""
-    import asyncio
-    from chatbot import crm_executive_outbound_api as api
-    async def auth(_request):
-        return {"_id": ObjectId(OWNER), "rol": "agente"}
-    monkeypatch.setattr(api, "_user", auth)
-    result = asyncio.run(api.crm_executive_whatsapp_available(object(), str(LEAD_ID)))
-    assert result == {"available": False, "method": "wa_me"}
-
-
-def test_crm_manual_whatsapp_direct_api_post_is_blocked_before_provider_call(monkeypatch):
-    """Server-side kill switch, independent of browser state or feature flags."""
+def test_other_executives_keep_manual_link_and_cannot_use_pilot(monkeypatch):
     import asyncio
     from fastapi import HTTPException
     from chatbot import crm_executive_outbound_api as api
+
     async def auth(_request):
-        return {"_id": ObjectId(OWNER), "rol": "agente"}
+        return {"_id": ObjectId(OWNER), "nombre": "Hernán Castro", "rol": "agente"}
     monkeypatch.setattr(api, "_user", auth)
-    monkeypatch.setenv("PROCASA_EXEC_CRM_DIRECT_SEND_ENABLED", "1")
-    with pytest.raises(HTTPException) as e:
+    monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
+    assert asyncio.run(api.crm_executive_whatsapp_available(object(), str(LEAD_ID))) == {
+        "available": False, "method": "wa_me",
+    }
+    with pytest.raises(HTTPException) as exc:
         asyncio.run(api.crm_executive_whatsapp_send(object()))
-    assert e.value.status_code == 409
-    assert e.value.detail == "crm_manual_link_only"
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "pilot_user_not_authorized"
 
 
-def test_crm_lead_detail_whatsapp_link_only_in_browser():
-    """The green button must open a prefilled link, not issue a provider POST."""
+def test_pablo_pilot_off_never_enables_api(monkeypatch):
+    import asyncio
+    from chatbot import crm_executive_outbound_api as api
+
+    async def auth(_request):
+        return {"_id": ObjectId(api._PABLO_USER_ID),
+                "nombre": "Pablo Galleguillos", "rol": "agente"}
+    monkeypatch.setattr(api, "_user", auth)
+    monkeypatch.delenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", raising=False)
+    assert asyncio.run(api.crm_executive_whatsapp_available(object(), str(LEAD_ID))) == {
+        "available": False, "method": "wa_me",
+    }
+
+
+def test_pablo_pilot_available_and_manual_send_is_scoped_and_idempotent(monkeypatch):
+    import asyncio
+    from chatbot import crm_executive_outbound_api as api
+    from chatbot import storage
+
+    user = {"_id": ObjectId(api._PABLO_USER_ID),
+            "nombre": "Pablo Galleguillos", "rol": "agente"}
+    monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
+    async def auth(_request):
+        return user
+    monkeypatch.setattr(api, "_user", auth)
+    db = object()
+    monkeypatch.setattr(storage, "get_db", lambda: db)
+    checks = []
+    def eligible(given_db, *, user, lead_id):
+        checks.append((given_db, str(user["_id"]), lead_id))
+        return {"session": {"session_id": "133286"}}
+    monkeypatch.setattr(api, "_eligible_pablo", eligible)
+    assert asyncio.run(api.crm_executive_whatsapp_available(object(), str(LEAD_ID))) == {
+        "available": True, "method": "executive_wasender_api",
+    }
+    sent = []
+    def fake_send(given_db, **kwargs):
+        sent.append((given_db, kwargs))
+        return {"status": "accepted", "recorded": True,
+                "provider_message_id": "provider-123"}
+    monkeypatch.setattr(api, "send_manual", fake_send)
+    class Request:
+        async def json(self):
+            return {"lead_id": str(LEAD_ID), "text": "Hola desde el CRM",
+                    "idempotency_key": "pilot_pablo_key_12345"}
+    result = asyncio.run(api.crm_executive_whatsapp_send(Request()))
+    assert result == {
+        "status": "accepted", "recorded": True,
+        "provider_message_id": "provider-123",
+    }
+    assert checks == [(db, api._PABLO_USER_ID, str(LEAD_ID))] * 2
+    assert len(sent) == 1
+    assert sent[0][0] is db
+    assert sent[0][1] == {
+        "lead_id": str(LEAD_ID), "actor_user_id": api._PABLO_USER_ID,
+        "message": "Hola desde el CRM",
+        "idempotency_key": "pilot_pablo_key_12345",
+    }
+
+
+def test_pablo_pilot_fails_closed_when_session_or_lead_not_ready(monkeypatch):
+    import asyncio
+    from fastapi import HTTPException
+    from chatbot import crm_executive_outbound_api as api
+    from chatbot import storage
+
+    user = {"_id": ObjectId(api._PABLO_USER_ID),
+            "nombre": "Pablo Galleguillos", "rol": "agente"}
+    monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
+    async def auth(_request):
+        return user
+    monkeypatch.setattr(api, "_user", auth)
+    monkeypatch.setattr(storage, "get_db", lambda: object())
+    def fail(_db, *, user, lead_id):
+        raise outgoing.OutboundBlocked("pilot_session_mismatch")
+    monkeypatch.setattr(api, "_eligible_pablo", fail)
+    monkeypatch.setattr(api, "send_manual",
+                        lambda *_a, **_k: pytest.fail("No provider POST"))
+    assert asyncio.run(api.crm_executive_whatsapp_available(object(), str(LEAD_ID))) == {
+        "available": False, "method": "blocked",
+    }
+    class Request:
+        async def json(self):
+            return {"lead_id": str(LEAD_ID), "text": "Hola",
+                    "idempotency_key": "attempt-12345"}
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(api.crm_executive_whatsapp_send(Request()))
+    assert exc.value.status_code == 409
+
+
+def test_crm_lead_detail_uses_api_only_for_pablo_link_for_everyone_else():
     from pathlib import Path
     text = (Path(__file__).resolve().parent.parent / "templates" /
             "crm_lead_detail.html").read_text(encoding="utf-8")
     assert "https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}" in text
     assert "window.open(url, '_blank')" in text
     assert "Abrir WhatsApp" in text
-    assert "fetch('/api/crm/executive-whatsapp/send'" not in text
-    assert "fetch('/api/crm/executive-whatsapp/available/" not in text
+    assert "window.crmPabloApiPilot" in text
+    assert "fetch('/api/crm/executive-whatsapp/send'" in text
+    assert "fetch('/api/crm/executive-whatsapp/available/" in text
+    assert "window.crmExecutiveWaMethod !== 'executive_wasender_api'" in text
+    assert "window.crmExecutiveOutboundAttemptKey" in text

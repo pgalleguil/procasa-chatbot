@@ -291,40 +291,88 @@ def detect_property_code(lead):
     if code: return f"ML: {code}"
     return None
 
-def process_chat_timeline(messages):
+def process_chat_timeline(messages, executive_names=None):
+    """Chronological CRM conversation with explicit, factual message authors.
+
+    Executive WhatsApp is passive evidence. It must never be presented as a
+    customer message or as something authored by the office chatbot.
+    """
+    executive_names = executive_names or {}
     processed = []
-    if not messages: return []
-    for msg in messages:
-        role = msg.get("role", "user")
-        css_class = "chat-bot" if role in ["assistant", "system"] else "user-message"
-        
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role") or "user").lower()
+        actor_type = str(msg.get("actor_type") or "").lower()
+        source = str(msg.get("source") or "").lower()
+        channel = str(msg.get("channel") or "").lower()
+
+        if role == "agent" or role.startswith("executive:") or actor_type == "human_agent":
+            author_type = "executive"
+            css_class = "chat-executive"
+            actor_id = str(msg.get("actor_id") or msg.get("assigned_executive_id") or "")
+            author_label = executive_names.get(actor_id) or "Ejecutivo"
+        elif role in ("assistant", "system") or actor_type == "bot":
+            author_type = "bot"
+            css_class = "chat-bot"
+            author_label = "Chatbot PROCASA" if role != "system" else "Sistema PROCASA"
+        else:
+            author_type = "customer"
+            css_class = "user-message"
+            author_label = "Cliente"
+
+        if source in ("crm_manual_api", "crm_admin_delegated_api", "crm_hot_auto_api"):
+            channel_label = "Enviado desde CRM"
+        elif channel == "executive_whatsapp" or source in ("executive_whatsapp", "whatsapp_direct"):
+            channel_label = "WhatsApp del ejecutivo"
+        elif source == "price_drop_campaign_api":
+            channel_label = "Campaña WhatsApp"
+        elif author_type == "bot":
+            channel_label = "Chatbot de oficina"
+        else:
+            # Legacy office messages often have no channel metadata.
+            channel_label = "Canal sin especificar"
+
         ts_obj = msg.get("timestamp")
         if isinstance(ts_obj, str):
             try:
-                # Keep the offset: stripping "Z" loses the UTC information
-                # and can display an executive/office message three hours late.
                 ts_obj = datetime.fromisoformat(ts_obj.replace("Z", "+00:00"))
-                # Legacy Prop360 values without an explicit offset are
-                # ambiguous; preserve their wall clock rather than inventing
-                # a timezone. All new messages have a verified offset.
+                # A legacy, unzoned timestamp is intentionally displayed
+                # verbatim. New messages include an explicit UTC offset.
                 if ts_obj.tzinfo is not None:
                     ts_obj = ts_obj.astimezone(CHILE_TZ)
             except (ValueError, TypeError):
                 ts_obj = datetime.min
         elif isinstance(ts_obj, datetime):
-            # Naive BSON Date values are UTC; normalize before display.
+            # Naive BSON Dates represent UTC, unlike unzoned legacy strings.
             if ts_obj.tzinfo is None:
                 ts_obj = ts_obj.replace(tzinfo=timezone.utc)
             ts_obj = ts_obj.astimezone(CHILE_TZ)
-
-        if ts_obj is None:
+        else:
             ts_obj = datetime.min
-            
+
+        if ts_obj == datetime.min:
+            sort_ts = datetime.max.replace(tzinfo=timezone.utc)
+        elif ts_obj.tzinfo is None:
+            # For sorting only, compare legacy local wall-clock time against
+            # verified instants without changing its displayed timestamp.
+            sort_ts = CHILE_TZ.localize(ts_obj).astimezone(timezone.utc)
+        else:
+            sort_ts = ts_obj.astimezone(timezone.utc)
+
         processed.append({
-            "role": css_class, 
-            "content": msg.get("content", ""),
-            "timestamp": ts_obj
+            "role": css_class,
+            "author_type": author_type,
+            "author_label": author_label,
+            "channel_label": channel_label,
+            "content": msg.get("content") or "",
+            "timestamp": ts_obj,
+            "_sort_ts": sort_ts,
         })
+    # Python's stable sort preserves original order for equal instants.
+    processed.sort(key=lambda row: row["_sort_ts"])
+    for row in processed:
+        row.pop("_sort_ts")
     return processed
 
 # --- REGISTRO DE EVENTOS (Delegado a storage) ---
@@ -2212,7 +2260,29 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
             "channel": channel
         })
         
-    timeline = process_chat_timeline(lead.get("messages", []))
+    # Resolve historical message authors by immutable user ID: using the
+    # currently assigned name would misattribute older conversations when a
+    # lead was reassigned. This is one bounded, read-only query per detail page.
+    from bson import ObjectId
+    actor_ids = set()
+    for msg in lead.get("messages", []):
+        if not isinstance(msg, dict):
+            continue
+        role = str(msg.get("role") or "").lower()
+        if role == "agent" or role.startswith("executive:") or msg.get("actor_type") == "human_agent":
+            actor_id = str(msg.get("actor_id") or msg.get("assigned_executive_id") or "")
+            if ObjectId.is_valid(actor_id):
+                actor_ids.add(actor_id)
+    actor_oids = [ObjectId(actor_id) for actor_id in sorted(actor_ids)[:30]]
+    executive_names = {}
+    if actor_oids:
+        executive_names = {
+            str(user["_id"]): str(user.get("nombre") or "Ejecutivo")
+            for user in db["usuarios"].find(
+                {"_id": {"$in": actor_oids}}, {"nombre": 1}
+            )
+        }
+    timeline = process_chat_timeline(lead.get("messages", []), executive_names)
     prospecto = lead.get("prospecto", {})
 
     # Buscar próxima tarea pendiente (Auditoría Canónica)

@@ -1348,3 +1348,87 @@ def test_team_send_does_not_enable_erika_or_rocio_without_link(monkeypatch):
                          "nombre": "Erika Garrido", "rol": "agente"}) is None
     assert api._profile({"_id": ObjectId("6995e9be6a099d6e9612d120"),
                          "nombre": "Rocío Aliaga", "rol": "agente"}) is None
+
+
+PABLO_CENTRAL_ID = "69796bc4bbebf240378eb739"
+
+
+class UsersWithCentralPablo(Users):
+    def find_one(self, query, projection):
+        if str(query.get("_id")) == PABLO_CENTRAL_ID:
+            return {"_id": ObjectId(PABLO_CENTRAL_ID), "rol": "agente",
+                    "is_active": True, "nombre": "Pablo Galleguillos"}
+        if str(query.get("_id")) == OWNER:
+            return {"_id": ObjectId(OWNER), "wasender": {"session_id": 133517},
+                    "telefono": "+56911112222", "rol": "agente", "is_active": True}
+        return None
+
+
+def _central_ready(context, monkeypatch):
+    db, _ = context
+    db["usuarios"] = UsersWithCentralPablo()
+    db["leads"].document["commercial_intelligence"] = {"active_search": {
+        "status": "ACTIVE", "followup_required": True, "opt_out": False,
+    }}
+    monkeypatch.setenv("PROCASA_CENTRAL_SUPPORT_DELEGATED_SEND_ENABLED", "1")
+    return db
+
+
+def test_exact_pablo_commercial_support_uses_current_owner_session(context, monkeypatch):
+    db = _central_ready(context, monkeypatch)
+    pablo = {"_id": ObjectId(PABLO_CENTRAL_ID), "nombre": "Pablo Galleguillos",
+             "rol": "agente"}
+    attested = []
+    monkeypatch.setattr(outgoing, "verify_provider_sender_identity",
+                        lambda session, *, expected_phone, force=False:
+                        attested.append((session["session_id"], expected_phone, force)))
+    answer = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, requester_user=pablo,
+        central_support=True, message="Le comparto una opción ya verificada",
+        idempotency_key="central-test-pablo-1", post=lambda *_a, **_kw: _response(msg="WA-CENTRAL-1"),
+    )
+    assert answer["status"] == "accepted" and answer["recorded"] is True
+    assert answer["delegated"] is True
+    assert ("133517", "+56911112222", True) in attested
+    row = db["leads"].document["messages"][-1]
+    assert row["actor_id"] == PABLO_CENTRAL_ID
+    assert row["assigned_executive_id"] == OWNER
+    assert row["source"] == "crm_admin_delegated_api"
+    assert row["wasender_session_id"] == "133517"
+
+
+@pytest.mark.parametrize("bad", [
+    {"_id": ObjectId(PABLO_CENTRAL_ID), "nombre": "Otro Nombre", "rol": "agente"},
+    {"_id": ObjectId(), "nombre": "Pablo Galleguillos", "rol": "agente"},
+    {"_id": ObjectId(PABLO_CENTRAL_ID), "nombre": "Pablo Galleguillos", "rol": "viewer"},
+])
+def test_central_send_denies_impersonation(context, monkeypatch, bad):
+    db = _central_ready(context, monkeypatch)
+    with pytest.raises(outgoing.OutboundBlocked, match="requester_not_authorized"):
+        outgoing.send_manual(
+            db, lead_id=LEAD_ID, actor_user_id=OWNER,
+            requester_user=bad, central_support=True,
+            message="Nunca enviar", idempotency_key="central-spoof-123",
+            post=lambda *_a, **_kw: pytest.fail("provider must not be called"),
+        )
+
+
+def test_central_delegation_disabled_and_inactive_search_cannot_send(context, monkeypatch):
+    db = _central_ready(context, monkeypatch)
+    pablo = {"_id": ObjectId(PABLO_CENTRAL_ID), "nombre": "Pablo Galleguillos",
+             "rol": "agente"}
+    monkeypatch.setenv("PROCASA_CENTRAL_SUPPORT_DELEGATED_SEND_ENABLED", "0")
+    with pytest.raises(outgoing.OutboundBlocked, match="requester_not_authorized"):
+        outgoing.send_manual(
+            db, lead_id=LEAD_ID, actor_user_id=OWNER, requester_user=pablo,
+            central_support=True, message="No enviar", idempotency_key="central-disabled-1",
+            post=lambda *_a, **_kw: pytest.fail("must not send"),
+        )
+    monkeypatch.setenv("PROCASA_CENTRAL_SUPPORT_DELEGATED_SEND_ENABLED", "1")
+    db["leads"].document["commercial_intelligence"]["active_search"]["status"] = "COMPLETED"
+    with pytest.raises(outgoing.OutboundBlocked, match="requester_not_authorized"):
+        outgoing.send_manual(
+            db, lead_id=LEAD_ID, actor_user_id=OWNER, requester_user=pablo,
+            central_support=True, message="No enviar", idempotency_key="central-closed-1",
+            post=lambda *_a, **_kw: pytest.fail("must not send"),
+        )

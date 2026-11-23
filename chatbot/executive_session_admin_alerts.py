@@ -1,9 +1,9 @@
-"""Read-only executive session monitor; WhatsApp incident alerts to Pablo only.
+"""Event-triggered executive WhatsApp incident alerts exclusively to Pablo.
 
-This worker never sends from an executive session, reads any conversations,
-or notifies the affected agent. An independent office WhatsApp sender delivers
-a minimal operational alert to Pablo's verified phone. Durable CAS prevents
-duplicate sends across multiple workers and successive Render deploys.
+Never poll the provider on a timer. A CRM WhatsApp preflight already verifies
+sender identity and session status; use that result to notify Pablo only
+when there is a real sending attempt. Alerts use an independent office sender,
+never the executive session. Durable CAS prevents duplicate incident messages.
 """
 from __future__ import annotations
 
@@ -216,3 +216,133 @@ async def session_monitor_loop() -> None:
         except Exception as exc:
             logger.error("EXEC_WA_HEALTH check_failure=%s", type(exc).__name__)
         await asyncio.sleep(interval)
+
+
+# Event-driven replacement for the old periodic service. Only CRM WhatsApp
+# preflight/send endpoints call this. No extra GET /user or GET /status calls.
+_CRM_ALERT_REASONS = frozenset({
+    "session_unavailable", "session_disconnected", "authentication",
+    "sender_identity_mismatch", "logged_out", "expired", "need_scan",
+})
+
+
+def mark_event_recovered(db, *, session_id: str) -> None:
+    """Re-arm a notification ONLY after CRM already verified a live session.
+
+    Does not probe WaSender, send messages or touch other executive sessions.
+    In-flight notifications remain reserved to avoid a race with another click.
+    """
+    if os.getenv(FLAG, "0") != "1":
+        return
+    if session_id not in dict(EXECUTIVES):
+        return
+    db[STATE_COLLECTION].update_one(
+        {"_id": session_id, "alert_claimed": True,
+         "alert_delivery": {"$ne": "reserved"}},
+        {"$set": {"alert_claimed": False, "alert_delivery": "healthy",
+                  "last_status": "connected", "unhealthy_checks": 0,
+                  "last_check_at": datetime.now(timezone.utc)}},
+    )
+
+
+async def notify_pablo_on_crm_failure(
+    *, session_id: str, executive_name: str, reason: str,
+    db=None, send=None,
+) -> str:
+    """Send at most one operator alert per outage *on an executive CRM action*.
+
+    The provider has ALREADY been checked by the authenticated CRM send
+    preflight. This method performs zero new session probes. Mongo reservation
+    is committed before the independent office WhatsApp send; unknown or
+    failed sends are never automatically retried.
+    """
+    if os.getenv(FLAG, "0") != "1":
+        return "disabled"
+    if dict(EXECUTIVES).get(session_id) != executive_name:
+        return "executive_not_authorized"
+    if reason not in _CRM_ALERT_REASONS:
+        return "reason_not_alertable"
+    from .storage import get_db
+    from .whatsapp_client import send_whatsapp_message_detailed
+    try:
+        db = db if db is not None else await asyncio.to_thread(get_db)
+        collection = db[STATE_COLLECTION]
+
+        # Ensure the document exists without overwriting prior state or any
+        # other session's health. _id is indexed, avoiding collection scans.
+        await asyncio.to_thread(
+            collection.update_one, {"_id": session_id},
+            {"$setOnInsert": {"alert_claimed": False}}, upsert=True,
+        )
+        claimed = await asyncio.to_thread(
+            collection.find_one_and_update,
+            {"_id": session_id, "alert_claimed": False},
+            {"$set": {
+                "alert_claimed": True, "alert_delivery": "reserved",
+                "alert_reason": reason,
+                "last_status": reason,
+                "alert_reserved_at": datetime.now(timezone.utc),
+            }},
+            return_document=ReturnDocument.AFTER,
+        )
+        if claimed is None:
+            return "already_notified"
+
+        recipient = await asyncio.to_thread(_pablo_recipient, db)
+        if recipient is None:
+            await asyncio.to_thread(
+                collection.update_one, {"_id": session_id},
+                {"$set": {"alert_delivery": "recipient_unverified"}},
+            )
+            logger.error(
+                "EXEC_WA_PABLO_EVENT session=%s result=recipient_unverified",
+                session_id,
+            )
+            return "recipient_unverified"
+
+        message = (
+            "ALERTA PROCASA - WhatsApp ejecutivo\\n"
+            f"Ejecutivo: {executive_name}\\n"
+            f"Sesión WaSender: {session_id}\\n"
+            f"Motivo: {reason}\\n"
+            "No se pudo confirmar el envío por API desde el CRM. "
+            "El ejecutivo puede utilizar WhatsApp Web cuando el sistema "
+            "ofrezca esa alternativa de forma segura."
+        )
+        sender = send or send_whatsapp_message_detailed
+        try:
+            result = await sender(recipient, message)
+            delivery = (
+                "accepted" if result.get("success") is True
+                and result.get("provider_message_id")
+                else "delivery_unknown" if result.get("provider_call_uncertain")
+                or result.get("success") is True else "failed"
+            )
+        except asyncio.CancelledError:
+            # Reservation survives cancellation: no duplicate on redeploy.
+            raise
+        except Exception as exc:
+            logger.error(
+                "EXEC_WA_PABLO_EVENT session=%s send_error=%s",
+                session_id, type(exc).__name__,
+            )
+            delivery = "delivery_unknown"
+        await asyncio.to_thread(
+            collection.update_one,
+            {"_id": session_id, "alert_delivery": "reserved"},
+            {"$set": {
+                "alert_delivery": delivery,
+                "alert_result_at": datetime.now(timezone.utc),
+            }},
+        )
+        logger.info("EXEC_WA_PABLO_EVENT session=%s result=%s",
+                    session_id, delivery)
+        return delivery
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.error(
+            "EXEC_WA_PABLO_EVENT session=%s unexpected=%s",
+            session_id, type(exc).__name__,
+        )
+        return "error"

@@ -36,7 +36,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 _SESSION_ID = re.compile(r"^[1-9][0-9]{0,17}$")
 _LID = re.compile(r"^[0-9]{8,25}@lid$")
-_ALLOWED_EVENTS = frozenset({"messages.upsert", "messages.received"})
+_ALLOWED_EVENTS = frozenset({"messages.upsert", "messages.received", "message.sent"})
 _LID_DIAG_SESSION: ContextVar[str] = ContextVar("exec_lid_diag_session", default="")
 
 _DIAGNOSTIC_FLAG = "PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS"
@@ -45,7 +45,7 @@ _DIAGNOSTIC_FLAG = "PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS"
 _DIAGNOSTIC_REASONS = frozenset({
     "event_unsupported", "data_missing", "message_shape_unknown",
     "message_batch_unsupported", "direction_missing", "non_direct_chat",
-    "event_direction_mismatch", "metadata_other",
+    "event_direction_mismatch", "outbound_not_confirmed", "metadata_other",
     "peer_phone_unresolved", "peer_lid_unresolved",
     "peer_not_authorized", "text_unavailable", "capture_disabled",
     "session_inactive", "stored", "echo_reconciled",
@@ -106,6 +106,11 @@ def _metadata_skip_reason(payload: dict) -> str:
         return "direction_missing"
     if payload.get("event") == "messages.received" and key["fromMe"]:
         return "event_direction_mismatch"
+    if payload.get("event") == "message.sent":
+        if not key["fromMe"]:
+            return "event_direction_mismatch"
+        if data.get("success") is False or str(data.get("status") or "").lower() in ("failed", "error"):
+            return "outbound_not_confirmed"
     vals = (key.get("remoteJid"), key.get("remoteJidAlt"),
             msg.get("chatId"), msg.get("from"))
     if any(("@g.us" in str(v or "") or "@newsletter" in str(v or "")
@@ -254,6 +259,12 @@ def _event_metadata(payload: dict) -> tuple[dict, dict, bool] | None:
         return None
     if event == "messages.received" and key["fromMe"]:
         return None
+    if event == "message.sent":
+        # Never attribute failed sends or inbound messages as an executive send.
+        if not key["fromMe"] or data.get("success") is False:
+            return None
+        if str(data.get("status") or "").lower() in ("failed", "error"):
+            return None
     # Nonpersonal conversations and newsletters never enter CRM.
     vals = (key.get("remoteJid"), key.get("remoteJidAlt"),
             message.get("chatId"), message.get("from"))
@@ -545,7 +556,11 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
         return _ignored(session, "peer_not_authorized")
     lead, cycle = matched
     # Read message text only after exact-session, phone and ownership checks.
-    parsed = _parse_message(payload, phone, lid)
+    # Reuse the strict shared parser for the provider\u0027s documented direct-key
+    # message.sent envelope, without widening the office bot\u0027s webhook.
+    parse_payload = ({**payload, "event": "messages.upsert"}
+                     if payload.get("event") == "message.sent" else payload)
+    parsed = _parse_message(parse_payload, phone, lid)
     if parsed is None:
         return _ignored(session, "text_unavailable")
     if not write:

@@ -160,7 +160,8 @@ def eligible_manual_session(db, *, lead: dict, actor_user_id: str) -> dict:
     return {"cycle": cycle, "recipient": recipient, "session": session}
 
 
-def eligible_requester_session(db, *, lead: dict, requester_user: dict) -> dict:
+def eligible_requester_session(db, *, lead: dict, requester_user: dict,
+                               central_support: bool = False) -> dict:
     """Authorize the logged-in owner or an active CRM supervisor to use the owner's session.
 
     A supervisor may initiate outreach ONLY to the single lead of the current
@@ -180,20 +181,50 @@ def eligible_requester_session(db, *, lead: dict, requester_user: dict) -> dict:
         raise OutboundBlocked("current_assignment_required")
     delegated = requester_id != owner_id
     if delegated:
-        if not can_administer_leads((requester_user or {}).get("rol")):
-            raise OutboundBlocked("requester_not_authorized")
         verified_admin = db["usuarios"].find_one(
             {"_id": ObjectId(requester_id), "is_active": True},
-            {"_id": 1, "rol": 1},
+            {"_id": 1, "rol": 1, "nombre": 1},
         )
-        if not verified_admin or not can_administer_leads(verified_admin.get("rol")):
-            raise OutboundBlocked("requester_not_authorized")
-        access = resolve_crm_lead_access_context(
-            db, user=verified_admin, lead=lead, security_enabled=True,
+        # Pablo is the commercial support operator but his legacy Mongo
+        # profile currently has rol="agente". Grant NO global CRM-admin role:
+        # only this exact ID, an opt-in feature flag, and a verified ACTIVE
+        # search can enter the narrower central-support send flow.
+        central_pablo = bool(
+            central_support
+            and os.getenv("PROCASA_CENTRAL_SUPPORT_DELEGATED_SEND_ENABLED", "0") == "1"
+            and requester_id == "69796bc4bbebf240378eb739"
+            and (requester_user or {}).get("nombre") == "Pablo Galleguillos"
+            and (verified_admin or {}).get("nombre") == "Pablo Galleguillos"
+            and (verified_admin or {}).get("rol") == "agente"
+            and (lead.get("commercial_intelligence") or {}).get("active_search", {}).get("status") == "ACTIVE"
+            and (lead.get("commercial_intelligence") or {}).get("active_search", {}).get("followup_required") is True
+            and not (lead.get("commercial_intelligence") or {}).get("active_search", {}).get("opt_out")
         )
-        if not access.access_allowed or not access.action_permissions.get("contact_whatsapp"):
+        if not verified_admin:
             raise OutboundBlocked("requester_not_authorized")
+        if not central_pablo:
+            if not can_administer_leads((requester_user or {}).get("rol")):
+                raise OutboundBlocked("requester_not_authorized")
+            if not can_administer_leads(verified_admin.get("rol")):
+                raise OutboundBlocked("requester_not_authorized")
+            access = resolve_crm_lead_access_context(
+                db, user=verified_admin, lead=lead, security_enabled=True,
+            )
+            if not access.access_allowed or not access.action_permissions.get("contact_whatsapp"):
+                raise OutboundBlocked("requester_not_authorized")
     info = eligible_manual_session(db, lead=lead, actor_user_id=owner_id)
+    if delegated and central_pablo:
+        # Explicit provider-side phone check, including Paula and Susana,
+        # even when the ordinary pilot send would not force attestation.
+        sender = db["usuarios"].find_one(
+            {"_id": ObjectId(owner_id), "is_active": True, "rol": "agente"},
+            {"telefono": 1},
+        )
+        if not sender or not sender.get("telefono"):
+            raise OutboundBlocked("sender_identity_unverified")
+        verify_provider_sender_identity(
+            info["session"], expected_phone=sender["telefono"], force=True,
+        )
     return {
         **info, "owner_id": owner_id, "requester_id": requester_id,
         "delegated": delegated,
@@ -241,7 +272,8 @@ def _credited_first_management(db, *, lead_id, actor_user_id: str,
 
 def send_manual(db, *, lead_id, actor_user_id: str, message: str,
                 idempotency_key: str, post=None, now=None,
-                requester_user: dict | None = None) -> dict:
+                requester_user: dict | None = None,
+                central_support: bool = False) -> dict:
     """One provider call for one idempotency key; never retry an uncertain send.
 
     A known-accepted send is appended to the canonical lead with the actual
@@ -256,7 +288,10 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     oid = ObjectId(str(lead_id))
     lead = db["leads"].find_one({"_id": oid})
     info = (
-        eligible_requester_session(db, lead=lead, requester_user=requester_user)
+        eligible_requester_session(
+            db, lead=lead, requester_user=requester_user,
+            central_support=central_support,
+        )
         if requester_user is not None else
         eligible_manual_session(db, lead=lead, actor_user_id=actor_user_id)
     )
@@ -295,7 +330,10 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     try:
         current = db["leads"].find_one({"_id": oid})
         current_info = (
-            eligible_requester_session(db, lead=current, requester_user=requester_user)
+            eligible_requester_session(
+                db, lead=current, requester_user=requester_user,
+                central_support=central_support,
+            )
             if requester_user is not None else
             eligible_manual_session(db, lead=current, actor_user_id=owner)
         )

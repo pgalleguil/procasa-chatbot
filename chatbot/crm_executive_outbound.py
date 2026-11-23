@@ -200,7 +200,9 @@ def eligible_requester_session(db, *, lead: dict, requester_user: dict,
             and (lead.get("commercial_intelligence") or {}).get("active_search", {}).get("followup_required") is True
             and not (lead.get("commercial_intelligence") or {}).get("active_search", {}).get("opt_out")
         )
-        if not verified_admin:
+        if not verified_admin or (central_support and not central_pablo):
+            # Central support is ONLY for the exact verified Pablo identity.
+            # Never fall through to ordinary supervisor authorization.
             raise OutboundBlocked("requester_not_authorized")
         if not central_pablo:
             if not can_administer_leads((requester_user or {}).get("rol")):

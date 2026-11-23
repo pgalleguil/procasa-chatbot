@@ -22,7 +22,12 @@ _ACTIVE = re.compile(
     r"(?:casa|departamento|depto|propiedad)|quiero (?:comprar|arrendar)|"
     r"otras? (?:alternativas?|opciones?)|algo mas (?:barato|economico)|"
     r"busqu(?:en|eme|enme) (?:algo|una?)|"
-    r"tienen (?:algo|otra|otras) (?:mas barato|mas economico|en))\b"
+    r"tienen (?:algo|otra|otras) (?:mas barato|mas economico|en)|"
+    r"seria ideal si (?:tiene|tienen) (?:algo|en su sistema)|"
+    r"algo (?:parecido|similar) (?:con|que tenga)|"
+    r"busco algo (?:mas cerca|parecido|similar)|"
+    r"tiene(?:n)? algo (?:parecido|similar)|"
+    r"busco otra (?:propiedad|casa|opcion|alternativa))\b"
 )
 _COMPLETED = re.compile(
     r"^(?:ya (?:encontre|compre|arrende) (?:una? )?(?:casa|depto|departamento|propiedad)"
@@ -178,6 +183,140 @@ def capture_active_search(
         budget = _max_clp(body, already_searching=explicit or started)
         areas = _communes(body) if explicit or started else []
         types = [kind for kind, pattern in _TYPE if pattern.search(body)]
+        # These are customer search preferences; never read the agent's
+        # listing description as if it were the customer's requirements.
+        parking = bool(re.search(r'\bcon (?:al menos )?(?:un |1 )?estacionamiento\b', body))
+        bedrooms = re.search(r'\b(\d{1,2})\s*dormitorios?\b', body)
+        near_metro = bool(re.search(r'\bcercan[oa] (?:a |de )?(?:algun |un |el )?metro\b', body))
+        landmark = re.search(
+            r'\bbusco algo mas cerca de(?:l | la | )([a-z][a-z0-9 ]{3,65})
+        # "casa" alone is a preference correction only inside a live search;
+        # do not infer searches from unrelated one-word answers.
+        if started or (explicit and (budget or areas or types or amenities)):
+            explicit = True
+            status = STATUS_ACTIVE
+            if channel not in sources:
+                sources.append(channel)
+            if budget:
+                criteria["max_price_clp"] = budget
+                evidence["max_price_clp"] = {"source": channel, "message_id": message_id}
+            if areas:
+                criteria["comunas"] = areas
+                evidence["comunas"] = {"source": channel, "message_id": message_id}
+            if types:
+                criteria["property_types"] = types
+                evidence["property_types"] = {"source": channel, "message_id": message_id}
+            if parking:
+                criteria["parking_required"] = True
+                evidence["parking_required"] = {"source": channel, "message_id": message_id}
+            if bedrooms and 1 <= int(bedrooms[1]) <= 12:
+                criteria["min_bedrooms"] = int(bedrooms[1])
+                evidence["min_bedrooms"] = {"source": channel, "message_id": message_id}
+            if near_metro:
+                criteria["near_metro_required"] = True
+                evidence["near_metro_required"] = {"source": channel, "message_id": message_id}
+            if landmark:
+                criteria["preferred_landmark"] = landmark[1].strip()[:65]
+                evidence["preferred_landmark"] = {"source": channel, "message_id": message_id}
+            if re.search(r"\b(?:arriendo|arrendar|alquilar)\b", body):
+                criteria["operation"] = "ARRIENDO"
+                evidence["operation"] = {"source": channel, "message_id": message_id}
+            elif re.search(r"\b(?:comprar|compra|venta)\b", body):
+                criteria["operation"] = "VENTA"
+                evidence["operation"] = {"source": channel, "message_id": message_id}
+            newest = timestamp.isoformat()
+    if not criteria and status != STATUS_COMPLETED and not explicit:
+        return None
+    if status == STATUS_ACTIVE and not criteria.get("operation"):
+        # The prospect came from a sale listing, so a buyer search can
+        # inherit the transaction type, never a budget or a location.
+        if plain(original_operation) in ("venta", "v"):
+            criteria["operation"] = "VENTA"
+            evidence["operation"] = {"source": "original_listing", "message_id": None}
+        elif plain(original_operation) in ("arriendo", "a"):
+            criteria["operation"] = "ARRIENDO"
+            evidence["operation"] = {"source": "original_listing", "message_id": None}
+    return {
+        "status": status, "criteria": criteria,
+        "field_evidence": evidence, "source_channels": sources,
+        "excluded_property_codes": excluded[:12],
+        "last_customer_at": newest, "opt_out": opt_out,
+        # Incomplete searches still need human qualification: no invented
+        # prices, communes, available properties or customer consent.
+        "followup_required": status == STATUS_ACTIVE and not opt_out
+                             and bool(sources),
+    }
+
+
+def find_matching_inventory(db, search: dict, *, limit: int = 8) -> list[dict]:
+    """Exact, active, published matches; return candidates, never send.
+
+    A UF publication's CLP amount may be a stale conversion. The returned
+    matches require a fresh price/availability check before outbound offers.
+    """
+    criteria = search.get("criteria") or {}
+    if (search.get("status") != STATUS_ACTIVE
+            or criteria.get("operation") != "VENTA"
+            or not criteria.get("comunas")
+            or not criteria.get("max_price_clp")):
+        return []
+    max_clp = criteria["max_price_clp"]
+    if not isinstance(max_clp, int) or not (1_000_000 <= max_clp <= 2_000_000_000):
+        return []
+    excluded = set(str(x) for x in search.get("excluded_property_codes") or [])
+    filt = {
+        "disponible_prop360": True,
+        "tipo_operacion.venta": True,
+        "estado.estado_prop360": "Activa",
+        "ubicacion.comuna": {"$in": criteria["comunas"]},
+        "tipo_operacion.precio_venta.precio_clp": {"$gt": 0, "$lte": max_clp},
+        "estado.oficina": {"$in": ["PROCASA SUCRE", "INMOBILIARIA SUCRE SPA"]},
+        "publicaciones.procasa.publicaciones.V.publicada": True,
+    }
+    kinds = criteria.get("property_types") or []
+    if kinds:
+        filt["tipo_operacion.tipo"] = {"$in": [
+            "Casa" if x == "CASA" else "Departamento"
+            for x in kinds if x in ("CASA", "DEPARTAMENTO")
+        ]}
+        if not filt["tipo_operacion.tipo"]["$in"]:
+            return []
+    fields = {
+        "_id": 0, "codigo": 1, "tipo_operacion.tipo": 1,
+        "tipo_operacion.precio_venta.precio_clp": 1,
+        "tipo_operacion.precio_venta.precio_uf": 1,
+        "tipo_operacion.precio_venta.moneda_publicada": 1,
+        "ubicacion.comuna": 1,
+        "publicaciones.procasa.url_procasa": 1,
+    }
+    found = []
+    for p in db["universo_cartera_prop360"].find(filt, fields).sort(
+        "tipo_operacion.precio_venta.precio_clp", 1
+    ).limit(max(1, min(limit + len(excluded), 30))):
+        code = str(p.get("codigo") or "")
+        pub = (p.get("publicaciones") or {}).get("procasa") or {}
+        link = pub.get("url_procasa")
+        price = ((p.get("tipo_operacion") or {}).get("precio_venta") or {})
+        if code in excluded or not re.fullmatch(r"\d{3,8}", code):
+            continue
+        if not isinstance(link, str) or link != f"https://www.procasa.cl/{code}":
+            continue
+        found.append({
+            "property_code": code,
+            "property_type": ((p.get("tipo_operacion") or {}).get("tipo") or ""),
+            "comuna": ((p.get("ubicacion") or {}).get("comuna") or ""),
+            "price_clp_reference": price.get("precio_clp"),
+            "price_uf": price.get("precio_uf"),
+            "public_url": link,
+            "verification": "RECHECK_PRICE_AND_AVAILABILITY",
+        })
+        if len(found) >= limit:
+            break
+    return found
+,
+            body,
+        )
+        amenities = parking or bedrooms or near_metro or landmark
         # "casa" alone is a preference correction only inside a live search;
         # do not infer searches from unrelated one-word answers.
         if started or (explicit and (budget or areas or types)):

@@ -54,18 +54,19 @@ def _eligible_pablo(db, *, user: dict, lead_id: str) -> dict:
     )
     if str(info["session"]["session_id"]) != _PABLO_SESSION:
         raise OutboundBlocked("pilot_session_mismatch")
-    # Pablo is temporarily operating Erika's linked session by explicit choice.
-    # Verify the bearer key is REALLY connected to Erika's WhatsApp number
-    # before the pilot can send; never trust only our Mongo session reference.
-    sender_matches = list(db["usuarios"].find(
-        {"nombre": "Erika Garrido", "is_active": True, "rol": "agente"},
+    # The session slot was formerly allocated to Erika, but Pablo is its
+    # current active operator for testing. Confirm the real WhatsApp number
+    # behind the bearer token equals Pablo's registered phone, not Erika's.
+    # Session ID / variable name alone is not sufficient sender proof.
+    sender = db["usuarios"].find_one(
+        {"_id": ObjectId(_PABLO_USER_ID), "is_active": True, "rol": "agente"},
         {"telefono": 1},
-    ).limit(2))
-    if len(sender_matches) != 1 or not sender_matches[0].get("telefono"):
+    )
+    if not sender or not sender.get("telefono"):
         raise OutboundBlocked("pilot_sender_unverified")
     verify_provider_sender_identity(
         info["session"],
-        expected_phone=sender_matches[0]["telefono"],
+        expected_phone=sender["telefono"],
         force=True,
     )
     return info

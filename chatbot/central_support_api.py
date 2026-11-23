@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse
 
 from .crm_executive_outbound import OutboundBlocked, send_manual
 from .crm_executive_outbound_api import _outstanding_uncertain
+from .active_search_followup import TASKS_COLLECTION
 
 router = APIRouter()
 PABLO_ID = ObjectId("69796bc4bbebf240378eb739")
@@ -56,13 +57,15 @@ async def _operator(request: Request, *, send: bool = False):
 def _open_tasks(db) -> list[dict]:
     # Bounded, one indexed-style read and one bulk lookup. Never scan private
     # conversation messages or other executives' personal WhatsApp.
-    tasks = list(db["crm_tasks"].find({
+    tasks = list(db[TASKS_COLLECTION].find({
         "type": "SEARCH_ALTERNATIVES",
         "status": "pending",
         "source": "verified_active_search",
+        "recipient_user_id": str(PABLO_ID),
     }, {
         "task_id": 1, "lead_id": 1, "assignment_cycle_id": 1,
-        "assigned_to_user_id": 1, "phone": 1, "agent": 1,
+        "related_executive_user_id": 1, "recipient_user_id": 1,
+        "phone": 1, "agent": 1,
         "note": 1, "created_at": 1, "property_codes_to_review": 1,
         "last_central_send": 1,
     }).sort("created_at", -1).limit(50))
@@ -84,7 +87,7 @@ def _open_tasks(db) -> list[dict]:
         life = lead.get("lifecycle") or {}
         search = ((lead.get("commercial_intelligence") or {}).get("active_search") or {})
         if (str(life.get("current_assignment_cycle_id") or "") != str(task.get("assignment_cycle_id") or "")
-                or str(life.get("assigned_to_user_id") or "") != str(task.get("assigned_to_user_id") or "")
+                or str(life.get("assigned_to_user_id") or "") != str(task.get("related_executive_user_id") or "")
                 or search.get("status") != "ACTIVE" or not search.get("followup_required")
                 or search.get("opt_out")
                 or (lead.get("contact_restrictions") or {}).get("marketing_opt_out")):
@@ -131,12 +134,13 @@ def _send_checked(db, *, user: dict, data: dict) -> dict:
     if not isinstance(task_id, str) or not task_id.startswith("active_search:"):
         raise OutboundBlocked("invalid_support_task")
     lead_oid = ObjectId(lead_id)
-    task = db["crm_tasks"].find_one({
+    task = db[TASKS_COLLECTION].find_one({
         "_id": task_id,
         "lead_id": lead_oid,
         "type": "SEARCH_ALTERNATIVES",
         "status": "pending",
         "source": "verified_active_search",
+        "recipient_user_id": str(PABLO_ID),
     })
     lead = db["leads"].find_one({"_id": lead_oid})
     if not task or not lead:
@@ -146,7 +150,7 @@ def _send_checked(db, *, user: dict, data: dict) -> dict:
     cycle = str(life.get("current_assignment_cycle_id") or "")
     if (not ObjectId.is_valid(owner_id) or not cycle
             or cycle != str(task.get("assignment_cycle_id") or "")
-            or owner_id != str(task.get("assigned_to_user_id") or "")):
+            or owner_id != str(task.get("related_executive_user_id") or "")):
         raise OutboundBlocked("assignment_changed")
     search = (lead.get("commercial_intelligence") or {}).get("active_search") or {}
     if (search.get("status") != "ACTIVE" or search.get("followup_required") is not True
@@ -161,10 +165,11 @@ def _send_checked(db, *, user: dict, data: dict) -> dict:
         message=data.get("text"), idempotency_key=data.get("idempotency_key"),
     )
     if result.get("status") == "accepted" and result.get("recorded") is True:
-        db["crm_tasks"].update_one({
+        db[TASKS_COLLECTION].update_one({
             "_id": task_id, "status": "pending",
             "assignment_cycle_id": cycle,
-            "assigned_to_user_id": owner_id,
+            "related_executive_user_id": owner_id,
+            "recipient_user_id": str(PABLO_ID),
         }, {"$set": {
             "last_central_send": datetime.now(timezone.utc),
             "last_central_send_provider_id": result.get("provider_message_id"),

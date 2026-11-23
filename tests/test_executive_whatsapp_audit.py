@@ -1,6 +1,6 @@
 """Passive executive WhatsApp audit regression tests (no real WaSender/Mongo calls)."""
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -283,6 +283,72 @@ def test_inverse_lid_rejects_unknown_private_lid_and_stale_owner(rig, monkeypatc
     known = event(from_me=True, jid="123456789012345@lid", msg_id="old-cycle")
     assert post(client, known).json()["status"] == "ignored"
     assert db["leads"].update_calls == 0
+
+
+def test_lid_fallback_checks_entire_recent_assigned_cohort_not_first_12(
+        rig, monkeypatch):
+    db, _cycle, _client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_REVERSE_LID_ENABLED", "1")
+    lid = "123456789012345678@lid"
+    # Twenty-one active business assignments since linkage; the intended
+    # customer falls OUTSIDE the old hard-coded 12-lead ceiling.
+    docs = [
+        {"_id": ObjectId(f"{i + 1:024x}"), "phone": f"+569{10000000 + i:08d}"}
+        for i in range(21)
+    ]
+    phones = {item["phone"]: item for item in docs}
+    queries = []
+    class CohortLeads:
+        def find(self, query, projection):
+            queries.append(query)
+            if "whatsapp_verified_lid.lid" in query:
+                return Cursor([])
+            assert query["lifecycle.assigned_to_user_id"] == str(USER)
+            assert query["phone"] == {"$type": "string"}
+            # Only recent active assignments, never the old lead history.
+            assert "lifecycle.current_assignment_cycle_id" in query
+            since = query["lifecycle.assigned_at"]["$gte"]
+            assert datetime.now(timezone.utc) - timedelta(days=15) < since
+            return Cursor(docs)
+    db["leads"] = CohortLeads()
+    monkeypatch.setattr(
+        audit, "_authorized_lead",
+        lambda _db, phone, user_id: (phones[phone], {"assignment_cycle_id": "A"})
+        if user_id == str(USER) and phone in phones else None,
+    )
+    observed = []
+    def inverse(phone, token):
+        observed.append(phone)
+        assert token == TOKEN
+        return lid if phone == docs[17]["phone"] else None
+    monkeypatch.setattr(audit, "_lid_from_pn", inverse)
+    phone = audit._verified_lid_phone(
+        db, session={"user_id": str(USER), "session_id": SESSION,
+                     "token": TOKEN}, lid=lid,
+    )
+    assert phone == docs[17]["phone"]
+    assert set(observed) == set(phones)
+    assert len(queries) == 2
+    assert "messages" not in queries[1]  # Nothing reads historical chats.
+
+
+def test_lid_recent_cohort_capacity_fails_closed(rig, monkeypatch):
+    db, _cycle, _client = rig
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_REVERSE_LID_ENABLED", "1")
+    class TooManyLeads:
+        def find(self, query, projection):
+            return Cursor([]) if "whatsapp_verified_lid.lid" in query else Cursor([
+                {"_id": ObjectId(f"{i + 1:024x}"),
+                 "phone": f"+569{10000000 + i:08d}"}
+                for i in range(49)
+            ])
+    db["leads"] = TooManyLeads()
+    monkeypatch.setattr(audit, "_lid_from_pn",
+                        lambda *_: pytest.fail("Provider must not be queried"))
+    assert audit._verified_lid_phone(
+        db, session={"user_id": str(USER), "session_id": SESSION,
+                     "token": TOKEN}, lid="123456789012345678@lid",
+    ) is None
 
 
 def test_message_sent_direct_envelope_is_saved_and_deduped_against_upsert(rig):

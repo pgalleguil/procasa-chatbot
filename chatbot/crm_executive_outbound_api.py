@@ -235,6 +235,24 @@ def _recover_incidents(db, *, executive_id: str = _PABLO_USER_ID) -> None:
         logger.warning("CRM_EXEC_WA_INCIDENT recover_failed=%s", type(exc).__name__)
 
 
+def _queue_operator_alert(*, user: dict, reason: str) -> None:
+    """Signal an already-detected CRM outage, without extra provider probes.
+
+    The send is isolated from the executive's click. A durable Mongo claim
+    prevents repeated alerts from multiple clicks, users or app processes.
+    """
+    if os.getenv("PROCASA_EXEC_WA_PABLO_ALERTS_ENABLED", "0") != "1":
+        return
+    profile = _profile(user)
+    if profile is None:
+        return
+    from .executive_session_admin_alerts import notify_pablo_on_crm_failure
+    asyncio.create_task(notify_pablo_on_crm_failure(
+        session_id=profile["session"], executive_name=profile["name"],
+        reason=reason,
+    ))
+
+
 def _assess(db, *, user: dict, lead_id: str, get=None) -> dict:
     """Server-side safe choice; owner, consent and session gates cannot be bypassed."""
     profile = _profile(user)
@@ -269,6 +287,15 @@ def _assess(db, *, user: dict, lead_id: str, get=None) -> dict:
         return {"method": "wa_me", "available": False,
                 "fallback": True, "reason": "session_unavailable"}
     _recover_incidents(db, executive_id=profile["id"])
+    # The existing CRM preflight already verified provider status/identity.
+    # Re-arm only a previously raised alert. No additional WaSender requests.
+    if os.getenv("PROCASA_EXEC_WA_PABLO_ALERTS_ENABLED", "0") == "1":
+        from .executive_session_admin_alerts import mark_event_recovered
+        try:
+            mark_event_recovered(db, session_id=profile["session"])
+        except Exception as exc:
+            logger.warning("EXEC_WA_PABLO_EVENT recovery_error=%s",
+                           type(exc).__name__)
     return {"method": "executive_wasender_api", "available": True}
 
 
@@ -290,9 +317,13 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
             return {"available": False, "method": "wa_me", "fallback": True}
         return {"available": False, "method": "wa_me"}
     from .storage import get_db
-    return await asyncio.to_thread(lambda: _assess(
+    assessment = await asyncio.to_thread(lambda: _assess(
         get_db(), user=user, lead_id=lead_id,
     ))
+    if (assessment.get("fallback") is True
+            and assessment.get("reason") == "session_unavailable"):
+        _queue_operator_alert(user=user, reason="session_unavailable")
+    return assessment
 
 
 @router.post("/api/crm/executive-whatsapp/send")
@@ -336,6 +367,9 @@ async def crm_executive_whatsapp_send(request: Request):
     if result.get("status") == "duplicate":
         return {"status": "duplicate", "previous_state": result.get("previous_state")}
     if result.get("status") == "manual_fallback":
+        # The POST can detect a disconnection after the initial GET preflight.
+        if result.get("reason") == "session_unavailable":
+            _queue_operator_alert(user=user, reason="session_unavailable")
         return {"status": "manual_fallback", "method": "wa_me"}
     if result.get("status") == "blocked":
         raise HTTPException(status_code=409, detail={"code": "operation_blocked"})
@@ -349,6 +383,8 @@ async def crm_executive_whatsapp_send(request: Request):
                                 session_id=profile["session"],
                                 executive_id=profile["id"],
                                 executive_name=profile["name"])
+        if reason in ("session_disconnected", "authentication"):
+            _queue_operator_alert(user=user, reason=reason)
         if reason in _SAFE_REJECTED_REASONS:
             return {"status": "manual_fallback", "method": "wa_me"}
         raise HTTPException(status_code=422, detail={"code": "operation_blocked"})

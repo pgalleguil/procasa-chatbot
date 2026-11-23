@@ -74,7 +74,7 @@ def intent(text, previous_agent=""):
             r'(?:ir\s+a\s+)?(?:verlo|verla|ver\s+(?:el|la|ese|esa)|la visita|una visita)\b',
             msg,
         ) or re.search(
-            r'\b(?:cree|crees|creen)\s+que\s+(?:podemos|podriamos)\s+'
+            r'\b(?:cree|crees|creen)\s+que\s+(?:podemos|podriamos|podamos)\s+'
             r'(?:ir a )?ver\s+(?:el|la|ese|esa|lo|la propiedad|local)\b',
             msg,
         ):
@@ -94,7 +94,7 @@ def intent(text, previous_agent=""):
     # Specific due-diligence questions still require an executive answer.
     if any(re.search(
         r'\b(?:contribuciones|esta regularizad[ao]|requisitos? (?:para |de )?'
-        r'(?:arrendar|arriendo)|ubicacion exacta|'
+        r'(?:arrendar|arriendo)|requisitos? (?:piden )?(?:para |de )?(?:arrendar|arriendo)|ubicacion exacta|'
         r'que tan lejos|que micros?|que micro|'
         r'donde se encuentra|cuantos? metros|'
         r'esta disponible desde|sigue disponible)\b', p

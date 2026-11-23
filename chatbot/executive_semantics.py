@@ -66,6 +66,40 @@ def intent(text, previous_agent=""):
             return "ASK_VISIT"
         if re.match(r'(?:me (?:puedes|pueden|podrias|podrian) llamar|llamame|llamenme|quiero (?:hablar|conversar) con (?:un |una )?(?:ejecutivo|ejecutiva|asesor|asesora|corredor)|contacteme por telefono)\b', p):
             return "ASK_CONTACT"
+    # Actual customer phrasing in executive chats, not hypothetical visits.
+    if not re.search(r'\b(?:no puedo|no quiero|no podre|no me interesa)\b', msg):
+        if re.search(
+            r'\b(?:para|quiero|quisiera|podemos|podriamos|me gustaria)\s+'
+            r'(?:poder\s+)?(?:coordinar|agendar|programar)\s+'
+            r'(?:ir\s+a\s+)?(?:verlo|verla|ver\s+(?:el|la|ese|esa)|la visita|una visita)\b',
+            msg,
+        ) or re.search(
+            r'\b(?:cree|crees|creen)\s+que\s+(?:podemos|podriamos|podamos)\s+'
+            r'(?:ir a )?ver\s+(?:el|la|ese|esa|lo|la propiedad|local)\b',
+            msg,
+        ):
+            return "ASK_VISIT"
+    # Alternative requests need not say the literal word "alternativas".
+    if not re.match(r'^(?:no |nunca |tampoco )', msg) and re.search(
+        r'\b(?:seria ideal si (?:tiene|tienen)|'
+        r'(?:tiene|tienen) (?:algo|alguna propiedad) (?:parecido|similar)|'
+        r'busco algo mas cerca del|busco algo mas cerca de|'
+        r'busco algo (?:parecido|similar|diferente)|'
+        r'busco (?:otra|otras) (?:propiedad|casa|departamento|opcion)|'
+        r'quiero (?:otra|otras) (?:opcion|alternativa)|'
+        r'algo (?:parecido|similar) (?:con|que tenga)|'
+        r'(?:otra|alguna) (?:propiedad|opcion) con)\b', msg
+    ):
+        return "ASK_ALTERNATIVES"
+    # Specific due-diligence questions still require an executive answer.
+    if any(re.search(
+        r'\b(?:contribuciones|esta regularizad[ao]|requisitos? (?:para |de )?'
+        r'(?:arrendar|arriendo)|requisitos? (?:piden )?(?:para |de )?(?:arrendar|arriendo)|ubicacion exacta|'
+        r'que tan lejos|que micros?|que micro|'
+        r'donde se encuentra|cuantos? metros|'
+        r'esta disponible desde|sigue disponible)\b', p
+    ) for p in parts):
+        return "ASK_INFO"
     if re.search(r'\bno puedo visitar\b', msg) and re.search(r'\b(?:proxima semana|otro dia|el sabado|el lunes).*\bsi\b', msg):
         return "ASK_VISIT"
     if re.match(r'^(?:si|dale|bueno|perfecto)[, ]', msg) and not re.search(r'\bno\b', msg):
@@ -77,6 +111,10 @@ def intent(text, previous_agent=""):
                 return "ASK_CONTACT"
     if any(re.search(r'\b(?:tienen (?:otra|otras|algo parecido)|busco (?:otra|otras)|otras? (?:opciones|alternativas)|ahora busco en|mejor en otra comuna)\b', p) and not p.startswith('no ') for p in parts):
         return "ASK_ALTERNATIVES"
+    # Insufficient budget declines this listing, not the entire search.
+    # A subsidy amount is not an approved buying-price ceiling.
+    if re.search(r'\bno (?:tengo|cuento con) (?:el )?presupuesto para (?:eso|esa|ese|esta|este)\b', msg):
+        return "PROPERTY_DECLINED"
     if re.search(r'\b(?:esa|esta|ese|este|la|el) (?:casa|propiedad|opcion|departamento) no me interesa|\bno me interesa (?:esa|esta|ese|este|la|el) (?:casa|propiedad|opcion|departamento)\b', msg):
         return "PROPERTY_DECLINED"
     if any(re.match(r'(?:me interesa|estoy interesad[oa]|sigo interesad[oa])\b', p) for p in parts):

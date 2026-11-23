@@ -22,7 +22,12 @@ _ACTIVE = re.compile(
     r"(?:casa|departamento|depto|propiedad)|quiero (?:comprar|arrendar)|"
     r"otras? (?:alternativas?|opciones?)|algo mas (?:barato|economico)|"
     r"busqu(?:en|eme|enme) (?:algo|una?)|"
-    r"tienen (?:algo|otra|otras) (?:mas barato|mas economico|en))\b"
+    r"tienen (?:algo|otra|otras) (?:mas barato|mas economico|en)|"
+    r"seria ideal si (?:tiene|tienen) (?:algo|en su sistema)|"
+    r"algo (?:parecido|similar) (?:con|que tenga)|"
+    r"busco algo (?:mas cerca|parecido|similar)|"
+    r"tiene(?:n)? algo (?:parecido|similar)|"
+    r"busco otra (?:propiedad|casa|opcion|alternativa))\b"
 )
 _COMPLETED = re.compile(
     r"^(?:ya (?:encontre|compre|arrende) (?:una? )?(?:casa|depto|departamento|propiedad)"
@@ -178,9 +183,18 @@ def capture_active_search(
         budget = _max_clp(body, already_searching=explicit or started)
         areas = _communes(body) if explicit or started else []
         types = [kind for kind, pattern in _TYPE if pattern.search(body)]
+        # These are customer-origin preferences, never agent listing claims.
+        parking = bool(re.search(r'\bcon (?:al menos )?(?:un |1 )?estacionamiento\b', body))
+        bedrooms = re.search(r'\b(\d{1,2})\s*dormitorios?\b', body)
+        near_metro = bool(re.search(r'\bcercan[oa] (?:a |de )?(?:algun |un |el )?metro\b', body))
+        landmark = re.search(
+            r'\bbusco algo mas cerca de(?:l | la | )([a-z][a-z0-9 ]{3,65})$',
+            body,
+        )
+        amenities = parking or bedrooms or near_metro or landmark
         # "casa" alone is a preference correction only inside a live search;
         # do not infer searches from unrelated one-word answers.
-        if started or (explicit and (budget or areas or types)):
+        if started or (explicit and (budget or areas or types or amenities)):
             explicit = True
             status = STATUS_ACTIVE
             if channel not in sources:
@@ -194,6 +208,18 @@ def capture_active_search(
             if types:
                 criteria["property_types"] = types
                 evidence["property_types"] = {"source": channel, "message_id": message_id}
+            if parking:
+                criteria["parking_required"] = True
+                evidence["parking_required"] = {"source": channel, "message_id": message_id}
+            if bedrooms and 1 <= int(bedrooms[1]) <= 12:
+                criteria["min_bedrooms"] = int(bedrooms[1])
+                evidence["min_bedrooms"] = {"source": channel, "message_id": message_id}
+            if near_metro:
+                criteria["near_metro_required"] = True
+                evidence["near_metro_required"] = {"source": channel, "message_id": message_id}
+            if landmark:
+                criteria["preferred_landmark"] = landmark[1].strip()[:65]
+                evidence["preferred_landmark"] = {"source": channel, "message_id": message_id}
             if re.search(r"\b(?:arriendo|arrendar|alquilar)\b", body):
                 criteria["operation"] = "ARRIENDO"
                 evidence["operation"] = {"source": channel, "message_id": message_id}
@@ -201,7 +227,7 @@ def capture_active_search(
                 criteria["operation"] = "VENTA"
                 evidence["operation"] = {"source": channel, "message_id": message_id}
             newest = timestamp.isoformat()
-    if not criteria and status != STATUS_COMPLETED:
+    if not criteria and status != STATUS_COMPLETED and not explicit:
         return None
     if status == STATUS_ACTIVE and not criteria.get("operation"):
         # The prospect came from a sale listing, so a buyer search can
@@ -217,8 +243,9 @@ def capture_active_search(
         "field_evidence": evidence, "source_channels": sources,
         "excluded_property_codes": excluded[:12],
         "last_customer_at": newest, "opt_out": opt_out,
-        "followup_required": status == STATUS_ACTIVE and bool(criteria.get("max_price_clp"))
-                             and bool(criteria.get("comunas")),
+        # Missing budget/comuna requires qualification, not silent dropping.
+        "followup_required": status == STATUS_ACTIVE and not opt_out
+                             and bool(sources),
     }
 
 

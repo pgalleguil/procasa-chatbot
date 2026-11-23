@@ -1771,6 +1771,10 @@ app.include_router(executive_audit_router)
 from chatbot.crm_executive_outbound_api import router as crm_executive_outbound_router
 app.include_router(crm_executive_outbound_router)
 
+# Scoped commercial support console; no WhatsApp customer auto-send.
+from chatbot.central_support_api import router as central_support_router
+app.include_router(central_support_router)
+
 from chatbot.lead_router import should_send_now, format_whatsapp_template
 from chatbot.storage import (
     get_db,

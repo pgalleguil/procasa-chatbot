@@ -162,8 +162,8 @@ def test_followup_task_once_then_new_inventory_creates_new_task_not_outbound():
     assert first
     assert first == ensure_followup_task(db, lead_id=lead_id, cycle_id=CYCLE,
                                         owner_id=OWNER, search=search, now=NOW)
-    assert db.crm_tasks.count_documents({}) == 1
-    assert "97.000.000" in db.crm_tasks.find_one({"_id": first})["note"]
+    assert db.crm_central_support_tasks.count_documents({}) == 1
+    assert "97.000.000" in db.crm_central_support_tasks.find_one({"_id": first})["note"]
     db.crm_assignment_cycles.insert_one({
         "lead_id": lead_id, "cycle_status": "active", "unassigned_at": None,
         "assignment_cycle_id": CYCLE, "assigned_to_user_id": OWNER,
@@ -171,9 +171,9 @@ def test_followup_task_once_then_new_inventory_creates_new_task_not_outbound():
     db.universo_cartera_prop360.insert_one(_property("1234"))
     updated = refresh_active_search_batch(db, limit=10, now=NOW)
     assert updated["checked"] == 1
-    assert db.crm_tasks.count_documents({}) == 2
-    assert db.crm_tasks.find_one({"_id": first})["status"] == "completed"
-    match_task = db.crm_tasks.find_one({"status": "pending"})
+    assert db.crm_central_support_tasks.count_documents({}) == 2
+    assert db.crm_central_support_tasks.find_one({"_id": first})["status"] == "completed"
+    match_task = db.crm_central_support_tasks.find_one({"status": "pending"})
     assert match_task["type"] == "SEARCH_ALTERNATIVES"
     assert match_task["property_codes_to_review"] == ["1234"]
     assert "confirmar disponibilidad" in match_task["note"]
@@ -231,7 +231,85 @@ def test_existing_diana_classification_is_repaired_without_new_customer_message(
     assert profile["match_status"] == "WAITING_INVENTORY"
     assert saved["commercial_intelligence"]["summary"]["followup_search_required"]
     assert saved["commercial_intelligence"]["summary"]["executive_management"]["case_type"] == "BUSQUEDA_ACTIVA_ALTERNATIVAS"
-    assert db.crm_tasks.count_documents({"type": "SEARCH_ALTERNATIVES"}) == 1
+    assert db.crm_central_support_tasks.count_documents({"type": "SEARCH_ALTERNATIVES"}) == 1
     # An inventory refresh must not recreate the profile or duplicate tasks.
     assert worker.backfill_missing_active_searches(db, limit=2)["repaired"] == 0
-    assert db.crm_tasks.count_documents({}) == 1
+    assert db.crm_central_support_tasks.count_documents({}) == 1
+
+
+def test_edson_alternative_without_budget_creates_manual_central_support_task():
+    # A verified customer asked for a different listing with concrete
+    # amenities but never supplied a budget/comuna.
+    msg = executive(
+        "Sería ideal si tiene en su sistema algo parecido, con estacionamiento "
+        "1 dormitorio, baño y cercano a algún metro", 1,
+    )
+    search = classify([msg])
+    assert search["status"] == "ACTIVE"
+    assert search["followup_required"] is True
+    assert search["criteria"]["parking_required"] is True
+    assert search["criteria"]["min_bedrooms"] == 1
+    assert search["criteria"]["near_metro_required"] is True
+    assert "max_price_clp" not in search["criteria"]
+    assert "comunas" not in search["criteria"]
+    db = mongomock.MongoClient().edson
+    lead_id = ObjectId()
+    db.leads.insert_one({
+        "_id": lead_id, "phone": "+56911112222", "ejecutivo_asignado": "Mariela Arriagada",
+        "lifecycle": {"assigned_to_user_id": OWNER, "current_assignment_cycle_id": CYCLE},
+        "commercial_intelligence": {"active_search": search},
+    })
+    task_id = ensure_followup_task(db, lead_id=lead_id, cycle_id=CYCLE,
+                                   owner_id=OWNER, search=search, now=NOW)
+    assert task_id
+    task = db.crm_central_support_tasks.find_one({"_id": task_id})
+    assert task["status"] == "pending"
+    assert "estacionamiento requerido" in task["note"]
+    assert "por confirmar" in task["note"]
+    assert db.crm_central_support_alerts.count_documents({}) == 1
+    assert db.crm_central_support_alerts.find_one({})["delivery"] == "queued"
+    assert find_matching_inventory(db, search) == []  # Not an invented match
+
+
+def test_landmark_preference_stays_in_manual_search_not_false_inventory_match():
+    search = classify([executive("Busco algo más cerca del San Fco Javier", 1)])
+    assert search["status"] == "ACTIVE"
+    assert search["criteria"]["preferred_landmark"] == "san fco javier"
+    assert search["followup_required"] is True
+    assert search["criteria"]["operation"] == "VENTA"
+    assert "comunas" not in search["criteria"]
+
+
+def test_no_search_is_invented_from_a_question_about_one_listing():
+    assert classify([executive("Este departamento tiene estacionamiento?", 1)]) is None
+    assert classify([executive("43 millones de subsidio", 2)]) is None
+
+
+def test_revised_customer_requirements_make_a_new_task_but_not_duplicates():
+    db = mongomock.MongoClient().revised_search
+    lead_id = ObjectId()
+    search = classify([executive("Busco algo similar con estacionamiento", 1)])
+    db.leads.insert_one({
+        "_id": lead_id, "phone": "+56911112222", "ejecutivo_asignado": "Hernán Castro",
+        "lifecycle": {"assigned_to_user_id": OWNER, "current_assignment_cycle_id": CYCLE},
+        "commercial_intelligence": {"active_search": search},
+    })
+    first = ensure_followup_task(db, lead_id=lead_id, cycle_id=CYCLE,
+                                 owner_id=OWNER, search=search, now=NOW)
+    assert ensure_followup_task(db, lead_id=lead_id, cycle_id=CYCLE,
+                                owner_id=OWNER, search=search, now=NOW) == first
+    revised = classify([executive("2 dormitorios", 2)], prior=search)
+    db.leads.update_one({"_id": lead_id}, {"$set": {
+        "commercial_intelligence.active_search": revised,
+    }})
+    second = ensure_followup_task(db, lead_id=lead_id, cycle_id=CYCLE,
+                                  owner_id=OWNER, search=revised, now=NOW)
+    assert first != second
+    assert db.crm_central_support_tasks.count_documents({}) == 2
+    assert db.crm_central_support_alerts.count_documents({}) == 2
+    # Support requests never enter the executive's normal CRM task inbox.
+    assert db.crm_tasks.count_documents({}) == 0
+    central = list(db.crm_central_support_tasks.find({}))
+    assert all(t["recipient_user_id"] == "69796bc4bbebf240378eb739"
+               for t in central)
+    assert all(t["related_executive_user_id"] == OWNER for t in central)

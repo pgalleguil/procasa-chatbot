@@ -1,4 +1,4 @@
-"""Idempotent human follow-up tasks for buyer-search matches.
+"""Administrator-only central-support tasks for buyer-search matches.
 
 Never sends WhatsApp; a price inferred from UF must be freshly verified
 before offering it. No SLA transitions or contact/marketing permissions change.
@@ -7,51 +7,70 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from hashlib import sha256
+import json
 
 from .active_search import find_matching_inventory
+from .central_support_alerts import notify_central_support_task
 
 TASK_TYPE = "SEARCH_ALTERNATIVES"
+TASKS_COLLECTION = "crm_central_support_tasks"
+ADMIN_USER_ID = "69796bc4bbebf240378eb739"
 ACTIVE = "ACTIVE"
 
 
-def _task_id(lead_id, cycle_id, matches: list[dict]) -> str:
+def _task_id(lead_id, cycle_id, matches: list[dict], criteria: dict | None = None) -> str:
     group = "waiting" if not matches else "matches:" + sha256(
         "|".join(sorted(x["property_code"] for x in matches)).encode()
     ).hexdigest()[:16]
-    digest = sha256(f"{lead_id}|{cycle_id}|{group}".encode()).hexdigest()
+    # The same unanswered search is idempotent. New customer requirements
+    # create a new task instead of silently reusing a completed old task.
+    fingerprint = json.dumps(criteria or {}, sort_keys=True, ensure_ascii=True)
+    digest = sha256(f"{lead_id}|{cycle_id}|{group}|{fingerprint}".encode()).hexdigest()
     return "active_search:" + digest[:32]
 
 
 def _criteria_note(search: dict, matches: list[dict]) -> str:
     c = search.get("criteria") or {}
     kinds = c.get("property_types") or []
-    if kinds == ["CASA"]:
-        kind = "casa"
-    elif kinds == ["DEPARTAMENTO"]:
-        kind = "departamento"
-    else:
-        kind = "casa o departamento"
-    amount = int(c.get("max_price_clp") or 0)
-    budget = "$" + f"{amount:,}".replace(",", ".")
-    area = " o ".join(c.get("comunas") or [])
+    kind = ("casa" if kinds == ["CASA"] else
+            "departamento" if kinds == ["DEPARTAMENTO"] else
+            "inmueble (tipo por confirmar)")
+    amount = c.get("max_price_clp")
+    budget = ("$" + f"{int(amount):,}".replace(",", ".")
+              if isinstance(amount, (int, float)) and amount > 0
+              else "por confirmar")
+    area = " o ".join(c.get("comunas") or []) or "comuna por confirmar"
+    details = []
+    if c.get("parking_required"):
+        details.append("estacionamiento requerido")
+    if c.get("min_bedrooms"):
+        details.append(f"{int(c['min_bedrooms'])} dormitorio(s)")
+    if c.get("near_metro_required"):
+        details.append("cercano al Metro")
+    if c.get("preferred_landmark"):
+        details.append("cerca de " + str(c["preferred_landmark"])[:65])
+    extras = "; ".join(details)
+    prefix = f"Búsqueda activa: {kind}, presupuesto {budget}, {area}."
+    if extras:
+        prefix += " Requisitos: " + extras + "."
     if not matches:
-        return (f"Búsqueda activa: {kind}, hasta {budget}, en {area}. "
-                "No hay coincidencias en la cartera verificada; "
-                "hacer seguimiento y revisar próximas altas o rebajas.")
+        return (prefix + " Buscar alternativas verificadas; solicitar datos "
+                "faltantes al ejecutivo/cliente y revisar inventario externo. "
+                "No afirmar que no existe stock si faltan comuna o presupuesto.")
     ids = ", ".join(x["property_code"] for x in matches[:5])
-    return (f"Búsqueda activa: {kind}, hasta {budget}, en {area}. "
-            f"Revisar opciones internas {ids} y ofrecer únicamente después "
-            "de confirmar disponibilidad, precio y autorización de contacto.")
+    return (prefix + f" Revisar candidatos internos {ids}. "
+            "Es obligatorio confirmar disponibilidad, precio, coincidencia "
+            "de los requisitos y permiso de contacto antes de ofrecer.")
 
 
 def ensure_followup_task(
     db, *, lead_id, cycle_id: str, owner_id: str,
     search: dict, now: datetime | None = None,
 ) -> str | None:
-    """One task per search revision/match set, never blindly resurrect closed.
+    """Only the administrator gets a support task; the lead still belongs to its executive.
 
-    The assigned executive manually approves and delivers an offer. An actual
-    customer send must go through the existing office/CRM authorization flow.
+    Separate storage avoids leaking an extra task into the executive's normal
+    CRM reminders/inbox. A deliberate customer send is independently authorized.
     """
     if (search.get("status") != ACTIVE
             or not search.get("followup_required")
@@ -67,11 +86,12 @@ def ensure_followup_task(
     if not lead:
         return None
     matches = search.get("matches") or []
-    identity = _task_id(lead_id, cycle_id, matches)
+    identity = _task_id(lead_id, cycle_id, matches, search.get("criteria"))
     record = {
         "_id": identity, "task_id": identity,
         "lead_id": lead_id, "assignment_cycle_id": cycle_id,
-        "assigned_to_user_id": owner_id,
+        "related_executive_user_id": owner_id,
+        "recipient_user_id": ADMIN_USER_ID,
         "phone": str(lead.get("phone") or "").replace("+", "").replace(" ", ""),
         "type": TASK_TYPE, "status": "pending",
         "execute_at": now, "created_at": now,
@@ -80,15 +100,23 @@ def ensure_followup_task(
         "property_codes_to_review": [x["property_code"] for x in matches],
         "source": "verified_active_search",
     }
-    db["crm_tasks"].update_one(
+    result = db[TASKS_COLLECTION].update_one(
         {"_id": identity},
         {"$setOnInsert": record}, upsert=True,
     )
+    # This is an event-driven, once-per-revision alert, not a periodic
+    # WaSender account-status poll. It never sends to the customer.
+    try:
+        notify_central_support_task(db, record, newly_created=bool(result.upserted_id))
+    except Exception:
+        # Alert delivery must not discard the canonical CRM follow-up task.
+        import logging
+        logging.getLogger(__name__).exception("CENTRAL_SUPPORT alert_registration_failed")
     if matches:
         # The waiting task is superseded by a match-specific action. A human
         # already-completed task is never reopened or rewritten.
-        waiting_id = _task_id(lead_id, cycle_id, [])
-        db["crm_tasks"].update_one(
+        waiting_id = _task_id(lead_id, cycle_id, [], search.get("criteria"))
+        db[TASKS_COLLECTION].update_one(
             {"_id": waiting_id, "status": "pending"},
             {"$set": {"status": "completed", "resolved_at": now,
                       "resolution": "inventory_candidates_found"}},
@@ -99,7 +127,7 @@ def ensure_followup_task(
 def refresh_active_search_batch(
     db, *, limit: int = 20, now: datetime | None = None,
 ) -> dict:
-    """Bounded re-evaluation so new verified inventory can unlock a follow-up.
+    """Bounded re-evaluation so new verified inventory can unlock admin support.
 
     Inbound messages create the original active search; this loop only reads
     that structured profile and the business inventory, not conversations.

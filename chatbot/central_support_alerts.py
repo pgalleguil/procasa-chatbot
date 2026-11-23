@@ -11,7 +11,7 @@ import os
 from datetime import datetime, timezone
 from hashlib import sha256
 
-from .executive_session_admin_alerts import _pablo_recipient
+from .executive_session_admin_alerts import _pablo_recipient, PABLO_ID
 
 logger = logging.getLogger(__name__)
 COLLECTION = "crm_central_support_alerts"
@@ -20,10 +20,12 @@ ENABLED_FLAG = "PROCASA_CENTRAL_SUPPORT_WHATSAPP_ENABLED"
 
 def _eligible(db, task: dict) -> bool:
     """Reject stale ownership, closed searches and synthetic contact records."""
+    if str(task.get("recipient_user_id") or "") != str(PABLO_ID):
+        return False
     lead = db["leads"].find_one({
         "_id": task["lead_id"],
         "lifecycle.current_assignment_cycle_id": task["assignment_cycle_id"],
-        "lifecycle.assigned_to_user_id": task["assigned_to_user_id"],
+        "lifecycle.assigned_to_user_id": task["related_executive_user_id"],
         "commercial_intelligence.active_search.status": "ACTIVE",
         "commercial_intelligence.active_search.followup_required": True,
     }, {
@@ -59,7 +61,9 @@ def notify_central_support_task(db, task: dict, *, newly_created: bool,
             "task_id": task_id,
             "lead_id": task["lead_id"],
             "assignment_cycle_id": task["assignment_cycle_id"],
-            "assigned_to_user_id": task["assigned_to_user_id"],
+            # The executive is contextual: ONLY the verified admin is a recipient.
+            "recipient_user_id": str(PABLO_ID),
+            "related_executive_user_id": task["related_executive_user_id"],
             "executive_name": str(task.get("agent") or "")[:100],
             "action": "BUSCAR_ALTERNATIVAS",
             "property_codes_to_review": list(task.get("property_codes_to_review") or [])[:8],

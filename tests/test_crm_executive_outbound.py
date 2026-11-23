@@ -756,6 +756,30 @@ def test_pablo_pilot_fails_closed_when_session_or_lead_not_ready(monkeypatch):
     assert exc.value.status_code == 409
 
 
+def test_pablo_pilot_attests_own_phone_not_erika_account(monkeypatch):
+    from chatbot import crm_executive_outbound_api as api
+    monkeypatch.setenv("PROCASA_PABLO_CRM_WASENDER_API_ENABLED", "1")
+    user = {"_id": ObjectId(api._PABLO_USER_ID),
+            "nombre": "Pablo Galleguillos", "rol": "agente"}
+    class Users:
+        def find_one(self, query, projection):
+            assert query["_id"] == ObjectId(api._PABLO_USER_ID)
+            return {"telefono": "+56912345678"}
+    db = {"leads": SimpleNamespace(find_one=lambda _query: {"_id": LEAD_ID}),
+          "usuarios": Users()}
+    monkeypatch.setattr(api, "eligible_manual_session",
+                        lambda *_a, **_kw: {
+                            "session": {"session_id": "133286", "token": "test-token"},
+                        })
+    attested = []
+    monkeypatch.setattr(api, "verify_provider_sender_identity",
+                        lambda session, expected_phone, force:
+                            attested.append((session["session_id"], expected_phone, force)))
+    info = api._eligible_pablo(db, user=user, lead_id=str(LEAD_ID))
+    assert info["session"]["session_id"] == "133286"
+    assert attested == [("133286", "+56912345678", True)]
+
+
 def test_crm_lead_detail_uses_api_only_for_pablo_link_for_everyone_else():
     from pathlib import Path
     text = (Path(__file__).resolve().parent.parent / "templates" /

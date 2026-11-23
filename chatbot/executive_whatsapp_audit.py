@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
+import threading
+import time
 from contextvars import ContextVar
 import json
 import logging
@@ -40,6 +41,8 @@ _SESSION_ID = re.compile(r"^[1-9][0-9]{0,17}$")
 _LID = re.compile(r"^[0-9]{8,25}@lid$")
 _ALLOWED_EVENTS = frozenset({"messages.upsert", "messages.received", "message.sent"})
 _LID_DIAG_SESSION: ContextVar[str] = ContextVar("exec_lid_diag_session", default="")
+_REVERSE_LID_CACHE: dict[tuple[str, str, int], tuple[float, str | None]] = {}
+_REVERSE_LID_LOCK = threading.Lock()
 
 _DIAGNOSTIC_FLAG = "PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS"
 # These fixed reason codes are the ONLY values ever emitted. Neither content,
@@ -368,6 +371,25 @@ def _lid_from_pn(phone: str, token: str | None) -> str | None:
         return None
 
 
+def _cached_lid_from_pn(phone: str, session: dict) -> str | None:
+    """Short-lived per-session lookup cache to protect provider rate limits."""
+    token = session.get("token")
+    if not token:
+        return None
+    key = (str(session["session_id"]), phone, hash(token))
+    now = time.monotonic()
+    with _REVERSE_LID_LOCK:
+        previous = _REVERSE_LID_CACHE.get(key)
+        if previous and previous[0] > now:
+            return previous[1]
+    value = _lid_from_pn(phone, token)
+    with _REVERSE_LID_LOCK:
+        if len(_REVERSE_LID_CACHE) >= 512:
+            _REVERSE_LID_CACHE.clear()
+        _REVERSE_LID_CACHE[key] = (time.monotonic() + (600 if value else 20), value)
+    return value
+
+
 def _verified_lid_phone(db, *, session: dict, lid: str) -> str | None:
     """Match a remote LID only against leads already assigned to this executive.
 
@@ -418,7 +440,7 @@ def _verified_lid_phone(db, *, session: dict, lid: str) -> str | None:
     # operation. No chat content, message IDs or unassigned contacts are read.
     with ThreadPoolExecutor(max_workers=4) as pool:
         observed = list(pool.map(
-            lambda candidate: _lid_from_pn(candidate, session.get("token")),
+            lambda candidate: _cached_lid_from_pn(candidate, session),
             candidates,
         ))
     matches = [pn for pn, reported in zip(candidates, observed) if reported == lid]

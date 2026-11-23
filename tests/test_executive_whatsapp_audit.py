@@ -962,3 +962,85 @@ def test_malformed_extra_capture_grants_no_new_access(rig, monkeypatch, invalid)
     assert audit._capture_enabled_for_session(SESSION, False) is False
     assert post(client, event(from_me=True)).json()["status"] == "dry_run"
     assert db["leads"].update_calls == 0
+
+
+def test_isolated_mariela_capture_flag_does_not_touch_other_sessions(rig, monkeypatch):
+    # Prior global allowlists may contain Hernan, Susana and Paula; no overwrite.
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_CAPTURE_SESSION_IDS",
+                       "133517,133523,133527")
+    monkeypatch.delenv("PROCASA_EXEC_AUDIT_CAPTURE_EXTRA_SESSION_IDS", raising=False)
+    monkeypatch.delenv("PROCASA_EXEC_AUDIT_MARIELA_133526_CAPTURE_ENABLED", raising=False)
+    assert audit._capture_enabled_for_session("133526", False) is False
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_MARIELA_133526_CAPTURE_ENABLED", "1")
+    assert audit._capture_enabled_for_session("133526", False) is True
+    assert audit._capture_enabled_for_session("133517", False) is True
+    assert audit._capture_enabled_for_session("133523", False) is True
+    assert audit._capture_enabled_for_session("133527", False) is True
+    assert audit._capture_enabled_for_session("133286", False) is False
+    assert audit._capture_enabled_for_session("133286", True) is False
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_MARIELA_133526_CAPTURE_ENABLED", "TRUE")
+    assert audit._capture_enabled_for_session("133526", False) is False
+
+
+def test_mariela_isolated_capture_does_not_bypass_global_write_guard(rig, monkeypatch):
+    db, cycle, client = rig
+    # Force the model session to act as session 133526 solely in-memory.
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_MARIELA_133526_CAPTURE_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_WRITE_ENABLED", "0")
+    original_session_id = db["usuarios"].user["wasender"]["session_id"]
+    original_env = EXEC_ENV
+    try:
+        db["usuarios"].user["wasender"]["session_id"] = 133526
+        monkeypatch.setenv("PROCASA_WASENDER_PABLO_GALLEGUILLOS", json.dumps({
+            "session_id": 133526, "webhook_secret": SECRET,
+            "api_token": TOKEN, "capture_enabled": False,
+        }))
+        assert post(client, event(from_me=True), session_id="133526").json()["status"] == "dry_run"
+        assert db["leads"].update_calls == 0
+    finally:
+        db["usuarios"].user["wasender"]["session_id"] = original_session_id
+
+
+def test_mariela_provider_probe_verifies_registered_phone_and_live_status(
+        rig, monkeypatch):
+    from chatbot import crm_executive_outbound, crm_executive_outbound_api
+    db, _, _ = rig
+    session = {"user_oid": USER, "session_id": "133526", "token": TOKEN}
+    monkeypatch.setattr(db["usuarios"], "find_one",
+                        lambda *_a, **_kw: {"telefono": "+56938725886"})
+    checked = []
+    monkeypatch.setattr(crm_executive_outbound, "verify_provider_sender_identity",
+                        lambda obj, expected_phone, force:
+                        checked.append((obj["session_id"], expected_phone, force)))
+    monkeypatch.setattr(crm_executive_outbound_api, "_session_status",
+                        lambda obj: "connected")
+    assert audit._mariela_provider_readiness(session) == "connected_identity_verified"
+    assert checked == [("133526", "+56938725886", True)]
+    monkeypatch.setattr(crm_executive_outbound_api, "_session_status",
+                        lambda obj: "disconnected")
+    assert audit._mariela_provider_readiness(session) == "provider_disconnected"
+    def mismatch(*_a, **_kw):
+        raise crm_executive_outbound.OutboundBlocked("sender_identity_mismatch")
+    monkeypatch.setattr(crm_executive_outbound, "verify_provider_sender_identity", mismatch)
+    assert audit._mariela_provider_readiness(session) == "sender_identity_mismatch"
+    assert audit._mariela_provider_readiness(None) == "session_unavailable"
+
+
+def test_mariela_startup_probe_reports_provider_only_as_non_secret_state(
+        rig, monkeypatch, caplog):
+    import asyncio
+    db, _, _ = rig
+    caplog.set_level("INFO")
+    monkeypatch.setenv("PROCASA_EXEC_AUDIT_DIAGNOSTIC_SESSIONS", "133526")
+    monkeypatch.setattr(audit, "_session_from_storage", lambda sid: {
+        "user_oid": USER, "session_id": sid, "token": TOKEN,
+        "capture_enabled": False,
+    })
+    monkeypatch.setattr(audit, "_mariela_provider_readiness",
+                        lambda session: "connected_identity_verified")
+    asyncio.run(audit.executive_audit_readiness_probe())
+    assert "EXEC_AUDIT_READY session=133526 state=session_capture_disabled" in caplog.text
+    assert "MARIELA_PROVIDER_READY session=133526 state=connected_identity_verified" in caplog.text
+    assert TOKEN not in caplog.text
+    assert SECRET not in caplog.text
+    assert db["leads"].update_calls == 0

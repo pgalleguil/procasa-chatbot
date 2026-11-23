@@ -2818,6 +2818,20 @@
                 </button>
             </div>
 
+            {% if can_administer_leads %}
+            <section id="crmWhatsAppIncidents" role="status" aria-live="polite"
+                     class="alert alert-warning d-none" aria-label="Incidencias WhatsApp de ejecutivos">
+                <div class="fw-bold mb-2"><i class="fa-solid fa-triangle-exclamation me-1"></i>
+                    <span id="crmWhatsAppIncidentCount">Incidencias WhatsApp pendientes</span>
+                </div>
+                <div class="small mb-2">
+                    Un ejecutivo podría estar usando WhatsApp Web sin trazabilidad automática.
+                    Revisa la sesión antes de reactivar el envío por API.
+                </div>
+                <ul id="crmWhatsAppIncidentList" class="small mb-0"></ul>
+            </section>
+            {% endif %}
+
 {% endif %}
             <div id="crmDynamicContent" data-crm-version="{{ crm_version }}">
 
@@ -3389,6 +3403,45 @@
         <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
         <script src="{{ url_for('static', path='js/crm_quick_management.js') }}?v=20260825-followup20"></script>
         <script>
+            {% if can_administer_leads %}
+            async function loadCrmWhatsAppIncidents() {
+                const panel = document.getElementById('crmWhatsAppIncidents');
+                const list = document.getElementById('crmWhatsAppIncidentList');
+                if (!panel || !list) return;
+                try {
+                    const response = await fetch('/api/crm/executive-whatsapp/incidents', {
+                        credentials: 'same-origin', headers: {'Accept': 'application/json'}
+                    });
+                    if (!response.ok) return;
+                    const data = await response.json();
+                    const incidents = Array.isArray(data.incidents) ? data.incidents : [];
+                    panel.classList.toggle('d-none', incidents.length === 0);
+                    list.replaceChildren();
+                    document.getElementById('crmWhatsAppIncidentCount').textContent =
+                        incidents.length + ' incidencia(s) WhatsApp pendiente(s)';
+                    incidents.forEach(entry => {
+                        const li = document.createElement('li');
+                        const who = entry.executive || 'Ejecutivo';
+                        const session = entry.session || '?';
+                        const reason = entry.reason || 'no disponible';
+                        li.append(document.createTextNode(who + ' · Sesión ' + session
+                            + ' · ' + reason + ' · ' + (entry.occurrences || 1) + ' registro(s)'));
+                        if (entry.lead_id && /^[a-f0-9]{24}$/i.test(entry.lead_id)) {
+                            li.append(document.createTextNode(' · '));
+                            const link = document.createElement('a');
+                            link.href = '/crm/lead-id/' + entry.lead_id;
+                            link.textContent = 'Ver lead';
+                            li.append(link);
+                        }
+                        list.append(li);
+                    });
+                } catch (_) {
+                    // Never clear an existing alert just because polling failed.
+                }
+            }
+            loadCrmWhatsAppIncidents();
+            setInterval(loadCrmWhatsAppIncidents, 60000);
+            {% endif %}
             const quickManagementState = {
                 leadId: null, phone: null, assignmentCycleId: null, resultType: null,
                 managementRequestId: null, row: null

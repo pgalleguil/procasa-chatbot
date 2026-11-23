@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from .crm_executive_outbound import (
     OutboundBlocked, eligible_manual_session, send_manual,
+    verify_provider_sender_identity,
 )
 
 router = APIRouter()
@@ -53,6 +54,20 @@ def _eligible_pablo(db, *, user: dict, lead_id: str) -> dict:
     )
     if str(info["session"]["session_id"]) != _PABLO_SESSION:
         raise OutboundBlocked("pilot_session_mismatch")
+    # Pablo is temporarily operating Erika's linked session by explicit choice.
+    # Verify the bearer key is REALLY connected to Erika's WhatsApp number
+    # before the pilot can send; never trust only our Mongo session reference.
+    sender_matches = list(db["usuarios"].find(
+        {"nombre": "Erika Garrido", "is_active": True, "rol": "agente"},
+        {"telefono": 1},
+    ).limit(2))
+    if len(sender_matches) != 1 or not sender_matches[0].get("telefono"):
+        raise OutboundBlocked("pilot_sender_unverified")
+    verify_provider_sender_identity(
+        info["session"],
+        expected_phone=sender_matches[0]["telefono"],
+        force=True,
+    )
     return info
 
 

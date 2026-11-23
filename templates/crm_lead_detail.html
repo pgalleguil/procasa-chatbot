@@ -1149,7 +1149,8 @@
 
         /* Flex wrappers con ALINEACIÓN FORZADA */
         .chat-msg-user,
-        .chat-msg-assistant {
+        .chat-msg-assistant,
+        .chat-msg-executive {
             display: flex !important;
             width: 100% !important;
             margin-bottom: 12px !important;
@@ -1207,7 +1208,40 @@
         }
 
         .chat-msg-assistant .chat-name-tag {
-            color: var(--wa-green);
+            color: #b8b5ff;
+        }
+
+        /* Executive messages are never rendered as customer messages.
+           Keep their color distinct from both customer and office chatbot. */
+        .chat-msg-executive {
+            justify-content: flex-end !important;
+        }
+
+        .chat-msg-executive .chat-bubble {
+            background: #163b32;
+            color: var(--wa-text);
+            border: 1px solid rgba(75, 192, 146, 0.36);
+            border-radius: var(--wa-bubble-radius);
+            margin-right: 0;
+        }
+
+        .chat-msg-executive .chat-name-tag {
+            color: #89e6bd;
+        }
+
+        .chat-message-content {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .chat-time-label, .chat-source-label {
+            color: #b6c3c9;
+            font-size: 0.72rem;
+        }
+
+        .chat-source-label {
+            margin-top: 7px;
+            opacity: 0.86;
         }
 
         /* Contenedor con Fondo Doodle Auténtico */
@@ -2810,25 +2844,38 @@
                             </button>
                         </div>
 
-                        <!-- Historial Chatbot Comprimido -->
+                        <!-- Un solo historial cronológico: oficina, cliente y ejecutivo. -->
                         <div class="chat-toggle-header" data-bs-toggle="collapse" data-bs-target="#chatHistoryCollapse"
                             style="cursor:pointer;">
-                            <button class="btn-chat-toggle" type="button">
-                                <i class="fa-solid fa-comments me-2"></i> Ver conversación previa con IA
+                            <button class="btn-chat-toggle" type="button" aria-controls="chatHistoryCollapse">
+                                <i class="fa-solid fa-comments me-2"></i> Ver conversación completa (chatbot, cliente y ejecutivo)
                                 <i class="fa-solid fa-chevron-down transition-transform ms-2"></i>
                             </button>
                         </div>
                         <div class="collapse mt-2" id="chatHistoryCollapse">
                             <div class="bg-dark p-2 rounded border border-secondary chat-scroll-custom"
-                                style="max-height: 400px; overflow-y: auto;">
+                                style="max-height: 500px; overflow-y: auto;" aria-label="Historial cronológico del lead">
                                 {% for msg in lead.timeline %}
-                                {% set is_ia = msg.role == 'chat-bot' %}
-                                <div class="chat-msg-{{ 'assistant' if is_ia else 'user' }}">
+                                {% set actor = msg.author_type %}
+                                <div class="chat-msg-{{ 'assistant' if actor == 'bot' else ('executive' if actor == 'executive' else 'user') }}">
                                     <div class="chat-bubble">
-                                        <span class="chat-name-tag">{{ 'IA Procasa' if is_ia else 'Lead' }}</span>
-                                        {{ msg.content }}
+                                        <span class="chat-name-tag">
+                                            {% if actor == 'bot' %}<i class="fa-solid fa-robot me-1" aria-hidden="true"></i>
+                                            {% elif actor == 'executive' %}<i class="fa-solid fa-user-tie me-1" aria-hidden="true"></i>
+                                            {% else %}<i class="fa-solid fa-user me-1" aria-hidden="true"></i>{% endif %}
+                                            {{ msg.author_label }}
+                                        </span>
+                                        <div class="chat-message-content">{{ msg.content }}</div>
+                                        <div class="d-flex gap-2 flex-wrap align-items-center justify-content-between mt-1">
+                                            <span class="chat-source-label">{{ msg.channel_label }}</span>
+                                            <time class="chat-time-label"{% if msg.timestamp.year > 1 %} datetime="{{ msg.timestamp.isoformat() }}"{% endif %}>
+                                                {{ msg.timestamp.strftime('%d/%m/%Y %H:%M') if msg.timestamp.year > 1 else 'Hora sin confirmar' }}
+                                            </time>
+                                        </div>
                                     </div>
                                 </div>
+                                {% else %}
+                                <div class="text-center text-muted small p-3">No hay mensajes registrados para este lead.</div>
                                 {% endfor %}
                             </div>
                         </div>

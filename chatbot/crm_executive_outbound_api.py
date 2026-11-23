@@ -1,8 +1,8 @@
-"""Pablo CRM WaSender pilot: safe manual contingency and CRM admin incidents.
+"""Two isolated WaSender CRM pilots: Pablo and Mariela, with safe contingency.
 
-A WhatsApp Web link is offered only when the provider has NOT been called or
-has explicitly rejected a request. Uncertain/accepted-but-unrecorded dispatches
-never unlock a manual fallback. Other executives keep their original wa.me UI.
+Every pilot is gated by authenticated identity, dedicated environment enable
+flag, exact provider session and verified sender phone. Others retain wa.me.
+An uncertain provider result never permits automatic or manual retry.
 """
 from __future__ import annotations
 
@@ -30,6 +30,10 @@ _PABLO_USER_ID = "69796bc4bbebf240378eb739"
 _PABLO_NAME = "Pablo Galleguillos"
 _PABLO_SESSION = "133286"
 _PILOT_FLAG = "PROCASA_PABLO_CRM_WASENDER_API_ENABLED"
+_MARIELA_USER_ID = "6989c6309dd2ba54e478196c"
+_MARIELA_NAME = "Mariela Arriagada"
+_MARIELA_SESSION = "133526"
+_MARIELA_FLAG = "PROCASA_MARIELA_CRM_WASENDER_API_ENABLED"
 _INCIDENTS = "crm_executive_whatsapp_incidents"
 _UNCERTAIN_STATES = ("provider_attempt", "delivery_unknown",
                      "accepted_without_provider_id")
@@ -66,21 +70,39 @@ def _pablo_enabled(user: dict) -> bool:
     )
 
 
-def _eligible_pablo(db, *, user: dict, lead_id: str) -> dict:
-    if not _pablo_enabled(user):
-        raise OutboundBlocked("pilot_user_not_authorized")
+def _mariela_enabled(user: dict) -> bool:
+    return (
+        os.getenv(_MARIELA_FLAG, "0") == "1"
+        and str(user.get("_id") or "") == _MARIELA_USER_ID
+        and user.get("nombre") == _MARIELA_NAME
+        and user.get("rol") == "agente"
+    )
+
+
+def _profile(user: dict) -> dict | None:
+    # Identity comes from the authenticated user document, never from the body.
+    if _pablo_enabled(user):
+        return {"id": _PABLO_USER_ID, "name": _PABLO_NAME,
+                "session": _PABLO_SESSION}
+    if _mariela_enabled(user):
+        return {"id": _MARIELA_USER_ID, "name": _MARIELA_NAME,
+                "session": _MARIELA_SESSION}
+    return None
+
+
+def _eligible_executive(db, *, lead_id: str, profile: dict) -> dict:
     if not isinstance(lead_id, str) or not ObjectId.is_valid(lead_id):
         raise OutboundBlocked("invalid_lead_id")
     lead = db["leads"].find_one({"_id": ObjectId(lead_id)})
     info = eligible_manual_session(
-        db, lead=lead, actor_user_id=_PABLO_USER_ID,
+        db, lead=lead, actor_user_id=profile["id"],
     )
-    if str(info["session"]["session_id"]) != _PABLO_SESSION:
+    if str(info["session"]["session_id"]) != profile["session"]:
         raise OutboundBlocked("pilot_session_mismatch")
-    # Session 133286 was previously used by Erika. Only Pablo's actual
-    # registered WhatsApp phone may send during this explicitly scoped pilot.
+    # Session ID and stored credentials are not sufficient sender proof:
+    # compare the provider's /user phone against THIS executive's Mongo number.
     sender = db["usuarios"].find_one(
-        {"_id": ObjectId(_PABLO_USER_ID), "is_active": True, "rol": "agente"},
+        {"_id": ObjectId(profile["id"]), "is_active": True, "rol": "agente"},
         {"telefono": 1},
     )
     if not sender or not sender.get("telefono"):
@@ -91,7 +113,23 @@ def _eligible_pablo(db, *, user: dict, lead_id: str) -> dict:
     return info
 
 
-def _outstanding_uncertain(db, lead_id: str) -> bool:
+def _eligible_pablo(db, *, user: dict, lead_id: str) -> dict:
+    if not _pablo_enabled(user):
+        raise OutboundBlocked("pilot_user_not_authorized")
+    return _eligible_executive(db, lead_id=lead_id,
+        profile={"id": _PABLO_USER_ID, "name": _PABLO_NAME,
+                 "session": _PABLO_SESSION})
+
+
+def _eligible_mariela(db, *, user: dict, lead_id: str) -> dict:
+    if not _mariela_enabled(user):
+        raise OutboundBlocked("pilot_user_not_authorized")
+    return _eligible_executive(db, lead_id=lead_id,
+        profile={"id": _MARIELA_USER_ID, "name": _MARIELA_NAME,
+                 "session": _MARIELA_SESSION})
+
+
+def _outstanding_uncertain(db, lead_id: str, *, executive_id: str = _PABLO_USER_ID) -> bool:
     """Block a second dispatch/wa.me while earlier provider acceptance is unknown."""
     if not ObjectId.is_valid(lead_id):
         return True
@@ -104,7 +142,7 @@ def _outstanding_uncertain(db, lead_id: str) -> bool:
     return bool(db[OUTBOX].find_one({
         "lead_id": ObjectId(lead_id),
         "assignment_cycle_id": cycle,
-        "executive_id": _PABLO_USER_ID,
+        "executive_id": executive_id,
         "$or": [
             {"state": {"$in": list(_UNCERTAIN_STATES)}},
             {"state": "accepted", "canonical_recorded": {"$ne": True}},
@@ -138,22 +176,24 @@ def _session_status(session: dict, *, get=None) -> str:
 
 
 def _incident(db, *, lead_id: str, reason: str, phase: str,
-              session_id: str = _PABLO_SESSION) -> None:
+              session_id: str = _PABLO_SESSION,
+              executive_id: str = _PABLO_USER_ID,
+              executive_name: str = _PABLO_NAME) -> None:
     """Durable, deduplicated incident inbox; no numbers, secrets or message text."""
     safe_reason = str(reason or "unknown").lower()
     if not safe_reason.replace("_", "").isalnum() or len(safe_reason) > 55:
         safe_reason = "unknown"
     safe_phase = "preflight" if phase == "preflight" else "post_send"
     digest = sha256(
-        f"crm-wa/v1|{_PABLO_USER_ID}|{session_id}|{safe_phase}|{safe_reason}".encode()
+        f"crm-wa/v1|{executive_id}|{session_id}|{safe_phase}|{safe_reason}".encode()
     ).hexdigest()
     now = datetime.now(timezone.utc)
     try:
         db[_INCIDENTS].update_one(
             {"_id": "crm-wa:" + digest},
             {"$setOnInsert": {
-                "first_seen_at": now, "executive_user_id": _PABLO_USER_ID,
-                "executive_name": _PABLO_NAME, "session_id": session_id,
+                "first_seen_at": now, "executive_user_id": executive_id,
+                "executive_name": executive_name, "session_id": session_id,
                 "reason": safe_reason, "phase": safe_phase,
             }, "$set": {
                 "status": "open", "last_seen_at": now,
@@ -165,11 +205,11 @@ def _incident(db, *, lead_id: str, reason: str, phase: str,
         logger.error("CRM_EXEC_WA_INCIDENT persist_failed=%s", type(exc).__name__)
 
 
-def _recover_incidents(db) -> None:
+def _recover_incidents(db, *, executive_id: str = _PABLO_USER_ID) -> None:
     """Only connectivity incidents recover on a verified connected preflight."""
     try:
         db[_INCIDENTS].update_many({
-            "executive_user_id": _PABLO_USER_ID, "status": "open",
+            "executive_user_id": executive_id, "status": "open",
             "phase": "preflight",
             "reason": {"$in": [
                 "disconnected", "logged_out", "expired", "need_scan",
@@ -184,24 +224,36 @@ def _recover_incidents(db) -> None:
 
 def _assess(db, *, user: dict, lead_id: str, get=None) -> dict:
     """Server-side safe choice; owner, consent and session gates cannot be bypassed."""
-    if _outstanding_uncertain(db, lead_id):
-        _incident(db, lead_id=lead_id, reason="delivery_unconfirmed", phase="post_send")
+    profile = _profile(user)
+    if profile is None:
+        return {"method": "wa_me", "available": False}
+    incident_context = {
+        "session_id": profile["session"], "executive_id": profile["id"],
+        "executive_name": profile["name"],
+    }
+    if _outstanding_uncertain(db, lead_id, executive_id=profile["id"]):
+        _incident(db, lead_id=lead_id, reason="delivery_unconfirmed",
+                  phase="post_send", **incident_context)
         return {"method": "blocked", "available": False,
                 "reason": "delivery_unconfirmed"}
     try:
-        info = _eligible_pablo(db, user=user, lead_id=lead_id)
+        info = (_eligible_pablo(db, user=user, lead_id=lead_id)
+                if profile["id"] == _PABLO_USER_ID
+                else _eligible_mariela(db, user=user, lead_id=lead_id))
     except OutboundBlocked as exc:
         if exc.code in _SAFE_PREFLIGHT_FALLBACK:
-            _incident(db, lead_id=lead_id, reason=exc.code, phase="preflight")
+            _incident(db, lead_id=lead_id, reason=exc.code,
+                      phase="preflight", **incident_context)
             return {"method": "wa_me", "available": False,
                     "fallback": True, "reason": "session_unavailable"}
         return {"method": "blocked", "available": False, "reason": "not_authorized"}
     status = _session_status(info["session"], get=get)
     if status != "connected":
-        _incident(db, lead_id=lead_id, reason=status, phase="preflight")
+        _incident(db, lead_id=lead_id, reason=status,
+                  phase="preflight", **incident_context)
         return {"method": "wa_me", "available": False,
                 "fallback": True, "reason": "session_unavailable"}
-    _recover_incidents(db)
+    _recover_incidents(db, executive_id=profile["id"])
     return {"method": "executive_wasender_api", "available": True}
 
 
@@ -210,9 +262,10 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
     user = await _user(request)
     if not ObjectId.is_valid(lead_id):
         raise HTTPException(status_code=400, detail="lead_id_invalid")
-    if not _pablo_enabled(user):
-        # All other executives retain their previous wa.me behavior.
-        return {"available": False, "method": "wa_me"}
+    if _profile(user) is None:
+        # Non-pilot users retain their existing wa.me; Mariela remains manual
+        # while her separate enable flag is disabled.
+        return {"available": False, "method": "wa_me", "fallback": True}
     from .storage import get_db
     return await asyncio.to_thread(lambda: _assess(
         get_db(), user=user, lead_id=lead_id,
@@ -222,7 +275,7 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
 @router.post("/api/crm/executive-whatsapp/send")
 async def crm_executive_whatsapp_send(request: Request):
     user = await _user(request)
-    if not _pablo_enabled(user):
+    if _profile(user) is None:
         raise HTTPException(status_code=403, detail="pilot_user_not_authorized")
     try:
         data = await request.json()
@@ -242,7 +295,7 @@ async def crm_executive_whatsapp_send(request: Request):
             return {"status": "manual_fallback" if assessment["method"] == "wa_me"
                     else "blocked", "reason": assessment.get("reason")}
         return send_manual(
-            db, lead_id=data["lead_id"], actor_user_id=_PABLO_USER_ID,
+            db, lead_id=data["lead_id"], actor_user_id=_profile(user)["id"],
             message=data["text"], idempotency_key=data["idempotency_key"],
         )
 
@@ -267,16 +320,24 @@ async def crm_executive_whatsapp_send(request: Request):
         # The provider explicitly rejected the request; no send was accepted.
         db = await asyncio.to_thread(get_db)
         reason = str(result.get("reason_code") or "provider_rejected")
+        profile = _profile(user)
         await asyncio.to_thread(_incident, db, lead_id=data["lead_id"],
-                                reason=reason, phase="post_send")
+                                reason=reason, phase="post_send",
+                                session_id=profile["session"],
+                                executive_id=profile["id"],
+                                executive_name=profile["name"])
         if reason in _SAFE_REJECTED_REASONS:
             return {"status": "manual_fallback", "method": "wa_me"}
         raise HTTPException(status_code=422, detail={"code": "operation_blocked"})
     if result.get("status") in ("accepted", "accepted_without_provider_id",
                                 "delivery_unknown"):
         db = await asyncio.to_thread(get_db)
+        profile = _profile(user)
         await asyncio.to_thread(_incident, db, lead_id=data["lead_id"],
-                                reason="delivery_unconfirmed", phase="post_send")
+                                reason="delivery_unconfirmed", phase="post_send",
+                                session_id=profile["session"],
+                                executive_id=profile["id"],
+                                executive_name=profile["name"])
         raise HTTPException(status_code=503, detail={"code": "delivery_unconfirmed"})
     raise HTTPException(status_code=502, detail={"code": "operation_blocked"})
 

@@ -49,10 +49,17 @@ def _enabled_session_ids() -> set[str]:
             or any(_SEND_IDS.fullmatch(x) is None for x in ids)):
         return set()
     allowed = set(ids)
-    # Only Mariela's dedicated opt-in adds her session. Do NOT modify the
-    # shared Render allowlist or authorize other executive tokens.
-    if os.getenv("PROCASA_MARIELA_CRM_WASENDER_API_ENABLED", "0") == "1":
-        allowed.add("133526")
+    # Each named session has its own explicit opt-in. Never rewrite the
+    # existing Render allowlist shared by other executives.
+    opt_ins = (
+        ("PROCASA_MARIELA_CRM_WASENDER_API_ENABLED", "133526"),
+        ("PROCASA_HERNAN_CRM_WASENDER_API_ENABLED", "133517"),
+        ("PROCASA_SUSANA_CRM_WASENDER_API_ENABLED", "133523"),
+        ("PROCASA_PAULA_CRM_WASENDER_API_ENABLED", "133527"),
+    )
+    for flag, session_id in opt_ins:
+        if os.getenv(flag, "0") == "1":
+            allowed.add(session_id)
     return allowed
 
 

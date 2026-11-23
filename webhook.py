@@ -1216,6 +1216,10 @@ async def lifespan(app: FastAPI):
     from chatbot.crm_weekly_report import crm_weekly_scheduler_loop
     crm_weekly_task = asyncio.create_task(crm_weekly_scheduler_loop())
     non_hot_digest_task = asyncio.create_task(non_hot_digest_worker_loop())
+    # Operator-only connection health. Feature-gated and sends ONLY to Pablo
+    # using office WhatsApp; never uses an executive's personal session.
+    from chatbot.executive_session_admin_alerts import session_monitor_loop
+    exec_session_alert_task = asyncio.create_task(session_monitor_loop())
     sla_alert_task = None
     sla_reassignment_task = None
 
@@ -1601,6 +1605,7 @@ async def lifespan(app: FastAPI):
         sla_reassignment_task.cancel()
     if non_hot_digest_task is not None:
         non_hot_digest_task.cancel()
+    exec_session_alert_task.cancel()
     if prop360_task is not None:
         prop360_task.cancel()
     if captacion_prewarm_task is not None:
@@ -1619,6 +1624,7 @@ async def lifespan(app: FastAPI):
             *([sla_orch_task] if sla_orch_task is not None else []),
             *([sla_reassignment_task] if sla_reassignment_task is not None else []),
             *([non_hot_digest_task] if non_hot_digest_task is not None else []),
+            exec_session_alert_task,
             *([prop360_task] if prop360_task is not None else []),
             *([captacion_prewarm_task] if captacion_prewarm_task is not None else []),
             *([captacion_goal_prewarm_task] if captacion_goal_prewarm_task is not None else []),

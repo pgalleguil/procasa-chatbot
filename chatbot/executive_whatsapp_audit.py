@@ -377,7 +377,7 @@ def _verified_lid_phone(db, *, session: dict, lid: str) -> str | None:
     Every match is reauthorized against the active assignment cycle.
     Never fetch content from or persist a private/unmatched chat.
     """
-    if not _LID.fullmatch(lid):
+    if not _LID.fullmatch(lid) or os.getenv("PROCASA_EXEC_AUDIT_REVERSE_LID_ENABLED", "1") != "1":
         return None
     owner = session["user_id"]
     cached = list(db["leads"].find({

@@ -97,3 +97,17 @@ def test_crm_api_and_executive_direct_messages_are_distinct():
     assert [row["channel_label"] for row in rows] == [
         "Enviado desde CRM", "WhatsApp del ejecutivo"
     ]
+
+
+
+def test_detail_template_parses_and_uses_explicit_actor_classification():
+    from pathlib import Path
+    from jinja2 import Environment
+
+    template_source = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8-sig")
+    Environment().parse(template_source)
+    assert "Ver conversación completa (chatbot, cliente y ejecutivo)" in template_source
+    assert "msg.author_label" in template_source
+    assert "msg.channel_label" in template_source
+    assert "msg.timestamp.strftime('%d/%m/%Y %H:%M')" in template_source
+    assert "chat-msg-executive" in template_source

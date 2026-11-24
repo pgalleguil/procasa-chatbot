@@ -532,7 +532,7 @@ def _record_announced_leads(db, notification, valid_leads) -> None:
         logger.exception("[NON_HOT_DIGEST] no pudo registrar announced_lead_ids")
 
 
-def build_digest_message_content(db, notification):
+def build_digest_message_content(db, notification, *, cycle_bound_links=False):
     """Build the WhatsApp message text for the digest.
     
     Uses the canonical notification context for each lead.
@@ -573,6 +573,7 @@ def build_digest_message_content(db, notification):
             recipient_norm = str(resolved.get("_id"))
 
     valid = []
+    valid_cycles = {}
     for lead in leads:
         if str(lead.get("lead_temperature_effective") or "").upper() == HOT:
             _notify_hot_outside_digest(db, lead)
@@ -608,6 +609,7 @@ def build_digest_message_content(db, notification):
         if cycle and cycle.get("first_valid_management_at"):
             continue
         valid.append(lead)
+        valid_cycles[str(lead['_id'])] = cycle
 
     if not valid:
         return None, 0
@@ -629,11 +631,27 @@ def build_digest_message_content(db, notification):
         lead_data.setdefault("property_code", context.get("property_code"))
         lead_data.setdefault("operacion", context.get("operacion"))
         lead_data.setdefault("comuna", context.get("comuna"))
+        management_url = None
+        if cycle_bound_links:
+            from .crm_sla_cycle_links import (
+                SlaCycleLinkError, build_assignment_notification_short_url,
+            )
+            bound_cycle = valid_cycles[str(lead_data["_id"])]
+            if not recipient_norm or not bound_cycle:
+                return None, 0
+            try:
+                management_url = build_assignment_notification_short_url(
+                    db, lead_id=lead_data["_id"], recipient_user_id=recipient_norm,
+                    assignment_cycle_id=bound_cycle["assignment_cycle_id"],
+                )
+            except SlaCycleLinkError:
+                return None, 0
         content = format_whatsapp_template(
             lead_data,
             exec_name,
             context.get("property_code") or "S/N",
             is_new_assignment=True,
+            management_url=management_url,
         )
         _record_announced_leads(db, notification, valid)
         return _sanitize_surrogates(content), 1
@@ -772,7 +790,15 @@ def send_digest(db, *, notification, worker_id, sender=None):
     # Shadow mode: controlled by config. Canary IDs can bypass during incident.
     is_canary = str(notification.get("_id")) in CANARY_DIGEST_IDS
     shadow = Config.CRM_NON_HOT_DIGEST_SHADOW_MODE and not is_canary
-    content, lead_count = build_digest_message_content(db, notification)
+    try:
+        content, lead_count = build_digest_message_content(
+            db, notification, cycle_bound_links=not shadow,
+        )
+    except Exception as exc:
+        logger.exception("[DIGEST_LINK] Could not prepare assignment notification")
+        finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                         state="failed_retryable", error=type(exc).__name__)
+        return {"status": "failed_retryable", "error": type(exc).__name__}
     if content is None:
         finalize_attempt(
             db, notification_id=notification["_id"], worker_id=worker_id,

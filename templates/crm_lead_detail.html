@@ -1371,7 +1371,7 @@
         #commModal.wa-composer-pilot .modal-header, #commModal.wa-composer-pilot .modal-footer { padding:.65rem 1rem; }
         #commModal.wa-composer-pilot #waComposerTools { margin-top:.65rem; }
         #commModal.wa-composer-pilot #waPersonalCategory, #commModal.wa-composer-pilot label[for="waPersonalCategory"], #commModal.wa-composer-pilot #waInsertProperty, #commModal.wa-composer-pilot #waVariableButtons { display:none !important; }
-        #commModal.wa-composer-pilot #semRecommendAreaModal { display:none !important; }
+        #commModal.wa-composer-pilot #semRecommendMsgModal { min-height:320px; resize:vertical; }
         @media(max-width:700px) {
             #commModal.wa-composer-pilot .modal-body { grid-template-columns:1fr; gap:.8rem; }
             #commModal.wa-composer-pilot #waPilotSidebar { grid-column:1; grid-row:1; }
@@ -3786,7 +3786,7 @@
 
                         <!-- Message Preview for Recommendation -->
                         <div id="semRecommendAreaModal" class="mt-3 pt-3 border-top border-secondary d-none">
-                            <label class="data-label mb-1">Mensaje de Recomendación:</label>
+                            <label for="semRecommendMsgModal" class="data-label mb-1">Mensaje de recomendación editable</label>
                             <textarea class="form-control mb-2 modern-scrollbar" id="semRecommendMsgModal"
                                 rows="4"></textarea>
                         </div>
@@ -6633,9 +6633,8 @@
                         alert("⚠️ Error: El destinatario no tiene un número de teléfono válido registrado.");
                         return;
                     }
-                    if (window.crmPabloApiPilot && target === 'lead'
-                        && window.crmExecutiveWaMethod !== 'wa_me') {
-                        if (!['executive_wasender_api','retry'].includes(window.crmExecutiveWaMethod)) {
+                    if (window.crmPabloApiPilot && target === 'lead') {
+                        if (!['executive_wasender_api','retry','wa_me'].includes(window.crmExecutiveWaMethod)) {
                             showStrongToast('WhatsApp pendiente de revisión',
                                 'No se confirmó un envío seguro. No repetimos el mensaje ni abrimos otro canal.', 'warning');
                             return;
@@ -6650,6 +6649,10 @@
                         btn.dataset.sending = '1';
                         btn.style.opacity = '0.6';
                         const key = window.crmExecutiveOutboundAttemptKey;
+                        // A Web click must recheck the API at the moment of sending.
+                        // Reserve a tab synchronously to avoid browser popup blocking.
+                        const wasWeb = window.crmExecutiveWaMethod === 'wa_me';
+                        const pendingWeb = wasWeb ? window.open('about:blank', '_blank') : null;
                         try {
                             const response = await fetch('/api/crm/executive-whatsapp/send', {
                                 method: 'POST', credentials: 'same-origin',
@@ -6660,6 +6663,12 @@
                             });
                             const result = await response.json().catch(() => ({}));
                             if (!response.ok) {
+                                if ([400,401,403,409].includes(response.status)) {
+                                    window.crmExecutiveWaMethod = 'blocked';
+                                    updateSendLink(target, category);
+                                    showStrongToast('Contacto no autorizado', 'Revisa los datos y permisos del lead antes de continuar.', 'warning');
+                                    return;
+                                }
                                 const code = result.detail && typeof result.detail === 'object'
                                     ? result.detail.code : 'delivery_unconfirmed';
                                 throw new Error(code || 'delivery_unconfirmed');
@@ -6681,7 +6690,12 @@
                                 window.crmExecutiveWaReason = result.reason || '';
                                 window.crmExecutiveWaFallback = true;
                                 updateSendLink(target, category);
-                                showStrongToast('WhatsApp Web disponible',
+                                if (wasWeb && pendingWeb) {
+                                    const cleanPhone = phone.replace(/\D/g, '');
+                                    pendingWeb.opener = null;
+                                    pendingWeb.location.replace(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`);
+                                    hideModal();
+                                } else showStrongToast('WhatsApp Web disponible',
                                     'Sesión desconectada. Pulsa Abrir WhatsApp Web para continuar.', 'warning');
                             } else if (result.status === 'delivery_unconfirmed' || result.status === 'duplicate') {
                                 // Retain the same key for this exact draft; editing
@@ -6709,6 +6723,7 @@
                             showStrongToast('Estado del mensaje pendiente',
                                 'Puedes comprobar nuevamente el estado de la API o continuar con un nuevo mensaje.', 'warning');
                         } finally {
+                            if (pendingWeb && !pendingWeb.closed && window.crmExecutiveWaMethod !== 'wa_me') pendingWeb.close();
                             btn.dataset.sending = '0';
                             btn.style.opacity = '1';
                         }
@@ -7282,9 +7297,17 @@
 
             if (semState.selected.length > 0) {
                 recommendArea.classList.remove('d-none');
-                msgBox.value = buildRecommendMessage();
+                const generated = buildRecommendMessage();
+                // A status refresh must never overwrite the executive’s edits.
+                if (!pilotComposerActive() || msgBox.dataset.generated !== generated) {
+                    if (!pilotComposerActive() || !msgBox.value || msgBox.value === msgBox.dataset.generated || confirm("¿Actualizar el mensaje con la nueva selección de propiedades?")) {
+                        msgBox.value = generated;
+                    }
+                    msgBox.dataset.generated = generated;
+                }
             } else {
                 recommendArea.classList.add('d-none');
+                msgBox.value = ''; delete msgBox.dataset.generated;
             }
 
             // --- Footer Button Logic ---

@@ -641,3 +641,26 @@ def test_poll_reports_partial_errors_instead_of_ok(monkeypatch):
     assert result["status"] == "partial_error"
     assert result["unprocessed_events"] == 1
     assert checkpoints[-1]["max_confirmed_id"] == 10
+
+
+def test_poll_repeated_source_rows_are_processed_once(monkeypatch):
+    row = {"idContacto": 7, "codigo": "17252", "contFono": "+56911111111"}
+    db, processed, _ = _prepare_poll_cycle(
+        monkeypatch, [row, row.copy()], {"17252"}, {7: "created"}, last_id=10,
+    )
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+    assert processed == [(7, "17252", False)]
+    assert result["recovery_candidates_below_watermark"] == 1
+
+def test_poll_fetch_error_preserves_checkpoint_and_reports_failure(monkeypatch):
+    db, _, checkpoints = _prepare_poll_cycle(monkeypatch, [], set(), {}, last_id=10)
+    statuses = []
+    def fail_fetch(self, **kwargs):
+        raise RuntimeError("portal unavailable")
+    monkeypatch.setattr(extractor_prop360.Prop360Extractor, "fetch_leads", fail_fetch)
+    monkeypatch.setattr(prop360_poll_loop, "_persist_cycle_status",
+                        lambda status, extra: statuses.append((status, extra)))
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+    assert result["status"] == "error"
+    assert checkpoints == []
+    assert statuses == [("error", {"reason": "fetch_failed"})]

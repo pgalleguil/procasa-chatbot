@@ -651,7 +651,7 @@ def build_digest_message_content(db, notification, *, cycle_bound_links=False):
             exec_name,
             context.get("property_code") or "S/N",
             is_new_assignment=True,
-            management_url=management_url,
+            **({"management_url": management_url} if management_url else {}),
         )
         _record_announced_leads(db, notification, valid)
         return _sanitize_surrogates(content), 1

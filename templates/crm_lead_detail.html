@@ -4549,12 +4549,16 @@
                         { label: "📩 Información Detallada", channel: "email", subject: "Información detallada – [[propiedad]]", text: "[[nombre]],\n\nAdjunto encontrará la información detallada de la propiedad ubicada en [[direccion]].\n\nSi desea coordinar visita o revisar condiciones de financiamiento, quedo atento/a.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
                     ],
                     stage2: [
-                        { label: "🔥 Propuesta Visita", channel: "wa", text: "Por lo que conversamos, la mejor forma de evaluarla es en terreno.\n\n¿Te parece si coordinamos visita esta semana?" },
-                        { label: "🔥 Visita (Cerrada)", channel: "wa", text: "Tengo disponibilidad jueves 17:00 o sábado 11:00.\n¿Cuál te acomoda más?" },
+                        {"label":"Coordinar visita","channel":"wa","text":"Por lo que conversamos, ¿te parece si coordinamos una visita esta semana? Indícame qué días y horarios te acomodan."},
+                        {"label":"Proponer horarios","channel":"wa","text":"¿Tienes disponibilidad durante la mañana o la tarde? Así puedo revisar opciones para la visita."},
+                        {"label":"Requisitos de arriendo","channel":"wa","text":"¿Te gustaría revisar los requisitos y documentos necesarios para el arriendo antes de coordinar la visita?"},
+                        {"label":"Consulta de precio","channel":"wa","text":"¿Quieres revisar el precio y las condiciones de la propiedad? Cuéntame qué información necesitas."},
+                        {"label":"Financiamiento","channel":"wa","text":"¿Estás evaluando comprar con crédito hipotecario o con recursos propios? Así puedo orientarte mejor."},
+                        {"label":"Buscar otra propiedad","channel":"wa","text":"Si esta opción no se ajusta a lo que buscas, cuéntame tu presupuesto, comunas y características indispensables. Revisaré alternativas."},
                         { label: "📩 Agenda Visita", channel: "email", subject: "Agenda de visita – [[propiedad]]", text: "[[nombre]],\n\nConfirmo disponibilidad para visita en los siguientes horarios:\n\n- [[día]] [[hora]]\n- [[día]] [[hora]]\n\nQuedo atento/a a su confirmación.\n\nSaludos,\n[[ejecutivo]]" }
                     ],
                     stage3: [
-                        { label: "📅 Confirmar Visita", channel: "wa", text: "Hola [[nombre]] 👋\nConfirmo visita:\n\n📍 [[direccion]]\n🕒 [[hora]]\n\n¿Seguimos según lo acordado?" },
+                        { label: "📅 Confirmar Visita", channel: "wa", text: "Hola [[nombre]], te escribo para confirmar la visita acordada.\n\n[[enlace]]\n\n¿Me confirmas que mantienes disponibilidad en el horario conversado?" },
                         { label: "📩 Recordatorio Visita", channel: "email", subject: "Recordatorio de visita – [[propiedad]]", text: "[[nombre]],\n\nLe recordamos la visita agendada para [[día]] a las [[hora]] en [[direccion]].\n\nAnte cualquier eventualidad, puede contactarnos directamente.\n\nSaludos,\nProcasa" }
                     ],
                     stage4: [
@@ -4567,7 +4571,7 @@
                         { label: "📩 Documentación", channel: "email", subject: "Documentación requerida – Proceso de oferta", text: "[[nombre]],\n\nPara proceder con la presentación formal de oferta necesitamos:\n\n- Pre-aprobación bancaria\n- Copia de cédula de identidad\n\nUna vez recibidos, gestionaremos la presentación inmediata.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
                     ],
                     stage6: [
-                        { label: "❄️ Retomar Interés", channel: "wa", text: "Hola [[nombre]] 👋\nQuería retomar tu interés por la propiedad en [[comuna]].\n\n¿Sigues evaluando opciones o ya avanzaste con otra alternativa?" },
+                        { label: "❄️ Retomar Interés", channel: "wa", text: "Hola [[nombre]], quería retomar tu consulta por esta propiedad.\n\n[[enlace]]\n\n¿Sigues buscando o ya encontraste una alternativa?" },
                         { label: "❄️ Cierre Definitivo", channel: "wa", text: "Si prefieres que no te siga contactando, avísame y dejamos el seguimiento cerrado." },
                         { label: "📩 Seguimiento Formal", channel: "email", subject: "Seguimiento – [[propiedad]]", text: "[[nombre]],\n\nLe escribo para consultar si continúa evaluando la propiedad en [[comuna]] o si ya ha tomado decisión.\n\nQuedo atento/a a su confirmación.\n\nSaludos,\n[[ejecutivo]]" }
                     ]
@@ -5585,6 +5589,8 @@
                 });
                 card.onclick = () => {
                     document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
+                    const draft = document.getElementById('commMessage').value.trim();
+                    if (personalMode && draft && draft !== originalTemplateText.trim() && !confirm('¿Reemplazar el mensaje que estás editando?')) return;
                     card.classList.add('selected');
                     currentTemplateLabel = tpl.label;
                     selectTemplate(tpl.text, tpl.subject || "", tpl.omitPropertyLink ? "no-property" : (tpl.category || category));
@@ -5747,7 +5753,7 @@
             const safeExec = (leadData.execName && leadData.execName !== "None") ? leadData.execName.split(' ')[0] : "Agente";
             const safeProp = (leadData.propiedad && leadData.propiedad !== "None") ? leadData.propiedad : "la propiedad";
             const safeDir = (leadData.direccion && leadData.direccion !== "None") ? leadData.direccion : "Ubicación pendiente";
-            const safeComuna = (leadData.comuna && leadData.comuna !== "None") ? leadData.comuna : "Santiago";
+            const safeComuna = (leadData.comuna && leadData.comuna !== "None") ? leadData.comuna : (currentCommTarget === "lead" && currentCommChannel === "wa" ? "la zona consultada" : "Santiago");
             const safeDay = "mañana"; // Placeholder default
             const safeHour = "10:00"; // Placeholder default
 
@@ -5770,6 +5776,7 @@
             if (currentCommTarget === 'lead' && currentCommChannel === 'wa' && templateCategory === 'stage1') {
                 processedText = addPropertyLink(processedText);
             }
+            processedText = processedText.replace(/\n{3,}/g, "\n\n").trim();
             originalTemplateText = processedText;
             document.getElementById('commMessage').value = processedText;
 

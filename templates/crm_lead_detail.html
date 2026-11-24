@@ -5517,7 +5517,7 @@
                     if (thisPreflight !== window.crmExecutiveWaPreflightId) return;
                     const method = data.available && data.method === 'executive_wasender_api'
                         ? 'executive_wasender_api'
-                        : (data.method === 'wa_me' && data.fallback === true ? 'wa_me' : 'blocked');
+                        : (data.method === 'wa_me' && data.fallback === true ? 'wa_me' : data.method === 'retry' ? 'retry' : 'blocked');
                     window.crmExecutiveWaMethod = method;
                     window.crmExecutiveWaReason = data.reason || '';
                     window.crmExecutiveWaFallback = method === 'wa_me';
@@ -5525,7 +5525,7 @@
                     updateSendLink(currentCommTarget, semState.currentCategory || firstTabId);
                 }).catch(() => {
                     if (thisPreflight !== window.crmExecutiveWaPreflightId) return;
-                    window.crmExecutiveWaMethod = 'blocked';
+                    window.crmExecutiveWaMethod = 'retry';
                     window.crmExecutiveWaFallback = false;
                     window.crmExecutiveDirectReady = false;
                     updateSendLink(currentCommTarget, semState.currentCategory || firstTabId);
@@ -6492,9 +6492,8 @@
                 fallbackNotice.classList.toggle('d-none', !pilotWhatsapp || waMethod === 'executive_wasender_api');
                 fallbackNotice.textContent = !pilotWhatsapp ? '' :
                     waMethod === 'wa_me'
-                    ? (window.crmExecutiveWaReason === 'delivery_unconfirmed'
-                        ? 'Envío anterior no confirmado. Revisa la conversación en WhatsApp Web antes de enviar para evitar duplicados.'
-                        : 'Envío por API no disponible. Puedes continuar por WhatsApp Web. Este clic no confirma el envío ni detiene el SLA; la conversación podría no quedar registrada.')
+                    ? 'Sesión WaSender desconectada. Puedes continuar por WhatsApp Web mientras se restablece la conexión.'
+                    : waMethod === 'retry' ? 'No se pudo verificar la API. Puedes volver a comprobarla sin cambiar de canal.'
                     : waMethod === 'checking' ? 'Comprobando la sesión de WhatsApp…'
                     : waMethod === 'blocked' ? 'No se pudo autorizar el contacto o verificar sus datos. Revisa el lead o contacta al administrador.' : '';
             }
@@ -6504,7 +6503,7 @@
                         ? (pilotComposerActive() ? '<i class="fa-brands fa-whatsapp me-1"></i> Enviar WhatsApp' : '<i class="fa-brands fa-whatsapp me-1"></i> Enviar por WaSender')
                         : waMethod === 'wa_me'
                             ? '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp Web'
-                            : waMethod === 'checking' ? 'Verificando sesión…' : 'Envío pendiente de revisión')
+                            : waMethod === 'retry' ? 'Reintentar envío por API' : waMethod === 'checking' ? 'Verificando sesión…' : 'Envío pendiente de revisión')
                     : '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp';
             } else {
                 btn.innerHTML = '<i class="fa-solid fa-envelope me-1"></i> Abrir Correo';
@@ -6512,7 +6511,7 @@
 
             // Validation for standard modes
             const hasMessage = msgBody.value.trim().length > 0;
-            const pilotBlocked = pilotWhatsapp && !['executive_wasender_api', 'wa_me'].includes(waMethod);
+            const pilotBlocked = pilotWhatsapp && !['executive_wasender_api', 'wa_me', 'retry'].includes(waMethod);
             const requiredLinkProblem = pilotComposerActive()
                 ? pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category,leadData,pilotSelectedKey) : '';
             const unresolvedPilotFields = pilotComposerActive() && /\[\[[^\]]+\]\]/.test(msgBody.value);
@@ -6579,7 +6578,7 @@
                     }
                     if (window.crmPabloApiPilot && target === 'lead'
                         && window.crmExecutiveWaMethod !== 'wa_me') {
-                        if (window.crmExecutiveWaMethod !== 'executive_wasender_api') {
+                        if (!['executive_wasender_api','retry'].includes(window.crmExecutiveWaMethod)) {
                             showStrongToast('WhatsApp pendiente de revisión',
                                 'No se confirmó un envío seguro. No repetimos el mensaje ni abrimos otro canal.', 'warning');
                             return;
@@ -6626,21 +6625,32 @@
                                 window.crmExecutiveWaFallback = true;
                                 updateSendLink(target, category);
                                 showStrongToast('WhatsApp Web disponible',
-                                    result.reason === 'delivery_unconfirmed'
-                                        ? 'Revisa la conversación antes de enviar manualmente; el intento anterior pudo llegar.'
-                                        : 'Pulsa Abrir WhatsApp Web para continuar manualmente.', 'warning');
-                            } else {
-                                window.crmExecutiveWaMethod = 'blocked';
+                                    'Sesión desconectada. Pulsa Abrir WhatsApp Web para continuar.', 'warning');
+                            } else if (result.status === 'delivery_unconfirmed' || result.status === 'duplicate') {
+                                // Retain the same key for this exact draft; editing
+                                // or starting a new message is independent of it.
+                                window.crmExecutiveWaMethod = 'executive_wasender_api';
+                                window.crmExecutiveWaFallback = false;
                                 updateSendLink(target, category);
-                                showStrongToast('Intento ya registrado',
-                                    'No se reenvió el mensaje. Revisa la conversación antes de volver a intentarlo.', 'warning');
+                                showStrongToast('Estado del mensaje pendiente',
+                                    'Este intento está registrado. Puedes continuar con un nuevo mensaje por WaSender.', 'warning');
+                            } else if (result.status === 'rejected' || result.status === 'retry') {
+                                if (result.status === 'rejected') window.crmExecutiveOutboundAttemptKey = null;
+                                window.crmExecutiveWaMethod = 'retry';
+                                window.crmExecutiveWaFallback = false;
+                                updateSendLink(target, category);
+                                showStrongToast('No se completó el envío',
+                                    'Puedes intentar nuevamente por API. No se cambió de canal.', 'warning');
+                            } else {
+                                window.crmExecutiveWaMethod = 'retry';
+                                updateSendLink(target, category);
                             }
                         } catch (_error) {
-                            window.crmExecutiveWaMethod = 'blocked';
+                            window.crmExecutiveWaMethod = 'retry';
                             window.crmExecutiveWaFallback = false;
                             updateSendLink(target, category);
-                            showStrongToast('Envío no confirmado',
-                                'No repitas el envío: WaSender pudo haberlo recibido. El administrador podrá revisar la incidencia.', 'error');
+                            showStrongToast('Estado del mensaje pendiente',
+                                'Puedes comprobar nuevamente el estado de la API o continuar con un nuevo mensaje.', 'warning');
                         } finally {
                             btn.dataset.sending = '0';
                             btn.style.opacity = '1';
@@ -6648,8 +6658,6 @@
                         return;
                     }
                     // Manual fallback never performs a second API dispatch.
-                    if (pilotWhatsapp && window.crmExecutiveWaReason === 'delivery_unconfirmed'
-                        && !confirm('Revisa en WhatsApp si el mensaje anterior llegó. ¿Abrir la conversación para continuar manualmente?')) return;
                     const cleanPhone = phone.replace(/\D/g, '');
                     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`;
                     window.open(url, '_blank');

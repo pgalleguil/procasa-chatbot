@@ -5494,10 +5494,12 @@
             const firstTabId = personalMode ? 'stage1' : commTemplates[target].tabs[0].id;
             loadTemplates(target, firstTabId);
             if (pilotComposerActive() && !document.getElementById('commMessage').value.trim()) {
-                const first = pilotCommercialTemplates(pilotDetectedOperation(leadData))[0];
-                pilotSelectedKey = first.key;
-                currentTemplateLabel = first.label;
-                selectTemplate(first.text, '', first.category);
+                const first = pilotAllTemplates().find(t => t.key === pilotPrimaryKeys('stage1',leadData)[0]);
+                if (first && !pilotTemplateBlockReason(first,leadData)) {
+                    pilotSelectedKey = first.key;
+                    currentTemplateLabel = first.label;
+                    selectTemplate(first.text, '', first.category);
+                }
                 renderPilotTemplates(firstTabId);
             }
 
@@ -5567,8 +5569,10 @@
 
         function pilotCommercialTemplates(operation = '') {
             const rows = [
-                {"key":"builtin:1","category":"stage1","label":"Consulta recibida desde portal","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Recibí tu consulta [[origen]] por [[referencia]].\n\nPuedes revisar la publicación aquí:\n[[enlace]]\n\n[[visita_paso]]"},
-                {"key":"builtin:2","category":"stage1","label":"Cliente solicitó visita","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Recibí tu solicitud para visitar [[referencia]].\n[[enlace]]\n\n[[visita_paso]]"},
+                {"key":"builtin:1","category":"stage1","label":"Consulta recibida desde portal","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Recibí tu consulta [[origen]] por [[referencia]].\n\nTe comparto la publicación:\n[[enlace]]\n\n¿Tienes alguna consulta sobre la propiedad o te gustaría coordinar una visita?"},
+                {"key":"builtin:2","category":"stage1","label":"Cliente solicitó visita","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Recibí tu solicitud para visitar [[referencia]].\n\nTe comparto la publicación:\n[[enlace]]\n\n[[visita_paso]]"},
+                {"key":"builtin:30","category":"stage1","label":"Continuar conversación del chatbot","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Revisé tu conversación con nuestro asistente y continuaré ayudándote personalmente.\n\n[[primera_ficha]]\n\n[[primer_paso]]"},
+                {"key":"builtin:31","category":"stage1","label":"Primer contacto manual","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Me gustaría ayudarte con tu búsqueda inmobiliaria.\n\n[[primera_ficha]]\n\n[[primer_paso]]"},
                 {"key":"builtin:18","category":"stage2","label":"Presentar características de la propiedad","text":"[[nombre]], te comparto las principales características de [[referencia]]:\n[[atributos]]\n\nFotografías y ficha:\n[[enlace]]\n\n¿Se ajusta a lo que buscas?"},
                 {"key":"builtin:3","category":"stage2","label":"Requisitos y condiciones","text":"Hola [[nombre]], [[consulta]]"},
                 {"key":"builtin:21","category":"stage2","label":"Evaluar capacidad para postular","text":"[[nombre]], para evaluar tu postulación al arriendo, [[postulacion_paso]]\n\nAsí podremos revisar si cumples las condiciones del propietario antes de solicitar documentos."},
@@ -5709,7 +5713,18 @@
             const price = x => (drop.currency === 'UF' ? 'UF ' : '$')+fmt(x);
             const rebate = drop && ['UF','CLP'].includes(drop.currency) && Number.isFinite(drop.before) && Number.isFinite(drop.after) && drop.before > drop.after && drop.after > 0 ?
                 'Precio anterior: '+price(drop.before)+'\nPrecio actualizado: '+price(drop.after)+'\nRebaja: '+price(drop.before-drop.after) : '';
+            const q = context.criteria || {};
+            const questions = [];
+            if (!['VENTA','ARRIENDO'].includes(q.operation) && !operation) questions.push('¿Buscas comprar o arrendar?');
+            if (!Array.isArray(q.comunas) || !q.comunas.length) questions.push('¿En qué comuna buscas?');
+            if (!(Number(q.max_price_clp)>0 || Number(q.max_price_uf)>0)) questions.push('¿Cuál es tu presupuesto aproximado?');
+            const hasProperty = pilotHasSpecificProperty(data);
+            const firstStep = hasProperty
+                ? (visit || context.requested_visit ? (visit ? 'Tengo registrada la visita para el '+visit+'. ¿Me confirmas tu disponibilidad?' : 'Me indicaste que te acomodaba el '+context.requested_visit+'. ¿Sigue siendo una opción para ti?') : '¿Hay alguna información que necesites confirmar o te gustaría coordinar una visita?')
+                : (search ? 'Consideraré tu búsqueda de '+search+'. ' : '') + (questions.join(' ') || '¿Hay algún otro requisito importante que deba considerar?');
             return {
+                primera_ficha: data.publicContactUrl ? 'Te comparto la publicación de '+pilotPublicContext(data,operation).reference+':\n'+data.publicContactUrl : '',
+                primer_paso:firstStep,
                 consulta:operation === 'arriendo' ? rental : operation === 'venta' ? purchase : '¿Qué condiciones de la operación necesitas revisar para avanzar?',
                 visita_paso:visit ? 'Tengo registrada la visita para el '+visit+'. ¿Me confirmas si mantienes tu disponibilidad?' : context.requested_visit ? 'Me indicaste que te acomodaba el '+context.requested_visit+'. ¿Sigue siendo una opción para ti? Revisaré la disponibilidad antes de confirmarla.' : '¿Qué día y horario te acomodan para conocer la propiedad? Revisaré la disponibilidad para coordinar contigo.',
                 visita_confirmada:visit,
@@ -5742,8 +5757,24 @@
         }
 
         // The first-contact rule follows the draft rather than the open accordion.
-        function pilotFirstContactRequired(draftCategory, activeCategory) {
-            return draftCategory === 'stage1' || (!draftCategory && activeCategory === 'stage1');
+        function pilotHasSpecificProperty(data) {
+            return !!data.publicContactUrl || /^\d+$/.test(String(data.propiedad || '').trim());
+        }
+        function pilotFirstContactRequired(draftCategory, activeCategory, data = null, key = null) {
+            const first = draftCategory === 'stage1' || (!draftCategory && activeCategory === 'stage1');
+            if (!first) return false;
+            if (!data || ['builtin:1','builtin:2'].includes(key)) return true;
+            return pilotHasSpecificProperty(data);
+        }
+        function pilotFirstContactKeys(data) {
+            const ctx = data.pilotMessageContext || {};
+            const specific = pilotHasSpecificProperty(data);
+            const keys = [];
+            if (ctx.chatbot_dialogue) keys.push('builtin:30');
+            if (ctx.intake === 'prop360' && specific) keys.push('builtin:1');
+            if (ctx.intake === 'manual' || !keys.length) keys.push('builtin:31');
+            if (specific) keys.push('builtin:2');
+            return keys;
         }
 
         function pilotHasPublicLink(text, url) {
@@ -5757,15 +5788,15 @@
             return String(text).trimEnd() + '\n\n' + url;
         }
 
-        function pilotFirstContactError(text, url, draftCategory, activeCategory) {
-            if (!pilotFirstContactRequired(draftCategory, activeCategory)) return '';
+        function pilotFirstContactError(text, url, draftCategory, activeCategory, data = null, key = null) {
+            if (!pilotFirstContactRequired(draftCategory, activeCategory, data, key)) return '';
             if (!url) return 'No se puede enviar el primer contacto: la propiedad no tiene un enlace público verificado.';
             if (!pilotHasPublicLink(text, url)) return 'El enlace de la propiedad es obligatorio. Se reincorporará al terminar de editar.';
             return '';
         }
 
         function pilotRestoreRequiredLink(input) {
-            if (!pilotComposerActive() || !pilotFirstContactRequired(pilotDraftCategory, semState.currentCategory)) return;
+            if (!pilotComposerActive() || !pilotFirstContactRequired(pilotDraftCategory, semState.currentCategory, leadData, pilotSelectedKey)) return;
             const restored = pilotEnsureFirstContactLink(input.value, leadData.publicContactUrl);
             if (restored !== input.value) {
                 input.value = restored;
@@ -5828,7 +5859,7 @@
         function pilotPrimaryKeys(category, data) {
             const operation = pilotDetectedOperation(data);
             const context = data.pilotMessageContext || {};
-            if (category === 'stage1') return ['builtin:1','builtin:2'];
+            if (category === 'stage1') return pilotFirstContactKeys(data);
             if (category === 'stage2') {
                 const visit = pilotVisitLabel(context.visit_at) ? 'builtin:5' : 'builtin:4';
                 const keys = ['builtin:18','builtin:3',visit,'builtin:7','builtin:14'];
@@ -5848,6 +5879,7 @@
             const keys = pilotPrimaryKeys(category,data);
             const primary = [], extra = [];
             for (const tpl of entries) {
+                if (category === 'stage1' && !keys.includes(tpl.key)) continue;
                 if (keys.includes(tpl.key) && !pilotTemplateBlockReason(tpl,data)) primary.push(tpl);
                 else extra.push(tpl);
             }
@@ -5892,6 +5924,8 @@
 
         function pilotTemplateBlockReason(tpl, data) {
             const fields = pilotCommercialFields(data,pilotDetectedOperation(data));
+            if (tpl.category === 'stage1' && tpl.key.startsWith('builtin:') && !pilotFirstContactKeys(data).includes(tpl.key)) return 'Este primer contacto no corresponde al origen o propiedad del lead.';
+            if (tpl.category === 'stage1' && pilotFirstContactRequired('stage1','stage1',data,tpl.key) && !data.publicContactUrl) return 'Falta el enlace público verificado de la propiedad.';
             if (tpl.text.includes('[[visita_confirmada]]') && !fields.visita_confirmada) return 'No hay una visita futura agendada en el CRM. Registra la visita antes de preparar su confirmación.';
             if (tpl.text.includes('[[rebaja]]') && !fields.rebaja) return 'No hay una rebaja verificable para esta consulta y el precio publicado actual.';
             if (tpl.key === 'builtin:19' && ['cash','preapproved'].includes(data.pilotMessageContext?.finance)) return 'El cliente ya indicó su modalidad de financiamiento. Usa la plantilla de crédito y preaprobación para continuar.';
@@ -6184,8 +6218,8 @@
             const included = !!leadData.publicContactUrl && body.includes(leadData.publicContactUrl);
             hint.className = 'small mt-2 ' + (!active ? 'd-none' : included ? 'text-success' : 'text-warning');
             if (window.crmWhatsappComposerPilot === true && active) {
-                const required = pilotFirstContactRequired(pilotDraftCategory, semState.currentCategory);
-                const problem = pilotFirstContactError(body,leadData.publicContactUrl,pilotDraftCategory,semState.currentCategory);
+                const required = pilotFirstContactRequired(pilotDraftCategory, semState.currentCategory,leadData,pilotSelectedKey);
+                const problem = pilotFirstContactError(body,leadData.publicContactUrl,pilotDraftCategory,semState.currentCategory,leadData,pilotSelectedKey);
                 hint.className = 'small mt-2 ' + (!required ? 'd-none' : problem ? 'text-warning' : 'text-success');
                 hint.textContent = !required ? '' : problem || '✓ Enlace obligatorio incluido.';
                 return;
@@ -6252,12 +6286,12 @@
             if (window.crmWhatsappComposerPilot === true) {
                 const context = pilotPublicContext(leadData,pilotDetectedOperation(leadData));
                 const fields = pilotCommercialFields(leadData,pilotDetectedOperation(leadData));
-                for (const key of ['consulta','visita_paso','postulacion_paso','costos','financiamiento_paso','orden_visita','oferta_paso','seguimiento_info','busqueda_paso']) {
+                for (const key of ['consulta','visita_paso','postulacion_paso','costos','financiamiento_paso','orden_visita','oferta_paso','seguimiento_info','busqueda_paso','primer_paso','primera_ficha']) {
                     if (fields[key]) mappings.push([fields[key],'[['+key+']]']);
                 }
                 mappings.unshift([context.reference,'[[referencia]]'],[context.origin,'[[origen]]'],[context.attributes,'[[atributos]]'],[pilotGreeting(),'[[saludo]]']);
                 const sender = leadData.senderName || leadData.execName;
-                if (sender) { mappings.splice(7,2,[sender,'[[ejecutivo]]'],[sender.split(' ')[0],'[[ejecutivo]]']); }
+                if (sender) { mappings.unshift([sender,'[[ejecutivo]]']); }
                 if (leadData.propiedad && /^\d+$/.test(leadData.propiedad)) mappings.push([leadData.propiedad,'[[propiedad]]']);
                 if (leadData.contactOperation === 'venta') mappings.push(['en venta','[[operacion]]']);
                 if (leadData.contactOperation === 'arriendo') mappings.push(['en arriendo','[[operacion]]']);
@@ -6373,7 +6407,7 @@
             const fullName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre : "Estimado Cliente";
             const execName = window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa'
                 ? (leadData.senderName || leadData.execName) : leadData.execName;
-            const safeExec = (execName && execName !== "None") ? execName.split(' ')[0] : "Agente";
+            const safeExec = (execName && execName !== "None") ? execName.trim() : "Agente";
             const safeProp = (leadData.propiedad && leadData.propiedad !== "None") ? leadData.propiedad : "la propiedad";
             const safeDir = (leadData.direccion && leadData.direccion !== "None") ? leadData.direccion : "Ubicación pendiente";
             const safeComuna = (leadData.comuna && leadData.comuna !== "None") ? leadData.comuna : (currentCommTarget === "lead" && currentCommChannel === "wa" ? "la zona consultada" : "Santiago");
@@ -6471,7 +6505,7 @@
             const hasMessage = msgBody.value.trim().length > 0;
             const pilotBlocked = pilotWhatsapp && !['executive_wasender_api', 'wa_me'].includes(waMethod);
             const requiredLinkProblem = pilotComposerActive()
-                ? pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category) : '';
+                ? pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category,leadData,pilotSelectedKey) : '';
             const unresolvedPilotFields = pilotComposerActive() && /\[\[[^\]]+\]\]/.test(msgBody.value);
             if (hasMessage && !pilotBlocked && !requiredLinkProblem && !unresolvedPilotFields) {
                 btn.disabled = false;
@@ -6499,7 +6533,7 @@
                 // Fail closed before logging or calling the provider.
                 if (pilotComposerActive()) {
                     pilotRestoreRequiredLink(msgBody);
-                    const linkProblem = pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,semState.currentCategory);
+                    const linkProblem = pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,semState.currentCategory,leadData,pilotSelectedKey);
                     if (linkProblem) { showStrongToast('Primer contacto',linkProblem,'warning'); return; }
                     if (/\[\[[^\]]+\]\]/.test(msgBody.value)) { showStrongToast('Mensaje incompleto','Revisa los campos pendientes antes de enviar.','warning'); return; }
                 }

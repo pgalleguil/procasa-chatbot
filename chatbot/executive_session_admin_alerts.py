@@ -247,8 +247,7 @@ def mark_event_recovered(db, *, session_id: str) -> None:
 
 _CRM_SEND_ALERT_REASONS = _CRM_ALERT_REASONS | frozenset({
     "invalid_request", "invalid_recipient", "recipient_not_registered", "provider_rejected",
-    "subscription", "rate_limit", "delivery_unconfirmed",
-    "current_assignment_required", "crm_direct_send_disabled",
+    "subscription", "rate_limit",
 })
 
 
@@ -324,13 +323,11 @@ async def notify_pablo_on_crm_failure(
             f"Sesión WaSender: {session_id}\\n"
             f"Motivo: {reason}\\n"
             + (f"Lead: {lead_id}\\n" if lead_id else "")
-            + ("Envío incierto: revisar la conversación en WhatsApp Web antes de enviar manualmente; no repetir automáticamente."
-               if reason == "delivery_unconfirmed" else
-               "El destinatario no está registrado en WhatsApp. Verificar número o usar llamada/correo; no reenviar por WhatsApp Web."
+            + ("El destinatario no está registrado en WhatsApp. Verificar número o usar llamada/correo; no reenviar por WhatsApp Web."
                if reason == "recipient_not_registered" else
-               "No se pudo confirmar el envío por API desde el CRM. "
-               "El ejecutivo puede utilizar WhatsApp Web cuando el sistema "
-               "ofrezca esa alternativa de forma segura.")
+               "Sesión desconectada. El ejecutivo puede continuar por WhatsApp Web."
+               if reason in ("session_unavailable", "session_disconnected") else
+               "Incidencia de envío por API. Revisar la causa; no se bloquean nuevos mensajes ni se cambia automáticamente a WhatsApp Web.")
         )
         sender = send or send_whatsapp_message_detailed
         provider_id = None

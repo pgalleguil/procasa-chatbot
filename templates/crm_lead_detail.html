@@ -4079,6 +4079,7 @@
             contactOperation: {{ (lead.datos_propiedad.contact_operation or "") | tojson }},
             contactOrigin: {{ (lead.contact_origin or "") | tojson }},
             contactLeadOperation: {{ (lead.contact_lead_operation or "") | tojson }},
+            contactOperations: {{ (lead.datos_propiedad.contact_operations or []) | tojson }},
             contactPublicFacts: {{ (lead.datos_propiedad.contact_public_facts or {}) | tojson }},
             direccion: "{{ lead.datos_propiedad.calle }}",
             comuna: "{{ lead.datos_propiedad.comuna }}",
@@ -5492,7 +5493,7 @@
             const firstTabId = personalMode ? 'stage1' : commTemplates[target].tabs[0].id;
             loadTemplates(target, firstTabId);
             if (pilotComposerActive() && !document.getElementById('commMessage').value.trim()) {
-                const first = pilotCommercialTemplates()[0];
+                const first = pilotCommercialTemplates(pilotDetectedOperation(leadData))[0];
                 pilotSelectedKey = first.key;
                 currentTemplateLabel = first.label;
                 selectTemplate(first.text, '', first.category);
@@ -5554,38 +5555,98 @@
             return window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa';
         }
 
-        function pilotCommercialTemplates() {
-            return [
-                {"key":"builtin:1","category":"stage1","label":"Consulta por propiedad","text":"Hola [[nombre]], ¿cómo estás? Soy [[ejecutivo]], asesor inmobiliario de PROCASA.\n\nGracias por tu interés en esta propiedad [[operacion]]. Te comparto su ficha:\n[[enlace]]\n\n¿Hay alguna condición o característica que necesites revisar antes de decidir si la visitamos? Puedo ayudarte a aclararla y coordinar una visita."},
-                {"key":"builtin:2","category":"stage1","label":"Solicitud de visita","text":"Hola [[nombre]], soy [[ejecutivo]], asesor inmobiliario de PROCASA.\n\nRecibí tu solicitud de visita a esta propiedad:\n[[enlace]]\n\n¿Qué día y en qué rango horario tienes disponibilidad? Revisaré el acceso a la propiedad y te confirmaré las opciones para coordinar."},
-                {"key":"builtin:3","category":"stage2","label":"Requisitos y condiciones","text":"[[nombre]], para orientarte antes de avanzar, [[consulta]]"},
-                {"key":"builtin:4","category":"stage2","label":"Coordinar visita","text":"Perfecto, [[nombre]]. Para organizar la visita sin hacerte perder tiempo, ¿me puedes indicar dos días o rangos horarios que te acomoden?\n\nRevisaré la disponibilidad y te confirmaré la alternativa que podamos coordinar."},
-                {"key":"builtin:5","category":"stage2","label":"Confirmar visita acordada","text":"Hola [[nombre]], te escribo para confirmar la visita que coordinamos. ¿Mantienes tu disponibilidad para el horario acordado?\n\nSi necesitas algún ajuste, avísame para revisar otra opción y evitar que hagas el traslado innecesariamente."},
-                {"key":"builtin:6","category":"stage2","label":"Reagendar visita","text":"Hola [[nombre]], podemos reorganizar la visita. ¿Qué día y horario te acomoda mejor esta semana?\n\nRevisaré la disponibilidad antes de confirmar un nuevo horario."},
-                {"key":"builtin:7","category":"stage2","label":"Presentar una oferta","text":"[[nombre]], si la propiedad cumple con lo que buscas, podemos presentar una propuesta al propietario.\n\n¿Qué monto tienes en mente y qué condiciones necesitas considerar para avanzar? Con esos antecedentes podré revisar la propuesta antes de presentarla, sin comprometer su aceptación."},
-                {"key":"builtin:14","category":"stage2","label":"Coordinar llamada","text":"[[nombre]], para resolver tus dudas y revisar los próximos pasos, podemos conversar por teléfono unos minutos.\n\n¿Te acomoda que te llame hoy o prefieres indicarme un horario?"},
-                {"key":"builtin:15","category":"stage2","label":"Antecedentes pendientes","text":"[[nombre]], para continuar con la gestión necesitamos revisar los antecedentes que quedaron pendientes.\n\n¿Pudiste reunirlos? Si te falta alguno o tienes dudas sobre cómo entregarlos de forma segura, puedo orientarte para que avancemos."},
-                {"key":"builtin:16","category":"stage2","label":"Objeción de precio o condiciones","text":"Entiendo, [[nombre]]. Para saber si existe una alternativa viable, ¿lo que te impide avanzar es el precio, las condiciones de la operación o alguna característica de la propiedad?\n\nSi me indicas qué necesitarías ajustar, podré revisar las opciones sin comprometer condiciones que aún no estén autorizadas."},
-                {"key":"builtin:8","category":"stage6","label":"Sin respuesta al primer contacto","text":"Hola [[nombre]], quería retomar tu consulta por esta propiedad:\n[[enlace]]\n\n¿Sigue dentro de tus opciones? Si no se ajusta a lo que buscas, cuéntame qué necesitas cambiar y revisamos alternativas."},
-                {"key":"builtin:9","category":"stage6","label":"Seguimiento de información enviada","text":"Hola [[nombre]], ¿pudiste revisar la información que te compartí?\n\n¿Hay algún requisito, condición o dato que te esté impidiendo avanzar? Si me cuentas cuál, puedo ayudarte a resolverlo antes de coordinar el próximo paso."},
-                {"key":"builtin:10","category":"stage6","label":"Evaluación después de la visita","text":"Hola [[nombre]], gracias por tu tiempo durante la visita. Me gustaría conocer tu opinión.\n\n¿Qué te pareció la propiedad? ¿Hay algo que te impida avanzar, como el precio, la distribución o la ubicación? Con tu respuesta podré evaluar si conviene presentar una propuesta o buscar una mejor alternativa."},
-                {"key":"builtin:11","category":"stage6","label":"Buscar alternativas","text":"[[nombre]], si esta propiedad no se ajusta a lo que buscas, puedo revisar otras opciones.\n\n¿Cuál es la principal característica que necesitas cambiar: ubicación, presupuesto, tamaño u otra condición? Así enfocaré la búsqueda en lo que realmente necesitas."},
-                {"key":"builtin:12","category":"stage6","label":"Propiedad no disponible","text":"Hola [[nombre]], la propiedad que consultaste ya no está disponible.\n\n¿Mantienes los mismos requisitos de búsqueda o hay algo que haya cambiado? Puedo revisar alternativas disponibles."},
-                {"key":"builtin:13","category":"stage6","label":"Cliente terminó su búsqueda","text":"Gracias por avisarme, [[nombre]]. Daré por finalizado el seguimiento de esta búsqueda.\n\nSi más adelante necesitas asesoría inmobiliaria, puedes contar con PROCASA."},
-                {"key":"builtin:17","category":"stage6","label":"Cliente necesita tiempo para decidir","text":"Hola [[nombre]], entiendo que quieras tomarte un tiempo para evaluar la propiedad.\n\n¿Hay algún antecedente que te ayude a decidir, o prefieres que retomemos el contacto en otra fecha? Así respetamos tus tiempos y evitamos mensajes innecesarios."}
-            ];
+        function pilotDetectedOperation(data) {
+            const declared = String(data.contactOperation || '').trim().toLowerCase();
+            if (['venta','arriendo'].includes(declared)) return declared;
+            const inquiry = String(data.contactLeadOperation || '').trim().toLowerCase();
+            return (data.contactOperations || []).includes(inquiry) ? inquiry : '';
         }
 
-        function pilotResolveContext(text, operation, publicUrl) {
+        function pilotCommercialTemplates(operation = '') {
+            const rows = [
+                {"key":"builtin:1","category":"stage1","label":"Consulta recibida desde portal","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]] de PROCASA.\n\nMe asignaron tu consulta [[origen]] por [[referencia]]. Te comparto la ficha:\n[[enlace]]\n\n¿Te gustaría que coordinemos una visita o necesitas aclarar alguna característica antes de conocerla?"},
+                {"key":"builtin:2","category":"stage1","label":"Cliente solicitó visita","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]] de PROCASA.\n\nMe asignaron tu solicitud de visita [[origen]] por [[referencia]]:\n[[enlace]]\n\n¿Qué día y rango horario te acomodan? Revisaré la disponibilidad y te confirmaré la visita."},
+                {"key":"builtin:18","category":"stage2","label":"Destacar características de la propiedad","text":"[[nombre]], te comparto los principales datos de [[referencia]]:\n\n[[atributos]]\n\n[[enlace]]\n\nSi estas características se ajustan a lo que buscas, ¿coordinamos una visita para que puedas conocer la propiedad personalmente?"},
+                {"key":"builtin:3","category":"stage2","label":"Requisitos y condiciones","text":"Hola [[nombre]], [[consulta]]"},
+                {"key":"builtin:19","category":"stage2","label":"Apoyo para obtener crédito hipotecario","text":"[[nombre]], si aún no cuentas con una preaprobación hipotecaria, puedo orientarte sobre los pasos para evaluar tu financiamiento.\n\nConviene revisar con el banco el monto disponible, el pie, el plazo y los gastos asociados. ¿Ya estás conversando con alguna entidad financiera o necesitas orientación para iniciar la evaluación?"},
+                {"key":"builtin:20","category":"stage2","label":"Antecedentes para avanzar con la compra","text":"[[nombre]], para avanzar con la compraventa, normalmente necesitamos identificar a los compradores, conocer el monto y las condiciones de la oferta y, si corresponde, contar con una preaprobación hipotecaria o acreditar la modalidad de pago.\n\nLos documentos definitivos se confirman según la operación. ¿Ya tienes definido cómo financiarás la compra? Te indicaré el canal seguro para entregar antecedentes cuando corresponda."},
+                {"key":"builtin:21","category":"stage2","label":"Evaluar postulación al arriendo","text":"[[nombre]], para revisar si podemos avanzar con la postulación, ¿arrendarías de manera individual o complementarías renta con otra persona? ¿Desde qué fecha necesitas la propiedad?\n\nAsí podremos confirmar las condiciones específicas del propietario antes de solicitar documentos."},
+                {"key":"builtin:4","category":"stage2","label":"Coordinar visita","text":"[[nombre]], ¿qué días y rangos horarios tienes disponibles para visitar la propiedad? Revisaré el acceso y te confirmaré el horario antes de que hagas el traslado."},
+                {"key":"builtin:5","category":"stage2","label":"Confirmar visita acordada","text":"Hola [[nombre]], te escribo para confirmar la visita que coordinamos. ¿Mantienes tu disponibilidad para el horario acordado? Si necesitas algún ajuste, avísame para reorganizarla."},
+                {"key":"builtin:6","category":"stage2","label":"Reagendar visita","text":"Hola [[nombre]], podemos reorganizar la visita. ¿Qué día y rango horario te acomodan? Te confirmaré la nueva hora después de revisar la disponibilidad."},
+                {"key":"builtin:7","category":"stage2","label":"Presentar oferta","text":"[[nombre]], si quieres avanzar con la propiedad, podemos presentar una propuesta al propietario.\n\n¿Con qué monto y condiciones estarías dispuesto a avanzar? Revisaré tu propuesta y te informaré los siguientes pasos; la aceptación dependerá del propietario."},
+                {"key":"builtin:14","category":"stage2","label":"Coordinar llamada","text":"[[nombre]], podemos revisar tus dudas y próximos pasos por teléfono. ¿En qué horario te acomoda que te llame?"},
+                {"key":"builtin:15","category":"stage2","label":"Documentación pendiente","text":"Hola [[nombre]], ¿pudiste reunir los antecedentes que revisamos? Si te falta alguno, dime cuál para orientarte. Te confirmaré cómo entregarlos de forma segura y revisar si podemos continuar."},
+                {"key":"builtin:16","category":"stage2","label":"Objeción de precio o condiciones","text":"Entiendo, [[nombre]]. ¿Qué condición tendría que cambiar para que consideres avanzar: el precio, la modalidad de pago o alguna característica de la propiedad? Con eso puedo revisar si existe margen para una propuesta o buscar opciones más adecuadas."},
+                {"key":"builtin:8","category":"stage6","label":"Sin respuesta al primer contacto","text":"Hola [[nombre]], quería retomar tu consulta por [[referencia]]:\n[[enlace]]\n\n¿Todavía la estás considerando? Si no cumple con lo que buscas, puedo revisar otras opciones ajustadas a tus necesidades."},
+                {"key":"builtin:9","category":"stage6","label":"Seguimiento de información enviada","text":"Hola [[nombre]], ¿pudiste revisar la información que te compartí? ¿Hay algún requisito o condición que te impida avanzar? Si me indicas cuál, puedo ayudarte a resolverlo."},
+                {"key":"builtin:10","category":"stage6","label":"Evaluación después de la visita","text":"Hola [[nombre]], ¿qué te pareció la propiedad que visitamos? ¿La considerarías para avanzar con una propuesta o hay algo de la ubicación, distribución o precio que necesitemos ajustar en la búsqueda?"},
+                {"key":"builtin:11","category":"stage6","label":"Buscar alternativas","text":"[[nombre]], puedo buscar otras propiedades. ¿Qué aspecto de la opción anterior no se ajustó a lo que necesitas? Así podré enfocar la búsqueda en alternativas que realmente te sirvan."},
+                {"key":"builtin:12","category":"stage6","label":"Propiedad no disponible","text":"Hola [[nombre]], la propiedad que consultaste ya no está disponible. ¿Mantienes tus requisitos de búsqueda? Puedo revisar alternativas activas que se ajusten a lo que necesitas."},
+                {"key":"builtin:13","category":"stage6","label":"Cliente terminó su búsqueda","text":"Gracias por avisarme, [[nombre]]. Daré por finalizado el seguimiento de esta búsqueda. Si más adelante necesitas asesoría inmobiliaria, puedes contar con PROCASA."},
+                {"key":"builtin:17","category":"stage6","label":"Cliente evaluando decisión","text":"Hola [[nombre]], ¿hay algún dato que te falte para tomar una decisión o prefieres que retomemos el contacto en otra fecha? Puedo ayudarte a resolver lo que quede pendiente."}
+            ];
+            return rows.filter(row => {
+                if (['builtin:19','builtin:20'].includes(row.key)) return operation === 'venta';
+                if (row.key === 'builtin:21') return operation === 'arriendo';
+                return true;
+            }).map(row => row.key === 'builtin:3'
+                ? {...row,label:operation === 'arriendo' ? 'Documentos para postular al arriendo' : operation === 'venta' ? 'Crédito hipotecario y preaprobación' : 'Condiciones de la operación'}
+                : row);
+        }
+
+        function pilotGreeting() {
+            const hour = Number(new Intl.DateTimeFormat('es-CL',{timeZone:'America/Santiago',hour:'numeric',hourCycle:'h23'}).format(new Date()));
+            return hour < 12 ? 'buenos días' : hour < 20 ? 'buenas tardes' : 'buenas noches';
+        }
+
+        function pilotPublicContext(data, operation) {
+            const facts = data.contactPublicFacts || {};
+            const valid = value => typeof value === 'string' && value.trim() && !/^(none|s\/i|s\/n|desconocido|no registrado)$/i.test(value.trim()) ? value.trim() : '';
+            const type = valid(facts.tipo);
+            const commune = valid(facts.comuna);
+            const descriptor = type ? 'el inmueble tipo '+type.toLowerCase() : 'la propiedad';
+            const op = operation ? ' en '+operation : '';
+            const reference = descriptor + op + (commune ? ' en '+commune : '');
+            const portals = {'portalinmobiliario':'Portal Inmobiliario','mercadolibre':'Mercado Libre','yapo':'Yapo','chilepropiedades':'ChilePropiedades','enlaceinmobiliario':'Enlace Inmobiliario','proppit':'Proppit','procasa':'PROCASA','toc toc':'TOCTOC','toctoc':'TOCTOC'};
+            const originKey = String(data.contactOrigin || '').trim().toLowerCase().replace(/\s+/g,'');
+            const origin = portals[originKey] ? 'recibida a través de '+portals[originKey] : '';
+            const attrs = [];
+            const number = value => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+            const fmt = value => new Intl.NumberFormat('es-CL',{maximumFractionDigits:2}).format(value);
+            if (number(facts.dormitorios)) attrs.push(fmt(facts.dormitorios)+' dormitorios');
+            if (number(facts.banos)) attrs.push(fmt(facts.banos)+' baños');
+            if (number(facts.superficie_util)) attrs.push(fmt(facts.superficie_util)+' m² útiles');
+            if (type && /casa|parcela|terreno/i.test(type) && number(facts.superficie_terreno)) attrs.push(fmt(facts.superficie_terreno)+' m² de terreno');
+            if (number(facts.estacionamientos)) attrs.push(fmt(facts.estacionamientos)+' estacionamientos');
+            if (number(facts.bodegas)) attrs.push(fmt(facts.bodegas)+' bodegas');
+            const labels = {has_terrace:'Terraza',has_patio:'Patio',bodega:'Bodega',piscina:'Piscina',gimnasio:'Gimnasio',jardin:'Jardín'};
+            for (const key of (Array.isArray(facts.features) ? facts.features : [])) {
+                if (labels[key] && !(key === 'bodega' && number(facts.bodegas))) attrs.push(labels[key]);
+            }
+            const price = operation === 'venta' ? facts.precio_venta : operation === 'arriendo' ? facts.precio_arriendo : null;
+            if (price) {
+                const currency = String(price.moneda_publicada || price.moneda_publicacion || '').toUpperCase();
+                const published = number(price.precio_publicado_original) || number(price.precio_publicado);
+                if (published && ['UF','CLP'].includes(currency)) attrs.push('Precio publicado: '+(currency==='UF'?'UF ':'$')+fmt(published));
+            }
+            if (number(facts.gastos_comunes)) attrs.push('Gastos comunes informados: $'+fmt(facts.gastos_comunes)+' (sujetos a actualización)');
+            return {reference,origin,attributes:attrs.length ? attrs.map(x=>'• '+x).join('\n') : 'Puedes revisar las características y fotografías en la ficha.'};
+        }
+
+        function pilotResolveContext(text, operation, publicUrl, data = {}) {
             const op = operation === 'venta' ? 'en venta' : operation === 'arriendo' ? 'en arriendo' : '';
+            const context = pilotPublicContext(data,operation);
             const question = operation === 'arriendo'
-                ? '¿Para cuándo necesitas arrendar y postularías de manera individual o con otra persona? Con eso puedo confirmar los requisitos específicos de este arriendo y explicarte los antecedentes necesarios.'
+                ? 'para preparar una postulación al arriendo, estos son los antecedentes habituales que conviene tener disponibles:\n\n• Cédula de identidad vigente.\n• Comprobantes de ingresos (por ejemplo, liquidaciones de sueldo o antecedentes tributarios si trabajas de forma independiente).\n• Certificado de cotizaciones, cuando corresponda.\n• Informe comercial, si se solicita.\n• Antecedentes de quien complemente renta o del aval, solo si se exige.\n\nConfirmaré los requisitos exactos de esta propiedad antes de solicitar documentos y te indicaré un canal seguro para entregarlos. ¿Postularías individualmente o complementarías renta?'
                 : operation === 'venta'
-                    ? '¿Tienes previsto financiar la compra con crédito hipotecario o con recursos propios? Si usarás crédito, ¿ya cuentas con una preaprobación o estás evaluándolo? Así podremos revisar los próximos pasos.'
-                    : '¿Qué condición de la operación necesitas revisar antes de avanzar? Puedo confirmar los antecedentes que correspondan.';
-            let result = text.replace(/\[\[operacion\]\]/g, op).replace(/\[\[consulta\]\]/g, question);
+                    ? 'para orientar la compra, ¿ya tienes crédito hipotecario preaprobado o estás en proceso de evaluación? Si comprarías con recursos propios, también podemos avanzar con esa modalidad. Si necesitas apoyo para entender el financiamiento, puedo orientarte sobre los próximos pasos.'
+                    : '¿Qué condiciones de la operación necesitas revisar para avanzar?';
+            let result = text.replace(/\[\[operacion\]\]/g, op).replace(/\[\[consulta\]\]/g, question)
+                .replace(/\[\[saludo\]\]/g,pilotGreeting()).replace(/\[\[origen\]\]/g,context.origin)
+                .replace(/\[\[referencia\]\]/g,context.reference).replace(/\[\[atributos\]\]/g,context.attributes);
             if (!publicUrl) result = result.replace(/:\s*\n\[\[enlace\]\]/g, '.').replace(/\[\[enlace\]\]/g, '');
-            return result.replace(/ +([:,.?])/g, '$1');
+            return result.replace(/ +([:,.?])/g, '$1').replace(/ {2,}/g,' ');
         }
 
         // The first-contact rule follows the draft rather than the open accordion.
@@ -5621,12 +5682,12 @@
         }
 
         function pilotPersonalDisplay(text) {
-            const labels = {nombre:'Nombre del cliente',ejecutivo:'Nombre del ejecutivo',propiedad:'Código de propiedad',comuna:'Comuna de la propiedad',enlace:'Enlace de la propiedad',operacion:'Tipo de operación',consulta:'Pregunta según la operación'};
+            const labels = {nombre:'Nombre del cliente',ejecutivo:'Nombre del ejecutivo',propiedad:'Código de propiedad',comuna:'Comuna de la propiedad',enlace:'Enlace de la propiedad',operacion:'Tipo de operación',consulta:'Información según la operación',saludo:'Saludo según la hora',origen:'Portal de origen',referencia:'Propiedad consultada',atributos:'Características de la propiedad'};
             return String(text || '').replace(/\[\[([^\[\]]+)\]\]/g, (match,key) => labels[key] ? '«'+labels[key]+'»' : match);
         }
 
         function pilotPersonalStorage(text) {
-            const labels = {'Nombre del cliente':'nombre','Nombre del ejecutivo':'ejecutivo','Código de propiedad':'propiedad','Comuna de la propiedad':'comuna','Enlace de la propiedad':'enlace','Tipo de operación':'operacion','Pregunta según la operación':'consulta'};
+            const labels = {'Nombre del cliente':'nombre','Nombre del ejecutivo':'ejecutivo','Código de propiedad':'propiedad','Comuna de la propiedad':'comuna','Enlace de la propiedad':'enlace','Tipo de operación':'operacion','Información según la operación':'consulta','Pregunta según la operación':'consulta','Saludo según la hora':'saludo','Portal de origen':'origen','Propiedad consultada':'referencia','Características de la propiedad':'atributos'};
             return String(text || '').replace(/«([^»]+)»/g, (match,label) => labels[label] ? '[['+labels[label]+']]' : match);
         }
 
@@ -5665,7 +5726,7 @@
         }
 
         function pilotAllTemplates() {
-            return [...pilotCommercialTemplates(), ...personalLibrary.templates.map(t => ({
+            return [...pilotCommercialTemplates(pilotDetectedOperation(leadData)), ...personalLibrary.templates.map(t => ({
                 key:'personal:' + t.id, category:t.category, label:t.title, text:t.body, personalId:t.id
             }))];
         }
@@ -5676,7 +5737,7 @@
             // Do not detach the existing list when rebuilding headers.
             if (tabs.contains(list)) document.getElementById('waPilotSidebar').append(list);
             tabs.replaceChildren();
-            const counts = pilotCommercialTemplates().reduce((acc,t) => (acc[t.category]=(acc[t.category]||0)+1,acc),{});
+            const counts = pilotCommercialTemplates(pilotDetectedOperation(leadData)).reduce((acc,t) => (acc[t.category]=(acc[t.category]||0)+1,acc),{});
             const groups = [
                 ['stage1','Primer contacto','fa-handshake',counts.stage1],
                 ['stage2','Gestión comercial','fa-calendar-check',counts.stage2],
@@ -5863,25 +5924,12 @@
         }
 
         function renderCommTabs(target) {
-            const tabsContainer = document.getElementById('commTabs');
-            tabsContainer.innerHTML = "";
-            if (pilotComposerActive()) { renderPilotNavigation(); return; }
-            renderLegacyCommTabs(target); return;
-            const tabs = target === 'lead' && currentCommChannel === 'wa'
-                ? [{id: 'stage1', label: 'Primer contacto'},
-                   {id: 'stage2', label: 'Gestionar interés y visitas'},
-                   {id: 'stage6', label: 'Seguimiento'},
-                   {id: 'personal', label: 'Mis plantillas'},
-                   {id: 'recommendation', label: 'Recomendador'}]
-                : commTemplates[target].tabs;
-            tabs.forEach((tab, index) => {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = `stage-tab ${index === 0 ? 'active' : ''}`;
-                btn.innerText = tab.label;
-                btn.onclick = (e) => loadTemplates(target, tab.id, e.target);
-                tabsContainer.appendChild(btn);
-            });
+            if (pilotComposerActive()) {
+                document.getElementById('commTabs').innerHTML = '';
+                renderPilotNavigation();
+                return;
+            }
+            renderLegacyCommTabs(target);
         }
 
         function loadTemplates(target, category, btnElement = null) {
@@ -5935,67 +5983,8 @@
                 footerBtn.classList.remove('d-none');
             }
 
-            if (pilot) { renderPilotTemplates(category); return; }
-            const container = document.getElementById('templateList');
-            container.innerHTML = "";
-            const query = personalMode ? document.getElementById('waTemplateSearch').value.trim().toLowerCase() : '';
-            const personal = personalMode ? personalLibrary.templates.map(t => ({
-                label: t.title, text: t.body, channel: 'wa', category: t.category, personalId: t.id
-            })) : [];
-            const categories = personalMode && category === 'stage2' ? ['stage2', 'stage3', 'stage4', 'stage5'] : [category];
-            const allTemplates = category === 'personal' ? personal :
-                query ? [...Object.entries(commTemplates[target].data).flatMap(([cat, entries]) =>
-                    entries.map(t => ({...t, category: cat}))), ...personal] :
-                [...categories.flatMap(cat => (commTemplates[target].data[cat] || []).map(t => ({...t, category: cat}))),
-                 ...personal.filter(t => categories.includes(t.category))];
-            const filteredTemplates = allTemplates.filter(t => t.channel === currentCommChannel &&
-                (!query || (t.label + ' ' + t.text).toLowerCase().includes(query)));
-
-            if (filteredTemplates.length === 0) {
-                container.innerHTML = `<div class="text-center p-3 text-secondary small">No hay plantillas disponibles para este canal en esta etapa.</div>`;
-                return;
-            }
-
-            filteredTemplates.forEach(tpl => {
-                const card = document.createElement('div');
-                card.className = 'template-card';
-                card.setAttribute('role', 'button');
-                card.tabIndex = 0;
-                card.addEventListener('keydown', event => {
-                    if (event.target === card && ['Enter', ' '].includes(event.key)) {event.preventDefault(); card.click();}
-                });
-                card.onclick = () => {
-                    document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
-                    const draft = document.getElementById('commMessage').value.trim();
-                    if (personalMode && draft && draft !== originalTemplateText.trim() && !confirm('¿Reemplazar el mensaje que estás editando?')) return;
-                    card.classList.add('selected');
-                    currentTemplateLabel = tpl.label;
-                    selectTemplate(tpl.text, tpl.subject || "", tpl.omitPropertyLink ? "no-property" : (tpl.category || category));
-                };
-                const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp text-success"></i>' : '<i class="fa-regular fa-envelope text-primary"></i>';
-                const info = document.createElement('div');
-                info.className = 'tpl-info';
-                const title = document.createElement('span');
-                title.className = 'tpl-title'; title.textContent = tpl.label;
-                const preview = document.createElement('span');
-                preview.className = 'tpl-preview'; preview.textContent = tpl.text.replace(/\n/g, ' ').slice(0, 100);
-                info.append(title, preview); card.append(info);
-                if (tpl.personalId) {
-                    const edit = document.createElement('button');
-                    edit.type = 'button'; edit.className = 'btn btn-sm btn-outline-secondary ms-2'; edit.textContent = 'Editar';
-                    edit.onclick = e => {e.stopPropagation(); openPersonalEditor(tpl.personalId);};
-                    const del = document.createElement('button');
-                    del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger ms-1'; del.textContent = 'Eliminar';
-                    del.onclick = e => {e.stopPropagation(); if (confirm('¿Eliminar esta plantilla personal?')) persistPersonalLibrary(personalLibrary.templates.filter(t => t.id !== tpl.personalId));};
-                    const actions = document.createElement('div'); actions.className = 'd-flex flex-shrink-0'; actions.append(edit, del); card.append(actions);
-                } else {
-                    const badge = document.createElement('span');
-                    badge.className = 'small text-secondary'; badge.textContent = 'Usar'; card.append(badge);
-                }
-                container.appendChild(card);
-            });
+            renderPilotTemplates(category);
         }
-
 
         function addPropertyLink(message) {
             const url = leadData.publicContactUrl;
@@ -6149,7 +6138,47 @@
             persistPersonalLibrary(next);
         };
 
+        function selectLegacyTemplate(text, subject = "") {
+            const safeName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre.split(' ')[0] : "";
+            const fullName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre : "Estimado Cliente";
+            const safeExec = (leadData.execName && leadData.execName !== "None") ? leadData.execName.split(' ')[0] : "Agente";
+            const safeProp = (leadData.propiedad && leadData.propiedad !== "None") ? leadData.propiedad : "la propiedad";
+            const safeDir = (leadData.direccion && leadData.direccion !== "None") ? leadData.direccion : "Ubicación pendiente";
+            const safeComuna = (leadData.comuna && leadData.comuna !== "None") ? leadData.comuna : "Santiago";
+            const safeDay = "mañana"; // Placeholder default
+            const safeHour = "10:00"; // Placeholder default
+
+            let processedText = text
+                .replace(/\[\[nombre\]\]/g, safeName || "Estimado(a)")
+                .replace(/\[\[nombre completo\]\]/g, fullName)
+                .replace(/\[\[ejecutivo\]\]/g, safeExec)
+                .replace(/\[\[owner_name\]\]/g, leadData.ownerName.split(' ')[0])
+                .replace(/\[\[propiedad\]\]/g, safeProp)
+                .replace(/\[\[direccion\]\]/g, safeDir)
+                .replace(/\[\[comuna\]\]/g, safeComuna)
+                .replace(/\[\[precio\]\]/g, leadData.precio)
+                .replace(/\[\[día\]\]/g, safeDay)
+                .replace(/\[\[hora\]\]/g, safeHour);
+
+            // Cleanup potentially double spaces if name was empty
+            processedText = processedText.replace(/  +/g, ' ');
+
+            originalTemplateText = processedText;
+            document.getElementById('commMessage').value = processedText;
+
+            if (currentCommChannel === 'email' && subject) {
+                let processedSubject = subject
+                    .replace(/\[\[propiedad\]\]/g, safeProp)
+                    .replace(/\[\[comuna\]\]/g, safeComuna);
+                document.getElementById('emailSubject').value = processedSubject;
+            }
+
+            // Force UI update so button turns green immediately
+            updateSendLink(currentCommTarget, semState.currentCategory);
+        }
+
         function selectTemplate(text, subject = "", templateCategory = semState.currentCategory) {
+            if (!pilotComposerActive()) return selectLegacyTemplate(text,subject);
             const rawName = (leadData.nombre || '').trim();
             const safeName = /^(none|desconocido|sin nombre|cliente|s\/n|s\/i)$/i.test(rawName) ? "" : rawName.split(' ')[0];
             const fullName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre : "Estimado Cliente";
@@ -6164,7 +6193,7 @@
 
             if (window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa') {
                 pilotDraftCategory = templateCategory;
-                text = pilotResolveContext(text, leadData.contactOperation, leadData.publicContactUrl);
+                text = pilotResolveContext(text, pilotDetectedOperation(leadData), leadData.publicContactUrl, leadData);
             }
             let processedText = (currentCommTarget === 'lead' && currentCommChannel === 'wa' && !safeName
                 ? text.replace(/Hola \[\[nombre\]\],/gi, 'Hola,') : text)

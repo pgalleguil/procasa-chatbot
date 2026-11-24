@@ -248,7 +248,7 @@ def build_pilot_message_context(lead, detail, db, *, now=None):
         intake = "unknown"
     office_user = False
     chatbot_dialogue = False
-    for msg in messages:
+    for msg in (lead.get("messages") or []):
         if not isinstance(msg, dict) or not str(msg.get("content") or "").strip():
             continue
         if msg.get("role") == "user" and msg.get("source") in (None, "", "office_whatsapp", "chatbot"):
@@ -256,8 +256,21 @@ def build_pilot_message_context(lead, detail, db, *, now=None):
         if office_user and msg.get("role") == "assistant":
             chatbot_dialogue = True
             break
+    # Keep intake provenance separate from the best commercial contact.
+    # Never infer a visit request simply because a property exists.
+    visit_requested = bool(visit or requested_visit)
+    if not visit_requested:
+        for msg in reversed(messages):
+            if not isinstance(msg, dict) or msg.get("role") != "user":
+                continue
+            txt = _pilot_text(msg.get("content"))[:500]
+            if re.search(r"\b(no quiero|no puedo|cancel|no me interesa|ya no)\b", txt):
+                break
+            if re.search(r"\b(quiero|quisiera|me gustaria|necesito|puedo|podemos|podria)\s+(agendar |coordinar |programar )?(una visita|visitar|ir a ver|conocer la propiedad)\b|\b(solicito|solicitar) (una )?visita\b|\b(agendar|coordinar) (una )?visita\b", txt):
+                visit_requested = True
+                break
     return {
-        "intake": intake, "chatbot_dialogue": chatbot_dialogue,
+        "intake": intake, "chatbot_dialogue": chatbot_dialogue, "visit_requested": visit_requested,
         "criteria": known, "finance": finance, "employment": employment,
         "applicant": applicant, "followup": followup, "visit_at": visit,
         "price_drop": drop, "requested_visit": requested_visit,

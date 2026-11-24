@@ -248,6 +248,7 @@ def mark_event_recovered(db, *, session_id: str) -> None:
 _CRM_SEND_ALERT_REASONS = _CRM_ALERT_REASONS | frozenset({
     "invalid_request", "invalid_recipient", "recipient_not_registered", "provider_rejected",
     "subscription", "rate_limit", "delivery_unconfirmed",
+    "current_assignment_required", "crm_direct_send_disabled",
 })
 
 
@@ -323,7 +324,7 @@ async def notify_pablo_on_crm_failure(
             f"Sesión WaSender: {session_id}\\n"
             f"Motivo: {reason}\\n"
             + (f"Lead: {lead_id}\\n" if lead_id else "")
-            + ("Envío incierto: no reenviar hasta verificar la entrega."
+            + ("Envío incierto: revisar la conversación en WhatsApp Web antes de enviar manualmente; no repetir automáticamente."
                if reason == "delivery_unconfirmed" else
                "El destinatario no está registrado en WhatsApp. Verificar número o usar llamada/correo; no reenviar por WhatsApp Web."
                if reason == "recipient_not_registered" else

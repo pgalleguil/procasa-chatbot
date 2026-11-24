@@ -2,7 +2,7 @@
 
 Every session requires a dedicated opt-in, authenticated agent identity,
 current lead/cycle authorization, and verified provider sender phone.
-Other executives retain wa.me. Uncertain delivery never unlocks re-send.
+Other executives retain wa.me. Uncertain delivery never unlocks an automatic API retry; authorized users may inspect WhatsApp Web.
 """
 from __future__ import annotations
 
@@ -18,6 +18,9 @@ import requests
 
 from config import Config
 from .crm_permissions import can_administer_leads
+from .crm_lead_access import resolve_crm_lead_access_context
+from .price_drop_campaign_classifier import lead_must_not_be_contacted
+from .whatsapp_client import normalize_whatsapp_recipient
 from .crm_executive_outbound import (
     OUTBOX, OutboundBlocked, eligible_manual_session, send_manual,
     verify_provider_sender_identity,
@@ -150,17 +153,45 @@ def _outstanding_uncertain(db, lead_id: str, *, executive_id: str = _PABLO_USER_
         {"_id": ObjectId(lead_id)}, {"lifecycle.current_assignment_cycle_id": 1},
     ) or {}
     cycle = str((lead.get("lifecycle") or {}).get("current_assignment_cycle_id") or "")
-    if not cycle:
-        return True
     return bool(db[OUTBOX].find_one({
         "lead_id": ObjectId(lead_id),
-        "assignment_cycle_id": cycle,
+        **({"assignment_cycle_id": cycle} if cycle else {}),
         "executive_id": executive_id,
         "$or": [
             {"state": {"$in": list(_UNCERTAIN_STATES)}},
             {"state": "accepted", "canonical_recorded": {"$ne": True}},
         ],
     }, {"_id": 1}))
+
+
+def _manual_contact_allowed(db, *, user: dict, lead_id: str) -> bool:
+    """Manual Web is independent of provider/cycle metadata, not CRM permissions."""
+    if not ObjectId.is_valid(lead_id):
+        return False
+    lead = db["leads"].find_one({"_id": ObjectId(lead_id)}) or {}
+    if (not lead or lead.get("phone_is_synthetic") or lead.get("contact_identity_incomplete")
+            or lead_must_not_be_contacted(lead)):
+        return False
+    try:
+        recipient = normalize_whatsapp_recipient(str(lead.get("phone") or ""))
+        if "@" in recipient:
+            return False
+    except ValueError:
+        return False
+    access = resolve_crm_lead_access_context(db, user=user, lead=lead, security_enabled=True)
+    if not access.access_allowed or not access.action_permissions.get("contact_whatsapp"):
+        return False
+    owner = str(user.get("_id") or "")
+    lc = lead.get("lifecycle") or {}
+    if lc.get("assigned_to_user_id") and str(lc["assigned_to_user_id"]) != owner:
+        return False
+    cycles = list(db["crm_assignment_cycles"].find({
+        "lead_id": lead["_id"], "unassigned_at": None,
+        "cycle_status": {"$in": ["active", None]},
+    }, {"assigned_to_user_id": 1}).limit(2))
+    if len(cycles) > 1 or any(str(c.get("assigned_to_user_id") or "") != owner for c in cycles):
+        return False
+    return True
 
 
 def _session_status(session: dict, *, get=None) -> str:
@@ -263,9 +294,11 @@ def _assess(db, *, user: dict, lead_id: str, get=None) -> dict:
         "executive_name": profile["name"],
     }
     if _outstanding_uncertain(db, lead_id, executive_id=profile["id"]):
+        if not _manual_contact_allowed(db, user=user, lead_id=lead_id):
+            return {"method": "blocked", "available": False, "reason": "not_authorized"}
         _incident(db, lead_id=lead_id, reason="delivery_unconfirmed",
                   phase="post_send", **incident_context)
-        return {"method": "blocked", "available": False,
+        return {"method": "wa_me", "available": False, "fallback": True,
                 "reason": "delivery_unconfirmed"}
     try:
         info = (_eligible_pablo(db, user=user, lead_id=lead_id)
@@ -274,6 +307,12 @@ def _assess(db, *, user: dict, lead_id: str, get=None) -> dict:
                 if profile["id"] == _MARIELA_USER_ID
                 else _eligible_executive(db, lead_id=lead_id, profile=profile))
     except OutboundBlocked as exc:
+        if exc.code in ("current_assignment_required", "crm_direct_send_disabled"):
+            if _manual_contact_allowed(db, user=user, lead_id=lead_id):
+                _incident(db, lead_id=lead_id, reason=exc.code,
+                          phase="preflight", **incident_context)
+                return {"method": "wa_me", "available": False, "fallback": True,
+                        "reason": exc.code}
         if exc.code in _SAFE_PREFLIGHT_FALLBACK:
             _incident(db, lead_id=lead_id, reason=exc.code,
                       phase="preflight", **incident_context)
@@ -323,8 +362,8 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
     if (assessment.get("fallback") is True
             and assessment.get("reason") == "session_unavailable"):
         _queue_operator_alert(user=user, reason="session_unavailable")
-    elif assessment.get("reason") == "delivery_unconfirmed":
-        _queue_operator_alert(user=user, reason="delivery_unconfirmed", lead_id=lead_id)
+    elif assessment.get("reason") in ("delivery_unconfirmed", "current_assignment_required", "crm_direct_send_disabled"):
+        _queue_operator_alert(user=user, reason=assessment["reason"], lead_id=lead_id)
     return assessment
 
 
@@ -372,6 +411,9 @@ async def crm_executive_whatsapp_send(request: Request):
         # The POST can detect a disconnection after the initial GET preflight.
         if result.get("reason") == "session_unavailable":
             _queue_operator_alert(user=user, reason="session_unavailable")
+        if result.get("reason") in ("delivery_unconfirmed", "current_assignment_required", "crm_direct_send_disabled"):
+            _queue_operator_alert(user=user, reason=result["reason"], lead_id=data["lead_id"])
+            return {"status": "manual_fallback", "method": "wa_me", "reason": result["reason"]}
         return {"status": "manual_fallback", "method": "wa_me"}
     if result.get("status") == "blocked":
         if result.get("reason") == "delivery_unconfirmed":
@@ -404,6 +446,8 @@ async def crm_executive_whatsapp_send(request: Request):
                                 executive_id=profile["id"],
                                 executive_name=profile["name"])
         _queue_operator_alert(user=user, reason="delivery_unconfirmed", lead_id=data["lead_id"])
+        if await asyncio.to_thread(_manual_contact_allowed, db, user=user, lead_id=data["lead_id"]):
+            return {"status": "manual_fallback", "method": "wa_me", "reason": "delivery_unconfirmed"}
         raise HTTPException(status_code=503, detail={"code": "delivery_unconfirmed"})
     raise HTTPException(status_code=502, detail={"code": "operation_blocked"})
 

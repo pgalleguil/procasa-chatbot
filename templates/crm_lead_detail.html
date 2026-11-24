@@ -5625,6 +5625,7 @@
                 ? {...row,label:operation === 'arriendo' ? 'Documentos para postular al arriendo' : operation === 'venta' ? 'Financiamiento y preaprobación' : 'Condiciones de la operación'}
                 : row.key === 'builtin:8' && operation ? {...row,text:operation === 'venta' ? '¿Sigues buscando una propiedad para comprar? Puedo ayudarte a revisar alternativas que se ajusten a tu presupuesto y modalidad de financiamiento. ¿Retomamos la búsqueda o ya encontraste?' : '¿Sigues buscando arriendo? Puedo revisar opciones compatibles con tu presupuesto y fecha de ingreso. ¿Te gustaría que retomemos la búsqueda o ya encontraste?'}
                 : row.key === 'builtin:10' && operation ? {...row,text:operation === 'venta' ? '¿Qué te pareció la propiedad que visitaste? Si te interesa, podemos revisar una oferta y las condiciones de compra. Si hay algo que no te convence, cuéntame qué es para evaluar una negociación o alternativas.' : '¿Qué te pareció la propiedad que visitaste? Si te interesa, podemos revisar los requisitos y avanzar con tu postulación. Si hay algo que no te acomoda, cuéntame para evaluar alternativas.'}
+                : row.key === 'builtin:17' && operation ? {...row,text:operation === 'venta' ? 'Si la propiedad sigue siendo de tu interés, ¿qué nos falta resolver para avanzar con la compra? Si la diferencia está en el precio, podemos evaluar una oferta acorde a tu presupuesto y presentarla al propietario. ¿Qué condiciones te permitirían avanzar?' : 'Si la propiedad sigue siendo de tu interés, ¿qué nos falta resolver para avanzar con el arriendo? Podemos revisar el valor mensual, las garantías o la fecha de ingreso y consultar al propietario si existe flexibilidad. ¿Qué condiciones te permitirían avanzar?'}
                 : row.key === 'builtin:15' && operation ? {...row,label:operation === 'venta' ? 'Retomar financiamiento de compra' : 'Retomar postulación de arriendo',text:operation === 'venta' ? '¿En qué etapa estás con el financiamiento de la compra? Si necesitas revisar la preaprobación, el pie o el presupuesto disponible, puedo orientarte para evaluar cómo avanzar. Si ya lo tienes resuelto, revisemos los próximos pasos.' : '¿Te gustaría avanzar con la postulación? Si te falta algún antecedente o tienes dudas sobre ingresos, garantías o costos iniciales, puedo orientarte y revisar los requisitos aplicables antes de presentar tu postulación.'}
                 : row);
         }
@@ -6021,7 +6022,7 @@
                     button.type = 'button';
                     button.className = 'btn btn-sm ' + (pilotRecommendationMode === mode ? 'btn-outline-success' : 'btn-outline-secondary');
                     button.textContent = label;
-                    button.onclick = () => { pilotRecommendationMode = mode; renderPilotTemplates('recommendation'); updateSendLink('lead','recommendation'); if (typeof updateSemModalUI === 'function') updateSemModalUI(); };
+                    button.onclick = () => { pilotRecommendationMode = mode; renderPilotTemplates('recommendation'); updateSendLink('lead','recommendation'); if (typeof updateSelectionUI === 'function') updateSelectionUI(); };
                     list.append(button);
                 }
                 return;

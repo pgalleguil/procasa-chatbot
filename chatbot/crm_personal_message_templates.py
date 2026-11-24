@@ -22,9 +22,9 @@ def validate_template(data):
     title, body = title.strip(), body.strip()
     if not 1 <= len(title) <= 70 or not 1 <= len(body) <= 2000 or category not in CATEGORIES:
         raise ValueError("Nombre, contenido o categoría inválidos")
-    if re.search(r"https?://|www\\.|(?:wa\\.me/)|(?:\\+?56[ -]?9(?:[ -]?\\d){8})", title + "\\n" + body, re.I):
+    if re.search(r"https?://|www\.|(?:wa\.me/)|(?:\+?56[ -]?9(?:[ -]?\d){8})", title + "\n" + body, re.I):
         raise ValueError("Usa [[enlace]] y evita teléfonos o enlaces fijos de clientes")
-    if set(re.findall(r"\\[\\[([^\\[\\]]+)\\]\\]", body)) - VARIABLES:
+    if set(re.findall(r"\[\[([^\[\]]+)\]\]", body)) - VARIABLES:
         raise ValueError("Variable no admitida")
     return {"title": title, "body": body, "category": category}
 

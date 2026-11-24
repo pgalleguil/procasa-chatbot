@@ -500,3 +500,13 @@ def test_pilot_intake_channel_uses_real_dialogue():
     chat = {"messages": [{"role": "user", "content": "Busco departamento"}, {"role": "assistant", "content": "¿En qué comuna?"}]}
     assert build_pilot_message_context(chat, {}, db)["chatbot_dialogue"]
     assert validate_template(entry(body="Hola [[ejecutivo]] [[primera_ficha]] [[primer_paso]]"), pilot=True)["body"].endswith("[[primer_paso]]")
+
+
+def test_recommendation_editor_is_visible_and_edits_survive_status_refresh():
+    html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    assert "#commModal.wa-composer-pilot #semRecommendAreaModal { display:none" not in html
+    assert 'id="semRecommendMsgModal"' in html
+    assert "Mensaje de recomendación editable" in html
+    assert "msgBox.dataset.generated !== generated" in html
+    assert "msgBox.value === msgBox.dataset.generated" in html
+    assert "input.value = recommendation" in html

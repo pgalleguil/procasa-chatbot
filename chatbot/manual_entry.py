@@ -469,16 +469,19 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                 update_payload["$set"]["lifecycle.assigned_at"] = assigned_at.isoformat()
                 logger.info(f"[MANUAL] Lead sin ejecutivo previo. Asignando a dueño de ficha: {exec_name}")
 
-            db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
-            lead_id = str(existing_lead["_id"])
-            # Create assignment cycle for the new property interest
             if phone_is_real and not reused_active_cycle:
-                from .crm_metrics import create_assignment_cycle
                 exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
                 assigned_to = str(exec_user["_id"]) if exec_user else exec_name
                 assigned_at = _manual_assignment_at(
                     db, recipient=assigned_to, now=now, business_slot=assigned_at,
                 )
+                update_payload["$set"]["lifecycle.assigned_at"] = assigned_at.isoformat()
+
+            db["leads"].update_one({"_id": existing_lead["_id"]}, update_payload)
+            lead_id = str(existing_lead["_id"])
+            # Create assignment cycle for the new property interest
+            if phone_is_real and not reused_active_cycle:
+                from .crm_metrics import create_assignment_cycle
                 fresh_lead = db["leads"].find_one({"_id": existing_lead["_id"]})
                 if fresh_lead:
                     cycle = create_assignment_cycle(
@@ -488,17 +491,20 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                     )
             
         else:
+            if phone_is_real:
+                exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
+                assigned_to = str(exec_user["_id"]) if exec_user else exec_name
+                assigned_at = _manual_assignment_at(
+                    db, recipient=assigned_to, now=now, business_slot=assigned_at,
+                )
+                lead_doc["lifecycle"]["assigned_at"] = assigned_at.isoformat()
+
             # Insert brand new lead
             result = db["leads"].insert_one(lead_doc)
             lead_id = str(result.inserted_id)
             # Create assignment cycle immediately with explicit commercial reason
             if phone_is_real:
                 from .crm_metrics import create_assignment_cycle
-                exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
-                assigned_to = str(exec_user["_id"]) if exec_user else exec_name
-                assigned_at = _manual_assignment_at(
-                    db, recipient=assigned_to, now=now, business_slot=assigned_at,
-                )
                 cycle = create_assignment_cycle(
                     db, lead=lead_doc, assigned_to_user_id=assigned_to,
                     assigned_by="supervisor", reason="manual_lead_created",

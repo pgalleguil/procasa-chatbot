@@ -68,7 +68,7 @@ const leadData = {nombre:'Ana Pérez',execName:'Hernán Castro',propiedad:'6318'
 function updateSendLink(){}
 """ + source + """
 selectTemplate('Hola [[nombre]], soy [[ejecutivo]]. [[enlace]]');
-assert.equal(element('commMessage').value,'Hola Ana, soy Hernán. https://www.procasa.cl/6318');
+assert.equal(element('commMessage').value,'Hola Ana, soy Hernán Castro. https://www.procasa.cl/6318');
 selectTemplate('Hola [[nombre]], ¿coordinamos visita?');
 assert(element('commMessage').value.includes(leadData.publicContactUrl));
 assert.equal(element('commMessage').value.split(leadData.publicContactUrl).length, 2);
@@ -266,8 +266,12 @@ const manual = {pilotMessageContext:{intake:'manual'}};
 const portal = {propiedad:'6318',publicContactUrl:'https://www.procasa.cl/6318',pilotMessageContext:{intake:'prop360'}};
 const chat = {...portal,pilotMessageContext:{intake:'unknown',chatbot_dialogue:true}};
 assert.deepEqual(pilotFirstContactKeys(manual),['builtin:31']);
-assert.deepEqual(pilotFirstContactKeys(portal),['builtin:1','builtin:2']);
-assert.deepEqual(pilotFirstContactKeys(chat),['builtin:30','builtin:2']);
+assert.deepEqual(pilotFirstContactKeys(portal),['builtin:1']);
+assert.deepEqual(pilotFirstContactKeys({...portal,pilotMessageContext:{intake:'prop360',visit_requested:true}}),['builtin:2','builtin:1']);
+assert.deepEqual(pilotFirstContactKeys(chat),['builtin:30']);
+assert.deepEqual(pilotFirstContactKeys({...chat,pilotMessageContext:{intake:'manual',chatbot_dialogue:true}}),['builtin:30']);
+assert.deepEqual(pilotFirstContactKeys({...chat,pilotMessageContext:{intake:'prop360',chatbot_dialogue:true,visit_requested:true}}),['builtin:30','builtin:2']);
+assert.deepEqual(pilotFirstContactKeys({...portal,pilotMessageContext:{intake:'manual'}}),['builtin:31']);
 assert.equal(pilotFirstContactError('Hola','','stage1','stage1',manual,'builtin:31'),'');
 assert(pilotFirstContactError('Hola','','stage1','stage1',{...portal,publicContactUrl:''},'builtin:1'));
 assert(pilotFirstContactError('Hola',portal.publicContactUrl,'stage1','stage1',portal,'builtin:31'));
@@ -456,7 +460,9 @@ def test_pilot_intake_channel_uses_real_dialogue():
     db = mongomock.MongoClient()["test"]
     portal = {"source_type": "prop360", "messages": [{"role": "user", "source": "prop360", "content": "Consulta"}]}
     ctx = build_pilot_message_context(portal, {}, db)
-    assert ctx["intake"] == "prop360" and not ctx["chatbot_dialogue"]
+    assert ctx["intake"] == "prop360" and not ctx["chatbot_dialogue"] and not ctx["visit_requested"]
+    portal["messages"][0]["content"] = "Quiero coordinar una visita"
+    assert build_pilot_message_context(portal, {}, db)["visit_requested"]
     manual = {"source_type": "manual", "messages": [{"role": "user", "source": "executive_whatsapp", "content": "Hola"}]}
     ctx = build_pilot_message_context(manual, {}, db)
     assert ctx["intake"] == "manual" and not ctx["chatbot_dialogue"]

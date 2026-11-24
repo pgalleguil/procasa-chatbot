@@ -235,7 +235,7 @@ def _recover_incidents(db, *, executive_id: str = _PABLO_USER_ID) -> None:
         logger.warning("CRM_EXEC_WA_INCIDENT recover_failed=%s", type(exc).__name__)
 
 
-def _queue_operator_alert(*, user: dict, reason: str) -> None:
+def _queue_operator_alert(*, user: dict, reason: str, lead_id: str | None = None) -> None:
     """Signal an already-detected CRM outage, without extra provider probes.
 
     The send is isolated from the executive's click. A durable Mongo claim
@@ -249,7 +249,7 @@ def _queue_operator_alert(*, user: dict, reason: str) -> None:
     from .executive_session_admin_alerts import notify_pablo_on_crm_failure
     asyncio.create_task(notify_pablo_on_crm_failure(
         session_id=profile["session"], executive_name=profile["name"],
-        reason=reason,
+        reason=reason, lead_id=lead_id,
     ))
 
 
@@ -323,6 +323,8 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
     if (assessment.get("fallback") is True
             and assessment.get("reason") == "session_unavailable"):
         _queue_operator_alert(user=user, reason="session_unavailable")
+    elif assessment.get("reason") == "delivery_unconfirmed":
+        _queue_operator_alert(user=user, reason="delivery_unconfirmed", lead_id=lead_id)
     return assessment
 
 
@@ -372,6 +374,8 @@ async def crm_executive_whatsapp_send(request: Request):
             _queue_operator_alert(user=user, reason="session_unavailable")
         return {"status": "manual_fallback", "method": "wa_me"}
     if result.get("status") == "blocked":
+        if result.get("reason") == "delivery_unconfirmed":
+            _queue_operator_alert(user=user, reason="delivery_unconfirmed", lead_id=data["lead_id"])
         raise HTTPException(status_code=409, detail={"code": "operation_blocked"})
     if result.get("status") == "rejected":
         # The provider explicitly rejected the request; no send was accepted.
@@ -383,8 +387,8 @@ async def crm_executive_whatsapp_send(request: Request):
                                 session_id=profile["session"],
                                 executive_id=profile["id"],
                                 executive_name=profile["name"])
-        if reason in ("session_disconnected", "authentication"):
-            _queue_operator_alert(user=user, reason=reason)
+        # Every explicit provider rejection must reach the administrator.
+        _queue_operator_alert(user=user, reason=reason, lead_id=data["lead_id"])
         if reason in _SAFE_REJECTED_REASONS:
             return {"status": "manual_fallback", "method": "wa_me"}
         raise HTTPException(status_code=422, detail={"code": "operation_blocked"})
@@ -397,6 +401,7 @@ async def crm_executive_whatsapp_send(request: Request):
                                 session_id=profile["session"],
                                 executive_id=profile["id"],
                                 executive_name=profile["name"])
+        _queue_operator_alert(user=user, reason="delivery_unconfirmed", lead_id=data["lead_id"])
         raise HTTPException(status_code=503, detail={"code": "delivery_unconfirmed"})
     raise HTTPException(status_code=502, detail={"code": "operation_blocked"})
 

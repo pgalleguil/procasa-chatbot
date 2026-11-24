@@ -588,7 +588,7 @@ def format_hot_whatsapp_template(lead_data: Dict[str, Any], executive_name: str,
     )
 
 
-def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, property_code: str, is_new_assignment: bool = True) -> str:
+def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, property_code: str, is_new_assignment: bool = True, *, management_url: str | None = None) -> str:
     """
     Formats the WhatsApp message to be sent to the executive.
     """
@@ -609,7 +609,7 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
             f"👤 Cliente: {cliente_texto}\n"
             f"📝 Mensaje recibido:\n{comentario_cliente}\n\n"
             f"⚠️ _Por favor, revisa si es necesario actualizar la cartera o si la propiedad fue dada de baja._\n\n"
-            f"🔗 *Ver caso en CRM*:\n{build_message_crm_url(lead_data, property_code)}"
+            f"🔗 *Ver caso en CRM*:\n{management_url or build_message_crm_url(lead_data, property_code)}"
         )
     prop_inline = lead_data.get("property_data", {}) if isinstance(lead_data, dict) else {}
     comuna = (
@@ -644,7 +644,7 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
     if not is_new_assignment:
         contexto_extra = f"⚠️ _Este cliente ya está asignado a ti._\n"
 
-    crm_url = build_message_crm_url(lead_data, property_code)
+    crm_url = management_url or build_message_crm_url(lead_data, property_code)
 
     ubicacion_lines = ""
     if comuna:

@@ -274,7 +274,7 @@ def test_webhook_echo_before_api_acceptance_does_not_create_duplicate(context, m
         (402, {"success": False, "message": "Subscription expired"}, "subscription"),
         (429, {"success": False, "message": "Too many requests"}, "rate_limit"),
         (400, {"success": False, "message": "Session is not connected"}, "session_disconnected"),
-        (422, {"success": False, "message": "Recipient not on WhatsApp"}, "invalid_recipient"),
+        (422, {"success": False, "message": "Recipient not on WhatsApp"}, "recipient_not_registered"),
         (400, {"success": False, "message": "Validation failed"}, "invalid_request"),
         (409, {"success": False, "message": "Other error"}, "provider_rejected"),
     ],
@@ -1399,3 +1399,103 @@ def test_provider_validation_diagnostics_preserve_fields_without_private_data(co
     assert "+56912345678" not in str(saved)
     assert "PRIVATE CONTENT" not in str(saved)
     assert "private-session-token" not in str(saved)
+
+
+@pytest.mark.parametrize("exists", [True, False])
+def test_recipient_lookup_caches_only_explicit_boolean(monkeypatch, exists):
+    monkeypatch.setattr(outgoing, "_RECIPIENT_CACHE", outgoing.OrderedDict())
+    calls = []
+    def get(url, **kwargs):
+        calls.append((url, kwargs))
+        return SimpleNamespace(status_code=200, json=lambda: {
+            "success": True, "data": {"exists": exists}})
+    session = {"session_id": "133527", "token": "test-token"}
+    for _ in range(2):
+        assert outgoing.check_recipient_registration(session, "+56911112222", get=get) is exists
+    assert len(calls) == 1
+    assert calls[0][0].endswith("/on-whatsapp/%2B56911112222")
+    assert calls[0][1]["headers"]["Authorization"] == "Bearer test-token"
+    assert outgoing.check_recipient_registration(
+        {"session_id": "133526", "token": "other"}, "+56911112222", get=get) is exists
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("status,body", [
+    (429, {"success": False}),
+    (503, {"success": False}),
+    (200, {"success": False, "data": {"exists": False}}),
+    (200, {"success": True, "data": {"exists": "false"}}),
+    (200, {"success": True, "data": {}}),
+])
+def test_recipient_lookup_unknown_is_not_cached_or_negative(monkeypatch, status, body):
+    monkeypatch.setattr(outgoing, "_RECIPIENT_CACHE", outgoing.OrderedDict())
+    calls = []
+    def get(*args, **kwargs):
+        calls.append(1)
+        return SimpleNamespace(status_code=status, json=lambda: body)
+    for _ in range(2):
+        assert outgoing.check_recipient_registration(
+            {"session_id": "133527", "token": "test"}, "+56911112222", get=get) is None
+    assert len(calls) == 2
+
+
+def test_confirmed_missing_recipient_never_posts_or_credits_sla(context, monkeypatch):
+    db, _ = context
+    monkeypatch.setenv("PROCASA_EXEC_WA_RECIPIENT_CHECK_ENABLED", "1")
+    checks, posts, credits = [], [], []
+    monkeypatch.setattr(outgoing, "check_recipient_registration",
+                        lambda *_a: checks.append(1) or False)
+    monkeypatch.setattr(outgoing, "credit_verified_outbound", lambda **_kw: credits.append(1))
+    kwargs = dict(lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+                  idempotency_key="recipient-check-1234", post=lambda *_a, **_kw: posts.append(1))
+    assert outgoing.send_manual(db, **kwargs) == {
+        "status": "rejected", "reason_code": "recipient_not_registered"}
+    assert outgoing.send_manual(db, **kwargs)["status"] == "duplicate"
+    assert checks == [1] and not posts and not credits
+    saved = next(iter(db[outgoing.OUTBOX].docs.values()))
+    assert saved["state"] == "blocked"
+    assert saved["provider_send_attempted"] is False
+    assert saved["recipient_registration"] == "not_registered"
+    assert not db["leads"].document["messages"]
+
+
+@pytest.mark.parametrize("lookup", [True, None])
+def test_registered_or_unknown_recipient_preserves_normal_send(context, monkeypatch, lookup):
+    db, _ = context
+    monkeypatch.setenv("PROCASA_EXEC_WA_RECIPIENT_CHECK_ENABLED", "1")
+    monkeypatch.setattr(outgoing, "check_recipient_registration", lambda *_a: lookup)
+    calls = []
+    result = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="recipient-positive-123", post=lambda *_a, **_kw: calls.append(1) or _response())
+    assert result["status"] == "accepted" and calls == [1]
+
+
+def test_structured_provider_error_identifies_unregistered_recipient():
+    assert outgoing._provider_rejection_reason(422, {
+        "message": "Validation failed", "errors": {"to": ["Number is not registered on WhatsApp"]}
+    }) == "recipient_not_registered"
+    assert outgoing._provider_rejection_reason(422, {
+        "message": "Validation failed", "errors": {"text": ["Invalid format"]}
+    }) == "invalid_request"
+
+
+def test_unregistered_recipient_no_web_fallback_and_notifies_admin(pablo_fallback_context, monkeypatch):
+    import asyncio
+    from chatbot import storage
+    api, db, user = pablo_fallback_context
+    async def auth(_request):
+        return user
+    monkeypatch.setattr(api, "_user", auth)
+    monkeypatch.setattr(api, "_session_status", lambda *_a, **_kw: "connected")
+    monkeypatch.setattr(storage, "get_db", lambda: db)
+    monkeypatch.setattr(api, "send_manual", lambda *_a, **_kw: {
+        "status": "rejected", "reason_code": "recipient_not_registered"})
+    alerts = []
+    monkeypatch.setattr(api, "_queue_operator_alert", lambda **kw: alerts.append(kw))
+    class Request:
+        async def json(self):
+            return {"lead_id": str(LEAD_ID), "text": "Hola", "idempotency_key": "recipient-block-123"}
+    assert asyncio.run(api.crm_executive_whatsapp_send(Request())) == {
+        "status": "recipient_not_registered", "method": "blocked"}
+    assert alerts == [{"user": user, "reason": "recipient_not_registered", "lead_id": str(LEAD_ID)}]

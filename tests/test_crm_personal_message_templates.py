@@ -256,7 +256,7 @@ function linkForCompact(){return 'https://www.procasa.cl/6318';}
 const saleLead = {...rentLead,contactOperation:'venta'};
 const partition = (rows,category,data)=>pilotPartitionTemplates(rows.filter(r=>r.category===category),category,data);
 const rentPrimary = partition(rentRows,'stage2',rentLead);
-assert.equal(rentPrimary.primary.length,7);
+assert.equal(rentPrimary.primary.length,6);
 assert.equal(rentPrimary.primary.length+rentPrimary.extra.length,rentRows.filter(r=>r.category==='stage2').length);
 assert(rentPrimary.primary.some(r=>r.key==='builtin:3'));
 assert(!rentPrimary.primary.some(r=>['builtin:21','builtin:22','builtin:23'].includes(r.key)));

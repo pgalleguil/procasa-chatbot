@@ -292,7 +292,7 @@ def test_crm_get_preflight_event_is_the_trigger_not_a_timer():
 
 
 @pytest.mark.parametrize("reason", ["invalid_request", "invalid_recipient", "provider_rejected",
-                                    "subscription", "rate_limit", "delivery_unconfirmed"])
+                                    "subscription", "rate_limit"])
 def test_post_send_alert_is_per_lead_not_session_health(db, monkeypatch, reason):
     monkeypatch.setenv(alerts.FLAG, "1")
     calls = []
@@ -314,3 +314,12 @@ def test_post_send_alert_is_per_lead_not_session_health(db, monkeypatch, reason)
     assert lead_id in calls[0][1]
     assert db[alerts.STATE_COLLECTION].count_documents({
         "alert_provider_message_id": "office-receipt"}) == 2
+
+
+def test_uncertain_delivery_is_internal_only(db, monkeypatch):
+    monkeypatch.setenv(alerts.FLAG, "1")
+    async def send(*args):
+        pytest.fail("No administrator WhatsApp for uncertain delivery")
+    assert asyncio.run(alerts.notify_pablo_on_crm_failure(
+        session_id="133527", executive_name="Paula Morales",
+        reason="delivery_unconfirmed", lead_id=str(ObjectId()), db=db, send=send)) == "reason_not_alertable"

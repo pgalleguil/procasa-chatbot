@@ -380,7 +380,7 @@ def test_commercial_context_uses_customer_evidence_and_verified_history():
         "pipeline_stage": "VISIT_SCHEDULED", "visit_date": now + timedelta(days=1),
     }
     detail = {
-        "assignment_cycle_id": "current",
+        "assignment_cycle_id": "current", "contact_visit_confirmed_in_cycle": True,
         "active_search": {"status": "ACTIVE", "criteria": {"max_price_clp": 450000, "comunas": ["Ñuñoa"], "operation": "ARRIENDO"},
             "field_evidence": {"max_price_clp": {"source": "executive_whatsapp"}, "comunas": {"source": "original_listing"}, "operation": {"source": "office_whatsapp"}}},
         "datos_propiedad": {"codigo": "17252", "contact_operation": "arriendo", "public_contact_url": "https://www.procasa.cl/17252",

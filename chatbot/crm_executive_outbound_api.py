@@ -389,6 +389,8 @@ async def crm_executive_whatsapp_send(request: Request):
                                 executive_name=profile["name"])
         # Every explicit provider rejection must reach the administrator.
         _queue_operator_alert(user=user, reason=reason, lead_id=data["lead_id"])
+        if reason == "recipient_not_registered":
+            return {"status": "recipient_not_registered", "method": "blocked"}
         if reason in _SAFE_REJECTED_REASONS:
             return {"status": "manual_fallback", "method": "wa_me"}
         raise HTTPException(status_code=422, detail={"code": "operation_blocked"})

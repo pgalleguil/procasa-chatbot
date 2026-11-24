@@ -5,7 +5,11 @@ counts an API send as formal CRM management or changes a lead's SLA.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from datetime import datetime, timezone
+from threading import Lock
+from time import monotonic
+from urllib.parse import quote
 from hashlib import sha256
 import logging
 import os
@@ -30,6 +34,10 @@ from .whatsapp_client import normalize_whatsapp_recipient, _provider_message_id
 OUTBOX = "crm_executive_whatsapp_dispatches"
 logger = logging.getLogger(__name__)
 MAX_MESSAGE_CHARS = 2000
+_RECIPIENT_CACHE = OrderedDict()
+_RECIPIENT_CACHE_LOCK = Lock()
+_RECIPIENT_CACHE_MAX = 512
+_RECIPIENT_CACHE_TTL = 600
 _SEND_IDS = re.compile(r"^[1-9][0-9]{0,17}$")
 _REQUEST_ID = re.compile(r"^[0-9a-zA-Z_-]{8,100}$")
 
@@ -201,6 +209,46 @@ def eligible_requester_session(db, *, lead: dict, requester_user: dict) -> dict:
     }
 
 
+def check_recipient_registration(session: dict, recipient: str, *, get=None) -> bool | None:
+    """On-demand, read-only lookup. Unknown is not a negative result.
+
+    Cache only explicit boolean responses, bounded per process and scoped to
+    the session/recipient. No phone numbers, tokens or raw responses in logs.
+    """
+    token = str(session.get("token") or "")
+    sid = str(session.get("session_id") or "")
+    if not token or not sid or not re.fullmatch(r"\+?[1-9][0-9]{7,14}", recipient):
+        return None
+    key = sha256(f"{sid}|{recipient.lstrip('+')}".encode()).hexdigest()
+    now = monotonic()
+    with _RECIPIENT_CACHE_LOCK:
+        cached = _RECIPIENT_CACHE.get(key)
+        if cached is not None and cached[0] > now:
+            _RECIPIENT_CACHE.move_to_end(key)
+            return cached[1]
+    try:
+        response = (get or requests.get)(
+            Config.WASENDER_BASE_URL.rstrip("/") + "/on-whatsapp/" + quote(recipient, safe=""),
+            headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
+            timeout=4,
+        )
+        if response.status_code != 200:
+            return None
+        body = response.json()
+        data = body.get("data") if isinstance(body, dict) and body.get("success") is True else None
+        exists = data.get("exists") if isinstance(data, dict) else None
+        if type(exists) is not bool:
+            return None
+    except Exception:
+        return None
+    with _RECIPIENT_CACHE_LOCK:
+        _RECIPIENT_CACHE[key] = (monotonic() + _RECIPIENT_CACHE_TTL, exists)
+        _RECIPIENT_CACHE.move_to_end(key)
+        while len(_RECIPIENT_CACHE) > _RECIPIENT_CACHE_MAX:
+            _RECIPIENT_CACHE.popitem(last=False)
+    return exists
+
+
 def _provider_rejection_reason(http_status: int, body: dict) -> str:
     """Stable non-PII reason code; never persist raw WaSender errors."""
     if http_status in (401, 403):
@@ -216,6 +264,11 @@ def _provider_rejection_reason(http_status: int, body: dict) -> str:
         return "subscription"
     if any(term in raw for term in ("rate limit", "too many requests", "account protection")):
         return "rate_limit"
+    if http_status in (400, 422):
+        rules = _provider_validation_diagnostics(body).get("to", [])
+        if ("not_registered" in rules or "not on whatsapp" in raw
+                or ("not registered" in raw and any(word in raw for word in ("recipient", "number", "phone", "contact")))):
+            return "recipient_not_registered"
     if any(term in raw for term in ("not on whatsapp", "not registered", "invalid phone", "invalid recipient")):
         return "invalid_recipient"
     if http_status in (400, 422):
@@ -326,6 +379,11 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         old = db[OUTBOX].find_one({"_id": identity}, {"state": 1, "provider_message_id": 1}) or {}
         return {"status": "duplicate", "previous_state": old.get("state", "unknown"),
                 "provider_message_id": old.get("provider_message_id")}
+    # Only an explicit CRM send triggers the optional lookup. Reserve the
+    # idempotency key first; do not query on modal open or background polling.
+    registration = None
+    if os.getenv("PROCASA_EXEC_WA_RECIPIENT_CHECK_ENABLED", "0") == "1":
+        registration = check_recipient_registration(session, info["recipient"])
     # Revalidate immediately before crossing the irreversible provider boundary.
     try:
         current = db["leads"].find_one({"_id": oid})
@@ -335,6 +393,9 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
             eligible_manual_session(db, lead=current, actor_user_id=owner)
         )
         if (str(current_info["cycle"]["assignment_cycle_id"]) != cycle_id
+                or current_info["recipient"] != info["recipient"]
+                or str(current_info["session"]["session_id"]) != sid
+                or current_info["session"]["token"] != session["token"]
                 or (requester_user is not None
                     and (current_info["owner_id"] != owner or bool(current_info["delegated"]) != delegated))):
             raise OutboundBlocked("assignment_changed")
@@ -343,6 +404,14 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
             "state": "blocked", "block_reason": exc.code,
         }})
         return {"status": "blocked", "reason": exc.code}
+    if registration is False:
+        db[OUTBOX].update_one({"_id": identity}, {"$set": {
+            "state": "blocked", "block_reason": "recipient_not_registered",
+            "provider_send_attempted": False, "recipient_registration": "not_registered",
+            "provider_message_id": None, "provider_error_reason": "recipient_not_registered",
+            "provider_result_at": datetime.now(timezone.utc),
+        }})
+        return {"status": "rejected", "reason_code": "recipient_not_registered"}
     url = Config.WASENDER_BASE_URL.rstrip("/") + "/send-message"
     headers = {"Authorization": "Bearer " + session["token"], "Content-Type": "application/json"}
     do_post = post or requests.post
@@ -386,6 +455,9 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         "state": state, "provider_message_id": pid,
         "provider_result_at": datetime.now(timezone.utc),
         "provider_http_status": http_status, "provider_error_reason": reason,
+        "provider_send_attempted": True,
+        **({"recipient_registration": "registered" if registration is True else "unknown"}
+           if os.getenv("PROCASA_EXEC_WA_RECIPIENT_CHECK_ENABLED", "0") == "1" else {}),
         **({"provider_validation_fields": validation,
             "provider_request_text_chars": len(message)} if http_status in (400, 422) else {}),
     }})

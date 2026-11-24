@@ -5691,6 +5691,12 @@
                                 showStrongToast('Aceptado por WaSender',
                                     'Mensaje registrado en el lead. La entrega al destinatario se comprueba por separado.', 'success');
                                 hideModal();
+                            } else if (result.status === 'recipient_not_registered') {
+                                window.crmExecutiveWaMethod = 'blocked';
+                                window.crmExecutiveWaFallback = false;
+                                updateSendLink(target, category);
+                                showStrongToast('El número no está registrado en WhatsApp',
+                                    'No se envió ningún mensaje. Verifica el número o contacta al cliente mediante llamada o correo.', 'warning');
                             } else if (result.status === 'manual_fallback' && result.method === 'wa_me') {
                                 // Do NOT open the alternate channel automatically.
                                 // The user must click again and explicitly send in WhatsApp Web.

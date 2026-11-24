@@ -303,3 +303,48 @@ async def test_live_monitor_includes_old_assignment_with_new_hot_transition():
         result = await run_evaluation_and_persist_once(db=db, now=cl(11, 35))
     assert result["persisted"] == 1
     assert db[COLLECTION].docs[0]["alert_level"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_live_warning_uses_persisted_opaque_short_link_before_enqueue():
+    from chatbot.crm_sla_cycle_links import SHORT_LINK_COLLECTION, SHORT_LINK_PATH, issue_sla_short_id
+    db = populated_db()
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
+        first = await run_evaluation_and_persist_once(db=db, now=cl(9, 35))
+        second = await run_evaluation_and_persist_once(db=db, now=cl(9, 36))
+    assert first["persisted"] == 1 and second["persisted"] == 0
+    alert = db[COLLECTION].docs[0]
+    expected = issue_sla_short_id(lead_id="l1", recipient_user_id="u-erika", assignment_cycle_id="c1")
+    assert len(expected) == 16
+    assert alert["lead_url"].endswith(SHORT_LINK_PATH + expected)
+    assert alert["rendered_message"].count(alert["lead_url"]) == 1
+    assert "/crm/sla-cycle/" not in alert["rendered_message"]
+    assert len(db[SHORT_LINK_COLLECTION].docs) == 1
+    record = db[SHORT_LINK_COLLECTION].docs[0]
+    assert record["_id"] == expected
+    assert record["lead_id"] == "l1"
+    assert record["recipient_user_id"] == "u-erika"
+    assert record["assignment_cycle_id"] == "c1"
+
+
+@pytest.mark.asyncio
+async def test_short_link_storage_failure_never_enqueues_broken_link():
+    db = populated_db()
+    from unittest.mock import AsyncMock
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True), \
+         patch("chatbot.crm_sla_alert_pipeline.ensure_sla_short_link_async",
+               new=AsyncMock(side_effect=RuntimeError("storage unavailable"))):
+        with pytest.raises(RuntimeError, match="storage unavailable"):
+            await run_evaluation_and_persist_once(db=db, now=cl(9, 35))
+    assert db[COLLECTION].docs == []
+
+
+@pytest.mark.asyncio
+async def test_breach_without_management_cta_creates_no_short_link():
+    from chatbot.crm_sla_cycle_links import SHORT_LINK_COLLECTION
+    db = populated_db()
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
+        result = await run_evaluation_and_persist_once(db=db, now=cl(10, 5))
+    assert result["persisted"] == 1
+    assert SHORT_LINK_COLLECTION not in db
+    assert "/crm/s/" not in db[COLLECTION].docs[0]["rendered_message"]

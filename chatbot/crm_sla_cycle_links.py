@@ -172,6 +172,32 @@ def ensure_sla_short_link(
     return short_id
 
 
+async def ensure_sla_short_link_async(
+    db: Any,
+    *, lead_id: Any, recipient_user_id: Any, assignment_cycle_id: Any,
+    policy_version: str = "crm_sla_alert_v1",
+) -> str:
+    """Motor counterpart for the async SLA alert pipeline, same identity."""
+    short_id = issue_sla_short_id(
+        lead_id=lead_id,
+        recipient_user_id=recipient_user_id,
+        assignment_cycle_id=assignment_cycle_id,
+    )
+    await db[SHORT_LINK_COLLECTION].update_one(
+        {"_id": short_id},
+        {"$setOnInsert": {
+            "_id": short_id,
+            "lead_id": str(lead_id),
+            "recipient_user_id": str(recipient_user_id),
+            "assignment_cycle_id": str(assignment_cycle_id),
+            "created_at": datetime.now(timezone.utc),
+            "policy_version": str(policy_version),
+        }},
+        upsert=True,
+    )
+    return short_id
+
+
 def verify_sla_cycle_link_token(token: str) -> dict[str, str]:
     """Verify signature and required binding fields without touching Mongo."""
     raw = str(token or "").strip()
@@ -323,7 +349,7 @@ __all__ = [
     "SHORT_LINK_COLLECTION", "SHORT_LINK_PATH", "SHORT_LINK_VERSION",
     "SHORT_ID_LENGTH", "SlaCycleLinkConfigurationError",
     "SlaCycleLinkError", "SlaCycleLinkResolution", "build_sla_cycle_url",
-    "build_sla_short_url", "ensure_sla_short_link", "issue_sla_short_id",
+    "build_sla_short_url", "ensure_sla_short_link", "ensure_sla_short_link_async", "issue_sla_short_id",
     "issue_sla_cycle_link_token", "validate_sla_cycle_link", "validate_sla_short_link",
     "verify_sla_cycle_link_token",
 ]

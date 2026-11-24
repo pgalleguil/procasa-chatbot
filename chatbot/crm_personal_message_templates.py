@@ -8,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 COLLECTION = "crm_personal_message_templates_v1"
 MAX_TEMPLATES = 30
 PABLO_COMPOSER_PILOT_USER_ID = "69796bc4bbebf240378eb739"
-PILOT_BUILTIN_KEYS = frozenset(f"builtin:{i}" for i in range(1, 14))
+PILOT_BUILTIN_KEYS = frozenset(f"builtin:{i}" for i in range(1, 22))
 
 
 def composer_pilot_enabled(user_id):
@@ -31,8 +31,12 @@ def validate_template(data, *, pilot=False):
         raise ValueError("Nombre, contenido o categoría inválidos")
     if re.search(r"https?://|www\.|(?:wa\.me/)|(?:\+?56[ -]?9(?:[ -]?\d){8})", title + "\n" + body, re.I):
         raise ValueError("Usa [[enlace]] y evita teléfonos o enlaces fijos de clientes")
-    if set(re.findall(r"\[\[([^\[\]]+)\]\]", body)) - (VARIABLES | {"operacion"} if pilot else VARIABLES):
+    if set(re.findall(r"\[\[([^\[\]]+)\]\]", body)) - (VARIABLES | {"operacion", "consulta", "saludo", "origen", "referencia", "atributos"} if pilot else VARIABLES):
         raise ValueError("Variable no admitida")
+    if pilot and category == "stage1" and "[[enlace]]" not in body:
+        body = body.rstrip() + "\n\n[[enlace]]"
+        if len(body) > 2000:
+            raise ValueError("El mensaje de primer contacto debe incluir el enlace automático")
     return {"title": title, "body": body, "category": category}
 
 

@@ -3377,6 +3377,9 @@ async def get_my_whatsapp_templates(request: Request):
     user = await get_current_user_doc(request)
     if not user or not user.get("_id"):
         raise HTTPException(status_code=401, detail="No autenticado")
+    from chatbot.crm_personal_message_templates import composer_pilot_enabled
+    if not composer_pilot_enabled(user["_id"]):
+        raise HTTPException(status_code=403, detail="Piloto no habilitado para esta cuenta")
     from chatbot.storage import get_db as _sync_db
     from chatbot.crm_personal_message_templates import read_library
     data = await asyncio.get_running_loop().run_in_executor(
@@ -3389,6 +3392,9 @@ async def put_my_whatsapp_templates(request: Request):
     user = await get_current_user_doc(request)
     if not user or not user.get("_id"):
         raise HTTPException(status_code=401, detail="No autenticado")
+    from chatbot.crm_personal_message_templates import composer_pilot_enabled
+    if not composer_pilot_enabled(user["_id"]):
+        raise HTTPException(status_code=403, detail="Piloto no habilitado para esta cuenta")
     # Only same-origin JSON requests; never accept a user ID from the client.
     if request.headers.get("sec-fetch-site") not in (None, "same-origin"):
         raise HTTPException(status_code=403, detail="Origen no autorizado")

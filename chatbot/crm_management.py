@@ -241,9 +241,9 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
                             ("lead_id", "assignment_cycle_id", "actor_user_id", "result_type")):
             raise ValueError("management_request_id was reused for a different management")
 
-    if rule["follow_up"] and not follow_at:
-        follow_at = _default_follow_up(occurred)
-    follow_cycle_id = f"followup:{assignment_cycle_id}:{idempotency_key}" if rule["follow_up"] else None
+    # Waiting for a reply is a management state, not consent to an alarm.
+    # Only a date explicitly supplied by the executive schedules a task.
+    follow_cycle_id = f"followup:{assignment_cycle_id}:{idempotency_key}" if rule["follow_up"] and follow_at else None
     lead_updates = {
         "management_status": rule["status"], "contact_attempted": rule["attempt"],
         "effective_contact": rule["effective"], "follow_up_required": rule["follow_up"],
@@ -255,7 +255,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
         lead_updates["stage"] = str(legacy_stage or stage_override)
     else:
         lead_updates.update({"pipeline_stage": "CONTACTED", "stage": "gestion"})
-    if rule["follow_up"]:
+    if rule["follow_up"] and follow_at:
         lead_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": follow_up_owner_user_id,
                              "follow_up_cycle_id": follow_cycle_id, "follow_up_completed_at": None})
     if result_type == "VISIT_SCHEDULED":
@@ -276,7 +276,7 @@ def record_management_result(db, *, lead_id, assignment_cycle_id, actor_user_id,
     cycle_updates = {"sla_first_management_status": "completed", "sla_pending_alerts_cancelled_at": occurred,
                      "follow_up_required": rule["follow_up"], "last_management_result": result_type,
                      "sla_alert_claims.yellow.status": "suppressed", "sla_alert_claims.red.status": "suppressed"}
-    if rule["follow_up"]:
+    if rule["follow_up"] and follow_at:
         cycle_updates.update({"next_follow_up_at": follow_at, "follow_up_owner_user_id": follow_up_owner_user_id,
                               "follow_up_status": "pending", "follow_up_cycle_id": follow_cycle_id})
     db["crm_assignment_cycles"].update_one(
@@ -409,8 +409,6 @@ def record_legacy_management_result(db, *, lead, actor_user_id, actor_can_manage
     result_type = canonical_result_type(raw_result)
 
     next_date = data.get("next_action_date")
-    if data.get("interaction_type") == "hable" and result_type != "NOT_INTERESTED" and not next_date:
-        raise ValueError("next_action_date is required after effective contact")
 
     raw_normalized = str(raw_result or "").strip().lower()
     details = data.get("details_json") if isinstance(data.get("details_json"), dict) else {}

@@ -119,7 +119,7 @@
         if (!save) return;
         syncDateValidation();
         const requiresDate = state.resultType === 'VISIT_SCHEDULED'
-            || (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(state.resultType) && followUpEnabled());
+            || (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'].includes(state.resultType) && followUpEnabled());
         const requiresReason = state.resultType === 'NOT_INTERESTED';
         const requiresOther = otherResults.includes(state.resultType);
         save.disabled = !state.resultType
@@ -133,7 +133,7 @@
         document.querySelectorAll('[data-quick-result]').forEach(button =>
             button.classList.toggle('is-selected', button.dataset.quickResult === resultType));
         setExtra('quickChannelField', channelResults.includes(resultType));
-        const canScheduleFollowUp = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(resultType);
+        const canScheduleFollowUp = ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'].includes(resultType);
         const isVisit = resultType === 'VISIT_SCHEDULED';
         const showNotes = noteResults.includes(resultType);
         setExtra('quickFollowUpField', canScheduleFollowUp);
@@ -159,7 +159,7 @@
 
     function valid() {
         if (!state.resultType) return false;
-        if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(state.resultType)
+        if (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'].includes(state.resultType)
             && followUpEnabled() && (!$('quickNextDate')?.value || scheduleTooSoon())) return false;
         if (state.resultType === 'VISIT_SCHEDULED'
             && (!$('quickNextDate')?.value || scheduleTooSoon())) return false;
@@ -234,7 +234,7 @@
         const submittedId = state.managementRequestId;
         const payload = { lead_id: state.leadId, phone: state.phone, assignment_cycle_id: state.assignmentCycleId,
             management_request_id: submittedId, idempotency_key: submittedId, result_type: state.resultType,
-            next_follow_up_at: $('quickNextDate')?.value || null, details_json: details };
+            next_follow_up_at: (state.resultType === 'VISIT_SCHEDULED' || (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'].includes(state.resultType) && followUpEnabled())) ? ($('quickNextDate')?.value || null) : null, details_json: details };
         try {
             if (window.CRM_REVIEW_MODE) {
                 const result = state.resultType;

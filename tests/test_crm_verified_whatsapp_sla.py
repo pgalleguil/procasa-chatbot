@@ -77,6 +77,8 @@ def assert_first_management(db):
     assert results[0]["source"] == "executive_whatsapp_verified"
     events = list(db["crm_events"].find({"type": "SEND_WA_LEAD"}))
     assert len(events) == 1
+    assert db["crm_tasks"].count_documents({}) == 0
+    assert lead.get("next_follow_up_at") is None
 
 
 def test_authorized_persisted_human_send_stops_first_sla_once(data):

@@ -87,5 +87,5 @@ def write_library(db, user_id, payload):
         return None
     result = {"version": version + 1, "templates": templates}
     if pilot:
-        result["favorites"] = changes.get("favorites", read_library(db, user_id)["favorites"])
+        result["favorites"] = changes["favorites"] if "favorites" in changes else read_library(db, user_id)["favorites"]
     return result

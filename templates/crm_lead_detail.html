@@ -5551,6 +5551,8 @@
         // The pilot is separate from the team-wide WaSender API capability.
         // A server-authenticated immutable user ID controls the rendered flag.
         let pilotSelectedKey = null;
+        let pilotConfirmedTerms = '';
+        let pilotRecommendationMode = 'recommend';
         let pilotDraftCategory = null;
         function pilotComposerActive() {
             return window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa';
@@ -5709,7 +5711,7 @@
                 'Precio anterior: '+price(drop.before)+'\nPrecio actualizado: '+price(drop.after)+'\nRebaja: '+price(drop.before-drop.after) : '';
             return {
                 consulta:operation === 'arriendo' ? rental : operation === 'venta' ? purchase : '¿Qué condiciones de la operación necesitas revisar para avanzar?',
-                visita_paso:visit ? 'Tengo registrada la visita para el '+visit+'. ¿Me confirmas si mantienes tu disponibilidad?' : '¿Qué día y horario te acomodan para conocer la propiedad? Revisaré la disponibilidad para coordinar contigo.',
+                visita_paso:visit ? 'Tengo registrada la visita para el '+visit+'. ¿Me confirmas si mantienes tu disponibilidad?' : context.requested_visit ? 'Me indicaste que te acomodaba el '+context.requested_visit+'. ¿Sigue siendo una opción para ti? Revisaré la disponibilidad antes de confirmarla.' : '¿Qué día y horario te acomodan para conocer la propiedad? Revisaré la disponibilidad para coordinar contigo.',
                 visita_confirmada:visit,
                 postulacion_paso:'¿Me podrías confirmar lo siguiente?\n'+rentQuestions.join('\n'),
                 costos:pilotRentalCosts(data),
@@ -5772,12 +5774,12 @@
         }
 
         function pilotPersonalDisplay(text) {
-            const labels = {nombre:'Nombre del cliente',ejecutivo:'Nombre del ejecutivo',propiedad:'Código de propiedad',comuna:'Comuna de la propiedad',enlace:'Enlace de la propiedad',operacion:'Tipo de operación',consulta:'Información según la operación',saludo:'Saludo según la hora',origen:'Portal de origen',referencia:'Propiedad consultada',atributos:'Características de la propiedad'};
+            const labels = {nombre:'Nombre del cliente',ejecutivo:'Nombre del ejecutivo',propiedad:'Código de propiedad',comuna:'Comuna de la propiedad',enlace:'Enlace de la propiedad',operacion:'Tipo de operación',consulta:'Información según la operación',saludo:'Saludo según la hora',origen:'Portal de origen',referencia:'Propiedad consultada',atributos:'Características de la propiedad',visita_paso:'Paso de visita según el lead',postulacion_paso:'Preguntas pendientes de postulación',costos:'Costos informados del arriendo',financiamiento_paso:'Paso de financiamiento',orden_visita:'Datos pendientes de orden de visita',oferta_paso:'Propuesta según operación',seguimiento_info:'Seguimiento según conversación',busqueda_paso:'Criterios de búsqueda conocidos'};
             return String(text || '').replace(/\[\[([^\[\]]+)\]\]/g, (match,key) => labels[key] ? '«'+labels[key]+'»' : match);
         }
 
         function pilotPersonalStorage(text) {
-            const labels = {'Nombre del cliente':'nombre','Nombre del ejecutivo':'ejecutivo','Código de propiedad':'propiedad','Comuna de la propiedad':'comuna','Enlace de la propiedad':'enlace','Tipo de operación':'operacion','Información según la operación':'consulta','Pregunta según la operación':'consulta','Saludo según la hora':'saludo','Portal de origen':'origen','Propiedad consultada':'referencia','Características de la propiedad':'atributos'};
+            const labels = {'Nombre del cliente':'nombre','Nombre del ejecutivo':'ejecutivo','Código de propiedad':'propiedad','Comuna de la propiedad':'comuna','Enlace de la propiedad':'enlace','Tipo de operación':'operacion','Información según la operación':'consulta','Pregunta según la operación':'consulta','Saludo según la hora':'saludo','Portal de origen':'origen','Propiedad consultada':'referencia','Características de la propiedad':'atributos','Paso de visita según el lead':'visita_paso','Preguntas pendientes de postulación':'postulacion_paso','Costos informados del arriendo':'costos','Paso de financiamiento':'financiamiento_paso','Datos pendientes de orden de visita':'orden_visita','Propuesta según operación':'oferta_paso','Seguimiento según conversación':'seguimiento_info','Criterios de búsqueda conocidos':'busqueda_paso'};
             return String(text || '').replace(/«([^»]+)»/g, (match,label) => labels[label] ? '[['+labels[label]+']]' : match);
         }
 
@@ -5846,9 +5848,49 @@
                 const end = document.createElement('span'); end.className = 'wa-pilot-chevron small';
                 end.textContent = count === null ? '›' : String(count) + ' ›';
                 button.append(i,text,end);
-                button.onclick = () => loadTemplates('lead', category);
+                button.onclick = () => { if (category === 'recommendation') pilotRecommendationMode = 'recommend'; loadTemplates('lead', category); };
                 tabs.append(button);
             }
+        }
+
+        function pilotTemplateBlockReason(tpl, data) {
+            const fields = pilotCommercialFields(data,pilotDetectedOperation(data));
+            if (tpl.text.includes('[[visita_confirmada]]') && !fields.visita_confirmada) return 'No hay una visita futura agendada en el CRM. Registra la visita antes de preparar su confirmación.';
+            if (tpl.text.includes('[[rebaja]]') && !fields.rebaja) return 'No hay una rebaja verificable para esta consulta y el precio publicado actual.';
+            if (tpl.key === 'builtin:19' && ['cash','preapproved'].includes(data.pilotMessageContext?.finance)) return 'El cliente ya indicó su modalidad de financiamiento. Usa la plantilla de crédito y preaprobación para continuar.';
+            if (tpl.key === 'builtin:12' && data.publicContactUrl) return 'La ficha aún figura activa. Confirma primero que la propiedad no está disponible.';
+            if (tpl.key === 'builtin:18' && !data.publicContactUrl) return 'La propiedad no tiene una ficha pública activa verificada.';
+            return '';
+        }
+
+        function pilotSelectTemplate(tpl, category) {
+            const input = document.getElementById('commMessage');
+            const draft = input.value.trim();
+            if (draft && draft !== originalTemplateText.trim() && !confirm('¿Reemplazar el mensaje que estás editando?')) return;
+            const blocked = pilotTemplateBlockReason(tpl,leadData);
+            if (blocked) { showStrongToast('Contexto no disponible',blocked,'warning'); return; }
+            if (tpl.action) {
+                pilotRecommendationMode = tpl.action;
+                loadTemplates('lead','recommendation');
+                const query = document.getElementById('semanticQueryModal');
+                const summary = pilotSearchSummary(leadData);
+                if (summary && query) query.value = summary;
+                updateSendLink('lead','recommendation');
+                if (query) query.focus();
+                return;
+            }
+            let terms = '';
+            if (tpl.text.includes('[[condiciones_confirmadas]]')) {
+                const answer = prompt('Ingresa únicamente las condiciones confirmadas por el propietario (monto, plazos y condiciones). Si aún no hay respuesta confirmada, cancela.');
+                if (typeof answer !== 'string' || !answer.trim() || answer.trim().length > 800) return;
+                terms = answer.trim();
+            }
+            if (tpl.key === 'builtin:12' && !confirm('¿Confirmaste que la propiedad ya no está disponible?')) return;
+            pilotConfirmedTerms = terms;
+            pilotSelectedKey = tpl.key;
+            currentTemplateLabel = tpl.label;
+            selectTemplate(tpl.text,'',tpl.category);
+            renderPilotTemplates(category);
         }
 
         function renderPilotTemplates(category) {
@@ -5880,11 +5922,7 @@
                 info.append(title); card.append(info);
                 card.onclick = () => {
                     if (pilotSelectedKey === tpl.key) return;
-                    const draft = document.getElementById('commMessage').value.trim();
-                    if (draft && draft !== originalTemplateText.trim() && !confirm('¿Reemplazar el mensaje que estás editando?')) return;
-                    pilotSelectedKey = tpl.key; currentTemplateLabel = tpl.label;
-                    selectTemplate(tpl.text, '', tpl.category);
-                    renderPilotTemplates(category);
+                    pilotSelectTemplate(tpl,category);
                 };
                 card.addEventListener('keydown', e => {if (e.target === card && ['Enter',' '].includes(e.key)) {e.preventDefault(); card.click();}});
                 const action = (icon,label,fn,extra='') => {
@@ -5909,7 +5947,7 @@
 
         function preparePilotRecommendation(event) {
             if (event) event.preventDefault();
-            if (!pilotComposerActive() || !semState.selected.length) return false;
+            if (!pilotComposerActive() || !semState.selected.length || (pilotRecommendationMode === 'compare' && semState.selected.length < 2)) return false;
             const input = document.getElementById('commMessage');
             const recommendation = document.getElementById('semRecommendMsgModal').value.trim();
             if (!recommendation) return false;
@@ -5917,7 +5955,8 @@
                 && !confirm('¿Reemplazar el mensaje que estás editando?')) return false;
             pilotSelectedKey = null;
             pilotDraftCategory = 'stage6';
-            currentTemplateLabel = 'Recomendación de propiedades';
+            pilotConfirmedTerms = '';
+            currentTemplateLabel = pilotRecommendationMode === 'compare' ? 'Comparación de propiedades' : 'Recomendación de propiedades';
             originalTemplateText = recommendation;
             input.value = recommendation;
             loadTemplates('lead','stage6');
@@ -5931,7 +5970,7 @@
             if (!pilotComposerActive() || semState.currentCategory === 'recommendation') return;
             const input = document.getElementById('commMessage');
             if (input.value.trim() && input.value.trim() !== originalTemplateText.trim() && !confirm('¿Limpiar el mensaje editado?')) return;
-            input.value = ''; originalTemplateText = ''; pilotSelectedKey = null; pilotDraftCategory = null; currentTemplateLabel = 'Directo / Manual';
+            input.value = ''; originalTemplateText = ''; pilotSelectedKey = null; pilotDraftCategory = null; pilotConfirmedTerms = ''; currentTemplateLabel = 'Directo / Manual';
             renderPilotTemplates(semState.currentCategory);
             input.dispatchEvent(new Event('input',{bubbles:true}));
             input.focus();
@@ -6159,6 +6198,10 @@
                 [leadData.comuna, '[[comuna]]']];
             if (window.crmWhatsappComposerPilot === true) {
                 const context = pilotPublicContext(leadData,pilotDetectedOperation(leadData));
+                const fields = pilotCommercialFields(leadData,pilotDetectedOperation(leadData));
+                for (const key of ['consulta','visita_paso','postulacion_paso','costos','financiamiento_paso','orden_visita','oferta_paso','seguimiento_info','busqueda_paso']) {
+                    if (fields[key]) mappings.push([fields[key],'[['+key+']]']);
+                }
                 mappings.unshift([context.reference,'[[referencia]]'],[context.origin,'[[origen]]'],[context.attributes,'[[atributos]]'],[pilotGreeting(),'[[saludo]]']);
                 const sender = leadData.senderName || leadData.execName;
                 if (sender) { mappings.splice(7,2,[sender,'[[ejecutivo]]'],[sender.split(' ')[0],'[[ejecutivo]]']); }
@@ -6175,6 +6218,7 @@
         }
 
         function openPersonalEditor(id = null, fromDraft = false) {
+            if (pilotComposerActive() && fromDraft && (['builtin:5','builtin:26','builtin:27','builtin:28','builtin:29'].includes(pilotSelectedKey) || ['Recomendación de propiedades','Comparación de propiedades'].includes(currentTemplateLabel))) { showStrongToast('Plantilla personal','Este mensaje contiene datos de una operación concreta. Crea una plantilla nueva para reutilizarla sin guardar esos datos.','warning'); return; }
             if (!personalLibraryReady) {templateStatus('Cargando biblioteca; vuelve a intentarlo.'); refreshPersonalLibrary(); return;}
             const existing = personalLibrary.templates.find(t => t.id === id);
             personalEditingId = existing ? existing.id : null;
@@ -6285,7 +6329,7 @@
 
             if (window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa') {
                 pilotDraftCategory = templateCategory;
-                text = pilotResolveContext(text, pilotDetectedOperation(leadData), leadData.publicContactUrl, leadData);
+                text = pilotResolveContext(text, pilotDetectedOperation(leadData), leadData.publicContactUrl, {...leadData,pilotConfirmedTerms});
             }
             let processedText = (currentCommTarget === 'lead' && currentCommChannel === 'wa' && !safeName
                 ? text.replace(/Hola \[\[nombre\]\],/gi, 'Hola,') : text)
@@ -6337,7 +6381,7 @@
             const waGreen = '#25D366';
 
             if (category === 'recommendation') {
-                btn.innerHTML = pilotComposerActive() ? '<i class="fa-solid fa-arrow-right me-1"></i> Usar recomendaciones' : '<i class="fa-brands fa-whatsapp me-1"></i> Recomendar por WhatsApp';
+                btn.innerHTML = pilotComposerActive() ? (pilotRecommendationMode === 'compare' ? '<i class="fa-solid fa-arrow-right me-1"></i> Comparar seleccionadas (mín. 2)' : '<i class="fa-solid fa-arrow-right me-1"></i> Usar recomendaciones') : '<i class="fa-brands fa-whatsapp me-1"></i> Recomendar por WhatsApp';
                 btn.onclick = pilotComposerActive() ? preparePilotRecommendation : sendRecommendation;
                 if (pilotComposerActive()) btn.removeAttribute('target');
                 updateSelectionUI(); // This handles enabled/disabled for recommendations
@@ -6375,7 +6419,8 @@
             const pilotBlocked = pilotWhatsapp && !['executive_wasender_api', 'wa_me'].includes(waMethod);
             const requiredLinkProblem = pilotComposerActive()
                 ? pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category) : '';
-            if (hasMessage && !pilotBlocked && !requiredLinkProblem) {
+            const unresolvedPilotFields = pilotComposerActive() && /\[\[[^\]]+\]\]/.test(msgBody.value);
+            if (hasMessage && !pilotBlocked && !requiredLinkProblem && !unresolvedPilotFields) {
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 if (currentCommChannel === 'wa') {
@@ -6403,6 +6448,7 @@
                     pilotRestoreRequiredLink(msgBody);
                     const linkProblem = pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,semState.currentCategory);
                     if (linkProblem) { showStrongToast('Primer contacto',linkProblem,'warning'); return; }
+                    if (/\[\[[^\]]+\]\]/.test(msgBody.value)) { showStrongToast('Mensaje incompleto','Revisa los campos pendientes antes de enviar.','warning'); return; }
                 }
                 const finalMsg = msgBody.value;
 
@@ -7083,7 +7129,7 @@
 
             if (isRecVisible && footerBtn) {
                 const waGreen = '#25D366';
-                if (semState.selected.length > 0) {
+                if (semState.selected.length >= (pilotComposerActive() && pilotRecommendationMode === 'compare' ? 2 : 1)) {
                     footerBtn.disabled = false;
                     footerBtn.style.backgroundColor = waGreen;
                     footerBtn.style.borderColor = waGreen;
@@ -7101,6 +7147,27 @@
 
         function buildRecommendMessage() {
             const props = semState.selected;
+            if (pilotComposerActive()) {
+                const safeName = String(leadData.nombre || '').trim().split(' ')[0];
+                const name = /^(none|desconocido|cliente|s\/i)$/i.test(safeName) ? '' : safeName;
+                const search = pilotSearchSummary(leadData);
+                const compare = pilotRecommendationMode === 'compare';
+                let text = 'Hola'+(name?' '+name:'')+', '+(compare?'te comparto una comparación de las propiedades seleccionadas.':'seleccioné estas propiedades que podrían ajustarse a tu búsqueda.')+'\n';
+                if (search) text += '\nConsideré los requisitos que nos indicaste: '+search+'.\n';
+                props.forEach((p,i)=>{
+                    if (!/^\d+$/.test(String(p.codigo || ''))) return;
+                    const details = [];
+                    if (Number(p.dormitorios)>0) details.push(p.dormitorios+' dorm.');
+                    if (Number(p.banos)>0) details.push(p.banos+' baños');
+                    if (Number(p.m2_utiles)>0) details.push(p.m2_utiles+' m² útiles');
+                    text += '\n'+(i+1)+'. '+(p.tipo || 'Propiedad')+(p.comuna?' en '+p.comuna:'')+'\n';
+                    if (details.length) text += details.join(' · ')+'\n';
+                    const price = formatPrice(p);
+                    if (price && !/undefined|null|NaN|S\/I|^0$/.test(String(price))) text += 'Precio: '+price+'\n';
+                    text += 'https://www.procasa.cl/'+p.codigo+'\n';
+                });
+                return text+'\n'+(compare?'¿Cuál de estas alternativas se acerca más a lo que buscas? Podemos comparar las condiciones y coordinar una visita.':'¿Cuál te interesa conocer? Puedo aclarar tus dudas y coordinar una visita.');
+            }
             const leadDisplayName = (semState.leadName && semState.leadName !== "Desconocido") ? semState.leadName : "";
             let msg = leadDisplayName ? `¡Hola ${leadDisplayName}! 👋\n\n` : `¡Hola! 👋\n\n`;
             msg += pilotComposerActive() ? `Soy ${semState.execName} de Procasa. Te comparto algunas alternativas que podrían ajustarse a lo que buscas:\n\n` : `Soy ${semState.execName} de Procasa. He seleccionado estas propiedades de nuestra red que se ajustan perfectamente a tu búsqueda:\n\n`;

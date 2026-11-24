@@ -154,7 +154,7 @@ def test_pilot_contexts_and_recommendation_draft_behavior():
     assert '"crm_whatsapp_composer_pilot": composer_pilot_enabled(user.get("_id"))' in webhook
     assert "crm_whatsapp_composer_pilot|default(false)" in html
     assert "#commModal.wa-composer-pilot #waTemplateSearch" in html
-    assert "grid-template-columns:minmax(240px, .95fr) minmax(0, 1.6fr)" in html
+    assert "grid-template-columns:minmax(220px, .85fr) minmax(0, 1.8fr)" in html
     assert "Recomendador de propiedades" in html
     assert "fetch('/api/crm/recommendations'" in html
     assert "btn.onclick = pilotComposerActive() ? preparePilotRecommendation : sendRecommendation;" in html
@@ -211,3 +211,58 @@ assert.equal(loaded,null);
 """
     result = subprocess.run([node, "-e", script], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_hybrid_search_sends_required_lead_context_and_reports_http_errors():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node required")
+    html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    source = html[html.index("        async function searchSemantic()"):html.index("        function renderSemanticResults(")]
+    script = """
+const assert = require('assert');
+const leadData={id:'69796bc4bbebf240378eb739'};
+const semState={selected:[{codigo:6318}],lastResults:[]};
+const elements={
+    semanticQueryModal:{value:'  Departamento en Maipú  '},
+    semanticResultsModal:{innerHTML:'',textContent:'',replaceChildren(e){this.textContent=e.textContent}},
+    btnSemSearchModal:{disabled:false,innerHTML:'Buscar',dataset:{}},
+    scopeSwitchModal:{checked:true},neighborsSwitchModal:{checked:false}
+};
+const document={getElementById(id){return elements[id]||null},createElement(){return {}}};
+let request=null, status=200, payload={status:'ok',results:[{codigo:9999}]}, rendered=null;
+function detectPriceUnit(){return 'CLP'}
+function renderSemanticResults(results){rendered=results}
+async function fetch(url,options){
+    request={url,options,body:JSON.parse(options.body)};
+    return {ok:status===200,status,json:async()=>payload};
+}
+""" + source + """
+(async()=>{
+    await searchSemantic();
+    assert.equal(request.url,'/api/crm/recommendations');
+    assert.equal(request.options.credentials,'same-origin');
+    assert.equal(request.body.lead_id,leadData.id);
+    assert.equal(request.body.query,'Departamento en Maipú');
+    assert.equal(request.body.scope,'local');
+    assert.deepEqual(request.body.exclude,[6318]);
+    assert.deepEqual(rendered,[{codigo:9999}]);
+    status=400;payload={detail:'lead_context_required'};
+    await searchSemantic();
+    assert(elements.semanticResultsModal.textContent.includes('validar'));
+    assert(!elements.semanticResultsModal.textContent.includes('No se encontraron'));
+    status=403;payload={detail:'denied'};
+    await searchSemantic();
+    assert(elements.semanticResultsModal.textContent.includes('No tienes acceso'));
+    status=200;payload={status:'ok',results:[]};
+    await searchSemantic();
+    assert(elements.semanticResultsModal.innerHTML.includes('No se encontraron'));
+    request=null;elements.semanticQueryModal.value='abc';
+    await searchSemantic();
+    assert.equal(request,null);
+    assert(elements.semanticResultsModal.textContent.includes('5 caracteres'));
+    assert(!elements.btnSemSearchModal.disabled);
+})().catch(e=>{console.error(e);process.exitCode=1});
+"""
+    completed = subprocess.run([node, "-e", script], capture_output=True, text=True)
+    assert completed.returncode == 0, completed.stderr

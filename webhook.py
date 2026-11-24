@@ -7403,6 +7403,16 @@ async def check_scheduled_tasks_loop():
                         if not claimed_task:
                             continue
                         task = claimed_task
+                        # Old verified outbound credits automatically scheduled
+                        # next-day tasks without any executive opt-in.
+                        if (task.get("message_domain") == "crm_management_follow_up"
+                                and str(task.get("idempotency_key") or "").startswith("executive_wa_first:")):
+                            await run_db("crm_tasks.cancel_implicit_wa_reminder",
+                                lambda: db["crm_tasks"].update_one(
+                                    {"_id": task["_id"], "status": "processing", "worker_id": task_worker_id},
+                                    {"$set": {"status": "cancelled", "resolution": "implicit_whatsapp_reminder_disabled",
+                                              "resolved_at": now}}))
+                            continue
                         phone = task.get("phone")
                         note = task.get("note", "Sin detalles")
                         
@@ -7429,8 +7439,9 @@ async def check_scheduled_tasks_loop():
                         else:
                             lead = await run_db(
                                 "leads.find_one",
-                                lambda: db["leads"].find_one({"_id": task.get("lead_id")})
-                                or db["leads"].find_one({"phone": phone})
+                                lambda: (db["leads"].find_one({"_id": task.get("lead_id")})
+                                         if task.get("lead_id") is not None
+                                         else db["leads"].find_one({"phone": phone}))
                             )
                             if not lead:
                                 await run_db(
@@ -7450,6 +7461,18 @@ async def check_scheduled_tasks_loop():
                                         "lead_id": lead.get("_id"),
                                     }),
                                 )
+                            if task.get("assignment_cycle_id") and (
+                                not assigned_cycle or assigned_cycle.get("cycle_status") != "active"
+                                or assigned_cycle.get("unassigned_at") is not None
+                                or str((lead.get("lifecycle") or {}).get("current_assignment_cycle_id") or "") != str(task["assignment_cycle_id"])
+                                or str(task.get("recipient_user_id") or task.get("target_user_id") or "") != str(assigned_cycle.get("assigned_to_user_id") or "")
+                            ):
+                                await run_db("crm_tasks.cancel_stale_cycle",
+                                    lambda: db["crm_tasks"].update_one(
+                                        {"_id": task["_id"], "status": "processing", "worker_id": task_worker_id},
+                                        {"$set": {"status": "cancelled", "resolution": "stale_assignment_cycle",
+                                                  "resolved_at": now}}))
+                                continue
                             recipient_user_id = (
                                 task.get("recipient_user_id")
                                 or task.get("target_user_id")

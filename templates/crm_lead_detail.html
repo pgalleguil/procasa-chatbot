@@ -4249,7 +4249,7 @@
             });
 
             detailLeadQuickSetVisible('detailLeadQuickExtras', true);
-            detailLeadQuickSetVisible('detailLeadQuickFollowUp', ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(resultType));
+            detailLeadQuickSetVisible('detailLeadQuickFollowUp', ['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'].includes(resultType));
             detailLeadQuickSetVisible('detailLeadQuickDateField', resultType === 'VISIT_SCHEDULED');
             const dateLabel = detailLeadQuickElement('detailLeadQuickDateLabel');
             const dateHelp = detailLeadQuickElement('detailLeadQuickDateHelp');
@@ -4270,7 +4270,7 @@
             const followUp = detailLeadQuickElement('detailLeadQuickFollowUpToggle');
             const dateInput = detailLeadQuickElement('detailLeadQuickDate');
             const dateFieldVisible = detailLeadQuickResult === 'VISIT_SCHEDULED' ||
-                (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER'].includes(detailLeadQuickResult) && followUp?.checked);
+                (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'].includes(detailLeadQuickResult) && followUp?.checked);
             detailLeadQuickSetVisible('detailLeadQuickDateField', dateFieldVisible);
             if (dateFieldVisible) detailLeadQuickSetDateMinimum();
 
@@ -4366,7 +4366,7 @@
                         management_request_id: requestId,
                         idempotency_key: requestId,
                         result_type: detailLeadQuickResult,
-                        next_follow_up_at: dateInput?.value || null,
+                        next_follow_up_at: (detailLeadQuickResult === 'VISIT_SCHEDULED' || (['EFFECTIVE_CONTACT', 'CALL_NO_ANSWER', 'MESSAGE_SENT_WAITING_RESPONSE'].includes(detailLeadQuickResult) && followUp?.checked)) ? (dateInput?.value || null) : null,
                         details_json: details
                     })
                 });
@@ -4681,40 +4681,40 @@
             document.querySelectorAll('.field-incomplete').forEach(el => el.classList.remove('field-incomplete'));
 
             if (currentInteraction === 'effective') {
-                totalSteps = 2;
+                totalSteps = document.getElementById('resultado_gestion').value === 'visita_agendada' ? 2 : 1;
                 const subRes = document.getElementById('resultado_gestion').value;
                 const date = document.getElementById('fecha_global').value;
                 if (subRes) { currentSteps++; setValidationDot('result', true); } else { setValidationDot('result', false); }
-                if (date) { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', false); }
+                if (date && document.getElementById('resultado_gestion').value === 'visita_agendada') { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', Boolean(date)); }
                 if (!subRes) missing = "Manifestación";
-                else if (!date) missing = "Programar Seguimiento";
+                else if (document.getElementById('resultado_gestion').value === 'visita_agendada' && !date) missing = "Programar Seguimiento";
                 else isValid = true;
 
             } else if (currentInteraction === 'partial') {
-                totalSteps = 2;
+                totalSteps = document.getElementById('resultado_gestion').value === 'visita_agendada' ? 2 : 1;
                 const res = document.querySelector('input[name="partial_res"]:checked');
                 const date = document.getElementById('fecha_global').value;
 
                 if (res) { currentSteps++; setValidationDot('partial', true); } else { setValidationDot('partial', false); }
-                if (date) { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', false); }
+                if (date && document.getElementById('resultado_gestion').value === 'visita_agendada') { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', Boolean(date)); }
 
                 if (!res) missing = "Situación";
-                else if (!date) missing = "Programar Seguimiento";
+                else if (document.getElementById('resultado_gestion').value === 'visita_agendada' && !date) missing = "Programar Seguimiento";
                 else isValid = true;
 
             } else if (currentInteraction === 'failed') {
-                totalSteps = 3;
+                totalSteps = 2;
                 const res = document.querySelector('input[name="failed_res"]:checked');
                 const canal = document.getElementById('failed_canal').value;
                 const date = document.getElementById('fecha_global').value;
 
                 if (res) { currentSteps++; setValidationDot('failed', true); } else { setValidationDot('failed', false); }
                 if (canal) { currentSteps++; }
-                if (date) { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', false); }
+                if (date && document.getElementById('resultado_gestion').value === 'visita_agendada') { currentSteps++; setValidationDot('date', true); } else { setValidationDot('date', Boolean(date)); }
 
                 if (!res) missing = "Resultado";
                 else if (!canal) missing = "Canal";
-                else if (!date) missing = "Programar Seguimiento";
+                else if (document.getElementById('resultado_gestion').value === 'visita_agendada' && !date) missing = "Programar Seguimiento";
                 else isValid = true;
 
             } else if (currentInteraction === 'invalid') {
@@ -5203,7 +5203,7 @@
                 const dateObj = new Date(dateVal);
                 document.getElementById('sum_date').innerText = dateObj.toLocaleDateString('es-CL', { timeZone: 'America/Santiago' }) + ' ' + dateObj.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Santiago' });
             } else {
-                document.getElementById('sum_date').innerText = 'Pendiente';
+                document.getElementById('sum_date').innerText = 'Sin recordatorio programado';
             }
             validateState();
         }

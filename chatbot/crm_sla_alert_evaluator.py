@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from bson import ObjectId
 
@@ -31,7 +31,7 @@ from .crm_metrics import (
     INSTRUMENTATION_CUTOVER, VALID_MANAGEMENT_RESULTS,
     calculate_cycle_sla,
     coerce_utc_datetime, event_evidence, is_first_sla_management_completed,
-    normalize_result, resolve_cycle_sla_temperature,
+    normalize_result, resolve_cycle_sla_temperature, resolve_cycle_sla_start, resolve_cycle_hot_start,
     utc_now,
 )
 from .crm_sla_alert_templates import (
@@ -57,6 +57,40 @@ THRESHOLD_BREACHED_HOT = 60
 ALERT_LEVEL_WARNING = "warning"
 ALERT_LEVEL_NEAR_CRITICAL = "near_critical"
 ALERT_LEVEL_BREACHED = "breached"
+
+# Two monitor intervals at most for a newly breached SLA. Never catch up
+# historical breaches after an outage or a previously truncated scan.
+SLA_ALERT_BREACH_GRACE_MINUTES = 10
+
+
+def is_current_alert_deadline(deadline, now) -> bool:
+    deadline = coerce_utc_datetime(deadline)
+    now = coerce_utc_datetime(now)
+    return bool(deadline is not None and now is not None
+                and deadline >= now - timedelta(minutes=SLA_ALERT_BREACH_GRACE_MINUTES))
+
+
+def _within_live_alert_window(cycle, lead, now) -> bool:
+    """Cheap prefilter: canonical deadline and maximum warning horizon.
+
+    Does not infer human management. The full evaluator still checks all
+    management evidence, authorization, exclusions and the canonical SLA.
+    The final deadline uses the same normal/HOT starts and business calendar.
+    """
+    temperature = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+    hot = temperature == "HOT"
+    start = (resolve_cycle_hot_start(cycle=cycle, lead=lead) if hot
+             else resolve_cycle_sla_start(cycle=cycle))
+    if start is None:
+        return False
+    deadline = add_business_minutes(
+        start, THRESHOLD_BREACHED_HOT if hot else THRESHOLD_BREACHED_NORMAL)
+    # Thirty business minutes may cross a closing time/weekend. Use the
+    # canonical warning start rather than subtracting wall-clock minutes.
+    warning_start = add_business_minutes(
+        start, THRESHOLD_WARNING_HOT if hot else THRESHOLD_WARNING_NORMAL)
+    return bool(warning_start <= now and is_current_alert_deadline(deadline, now))
+
 
 SLA_PROFILE_STANDARD = "standard"
 SLA_PROFILE_HOT = "hot"
@@ -384,6 +418,7 @@ async def evaluate_sla_alerts(
     limit_mgmt_results: int = 500,
     alert_cutover=None,
     now=None,
+    live_current_only: bool = False,
 ) -> dict:
     if db is None:
         db = get_async_db()
@@ -407,11 +442,14 @@ async def evaluate_sla_alerts(
         "unassigned_at": None, "cycle_status": "active",
         "assigned_at": {"$gte": mongo_cutover},
         "assignment_cycle_id": {"$exists": True},
-    })
+    }, {"candidate_scores_snapshot": 0})
+    # Live monitoring must cover every active cycle. The batch size is not
+    # a global cap. Fetch only cycle metadata, never ranking snapshots.
     cycles = [
-        cycle for cycle in await cycles_cursor.to_list(length=limit_cycles)
+        cycle for cycle in await cycles_cursor.to_list(length=None if live_current_only else limit_cycles)
         if cycle.get("sla_performance_excluded") is not True
     ]
+    total_scanned = len(cycles)
     if not cycles:
         return {
             "as_of": now_utc.isoformat(), "total_cycles_evaluated": 0,
@@ -422,19 +460,37 @@ async def evaluate_sla_alerts(
 
     # 2. Fetch leads
     lead_ids = [c["lead_id"] for c in cycles]
-    leads_cursor = db["leads"].find(
-        {"_id": {"$in": lead_ids}},
-        {"messages": 0, "stage_history": 0},
-    )
-    leads = await leads_cursor.to_list(length=limit_leads)
+    leads = []
+    if live_current_only:
+        # Bounded indexed reads; no global lead cap that can hide a cycle.
+        for offset in range(0, len(lead_ids), max(1, min(limit_cycles, 500))):
+            batch = lead_ids[offset:offset + max(1, min(limit_cycles, 500))]
+            leads.extend(await db["leads"].find(
+                {"_id": {"$in": batch}},
+                {"messages": 0, "stage_history": 0},
+            ).to_list(length=None))
+    else:
+        leads = await db["leads"].find(
+            {"_id": {"$in": lead_ids}},
+            {"messages": 0, "stage_history": 0},
+        ).to_list(length=limit_leads)
     lead_map = {str(ld["_id"]): ld for ld in leads if ld.get("_id") is not None}
+    excluded_outside_window = 0
+    if live_current_only:
+        current = [
+            cycle for cycle in cycles
+            if str(cycle.get("lead_id")) in lead_map
+            and _within_live_alert_window(cycle, lead_map[str(cycle["lead_id"])], now_utc)
+        ]
+        excluded_outside_window = len(cycles) - len(current)
+        cycles = current
 
     # 3. Pre-fetch management_results for all active cycles
     cycle_ids = [str(c.get("assignment_cycle_id", "")) for c in cycles if c.get("assignment_cycle_id")]
     mgmt_cursor = db["crm_management_results"].find(
         {"assignment_cycle_id": {"$in": cycle_ids}},
     )
-    all_mgmt = await mgmt_cursor.to_list(length=limit_mgmt_results)
+    all_mgmt = await mgmt_cursor.to_list(length=None if live_current_only else limit_mgmt_results)
     mgmt_by_cycle: dict[str, list[dict]] = {}
     for m in all_mgmt:
         cid = str(m.get("assignment_cycle_id", ""))
@@ -446,7 +502,7 @@ async def evaluate_sla_alerts(
         {"metadata.assignment_cycle_id": 1, "state": 1,
          "provider_message_id": 1},
     )
-    sent_notifications = await notification_cursor.to_list(length=limit_mgmt_results)
+    sent_notifications = await notification_cursor.to_list(length=None if live_current_only else limit_mgmt_results)
     notifications_by_cycle: dict[str, list[dict]] = {}
     for n in sent_notifications:
         metadata = n.get("metadata") or {}
@@ -466,6 +522,8 @@ async def evaluate_sla_alerts(
 
     # 4. Evaluate each cycle
     excluded = Counter()
+    if live_current_only:
+        excluded["outside_current_alert_window"] = excluded_outside_window
     alerts: list[dict] = []
     seen_dedup: set[str] = set()
 
@@ -574,6 +632,8 @@ async def evaluate_sla_alerts(
         deadline_dt = sla.get("deadline_at")
         if deadline_threshold is None or deadline_dt is None:
             excluded["insufficient_deadline_data"] += 1; continue
+        if live_current_only and not is_current_alert_deadline(deadline_dt, now_utc):
+            excluded["historical_deadline"] += 1; continue
         deadline_display = build_deadline_display(deadline_dt, CHILE_TZ)
         remaining_minutes = max(0, deadline_threshold - elapsed)
 
@@ -657,7 +717,8 @@ async def evaluate_sla_alerts(
     return {
         "as_of": now_utc.isoformat(),
         "alert_cutover_used": alert_cutover.isoformat(),
-        "total_cycles_evaluated": len(cycles),
+        "total_cycles_evaluated": total_scanned,
+        "current_window_cycles": len(cycles),
         "included": len(alerts),
         "excluded_by_reason": dict(excluded),
         "alerts": alerts,

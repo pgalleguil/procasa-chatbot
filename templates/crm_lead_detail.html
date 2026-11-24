@@ -5805,12 +5805,12 @@
         }
 
         function pilotPersonalDisplay(text) {
-            const labels = {nombre:'Nombre del cliente',ejecutivo:'Nombre del ejecutivo',propiedad:'Código de propiedad',comuna:'Comuna de la propiedad',enlace:'Enlace de la propiedad',operacion:'Tipo de operación',consulta:'Información según la operación',saludo:'Saludo según la hora',origen:'Portal de origen',referencia:'Propiedad consultada',atributos:'Características de la propiedad',visita_paso:'Paso de visita según el lead',postulacion_paso:'Preguntas pendientes de postulación',costos:'Costos informados del arriendo',financiamiento_paso:'Paso de financiamiento',orden_visita:'Datos pendientes de orden de visita',oferta_paso:'Propuesta según operación',seguimiento_info:'Seguimiento según conversación',busqueda_paso:'Criterios de búsqueda conocidos'};
+            const labels = {nombre:'Nombre del cliente',ejecutivo:'Nombre del ejecutivo',propiedad:'Código de propiedad',comuna:'Comuna de la propiedad',enlace:'Enlace de la propiedad',operacion:'Tipo de operación',consulta:'Información según la operación',saludo:'Saludo según la hora',origen:'Portal de origen',referencia:'Propiedad consultada',atributos:'Características de la propiedad',visita_paso:'Paso de visita según el lead',postulacion_paso:'Preguntas pendientes de postulación',costos:'Costos informados del arriendo',financiamiento_paso:'Paso de financiamiento',orden_visita:'Datos pendientes de orden de visita',oferta_paso:'Propuesta según operación',seguimiento_info:'Seguimiento según conversación',busqueda_paso:'Criterios de búsqueda conocidos',primer_paso:'Siguiente paso del primer contacto',primera_ficha:'Ficha si existe propiedad'};
             return String(text || '').replace(/\[\[([^\[\]]+)\]\]/g, (match,key) => labels[key] ? '«'+labels[key]+'»' : match);
         }
 
         function pilotPersonalStorage(text) {
-            const labels = {'Nombre del cliente':'nombre','Nombre del ejecutivo':'ejecutivo','Código de propiedad':'propiedad','Comuna de la propiedad':'comuna','Enlace de la propiedad':'enlace','Tipo de operación':'operacion','Información según la operación':'consulta','Pregunta según la operación':'consulta','Saludo según la hora':'saludo','Portal de origen':'origen','Propiedad consultada':'referencia','Características de la propiedad':'atributos','Paso de visita según el lead':'visita_paso','Preguntas pendientes de postulación':'postulacion_paso','Costos informados del arriendo':'costos','Paso de financiamiento':'financiamiento_paso','Datos pendientes de orden de visita':'orden_visita','Propuesta según operación':'oferta_paso','Seguimiento según conversación':'seguimiento_info','Criterios de búsqueda conocidos':'busqueda_paso'};
+            const labels = {'Nombre del cliente':'nombre','Nombre del ejecutivo':'ejecutivo','Código de propiedad':'propiedad','Comuna de la propiedad':'comuna','Enlace de la propiedad':'enlace','Tipo de operación':'operacion','Información según la operación':'consulta','Pregunta según la operación':'consulta','Saludo según la hora':'saludo','Portal de origen':'origen','Propiedad consultada':'referencia','Características de la propiedad':'atributos','Paso de visita según el lead':'visita_paso','Preguntas pendientes de postulación':'postulacion_paso','Costos informados del arriendo':'costos','Paso de financiamiento':'financiamiento_paso','Datos pendientes de orden de visita':'orden_visita','Propuesta según operación':'oferta_paso','Seguimiento según conversación':'seguimiento_info','Criterios de búsqueda conocidos':'busqueda_paso','Siguiente paso del primer contacto':'primer_paso','Ficha si existe propiedad':'primera_ficha'};
             return String(text || '').replace(/«([^»]+)»/g, (match,label) => labels[label] ? '[['+labels[label]+']]' : match);
         }
 
@@ -6287,9 +6287,11 @@
                 const context = pilotPublicContext(leadData,pilotDetectedOperation(leadData));
                 const fields = pilotCommercialFields(leadData,pilotDetectedOperation(leadData));
                 for (const key of ['consulta','visita_paso','postulacion_paso','costos','financiamiento_paso','orden_visita','oferta_paso','seguimiento_info','busqueda_paso','primer_paso','primera_ficha']) {
-                    if (fields[key]) mappings.push([fields[key],'[['+key+']]']);
+                    if (fields[key]) { if (['primer_paso','primera_ficha'].includes(key)) mappings.unshift([fields[key],'[['+key+']]']); else mappings.push([fields[key],'[['+key+']]']); }
                 }
                 mappings.unshift([context.reference,'[[referencia]]'],[context.origin,'[[origen]]'],[context.attributes,'[[atributos]]'],[pilotGreeting(),'[[saludo]]']);
+                if (fields.primera_ficha) mappings.unshift([fields.primera_ficha,'[[primera_ficha]]']);
+                if (fields.primer_paso) mappings.unshift([fields.primer_paso,'[[primer_paso]]']);
                 const sender = leadData.senderName || leadData.execName;
                 if (sender) { mappings.unshift([sender,'[[ejecutivo]]']); }
                 if (leadData.propiedad && /^\d+$/.test(leadData.propiedad)) mappings.push([leadData.propiedad,'[[propiedad]]']);

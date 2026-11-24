@@ -600,3 +600,44 @@ def test_prop360_notice_cannot_become_hot_from_template_keywords():
         event, message=event.message, contact_date="2026-11-18T14:08:08",
         portal_source="Yapo", now_iso="2026-11-18T20:00:00+00:00",
     ) is None
+
+
+def test_poll_recovers_missing_older_events_without_replaying_confirmed_ones(monkeypatch):
+    leads = [
+        {"idContacto": 7, "codigo": "17252", "contFono": "+56911111111"},
+        {"idContacto": 8, "codigo": "17252", "contFono": "+56922222222"},
+        {"idContacto": 9, "codigo": "17252", "contFono": "+56933333333"},
+        {"idContacto": 10, "codigo": "17252", "contFono": "+56944444444"},
+        {"idContacto": 11, "codigo": "17252", "contFono": "+56955555555"},
+    ]
+    db, processed, checkpoints = _prepare_poll_cycle(
+        monkeypatch, leads, {"17252"}, {7: "created", 9: "resumed"}, last_id=10,
+    )
+    for cid, status in [(8, "completed"), (9, "lead_persisted"),
+                        (10, "assignment_review_required"), (11, "updated")]:
+        db["lead_ingest_events"].insert_one({
+            "source_system": "prop360", "source_event_id": str(cid), "status": status,
+        })
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+    assert processed == [(7, "17252", False), (9, "17252", True)]
+    assert result["recovery_candidates_below_watermark"] == 1
+    assert result["skipped_confirmed_event"] == 3
+    assert result["unprocessed_events"] == 0
+    assert checkpoints[-1]["max_confirmed_id"] == 11
+
+def test_poll_window_covers_weekends_even_with_legacy_env(monkeypatch):
+    monkeypatch.setenv("PROP360_POLL_WINDOW_HOURS", "48")
+    assert prop360_poll_loop._window_hours() == 168
+    monkeypatch.setenv("PROP360_POLL_WINDOW_HOURS", "240")
+    assert prop360_poll_loop._window_hours() == 240
+
+def test_poll_reports_partial_errors_instead_of_ok(monkeypatch):
+    leads = [{"idContacto": 7, "codigo": "17252", "contFono": "+56911111111"}]
+    db, processed, checkpoints = _prepare_poll_cycle(
+        monkeypatch, leads, {"17252"}, {7: "error"}, last_id=10,
+    )
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+    assert processed == [(7, "17252", False)]
+    assert result["status"] == "partial_error"
+    assert result["unprocessed_events"] == 1
+    assert checkpoints[-1]["max_confirmed_id"] == 10

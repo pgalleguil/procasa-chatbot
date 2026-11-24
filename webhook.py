@@ -3368,6 +3368,46 @@ async def view_crm_detail_by_id(
     })
 
 
+# ---- Private WhatsApp message library (authenticated user, not lead owner) ----
+
+@app.get("/api/crm/my-whatsapp-templates")
+async def get_my_whatsapp_templates(request: Request):
+    user = await get_current_user_doc(request)
+    if not user or not user.get("_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    from chatbot.storage import get_db as _sync_db
+    from chatbot.crm_personal_message_templates import read_library
+    data = await asyncio.get_running_loop().run_in_executor(
+        _WEB_THREAD_POOL, lambda: read_library(_sync_db(), user["_id"]))
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
+
+@app.put("/api/crm/my-whatsapp-templates")
+async def put_my_whatsapp_templates(request: Request):
+    user = await get_current_user_doc(request)
+    if not user or not user.get("_id"):
+        raise HTTPException(status_code=401, detail="No autenticado")
+    # Only same-origin JSON requests; never accept a user ID from the client.
+    if request.headers.get("sec-fetch-site") not in (None, "same-origin"):
+        raise HTTPException(status_code=403, detail="Origen no autorizado")
+    if request.headers.get("content-type", "").split(";")[0].strip().lower() != "application/json":
+        raise HTTPException(status_code=415, detail="Se requiere JSON")
+    raw = await request.body()
+    if len(raw) > 250000:
+        raise HTTPException(status_code=413, detail="Solicitud demasiado extensa")
+    from chatbot.storage import get_db as _sync_db
+    from chatbot.crm_personal_message_templates import write_library
+    try:
+        payload = await request.json()
+        data = await asyncio.get_running_loop().run_in_executor(
+            _WEB_THREAD_POOL, lambda: write_library(_sync_db(), user["_id"], payload))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if data is None:
+        raise HTTPException(status_code=409, detail="La biblioteca cambió en otra sesión. Vuelve a abrirla.")
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
+
+
 # ---- Phone masking helper ----
 
 def _mask_phone(phone: str) -> str:

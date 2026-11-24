@@ -276,7 +276,11 @@ def get_real_property_data(db, codigo_propiedad):
         "nombre_propietario": nombre,
         "movil_propietario": telefono,
         "email_propietario": email,
-        "url": f"https://www.procasa.cl/{prop.get('codigo')}"
+        "url": f"https://www.procasa.cl/{prop.get('codigo')}",
+        "public_contact_url": (f"https://www.procasa.cl/{prop.get('codigo')}"
+                               if (prop.get("estado") or {}).get("disponible_prop360") is True
+                               and str((prop.get("estado") or {}).get("estado_prop360") or "").strip().lower() == "activa"
+                               and str(prop.get("codigo") or "").isdigit() else "")
     }
 
 def detect_property_code(lead):

@@ -3357,14 +3357,19 @@ async def view_crm_detail_by_id(
 
     email = user.get("email") or user.get("username")
 
-    from chatbot.crm_personal_message_templates import composer_pilot_enabled
+    from chatbot.crm_personal_message_templates import composer_pilot_enabled, build_pilot_message_context
+    composer_pilot = composer_pilot_enabled(user.get("_id")) and data.get("phone_visibility") == "full"
+    if composer_pilot:
+        data["pilot_message_context"] = await loop.run_in_executor(
+            _WEB_THREAD_POOL, lambda: build_pilot_message_context(lead, data, _sync_db())
+        )
     return templates.TemplateResponse(request, "crm_lead_detail.html", {
         "request": request, 
         "lead": data,
         "user_email": email,
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", ""),
-        "crm_whatsapp_composer_pilot": composer_pilot_enabled(user.get("_id")),
+        "crm_whatsapp_composer_pilot": composer_pilot,
         "crm_sla_security_layer_enabled": bool(Config.CRM_SLA_SECURITY_LAYER_ENABLED),
         "lead_id": str(lead.get("_id") or ""),
     })

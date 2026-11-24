@@ -3357,12 +3357,14 @@ async def view_crm_detail_by_id(
 
     email = user.get("email") or user.get("username")
 
+    from chatbot.crm_personal_message_templates import composer_pilot_enabled
     return templates.TemplateResponse(request, "crm_lead_detail.html", {
         "request": request, 
         "lead": data,
         "user_email": email,
         "user_role": user.get("rol", "agente"),
         "user_name": user.get("nombre", ""),
+        "crm_whatsapp_composer_pilot": composer_pilot_enabled(user.get("_id")),
         "crm_sla_security_layer_enabled": bool(Config.CRM_SLA_SECURITY_LAYER_ENABLED),
         "lead_id": str(lead.get("_id") or ""),
     })

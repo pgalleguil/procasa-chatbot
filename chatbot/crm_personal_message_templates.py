@@ -10,7 +10,7 @@ from pymongo.errors import DuplicateKeyError
 COLLECTION = "crm_personal_message_templates_v1"
 MAX_TEMPLATES = 30
 PABLO_COMPOSER_PILOT_USER_ID = "69796bc4bbebf240378eb739"
-PILOT_BUILTIN_KEYS = frozenset(f"builtin:{i}" for i in range(1, 32))
+PILOT_BUILTIN_KEYS = frozenset(f"builtin:{i}" for i in range(1, 44))
 
 
 def composer_pilot_enabled(user_id):
@@ -269,7 +269,14 @@ def build_pilot_message_context(lead, detail, db, *, now=None):
             if re.search(r"\b(quiero|quisiera|me gustaria|necesito|puedo|podemos|podria)\s+(agendar |coordinar |programar )?(una visita|visitar|ir a ver|conocer la propiedad)\b|\b(solicito|solicitar) (una )?visita\b|\b(agendar|coordinar) (una )?visita\b", txt):
                 visit_requested = True
                 break
+    # Only actual executive conversation messages; do not treat chatbot replies as human contact.
+    executive_times = [_pilot_datetime(m.get("timestamp")) for m in messages
+                       if isinstance(m, dict) and (m.get("role") == "agent" or
+                       str(m.get("role") or "").startswith("executive:"))
+                       and m.get("source") in ("crm_manual_api", "whatsapp_direct", "crm_admin_delegated_api", "executive_whatsapp")]
+    last_executive_contact = max((t for t in executive_times if t and t <= now), default=None)
     return {
+        "last_executive_contact_at": last_executive_contact.isoformat() if last_executive_contact else None,
         "intake": intake, "chatbot_dialogue": chatbot_dialogue, "visit_requested": visit_requested,
         "criteria": known, "finance": finance, "employment": employment,
         "applicant": applicant, "followup": followup, "visit_at": visit,

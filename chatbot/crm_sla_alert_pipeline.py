@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from .crm_sla_alert_evaluator import evaluate_sla_alerts
 from .crm_metrics import coerce_utc_datetime
+from .crm_sla_cycle_links import build_sla_short_url, ensure_sla_short_link_async
 from .crm_sla_alert_repository import (
     COLLECTION, persist_candidate, resolve_catch_up_cutover,
 )
@@ -156,6 +157,19 @@ async def run_evaluation_and_persist_once(
         c["cutover_at"] = CUTOVER_AT.isoformat()
         c["persist_confirmation"] = PERSIST_CONFIRMATION
         c["evaluated_at"] = now_utc.isoformat()
+
+        if c.get("alert_level") != "breached":
+            # Keep the read-only evaluator unchanged. Only live persistence
+            # creates the opaque reference, before the outbox can be claimed.
+            identity = {key: c[key] for key in (
+                "lead_id", "recipient_user_id", "assignment_cycle_id")}
+            old_url = c["lead_url"]
+            short_url = build_sla_short_url(**identity)
+            if not old_url or old_url not in c["message"]:
+                raise ValueError("SLA warning missing canonical management URL")
+            await ensure_sla_short_link_async(db, **identity, policy_version=POLICY_VERSION)
+            c["message"] = c["message"].replace(old_url, short_url)
+            c["lead_url"] = short_url
 
         result = await persist_candidate(db, c)
         if result["status"] == "created":

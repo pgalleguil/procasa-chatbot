@@ -149,7 +149,9 @@ def test_pilot_contexts_and_recommendation_draft_behavior():
         pytest.skip("Node required")
     html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
     webhook = Path("webhook.py").read_text(encoding="utf-8")
-    assert '"crm_whatsapp_composer_pilot": composer_pilot_enabled(user.get("_id"))' in webhook
+    assert 'composer_pilot = composer_pilot_enabled(user.get("_id")) and str(data.get("phone_visibility") or "").casefold() == "full"' in webhook
+    assert '"crm_whatsapp_composer_pilot": composer_pilot' in webhook
+    assert 'if composer_pilot:\n        data["pilot_message_context"]' in webhook
     assert "crm_whatsapp_composer_pilot|default(false)" in html
     assert "#commModal.wa-composer-pilot #waTemplateSearch" in html
     assert "grid-template-columns:minmax(220px, .85fr) minmax(0, 1.8fr)" in html
@@ -184,13 +186,13 @@ currentCommChannel = 'wa';
 const saleRows = pilotCommercialTemplates('venta');
 const rentRows = pilotCommercialTemplates('arriendo');
 const unknownRows = pilotCommercialTemplates();
-assert.equal(saleRows.length,20);
-assert.equal(rentRows.length,19);
-assert.equal(unknownRows.length,18);
+assert.equal(saleRows.length,26);
+assert.equal(rentRows.length,27);
+assert.equal(unknownRows.length,21);
 assert.equal(saleRows.filter(r=>r.category==='stage1').length,2);
-assert.equal(saleRows.filter(r=>r.category==='stage2').length,11);
-assert.equal(saleRows.filter(r=>r.category==='stage6').length,7);
-assert.equal(new Set(saleRows.map(r=>r.key)).size,20);
+assert.equal(saleRows.filter(r=>r.category==='stage2').length,14);
+assert.equal(saleRows.filter(r=>r.category==='stage6').length,10);
+assert.equal(new Set(saleRows.map(r=>r.key)).size,26);
 assert(saleRows.slice(0,2).every(r=>r.text.includes('[[enlace]]')));
 assert(saleRows.some(r=>r.label.includes('preaprobación')));
 assert(rentRows.some(r=>r.label.includes('Documentos para postular')));
@@ -207,7 +209,7 @@ assert(sale.includes('el departamento en venta en Las Condes'));
 assert(sale.includes('Portal Inmobiliario'));
 assert(rent.includes('el departamento en arriendo en Las Condes'));
 const docText=pilotResolveContext(rentRows.find(r=>r.key==='builtin:3').text,'arriendo','x');
-assert(docText.includes('liquidaciones de sueldo') && docText.includes('Certificado de cotizaciones') && docText.includes('Confirmaré los requisitos exactos'));
+assert(docText.includes('liquidaciones de sueldo') && docText.includes('certificado de cotizaciones') && docText.includes('Confirmaré los requisitos exactos'));
 assert(pilotResolveContext(saleRows.find(r=>r.key==='builtin:3').text,'venta','x').includes('crédito hipotecario preaprobado'));
 const highlights=pilotResolveContext(saleRows.find(r=>r.key==='builtin:18').text,'venta',facts.publicContactUrl,facts);
 assert(highlights.includes('3 dormitorios') && highlights.includes('170 m² útiles') && highlights.includes('Terraza') && highlights.includes('UF 12.950'));
@@ -215,6 +217,27 @@ assert(!highlights.includes('unknown'));
 assert(!pilotResolveContext(saleRows[0].text,'','').includes('[[enlace]]'));
 assert(!pilotResolveContext(saleRows[0].text,'','').includes('en venta'));
 assert(!pilotResolveContext(saleRows[0].text,'','').includes('Portal Inmobiliario'));
+const commercial = {pilotMessageContext:{finance:'preapproved',employment:'dependent',applicant:'joint',
+    requested_visit:'miércoles a las 16:00 horas',followup:'rental_documents',
+    criteria:{property_types:['CASA'],comunas:['Pudahuel','Maipú'],max_price_clp:97000000,operation:'VENTA'},
+    price_drop:{before:435000,after:400000,currency:'CLP'}}};
+const resolved = pilotCommercialFields(commercial,'arriendo');
+assert(resolved.visita_paso.includes('miércoles a las 16:00 horas'));
+assert(resolved.visita_paso.includes('¿Sigue siendo'));
+assert(!resolved.postulacion_paso.includes('dependiente'));
+assert(!resolved.postulacion_paso.includes('complementarías'));
+assert(!resolved.consulta.includes('Trabajadores independientes:'));
+assert(resolved.seguimiento_info.includes('requisitos de arriendo'));
+assert(resolved.busqueda_paso.includes('$97.000.000'));
+assert(resolved.busqueda_paso.includes('Pudahuel o Maipú'));
+assert(resolved.rebaja.includes('$35.000'));
+assert(pilotCommercialFields(commercial,'venta').consulta.includes('gracias por informar'));
+assert(!pilotCommercialFields(commercial,'venta').consulta.includes('¿actualmente cuentas'));
+assert(pilotTemplateBlockReason(saleRows.find(r=>r.key==='builtin:5'),{}));
+assert(pilotTemplateBlockReason(saleRows.find(r=>r.key==='builtin:29'),{}));
+assert(!pilotTemplateBlockReason(rentRows.find(r=>r.key==='builtin:29'),commercial));
+assert.equal(rentRows.find(r=>r.key==='builtin:25').action,'compare');
+assert.equal(rentRows.find(r=>r.key==='builtin:24').action,'recommend');
 const link='https://www.procasa.cl/6318';
 assert(pilotHasPublicLink('Revisa '+link+'.',link));
 assert(!pilotHasPublicLink('Revisa '+link+'9',link));
@@ -328,10 +351,61 @@ def test_pilot_first_contact_guard_precedes_log_and_provider():
     assert "#commModal.wa-composer-pilot #waInsertProperty, #commModal.wa-composer-pilot #waVariableButtons { display:none !important; }" in html
     assert "pilotDraftCategory = templateCategory" in html
     assert "pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category)" in html
-    assert "if (hasMessage && !pilotBlocked && !requiredLinkProblem)" in html
+    assert "if (hasMessage && !pilotBlocked && !requiredLinkProblem && !unresolvedPilotFields)" in html
     assert "senderName: {{ (user_name or \"\") | tojson }}" in html
     send = html[html.index("        function updateSendLink("):html.index("        // --- NOTES SYSTEM ---")]
     assert send.index("if (linkProblem)") < send.index("logAction(logType")
     assert send.index("if (linkProblem)") < send.index("/api/crm/executive-whatsapp/send")
     assert "pilotRestoreRequiredLink(msgBody)" in send
     assert "pilotRestoreRequiredLink(this)" in html
+    assert "Ingresa únicamente las condiciones confirmadas por el propietario" in html
+    assert "pilotRecommendationMode === 'compare' && semState.selected.length < 2" in html
+
+
+def test_commercial_context_uses_customer_evidence_and_verified_history():
+    from datetime import datetime, timezone, timedelta
+    from chatbot.crm_personal_message_templates import build_pilot_message_context
+    db = mongomock.MongoClient()["test"]
+    now = datetime(2026, 11, 24, 15, tzinfo=timezone.utc)
+    lead = {
+        "created_at": now - timedelta(days=20),
+        "prospecto": {"nombre": "Ana Pérez", "email": "ana@example.com"},
+        "messages": [
+            {"role": "assistant", "content": "Tengo un crédito preaprobado"},
+            {"role": "user", "content": "Soy trabajador dependiente"},
+            {"role": "user", "content": "Complemento renta"},
+            {"role": "agent", "content": "Te envío requisitos de arriendo y liquidaciones"},
+            {"role": "user", "content": "Me acomoda el miércoles a las 16:00"},
+        ],
+        "pipeline_stage": "VISIT_SCHEDULED", "visit_date": now + timedelta(days=1),
+    }
+    detail = {
+        "assignment_cycle_id": "current", "contact_visit_confirmed_in_cycle": True,
+        "active_search": {"status": "ACTIVE", "criteria": {"max_price_clp": 450000, "comunas": ["Ñuñoa"], "operation": "ARRIENDO"},
+            "field_evidence": {"max_price_clp": {"source": "executive_whatsapp"}, "comunas": {"source": "original_listing"}, "operation": {"source": "office_whatsapp"}}},
+        "datos_propiedad": {"codigo": "17252", "contact_operation": "arriendo", "public_contact_url": "https://www.procasa.cl/17252",
+            "contact_public_facts": {"precio_arriendo": {"moneda_publicada": "CLP", "precio_publicado": 400000}}},
+    }
+    db["universo_cartera_prop360_historial"].insert_one({
+        "codigo": "17252", "tipo_evento": "cambio_precio", "campo": "precio_publicado",
+        "fecha": (now - timedelta(days=5)).isoformat(),
+        "fuente": "Prop360 ficha editable + bitacora", "verification_method": "bitacora transition",
+        "moneda_anterior": "CLP", "moneda_nueva": "CLP", "monto_anterior": 435000, "monto_nuevo": 400000,
+    })
+    result = build_pilot_message_context(lead, detail, db, now=now)
+    assert result["finance"] == ""
+    assert result["employment"] == "dependent"
+    assert result["applicant"] == "joint"
+    assert result["followup"] == "rental_documents"
+    assert result["requested_visit"] == "miércoles a las 16:00 horas"
+    assert result["criteria"] == {"max_price_clp": 450000, "operation": "ARRIENDO"}
+    assert result["visit_at"]
+    assert result["price_drop"] == {"before": 435000, "after": 400000, "currency": "CLP"}
+    lead["pipeline_stage"] = "CONTACTED"
+    lead["messages"].append({"role":"user","content":"Tengo un crédito hipotecario preaprobado"})
+    result = build_pilot_message_context(lead, detail, db, now=now)
+    assert result["finance"] == "preapproved"
+    assert result["visit_at"] is None
+    assert result["requested_visit"] == ""
+    db["universo_cartera_prop360_historial"].update_one({}, {"$set":{"moneda_anterior":"UF"}})
+    assert build_pilot_message_context(lead, detail, db, now=now)["price_drop"] is None

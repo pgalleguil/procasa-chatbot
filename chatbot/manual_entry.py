@@ -165,6 +165,15 @@ def check_lead_duplicate(phone: Optional[str], property_code: str, email: Option
 
     return "not_found", None
 
+def _manual_assignment_at(db, *, recipient, now, business_slot):
+    """Honor the recipient's notification opt-in without changing the SLA clock."""
+    if business_slot > now:
+        from .crm_delivery import executive_wants_immediate_assignment_notification
+        if executive_wants_immediate_assignment_notification(db, str(recipient)):
+            return now
+    return business_slot
+
+
 def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str, Any]:
     """
     Orchestrates the creation of a manual lead.
@@ -467,6 +476,9 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                 from .crm_metrics import create_assignment_cycle
                 exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
                 assigned_to = str(exec_user["_id"]) if exec_user else exec_name
+                assigned_at = _manual_assignment_at(
+                    db, recipient=assigned_to, now=now, business_slot=assigned_at,
+                )
                 fresh_lead = db["leads"].find_one({"_id": existing_lead["_id"]})
                 if fresh_lead:
                     cycle = create_assignment_cycle(
@@ -484,6 +496,9 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                 from .crm_metrics import create_assignment_cycle
                 exec_user = db["usuarios"].find_one({"nombre": exec_name}, {"_id": 1})
                 assigned_to = str(exec_user["_id"]) if exec_user else exec_name
+                assigned_at = _manual_assignment_at(
+                    db, recipient=assigned_to, now=now, business_slot=assigned_at,
+                )
                 cycle = create_assignment_cycle(
                     db, lead=lead_doc, assigned_to_user_id=assigned_to,
                     assigned_by="supervisor", reason="manual_lead_created",

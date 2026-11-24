@@ -1345,6 +1345,35 @@
         }
 
         #commModal.theme-wa #commModalDialog { max-width: 860px; }
+        /* Opt-in layout: only the authenticated pilot's lead WhatsApp modal. */
+        #commModal.wa-composer-pilot #commModalDialog { max-width: 1000px; }
+        #commModal.wa-composer-pilot .modal-body { display:grid; grid-template-columns:minmax(240px, .95fr) minmax(0, 1.6fr); gap:1.25rem; align-items:start; }
+        #commModal.wa-composer-pilot #commTabs, #commModal.wa-composer-pilot #waTemplateSearch { display:none !important; }
+        #commModal.wa-composer-pilot #waPilotSidebar { grid-column:1; grid-row:1; min-width:0; }
+        #commModal.wa-composer-pilot #messageContainer, #commModal.wa-composer-pilot #recommendationContainer { grid-column:2; grid-row:1; min-width:0; }
+        #commModal.wa-composer-pilot #waPersonalEditor { grid-column:1/-1; grid-row:2; }
+        #commModal.wa-composer-pilot #waPilotTabs { display:flex; flex-direction:column; gap:.35rem; }
+        #commModal.wa-composer-pilot .wa-pilot-group { width:100%; display:flex; gap:.55rem; align-items:center; text-align:left; padding:.65rem .75rem; border:1px solid var(--border-color); background:transparent; color:var(--text-primary); border-radius:8px; font-size:.88rem; font-weight:600; }
+        #commModal.wa-composer-pilot .wa-pilot-group.active { border-color:#23995c; background:rgba(35,153,92,.08); }
+        #commModal.wa-composer-pilot .wa-pilot-group .wa-pilot-chevron { margin-left:auto; }
+        #commModal.wa-composer-pilot #templateList { display:flex; flex-direction:column; gap:.25rem; max-height: none; margin:0 0 .4rem .45rem; padding:0; }
+        #commModal.wa-composer-pilot #templateList.d-none { display:none !important; }
+        #commModal.wa-composer-pilot .template-card { display:flex; flex-wrap:nowrap; align-items:center; min-height:38px; padding:.4rem .45rem; gap:.25rem; border-radius:6px; }
+        #commModal.wa-composer-pilot .template-card .tpl-title { white-space:normal; font-size:.82rem; line-height:1.3; }
+        #commModal.wa-composer-pilot .template-card .tpl-info { min-width:0; flex:1; }
+        #commModal.wa-composer-pilot .wa-pilot-action { padding:.2rem .35rem; color:var(--text-secondary); background:transparent; border:0; }
+        #commModal.wa-composer-pilot .wa-pilot-action.is-favorite { color:#d4a238; }
+        #commModal.wa-composer-pilot #commMessage { min-height:340px; resize:vertical; }
+        #commModal.wa-composer-pilot #waComposerTools { margin-top:.65rem; }
+        #commModal.wa-composer-pilot #waPersonalCategory, #commModal.wa-composer-pilot label[for="waPersonalCategory"] { display:none; }
+        #commModal.wa-composer-pilot #semRecommendAreaModal { display:none !important; }
+        @media(max-width:700px) {
+            #commModal.wa-composer-pilot .modal-body { grid-template-columns:1fr; gap:.8rem; }
+            #commModal.wa-composer-pilot #waPilotSidebar { grid-column:1; grid-row:1; }
+            #commModal.wa-composer-pilot #messageContainer, #commModal.wa-composer-pilot #recommendationContainer { grid-column:1; grid-row:2; }
+            #commModal.wa-composer-pilot #waPersonalEditor { grid-row:3; }
+            #commModal.wa-composer-pilot #commMessage { min-height:220px; }
+        }
         #commModal.theme-wa .comm-stage-tabs { flex-wrap: wrap; gap: .35rem; white-space: normal; }
         #commModal.theme-wa .templates-list { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); max-height: 245px; }
         #commModal.theme-wa .tpl-preview { white-space: normal; max-width: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -3650,6 +3679,10 @@
                         aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <div id="waPilotSidebar" class="d-none">
+                        <div class="data-label mb-2">Contexto comercial</div>
+                        <div id="waPilotTabs"></div>
+                    </div>
                     <div class="comm-stage-tabs modern-scrollbar" id="commTabs"></div>
                     <div id="waComposerTools" class="d-none mb-3">
                         <div class="d-flex flex-wrap gap-2">
@@ -3769,6 +3802,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
+                    <button type="button" id="waPilotClear" class="btn btn-outline-secondary btn-sm d-none">Limpiar</button>
                     <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                     <a href="#" id="btnSendComm" class="btn btn-primary btn-sm" target="_blank">Enviar</a>
                 </div>
@@ -4028,6 +4062,7 @@
         // --- DATOS DEL CONTEXTO ---
         // Pilot UI hint only. The backend does not trust this value and checks
         // immutable authenticated user ID, per-user opt-in and the exact WaSender session.
+        window.crmWhatsappComposerPilot = {{ 'true' if crm_whatsapp_composer_pilot|default(false) else 'false' }};
         window.crmPabloApiPilot = {{ 'true' if user_name in ['Pablo Galleguillos', 'Mariela Arriagada', 'Hernán Castro', 'Susana Ensignia', 'Paula Morales'] else 'false' }};
         const leadData = {
             id: "{{ lead_id }}",
@@ -4036,6 +4071,7 @@
             email: "{{ lead.email }}",
             propiedad: "{{ lead.datos_propiedad.codigo }}",
             publicContactUrl: {{ (lead.datos_propiedad.public_contact_url or "") | tojson }},
+            contactOperation: {{ (lead.datos_propiedad.contact_operation or "") | tojson }},
             direccion: "{{ lead.datos_propiedad.calle }}",
             comuna: "{{ lead.datos_propiedad.comuna }}",
             precio: "{{ lead.datos_propiedad.precio_uf }}",
@@ -5445,9 +5481,17 @@
                 document.getElementById('emailSubject').value = "";
             }
 
+            configurePilotComposerLayout();
             renderCommTabs(target);
             const firstTabId = personalMode ? 'stage1' : commTemplates[target].tabs[0].id;
             loadTemplates(target, firstTabId);
+            if (pilotComposerActive() && !document.getElementById('commMessage').value.trim()) {
+                const first = pilotCommercialTemplates()[0];
+                pilotSelectedKey = first.key;
+                currentTemplateLabel = first.label;
+                selectTemplate(first.text, '', first.category);
+                renderPilotTemplates(firstTabId);
+            }
 
             new bootstrap.Modal(document.getElementById('commModal')).show();
             updateSendLink(target, firstTabId);
@@ -5496,9 +5540,186 @@
             }
         }
 
+        // The pilot is separate from the team-wide WaSender API capability.
+        // A server-authenticated immutable user ID controls the rendered flag.
+        let pilotSelectedKey = null;
+        function pilotComposerActive() {
+            return window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa';
+        }
+
+        function pilotCommercialTemplates() {
+            return [
+                {"key":"builtin:1","category":"stage1","label":"Consulta por propiedad","text":"Hola [[nombre]], ¿cómo estás? Soy [[ejecutivo]], asesor inmobiliario de PROCASA.\n\nTe contacto por tu consulta sobre esta propiedad [[operacion]]:\n[[enlace]]\n\n¿Te gustaría conocer más detalles o coordinar una visita?"},
+                {"key":"builtin:2","category":"stage1","label":"Solicitud de visita","text":"Hola [[nombre]], ¿cómo estás? Soy [[ejecutivo]], asesor inmobiliario de PROCASA.\n\nRecibí tu solicitud para visitar esta propiedad:\n[[enlace]]\n\n¿Qué día y horario te acomodaría? Revisaré la disponibilidad para coordinar contigo."},
+                {"key":"builtin:3","category":"stage2","label":"Resolver dudas","text":"Claro, [[nombre]]. Con gusto te ayudo a resolver tus consultas sobre la propiedad. [[consulta]]"},
+                {"key":"builtin:4","category":"stage2","label":"Coordinar visita","text":"Perfecto, [[nombre]]. ¿Qué días y horarios tienes disponibles para visitar la propiedad? Así podré coordinar contigo."},
+                {"key":"builtin:5","category":"stage2","label":"Confirmar visita","text":"Hola [[nombre]], te escribo para confirmar la visita que coordinamos. ¿Me confirmas si mantenemos el horario acordado?"},
+                {"key":"builtin:6","category":"stage2","label":"Reagendar visita","text":"Hola [[nombre]], podemos coordinar la visita en otro momento. ¿Qué día y horario te acomodaría mejor?"},
+                {"key":"builtin:7","category":"stage2","label":"Presentar oferta","text":"[[nombre]], si la propiedad se ajusta a lo que estás buscando, podemos preparar una propuesta para presentarla al propietario.\n\n¿Qué precio y condiciones te permitirían avanzar?"},
+                {"key":"builtin:8","category":"stage6","label":"Cliente no respondió","text":"Hola [[nombre]], ¿cómo estás?\n\nQuería saber si pudiste revisar la propiedad que consultaste:\n[[enlace]]\n\n¿Sigue siendo una opción para ti o prefieres que revisemos otras alternativas?"},
+                {"key":"builtin:9","category":"stage6","label":"Información enviada","text":"Hola [[nombre]], quería saber si pudiste revisar la información que te compartí.\n\n¿Te quedó alguna duda que pueda ayudarte a resolver?"},
+                {"key":"builtin:10","category":"stage6","label":"Después de la visita","text":"Hola [[nombre]], muchas gracias por tu tiempo durante la visita.\n\n¿Qué te pareció la propiedad? ¿Se ajusta a lo que estás buscando o hay algún aspecto que te gustaría encontrar en otras alternativas?"},
+                {"key":"builtin:11","category":"stage6","label":"Buscar alternativas","text":"[[nombre]], me gustaría ayudarte a encontrar una propiedad que se ajuste mejor a tus necesidades.\n\n¿Qué comunas estás considerando, cuál es tu presupuesto máximo y qué características son indispensables para ti?"},
+                {"key":"builtin:12","category":"stage6","label":"Propiedad no disponible","text":"Hola [[nombre]], la propiedad que consultaste ya no está disponible.\n\nPuedo ayudarte a encontrar una alternativa similar. ¿Mantienes el mismo presupuesto y sector de búsqueda?"},
+                {"key":"builtin:13","category":"stage6","label":"Cliente terminó su búsqueda","text":"Muchas gracias por avisarme, [[nombre]]. Daré por finalizado el seguimiento de tu búsqueda.\n\nSi más adelante necesitas asesoría inmobiliaria, puedes contar conmigo."}
+            ];
+        }
+
+        function pilotResolveContext(text, operation, publicUrl) {
+            const op = operation === 'venta' ? 'en venta' : operation === 'arriendo' ? 'en arriendo' : '';
+            const question = operation === 'arriendo'
+                ? '¿Te gustaría revisar los requisitos de arriendo o tienes alguna duda sobre la propiedad?'
+                : operation === 'venta'
+                    ? '¿Hay algún aspecto de la propiedad o del proceso de compra que te gustaría revisar?'
+                    : '¿Qué información necesitas que revisemos?';
+            let result = text.replace(/\[\[operacion\]\]/g, op).replace(/\[\[consulta\]\]/g, question);
+            if (!publicUrl) result = result.replace(/:\s*\n\[\[enlace\]\]/g, '.').replace(/\[\[enlace\]\]/g, '');
+            return result.replace(/ +([:,.?])/g, '$1');
+        }
+
+        function configurePilotComposerLayout() {
+            const active = pilotComposerActive();
+            const modal = document.getElementById('commModal');
+            const sidebar = document.getElementById('waPilotSidebar');
+            const tools = document.getElementById('waComposerTools');
+            const list = document.getElementById('templateList');
+            modal.classList.toggle('wa-composer-pilot', active);
+            sidebar.classList.toggle('d-none', !active);
+            document.getElementById('waPilotClear').classList.toggle('d-none', !active);
+            document.getElementById('waInsertProperty').textContent = active ? 'Insertar enlace' : 'Insertar ficha';
+            document.getElementById('waNewTemplate').textContent = active ? '+ Nueva plantilla' : 'Crear plantilla personal';
+            if (active) {
+                sidebar.append(tools);
+                pilotSelectedKey = null;
+            } else {
+                document.getElementById('waPersonalEditor').before(tools);
+                document.getElementById('recommendationContainer').before(list);
+            }
+        }
+
+        function pilotAllTemplates() {
+            return [...pilotCommercialTemplates(), ...personalLibrary.templates.map(t => ({
+                key:'personal:' + t.id, category:t.category, label:t.title, text:t.body, personalId:t.id
+            }))];
+        }
+
+        function renderPilotNavigation() {
+            const tabs = document.getElementById('waPilotTabs');
+            const list = document.getElementById('templateList');
+            // Do not detach the existing list when rebuilding headers.
+            if (tabs.contains(list)) document.getElementById('waPilotSidebar').append(list);
+            tabs.replaceChildren();
+            const groups = [
+                ['stage1','Primer contacto','fa-handshake',2],
+                ['stage2','Gestión comercial','fa-calendar-check',5],
+                ['stage6','Seguimiento','fa-comments',6],
+                ['favorites','Favoritos','fa-star',(personalLibrary.favorites || []).length],
+                ['personal','Mis plantillas','fa-bookmark',personalLibrary.templates.length],
+                ['recommendation','Recomendador de propiedades','fa-magnifying-glass',null]
+            ];
+            for (const [category,label,icon,count] of groups) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'wa-pilot-group';
+                button.dataset.category = category;
+                const i = document.createElement('i'); i.className = 'fa-solid ' + icon;
+                const text = document.createElement('span'); text.textContent = label;
+                const end = document.createElement('span'); end.className = 'wa-pilot-chevron small';
+                end.textContent = count === null ? '›' : String(count) + ' ›';
+                button.append(i,text,end);
+                button.onclick = () => loadTemplates('lead', category);
+                tabs.append(button);
+            }
+        }
+
+        function renderPilotTemplates(category) {
+            renderPilotNavigation();
+            const sidebar = document.getElementById('waPilotSidebar');
+            const list = document.getElementById('templateList');
+            const active = Array.from(sidebar.querySelectorAll('.wa-pilot-group')).find(b => b.dataset.category === category);
+            if (active) {
+                active.classList.add('active');
+                active.setAttribute('aria-expanded','true');
+                active.after(list);
+            }
+            list.replaceChildren();
+            if (category === 'recommendation') {list.classList.add('d-none'); return;}
+            list.classList.remove('d-none');
+            const favorites = personalLibrary.favorites || [];
+            const entries = pilotAllTemplates().filter(t => category === 'favorites'
+                ? favorites.includes(t.key) : category === 'personal' ? !!t.personalId : !t.personalId && t.category === category);
+            if (!entries.length) {
+                const empty = document.createElement('span'); empty.className = 'text-secondary small p-2';
+                empty.textContent = 'No hay plantillas en esta sección.'; list.append(empty);
+            }
+            for (const tpl of entries) {
+                const card = document.createElement('div');
+                card.className = 'template-card' + (pilotSelectedKey === tpl.key ? ' selected' : '');
+                card.tabIndex = 0; card.setAttribute('role','button');
+                const info = document.createElement('div'); info.className = 'tpl-info';
+                const title = document.createElement('span'); title.className = 'tpl-title'; title.textContent = tpl.label;
+                info.append(title); card.append(info);
+                card.onclick = () => {
+                    if (pilotSelectedKey === tpl.key) return;
+                    const draft = document.getElementById('commMessage').value.trim();
+                    if (draft && draft !== originalTemplateText.trim() && !confirm('¿Reemplazar el mensaje que estás editando?')) return;
+                    pilotSelectedKey = tpl.key; currentTemplateLabel = tpl.label;
+                    selectTemplate(tpl.text, '', tpl.category);
+                    renderPilotTemplates(category);
+                };
+                card.addEventListener('keydown', e => {if (e.target === card && ['Enter',' '].includes(e.key)) {e.preventDefault(); card.click();}});
+                const action = (icon,label,fn,extra='') => {
+                    const b = document.createElement('button'); b.type='button'; b.className='wa-pilot-action '+extra;
+                    b.title=label; b.setAttribute('aria-label',label);
+                    const i=document.createElement('i'); i.className=icon; b.append(i);
+                    b.onclick=e=>{e.stopPropagation();fn();}; card.append(b);
+                };
+                const starred = favorites.includes(tpl.key);
+                action(starred?'fa-solid fa-star':'fa-regular fa-star', starred?'Quitar de favoritos':'Añadir a favoritos', () => {
+                    persistPersonalLibrary(personalLibrary.templates, starred ? favorites.filter(k=>k!==tpl.key) : [...favorites,tpl.key], false);
+                }, starred?'is-favorite':'');
+                if (tpl.personalId) {
+                    action('fa-solid fa-pen','Editar plantilla',()=>openPersonalEditor(tpl.personalId));
+                    action('fa-solid fa-trash','Eliminar plantilla',()=>{
+                        if (confirm('¿Eliminar esta plantilla personal?')) persistPersonalLibrary(personalLibrary.templates.filter(t=>t.id!==tpl.personalId),favorites.filter(k=>k!==tpl.key));
+                    });
+                }
+                list.append(card);
+            }
+        }
+
+        function preparePilotRecommendation(event) {
+            if (event) event.preventDefault();
+            if (!pilotComposerActive() || !semState.selected.length) return false;
+            const input = document.getElementById('commMessage');
+            const recommendation = document.getElementById('semRecommendMsgModal').value.trim();
+            if (!recommendation) return false;
+            if (input.value.trim() && input.value.trim() !== originalTemplateText.trim()
+                && !confirm('¿Reemplazar el mensaje que estás editando?')) return false;
+            pilotSelectedKey = null;
+            currentTemplateLabel = 'Recomendación de propiedades';
+            originalTemplateText = recommendation;
+            input.value = recommendation;
+            loadTemplates('lead','stage6');
+            input.dispatchEvent(new Event('input',{bubbles:true}));
+            input.focus();
+            return false;
+        }
+
+        document.getElementById('waPilotClear').onclick = () => {
+            if (!pilotComposerActive() || semState.currentCategory === 'recommendation') return;
+            const input = document.getElementById('commMessage');
+            if (input.value.trim() && input.value.trim() !== originalTemplateText.trim() && !confirm('¿Limpiar el mensaje editado?')) return;
+            input.value = ''; originalTemplateText = ''; pilotSelectedKey = null; currentTemplateLabel = 'Directo / Manual';
+            renderPilotTemplates(semState.currentCategory);
+            input.dispatchEvent(new Event('input',{bubbles:true}));
+            input.focus();
+        };
+
         function renderCommTabs(target) {
             const tabsContainer = document.getElementById('commTabs');
             tabsContainer.innerHTML = "";
+            if (pilotComposerActive()) { renderPilotNavigation(); return; }
             const tabs = target === 'lead' && currentCommChannel === 'wa'
                 ? [{id: 'stage1', label: 'Primer contacto'},
                    {id: 'stage2', label: 'Gestionar interés y visitas'},
@@ -5540,6 +5761,8 @@
             const msgContainer = document.getElementById('messageContainer');
             const footerBtn = document.getElementById('btnSendComm');
             const personalMode = target === 'lead' && currentCommChannel === 'wa';
+            const pilot = pilotComposerActive();
+            document.getElementById('waPilotClear').classList.toggle('d-none', !pilot || category === 'recommendation');
             document.getElementById('waComposerTools').classList.toggle('d-none', !personalMode || category === 'recommendation');
             if (category === 'recommendation') document.getElementById('waPersonalEditor').classList.add('d-none');
 
@@ -5550,6 +5773,8 @@
                 recContainer.classList.remove('d-none');
                 tplList.classList.add('d-none');
                 msgContainer.classList.add('d-none');
+                if (pilot) renderPilotTemplates(category);
+                updateSendLink(target, category);
                 return;
             } else {
                 recContainer.classList.add('d-none');
@@ -5558,6 +5783,7 @@
                 footerBtn.classList.remove('d-none');
             }
 
+            if (pilot) { renderPilotTemplates(category); return; }
             const container = document.getElementById('templateList');
             container.innerHTML = "";
             const query = personalMode ? document.getElementById('waTemplateSearch').value.trim().toLowerCase() : '';
@@ -5634,6 +5860,11 @@
             const body = document.getElementById('commMessage').value;
             const included = !!leadData.publicContactUrl && body.includes(leadData.publicContactUrl);
             hint.className = 'small mt-2 ' + (!active ? 'd-none' : included ? 'text-success' : 'text-warning');
+            if (window.crmWhatsappComposerPilot === true && active) {
+                hint.className = 'small mt-2 ' + (included ? 'text-success' : 'text-secondary');
+                hint.textContent = included ? '✓ Enlace incluido.' : leadData.publicContactUrl ? 'Enlace opcional; inclúyelo en el primer contacto.' : 'Sin enlace público verificado.';
+                return;
+            }
             hint.textContent = !active ? '' : !leadData.publicContactUrl
                 ? 'Sin ficha activa identificada. Verifica la propiedad antes de incluir un enlace.'
                 : included ? '✓ Ficha de la propiedad incluida.'
@@ -5662,7 +5893,7 @@
             } finally { personalLibraryLoading = false; }
         }
 
-        async function persistPersonalLibrary(items) {
+        async function persistPersonalLibrary(items, favorites = undefined, closeEditor = true) {
             if (!personalLibraryReady || personalSaving) {templateStatus('Carga la biblioteca antes de guardar.'); return false;}
             personalSaving = true;
             const save = document.getElementById('waSavePersonal');
@@ -5671,13 +5902,13 @@
                 const response = await fetch('/api/crm/my-whatsapp-templates', {
                     method: 'PUT', credentials: 'same-origin',
                     headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-                    body: JSON.stringify({version: personalLibrary.version, templates: items})
+                    body: JSON.stringify({version: personalLibrary.version, templates: items, ...(window.crmWhatsappComposerPilot === true ? {favorites: favorites ?? personalLibrary.favorites ?? []} : {})})
                 });
                 const data = await response.json();
                 if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudo guardar.');
                 personalLibrary = data;
                 templateStatus('Biblioteca actualizada · ' + data.templates.length + ' plantillas');
-                document.getElementById('waPersonalEditor').classList.add('d-none');
+                if (closeEditor) document.getElementById('waPersonalEditor').classList.add('d-none');
                 if (currentCommTarget === 'lead' && currentCommChannel === 'wa' && semState.currentCategory !== 'recommendation')
                     loadTemplates('lead', semState.currentCategory || 'stage1');
                 return true;
@@ -5693,6 +5924,10 @@
                 [leadData.nombre, '[[nombre]]'], [(leadData.nombre || '').split(' ')[0], '[[nombre]]'],
                 [leadData.execName, '[[ejecutivo]]'], [(leadData.execName || '').split(' ')[0], '[[ejecutivo]]'],
                 [leadData.comuna, '[[comuna]]']];
+            if (window.crmWhatsappComposerPilot === true) {
+                if (leadData.contactOperation === 'venta') mappings.push(['en venta','[[operacion]]']);
+                if (leadData.contactOperation === 'arriendo') mappings.push(['en arriendo','[[operacion]]']);
+            }
             for (const [literal, token] of mappings) {
                 if (literal && literal.length > 1 && literal !== 'None' && literal !== 'S/I' && literal !== 'Estimado(a)')
                     value = value.split(literal).join(token);
@@ -5727,7 +5962,7 @@
             input.dispatchEvent(new Event('input', {bubbles: true}));
             input.focus();
         };
-        for (const name of ['nombre', 'ejecutivo', 'propiedad', 'comuna', 'enlace']) {
+        for (const name of ['nombre', 'ejecutivo', 'propiedad', 'comuna', 'enlace', ...(window.crmWhatsappComposerPilot === true ? ['operacion'] : [])]) {
             const button = document.createElement('button');
             button.type = 'button'; button.className = 'btn btn-outline-secondary btn-sm'; button.textContent = name;
             button.onclick = () => {
@@ -5759,6 +5994,8 @@
             const safeDay = "mañana"; // Placeholder default
             const safeHour = "10:00"; // Placeholder default
 
+            if (window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa')
+                text = pilotResolveContext(text, leadData.contactOperation, leadData.publicContactUrl);
             let processedText = (currentCommTarget === 'lead' && currentCommChannel === 'wa' && !safeName
                 ? text.replace(/Hola \[\[nombre\]\],/gi, 'Hola,') : text)
                 .replace(/\[\[nombre\]\]/g, safeName || "Estimado(a)")
@@ -5807,8 +6044,8 @@
             const waGreen = '#25D366';
 
             if (category === 'recommendation') {
-                btn.innerHTML = '<i class="fa-brands fa-whatsapp me-1"></i> Recomendar por WhatsApp';
-                btn.onclick = sendRecommendation;
+                btn.innerHTML = pilotComposerActive() ? '<i class="fa-solid fa-arrow-right me-1"></i> Usar recomendaciones' : '<i class="fa-brands fa-whatsapp me-1"></i> Recomendar por WhatsApp';
+                btn.onclick = pilotComposerActive() ? preparePilotRecommendation : sendRecommendation;
                 updateSelectionUI(); // This handles enabled/disabled for recommendations
                 return;
             }
@@ -6545,7 +6782,7 @@
             const props = semState.selected;
             const leadDisplayName = (semState.leadName && semState.leadName !== "Desconocido") ? semState.leadName : "";
             let msg = leadDisplayName ? `¡Hola ${leadDisplayName}! 👋\n\n` : `¡Hola! 👋\n\n`;
-            msg += `Soy ${semState.execName} de Procasa. He seleccionado estas propiedades de nuestra red que se ajustan perfectamente a tu búsqueda:\n\n`;
+            msg += pilotComposerActive() ? `Soy ${semState.execName} de Procasa. Te comparto algunas alternativas que podrían ajustarse a lo que buscas:\n\n` : `Soy ${semState.execName} de Procasa. He seleccionado estas propiedades de nuestra red que se ajustan perfectamente a tu búsqueda:\n\n`;
 
             const formatter = new Intl.NumberFormat('es-CL', {
                 style: 'currency',

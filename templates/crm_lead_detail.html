@@ -3665,9 +3665,8 @@
                         <input id="waPersonalTitle" class="form-control form-control-sm mb-2" maxlength="70">
                         <label for="waPersonalCategory" class="data-label">Contexto</label>
                         <select id="waPersonalCategory" class="form-select form-select-sm mb-2">
-                            <option value="stage1">Primer contacto</option><option value="stage2">Interés activo</option>
-                            <option value="stage3">Visita</option><option value="stage4">Post visita</option>
-                            <option value="stage5">Oferta</option><option value="stage6">Seguimiento</option>
+                            <option value="stage1">Primer contacto</option><option value="stage2">Gestionar interés y visitas</option>
+                            <option value="stage6">Seguimiento</option>
                         </select>
                         <div id="waVariableButtons" class="d-flex flex-wrap gap-1 mb-2"></div>
                         <textarea id="waPersonalBody" class="form-control mb-2" rows="5" maxlength="2000" aria-label="Texto reutilizable"></textarea>
@@ -4537,42 +4536,38 @@
                 ],
                 data: {
                     stage1: [
-                        {"label":"Consulta general","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Recibí tu consulta por esta propiedad.\n\n[[enlace]]\n\n¿Qué información te gustaría conocer? ¿O prefieres coordinar una visita?"},
-                        {"label":"Solicitud de visita","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Recibí tu solicitud para visitar esta propiedad en [[comuna]].\n\n[[enlace]]\n\n¿Qué día y horario te acomodaría? Revisaré la disponibilidad."},
-                        {"label":"Consulta de arriendo","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Recibí tu consulta por esta propiedad.\n\n[[enlace]]\n\n¿Quieres revisar los requisitos de arriendo o coordinar una visita?"},
-                        {"label":"Consulta de compra","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Te contacto por esta propiedad.\n\n[[enlace]]\n\n¿Te interesa conocer más detalles, revisar condiciones de compra o visitarla?"},
-                        {"label":"Completar datos para visita","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Recibí tu solicitud de visita.\n\n[[enlace]]\n\n¿Sigues interesado/a en esta propiedad? Podemos revisar los datos necesarios para coordinarla."},
-                        {"label":"Cliente busca alternativas","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Quiero ayudarte a encontrar la propiedad que buscas.\n\n¿Qué comunas, presupuesto y características son prioritarias para ti?","omitPropertyLink":true},
-                        {"label":"Propiedad no disponible","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Te escribo por tu consulta.\n\n¿Quieres que te ayude a buscar alternativas similares? Cuéntame qué características y presupuesto tienes en mente.","omitPropertyLink":true},
+                        {"label":"Consulta de propiedad","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de Procasa. Recibí tu consulta por esta propiedad:\n[[enlace]]\n\n¿Qué te gustaría saber de ella?"},
+                        {"label":"Solicitó una visita","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de Procasa. Vi que te interesa visitar esta propiedad:\n[[enlace]]\n\n¿Qué día y horario te acomodan? Así reviso la disponibilidad."},
+                        {"label":"Consulta de arriendo","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de Procasa. Te contacto por tu consulta de arriendo:\n[[enlace]]\n\n¿Te gustaría revisar los requisitos o prefieres que coordinemos una visita?"},
+                        {"label":"Consulta de compra","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de Procasa. Te contacto por esta propiedad que consultaste:\n[[enlace]]\n\n¿Te gustaría conocer más detalles o visitarla?"},
                         { label: "📩 Confirmación Visita", channel: "email", subject: "Confirmación de Visita – [[propiedad]]", text: "[[nombre completo]],\n\nConfirmamos la visita a la propiedad ubicada en [[direccion]], [[comuna]].\n\nFecha: [[día]]\nHora: [[hora]]\n\nSus datos han sido correctamente registrados para la orden de visita.\n\nQuedo atento/a ante cualquier ajuste.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" },
                         { label: "📩 Datos para Visita", channel: "email", subject: "Información requerida para visita – [[propiedad]]", text: "[[nombre]],\n\nPara poder coordinar la visita solicitada, necesitamos completar sus datos para el registro correspondiente.\n\nAgradeceré nos indique:\n- Nombre completo\n- RUT\n\nQuedo atento/a para coordinar en cuanto recibamos esta información.\n\nSaludos,\n[[ejecutivo]]\nProcasa" },
                         { label: "📩 Información Detallada", channel: "email", subject: "Información detallada – [[propiedad]]", text: "[[nombre]],\n\nAdjunto encontrará la información detallada de la propiedad ubicada en [[direccion]].\n\nSi desea coordinar visita o revisar condiciones de financiamiento, quedo atento/a.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
                     ],
                     stage2: [
-                        {"label":"Coordinar visita","channel":"wa","text":"Por lo que conversamos, ¿te parece si coordinamos una visita esta semana? Indícame qué días y horarios te acomodan."},
-                        {"label":"Proponer horarios","channel":"wa","text":"¿Tienes disponibilidad durante la mañana o la tarde? Así puedo revisar opciones para la visita."},
-                        {"label":"Requisitos de arriendo","channel":"wa","text":"¿Te gustaría revisar los requisitos y documentos necesarios para el arriendo antes de coordinar la visita?"},
-                        {"label":"Consulta de precio","channel":"wa","text":"¿Quieres revisar el precio y las condiciones de la propiedad? Cuéntame qué información necesitas."},
-                        {"label":"Financiamiento","channel":"wa","text":"¿Estás evaluando comprar con crédito hipotecario o con recursos propios? Así puedo orientarte mejor."},
-                        {"label":"Buscar otra propiedad","channel":"wa","text":"Si esta opción no se ajusta a lo que buscas, cuéntame tu presupuesto, comunas y características indispensables. Revisaré alternativas."},
+                        {"label":"Coordinar visita","channel":"wa","text":"¿Qué días y horarios te acomodan para visitar la propiedad? Con eso puedo revisar la disponibilidad y coordinar contigo."},
+                        {"label":"Requisitos de arriendo","channel":"wa","text":"Para orientarte con los requisitos de arriendo, ¿me cuentas si postularías de manera individual o con otra persona? Así revisamos qué antecedentes necesitas."},
+                        {"label":"Financiamiento de compra","channel":"wa","text":"Para ayudarte a evaluar la compra, ¿tienes pensado utilizar crédito hipotecario o recursos propios?"},
+                        {"label":"Completar datos para visita","channel":"wa","text":"Para preparar la orden de visita, necesitamos completar algunos datos. ¿Te parece si coordinamos cómo compartirlos de forma segura?"},
                         { label: "📩 Agenda Visita", channel: "email", subject: "Agenda de visita – [[propiedad]]", text: "[[nombre]],\n\nConfirmo disponibilidad para visita en los siguientes horarios:\n\n- [[día]] [[hora]]\n- [[día]] [[hora]]\n\nQuedo atento/a a su confirmación.\n\nSaludos,\n[[ejecutivo]]" }
                     ],
                     stage3: [
-                        { label: "📅 Confirmar Visita", channel: "wa", text: "Hola [[nombre]], te escribo para confirmar la visita acordada.\n\n[[enlace]]\n\n¿Me confirmas que mantienes disponibilidad en el horario conversado?" },
+                        {"label":"Confirmar visita acordada","channel":"wa","text":"Hola [[nombre]], te escribo para confirmar la visita que coordinamos para esta propiedad:\n[[enlace]]\n\n¿Te sigue acomodando el horario que acordamos?"},
+                        {"label":"Reagendar visita","channel":"wa","text":"Hola [[nombre]], podemos buscar otro horario para la visita. ¿Qué día te acomodaría mejor?"},
                         { label: "📩 Recordatorio Visita", channel: "email", subject: "Recordatorio de visita – [[propiedad]]", text: "[[nombre]],\n\nLe recordamos la visita agendada para [[día]] a las [[hora]] en [[direccion]].\n\nAnte cualquier eventualidad, puede contactarnos directamente.\n\nSaludos,\nProcasa" }
                     ],
                     stage4: [
-                        { label: "🏁 Interés Alto", channel: "wa", text: "[[nombre]], por lo que vimos hoy, creo que esta propiedad calza bastante con lo que buscas.\n\n¿Te parece si avanzamos con propuesta formal?" },
-                        { label: "🏁 Interés Medio", channel: "wa", text: "Gracias por la visita hoy 🙌\n\nCon sinceridad,\n¿la propiedad te hizo sentido o la estás comparando con otras opciones?" },
-                        { label: "🏁 Sin Interés", channel: "wa", text: "Gracias por tu tiempo hoy.\n\nSi quieres, puedo enviarte alternativas similares dentro de tu rango." }
+                        {"label":"Después de la visita","channel":"wa","text":"Hola [[nombre]], gracias por tu tiempo durante la visita. ¿Qué te pareció la propiedad? Me gustaría saber si se ajusta a lo que buscas o si podemos revisar otras opciones."}
                     ],
                     stage5: [
-                        { label: "💰 Solicitar Documentos", channel: "wa", text: "Para formalizar la oferta necesitamos:\n\n✔ Pre-aprobación bancaria\n✔ Cédula de identidad\n\nCon eso dejamos todo presentado formalmente al propietario." },
+                        {"label":"Conversar una oferta","channel":"wa","text":"Si te interesa avanzar con esta propiedad, podemos revisar juntos el precio y las condiciones de una eventual oferta. ¿Qué propuesta tienes en mente?"},
                         { label: "📩 Documentación", channel: "email", subject: "Documentación requerida – Proceso de oferta", text: "[[nombre]],\n\nPara proceder con la presentación formal de oferta necesitamos:\n\n- Pre-aprobación bancaria\n- Copia de cédula de identidad\n\nUna vez recibidos, gestionaremos la presentación inmediata.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
                     ],
                     stage6: [
-                        { label: "❄️ Retomar Interés", channel: "wa", text: "Hola [[nombre]], quería retomar tu consulta por esta propiedad.\n\n[[enlace]]\n\n¿Sigues buscando o ya encontraste una alternativa?" },
-                        { label: "❄️ Cierre Definitivo", channel: "wa", text: "Si prefieres que no te siga contactando, avísame y dejamos el seguimiento cerrado." },
+                        {"label":"Sin respuesta","channel":"wa","text":"Hola [[nombre]], quería saber si pudiste revisar la propiedad que consultaste:\n[[enlace]]\n\n¿Sigue siendo una opción para ti?"},
+                        {"label":"Buscar alternativas","channel":"wa","text":"Si esta propiedad no se ajusta a lo que buscas, puedo ayudarte a encontrar otras opciones. ¿Me cuentas qué comuna, presupuesto y características son indispensables para ti?","omitPropertyLink":true},
+                        {"label":"Propiedad no disponible","channel":"wa","text":"Hola [[nombre]], la propiedad que consultaste ya no está disponible. Puedo ayudarte a buscar una alternativa similar. ¿Siguen siendo los mismos tus requisitos?","omitPropertyLink":true},
+                        {"label":"Ya no busca","channel":"wa","text":"Gracias por avisarme. Dejaré de contactarte por esta búsqueda. Si más adelante necesitas ayuda, quedo a tu disposición.","omitPropertyLink":true},
                         { label: "📩 Seguimiento Formal", channel: "email", subject: "Seguimiento – [[propiedad]]", text: "[[nombre]],\n\nLe escribo para consultar si continúa evaluando la propiedad en [[comuna]] o si ya ha tomado decisión.\n\nQuedo atento/a a su confirmación.\n\nSaludos,\n[[ejecutivo]]" }
                     ]
                 }
@@ -5505,8 +5500,10 @@
             const tabsContainer = document.getElementById('commTabs');
             tabsContainer.innerHTML = "";
             const tabs = target === 'lead' && currentCommChannel === 'wa'
-                ? [{id: 'stage1', label: 'Primer contacto'}, {id: 'personal', label: 'Mis plantillas'},
-                   ...commTemplates[target].tabs.filter(t => t.id !== 'stage1' && t.id !== 'recommendation'),
+                ? [{id: 'stage1', label: 'Primer contacto'},
+                   {id: 'stage2', label: 'Gestionar interés y visitas'},
+                   {id: 'stage6', label: 'Seguimiento'},
+                   {id: 'personal', label: 'Mis plantillas'},
                    {id: 'recommendation', label: 'Recomendador'}]
                 : commTemplates[target].tabs;
             tabs.forEach((tab, index) => {
@@ -5567,10 +5564,12 @@
             const personal = personalMode ? personalLibrary.templates.map(t => ({
                 label: t.title, text: t.body, channel: 'wa', category: t.category, personalId: t.id
             })) : [];
+            const categories = personalMode && category === 'stage2' ? ['stage2', 'stage3', 'stage4', 'stage5'] : [category];
             const allTemplates = category === 'personal' ? personal :
                 query ? [...Object.entries(commTemplates[target].data).flatMap(([cat, entries]) =>
                     entries.map(t => ({...t, category: cat}))), ...personal] :
-                [...(commTemplates[target].data[category] || []), ...personal.filter(t => t.category === category)];
+                [...categories.flatMap(cat => (commTemplates[target].data[cat] || []).map(t => ({...t, category: cat}))),
+                 ...personal.filter(t => categories.includes(t.category))];
             const filteredTemplates = allTemplates.filter(t => t.channel === currentCommChannel &&
                 (!query || (t.label + ' ' + t.text).toLowerCase().includes(query)));
 
@@ -5706,8 +5705,10 @@
             const existing = personalLibrary.templates.find(t => t.id === id);
             personalEditingId = existing ? existing.id : null;
             document.getElementById('waPersonalTitle').value = existing ? existing.title : '';
-            document.getElementById('waPersonalCategory').value = existing ? existing.category :
-                (/^stage[1-6]$/.test(semState.currentCategory || '') ? semState.currentCategory : 'stage1');
+            const selectedCategory = existing ? existing.category : semState.currentCategory;
+            document.getElementById('waPersonalCategory').value =
+                ['stage2', 'stage3', 'stage4', 'stage5'].includes(selectedCategory) ? 'stage2' :
+                selectedCategory === 'stage6' ? 'stage6' : 'stage1';
             document.getElementById('waPersonalBody').value = existing ? existing.body : fromDraft ? reusableDraft() : '';
             document.getElementById('waPersonalEditor').classList.remove('d-none');
             document.getElementById('waPersonalTitle').focus();
@@ -5748,7 +5749,8 @@
         };
 
         function selectTemplate(text, subject = "", templateCategory = semState.currentCategory) {
-            const safeName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre.split(' ')[0] : "";
+            const rawName = (leadData.nombre || '').trim();
+            const safeName = /^(none|desconocido|sin nombre|cliente|s\/n|s\/i)$/i.test(rawName) ? "" : rawName.split(' ')[0];
             const fullName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre : "Estimado Cliente";
             const safeExec = (leadData.execName && leadData.execName !== "None") ? leadData.execName.split(' ')[0] : "Agente";
             const safeProp = (leadData.propiedad && leadData.propiedad !== "None") ? leadData.propiedad : "la propiedad";
@@ -5757,7 +5759,8 @@
             const safeDay = "mañana"; // Placeholder default
             const safeHour = "10:00"; // Placeholder default
 
-            let processedText = text
+            let processedText = (currentCommTarget === 'lead' && currentCommChannel === 'wa' && !safeName
+                ? text.replace(/Hola \[\[nombre\]\],/gi, 'Hola,') : text)
                 .replace(/\[\[nombre\]\]/g, safeName || "Estimado(a)")
                 .replace(/\[\[nombre completo\]\]/g, fullName)
                 .replace(/\[\[ejecutivo\]\]/g, safeExec)

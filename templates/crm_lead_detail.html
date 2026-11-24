@@ -5593,7 +5593,7 @@
                 {"key":"builtin:24","category":"stage6","label":"Recomendación personalizada con RAG","text":"","action":"recommend"},
                 {"key":"builtin:25","category":"stage6","label":"Comparar propiedades con RAG","text":"","action":"compare"},
                 {"key":"builtin:12","category":"stage6","label":"Propiedad ya no disponible","text":"Hola [[nombre]], quería comentarte que la propiedad por la que consultaste ya no se encuentra disponible.\n\nSin embargo, me gustaría seguir ayudándote con tu búsqueda. [[busqueda_paso]]\n\n¿Hay algún requisito que haya cambiado desde nuestra última conversación?"},
-                {"key":"builtin:29","category":"stage6","label":"Rebaja de precio verificada","text":"Hola [[nombre]], te contacto porque se actualizó el precio de [[referencia]], por la que habías consultado anteriormente.\n\n[[rebaja]]\n\nAquí puedes revisar la publicación actualizada:\n[[enlace]]\n\n¿Este nuevo valor se acerca más a tu presupuesto? Si te interesa, podemos coordinar una visita."},
+                {"key":"builtin:29","category":"stage6","label":"Rebaja de precio verificada","text":"Hola [[nombre]], te contacto porque se actualizó el precio de [[referencia]], que habías consultado anteriormente.\n\n[[rebaja]]\n\nAquí puedes revisar la publicación actualizada:\n[[enlace]]\n\n¿Este nuevo valor se acerca más a tu presupuesto? Si te interesa, podemos coordinar una visita."},
                 {"key":"builtin:17","category":"stage6","label":"Cliente está evaluando una decisión","text":"Hola [[nombre]], entiendo que elegir una propiedad requiere tiempo y es importante evaluar bien la decisión.\n\n¿Hay alguna información adicional que necesites para comparar esta propiedad con las otras opciones que estás considerando?\n\nPuedo ayudarte a revisar sus características, costos y condiciones para que puedas tomar una decisión informada."},
                 {"key":"builtin:13","category":"stage6","label":"Cliente terminó su búsqueda","text":"Muchas gracias por avisarme, [[nombre]].\n\nDaré por finalizado el seguimiento de esta búsqueda para no continuar enviándote mensajes. Si en el futuro necesitas comprar, vender o arrendar una propiedad, puedes contar con nosotros.\n\nSaludos y mucho éxito."}
             ];
@@ -5634,7 +5634,7 @@
             if (type && /casa|parcela|terreno/i.test(type) && number(facts.superficie_terreno)) attrs.push(fmt(facts.superficie_terreno)+' m² de terreno');
             if (number(facts.estacionamientos)) attrs.push(fmt(facts.estacionamientos)+(facts.estacionamientos === 1 ? ' estacionamiento' : ' estacionamientos'));
             if (number(facts.bodegas)) attrs.push(fmt(facts.bodegas)+(facts.bodegas === 1 ? ' bodega' : ' bodegas'));
-            const labels = {has_terrace:'Terraza',has_patio:'Patio',bodega:'Bodega',piscina:'Piscina',gimnasio:'Gimnasio',jardin:'Jardín',has_balcony:'Balcón',has_security:'Seguridad',has_guest_parking:'Estacionamientos de visitas'};
+            const labels = {has_terrace:'Terraza',has_patio:'Patio',bodega:'Bodega',piscina:'Piscina',gimnasio:'Gimnasio',jardin:'Jardín',has_balcony:'Balcón',has_security:'Seguridad',has_guest_parking:'Estacionamientos de visitas',jardinformado:'Jardín formado',has_air_conditioning:'Aire acondicionado',has_common_laundry:'Lavandería común'};
             for (const key of (Array.isArray(facts.features) ? facts.features : [])) {
                 if (labels[key] && !(key === 'bodega' && number(facts.bodegas))) attrs.push(labels[key]);
             }
@@ -5658,7 +5658,7 @@
         function pilotSearchSummary(data) {
             const q = data.pilotMessageContext?.criteria || {};
             const parts = [];
-            if (['VENTA','ARRIENDO'].includes(q.operation)) parts.push(q.operation.toLowerCase());
+            if (['VENTA','ARRIENDO'].includes(q.operation)) parts.push(q.operation === 'VENTA' ? 'compra de' : 'arriendo de');
             if (Array.isArray(q.property_types) && q.property_types.length) parts.push(q.property_types.map(x=>x.toLowerCase()).join(' o '));
             if (Array.isArray(q.comunas) && q.comunas.length) parts.push('en '+q.comunas.join(' o '));
             const fmt = x => new Intl.NumberFormat('es-CL',{maximumFractionDigits:2}).format(x);

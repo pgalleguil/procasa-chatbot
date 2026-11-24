@@ -5564,8 +5564,8 @@
 
         function pilotCommercialTemplates(operation = '') {
             const rows = [
-                {"key":"builtin:1","category":"stage1","label":"Consulta recibida desde portal","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]] de PROCASA.\n\nMe asignaron tu consulta [[origen]] por [[referencia]]. Te comparto la ficha:\n[[enlace]]\n\n¿Te gustaría que coordinemos una visita o necesitas aclarar alguna característica antes de conocerla?"},
-                {"key":"builtin:2","category":"stage1","label":"Cliente solicitó visita","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]] de PROCASA.\n\nMe asignaron tu solicitud de visita [[origen]] por [[referencia]]:\n[[enlace]]\n\n¿Qué día y rango horario te acomodan? Revisaré la disponibilidad y te confirmaré la visita."},
+                {"key":"builtin:1","category":"stage1","label":"Consulta recibida desde portal","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]] de PROCASA.\n\nMe asignaron tu contacto para ayudarte con tu consulta [[origen]] por [[referencia]]. Te comparto la ficha:\n[[enlace]]\n\n¿Te gustaría que coordinemos una visita o necesitas aclarar alguna característica antes de conocerla?"},
+                {"key":"builtin:2","category":"stage1","label":"Cliente solicitó visita","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]] de PROCASA.\n\nMe asignaron tu contacto para coordinar la visita que solicitaste [[origen]] por [[referencia]]:\n[[enlace]]\n\n¿Qué día y rango horario te acomodan? Revisaré la disponibilidad y te confirmaré la visita."},
                 {"key":"builtin:18","category":"stage2","label":"Destacar características de la propiedad","text":"[[nombre]], te comparto los principales datos de [[referencia]]:\n\n[[atributos]]\n\n[[enlace]]\n\nSi estas características se ajustan a lo que buscas, ¿coordinamos una visita para que puedas conocer la propiedad personalmente?"},
                 {"key":"builtin:3","category":"stage2","label":"Requisitos y condiciones","text":"Hola [[nombre]], [[consulta]]"},
                 {"key":"builtin:19","category":"stage2","label":"Apoyo para obtener crédito hipotecario","text":"[[nombre]], si aún no cuentas con una preaprobación hipotecaria, puedo orientarte sobre los pasos para evaluar tu financiamiento.\n\nConviene revisar con el banco el monto disponible, el pie, el plazo y los gastos asociados. ¿Ya estás conversando con alguna entidad financiera o necesitas orientación para iniciar la evaluación?"},
@@ -5605,12 +5605,14 @@
             const valid = value => typeof value === 'string' && value.trim() && !/^(none|s\/i|s\/n|desconocido|no registrado)$/i.test(value.trim()) ? value.trim() : '';
             const type = valid(facts.tipo);
             const commune = valid(facts.comuna);
-            const descriptor = type ? 'el inmueble tipo '+type.toLowerCase() : 'la propiedad';
+            const kind = type.toLowerCase();
+            const female = ['casa','oficina','parcela','bodega','propiedad','habitación'];
+            const descriptor = !type ? 'la propiedad' : (female.includes(kind) ? 'la ' : 'el ') + kind;
             const op = operation ? ' en '+operation : '';
             const reference = descriptor + op + (commune ? ' en '+commune : '');
             const portals = {'portalinmobiliario':'Portal Inmobiliario','mercadolibre':'Mercado Libre','yapo':'Yapo','chilepropiedades':'ChilePropiedades','enlaceinmobiliario':'Enlace Inmobiliario','proppit':'Proppit','procasa':'PROCASA','toc toc':'TOCTOC','toctoc':'TOCTOC'};
             const originKey = String(data.contactOrigin || '').trim().toLowerCase().replace(/\s+/g,'');
-            const origin = portals[originKey] ? 'recibida a través de '+portals[originKey] : '';
+            const origin = portals[originKey] ? 'a través de '+portals[originKey] : '';
             const attrs = [];
             const number = value => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
             const fmt = value => new Intl.NumberFormat('es-CL',{maximumFractionDigits:2}).format(value);
@@ -5631,7 +5633,7 @@
                 if (published && ['UF','CLP'].includes(currency)) attrs.push('Precio publicado: '+(currency==='UF'?'UF ':'$')+fmt(published));
             }
             if (number(facts.gastos_comunes)) attrs.push('Gastos comunes informados: $'+fmt(facts.gastos_comunes)+' (sujetos a actualización)');
-            return {reference,origin,attributes:attrs.length ? attrs.map(x=>'• '+x).join('\n') : 'Puedes revisar las características y fotografías en la ficha.'};
+            return {reference,origin,attributes:attrs.length ? attrs.map(x=>'• '+x).join('\n') : (data.publicContactUrl ? 'Puedes revisar las características y fotografías en la ficha.' : 'Puedo confirmar las características específicas que te interesen.')};
         }
 
         function pilotResolveContext(text, operation, publicUrl, data = {}) {
@@ -6068,8 +6070,10 @@
                 [leadData.execName, '[[ejecutivo]]'], [(leadData.execName || '').split(' ')[0], '[[ejecutivo]]'],
                 [leadData.comuna, '[[comuna]]']];
             if (window.crmWhatsappComposerPilot === true) {
+                const context = pilotPublicContext(leadData,pilotDetectedOperation(leadData));
+                mappings.unshift([context.reference,'[[referencia]]'],[context.origin,'[[origen]]'],[context.attributes,'[[atributos]]'],[pilotGreeting(),'[[saludo]]']);
                 const sender = leadData.senderName || leadData.execName;
-                if (sender) { mappings[3] = [sender,'[[ejecutivo]]']; mappings[4] = [sender.split(' ')[0],'[[ejecutivo]]']; }
+                if (sender) { mappings.splice(7,2,[sender,'[[ejecutivo]]'],[sender.split(' ')[0],'[[ejecutivo]]']); }
                 if (leadData.propiedad && /^\d+$/.test(leadData.propiedad)) mappings.push([leadData.propiedad,'[[propiedad]]']);
                 if (leadData.contactOperation === 'venta') mappings.push(['en venta','[[operacion]]']);
                 if (leadData.contactOperation === 'arriendo') mappings.push(['en arriendo','[[operacion]]']);

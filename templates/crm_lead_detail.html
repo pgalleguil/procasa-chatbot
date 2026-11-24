@@ -1344,6 +1344,12 @@
             padding: 12px;
         }
 
+        #commModal.theme-wa #commModalDialog { max-width: 860px; }
+        #commModal.theme-wa .comm-stage-tabs { flex-wrap: wrap; gap: .35rem; white-space: normal; }
+        #commModal.theme-wa .templates-list { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); max-height: 245px; }
+        #commModal.theme-wa .tpl-preview { white-space: normal; max-width: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        #commModal.theme-wa #commMessage { min-height: 160px; }
+        #commModal.theme-wa .template-card:focus-visible { outline: 2px solid var(--accent); }
         #commModal .modal-content {
             background-color: var(--bg-card);
             border: 1px solid var(--border-color);
@@ -3645,6 +3651,31 @@
                 </div>
                 <div class="modal-body">
                     <div class="comm-stage-tabs modern-scrollbar" id="commTabs"></div>
+                    <div id="waComposerTools" class="d-none mb-3">
+                        <div class="d-flex flex-wrap gap-2">
+                            <input type="search" class="form-control form-control-sm" id="waTemplateSearch" placeholder="Buscar mensaje por contexto…" aria-label="Buscar plantillas">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="waNewTemplate">Crear plantilla personal</button>
+                        </div>
+                        <div class="small text-secondary mt-2" id="waTemplateStatus" role="status" aria-live="polite"></div>
+                    </div>
+                    <div id="waPersonalEditor" class="d-none border rounded p-3 mb-3">
+                        <h6>Guardar plantilla personal</h6>
+                        <p class="small text-secondary">Se guarda para tu cuenta. Usa variables reutilizables, no datos particulares de un cliente.</p>
+                        <label for="waPersonalTitle" class="data-label">Nombre de plantilla</label>
+                        <input id="waPersonalTitle" class="form-control form-control-sm mb-2" maxlength="70">
+                        <label for="waPersonalCategory" class="data-label">Contexto</label>
+                        <select id="waPersonalCategory" class="form-select form-select-sm mb-2">
+                            <option value="stage1">Primer contacto</option><option value="stage2">Interés activo</option>
+                            <option value="stage3">Visita</option><option value="stage4">Post visita</option>
+                            <option value="stage5">Oferta</option><option value="stage6">Seguimiento</option>
+                        </select>
+                        <div id="waVariableButtons" class="d-flex flex-wrap gap-1 mb-2"></div>
+                        <textarea id="waPersonalBody" class="form-control mb-2" rows="5" maxlength="2000" aria-label="Texto reutilizable"></textarea>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button type="button" id="waSavePersonal" class="btn btn-primary btn-sm">Guardar plantilla</button>
+                            <button type="button" id="waCancelPersonal" class="btn btn-outline-secondary btn-sm">Cerrar editor</button>
+                        </div>
+                    </div>
 
                     <div id="emailSubjectContainer" class="mb-3 d-none">
                         <label class="data-label mb-1">Asunto:</label>
@@ -3726,8 +3757,15 @@
 
                     <!-- STANDARD MESSAGE CONTAINER -->
                     <div id="messageContainer">
-                        <label class="data-label mb-1">Mensaje:</label>
-                        <textarea class="form-control modern-scrollbar" id="commMessage" rows="5"></textarea>
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                            <label for="commMessage" class="data-label mb-0">Mensaje editable</label>
+                            <div id="waDraftTools" class="d-none d-flex gap-1 flex-wrap">
+                                <button type="button" id="waInsertProperty" class="btn btn-outline-success btn-sm">Insertar ficha</button>
+                                <button type="button" id="waSaveDraft" class="btn btn-outline-primary btn-sm">Guardar como plantilla</button>
+                            </div>
+                        </div>
+                        <textarea class="form-control modern-scrollbar" id="commMessage" rows="7" placeholder="Selecciona un mensaje o escribe aquí…"></textarea>
+                        <div id="waPropertyHint" class="d-none small mt-2" role="status" aria-live="polite"></div>
                         <div id="crmWaFallbackNotice" class="small mt-2 d-none" role="status" aria-live="polite"></div>
                     </div>
                 </div>
@@ -3998,6 +4036,7 @@
             telefono: "{{ lead.phone }}",
             email: "{{ lead.email }}",
             propiedad: "{{ lead.datos_propiedad.codigo }}",
+            publicContactUrl: {{ (lead.datos_propiedad.public_contact_url or "") | tojson }},
             direccion: "{{ lead.datos_propiedad.calle }}",
             comuna: "{{ lead.datos_propiedad.comuna }}",
             precio: "{{ lead.datos_propiedad.precio_uf }}",
@@ -4498,10 +4537,13 @@
                 ],
                 data: {
                     stage1: [
-                        { label: "🤖 Solicitud Visita", channel: "wa", text: "Hola [[nombre]] 👋\nSoy [[ejecutivo]] de Procasa.\n\nRecibí tu solicitud de visita para la propiedad en [[comuna]].\nYa tengo tus datos registrados 👍\n\nCoordinemos horario.\n¿Te acomoda más mañana o pasado?" },
-                        { label: "🤖 Solicitud Visita (Alt)", channel: "wa", text: "Hola [[nombre]], vi que solicitaste agendar visita para [[propiedad]].\n\nPerfecto, tengo disponibilidad [[día]] a las [[hora]].\n¿Te sirve?" },
-                        { label: "🤖 Datos Incompletos", channel: "wa", text: "Hola [[nombre]] 👋\nSoy [[ejecutivo]] de Procasa.\n\nVi que solicitaste visita para la propiedad en [[comuna]].\n\nPara generar la orden de visita necesito completar:\n✔ Nombre completo\n✔ RUT\n\nCuando me los envíes coordinamos de inmediato." },
-                        { label: "🤖 Más Información", channel: "wa", text: "Hola [[nombre]] 👋\nSoy [[ejecutivo]] de Procasa.\n\nVi que solicitaste más información sobre la propiedad en [[comuna]].\n\nCuéntame, ¿qué aspecto te interesa revisar con más detalle?\nPrecio, gastos comunes, entorno, financiamiento?" },
+                        {"label":"Consulta general","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Recibí tu consulta por esta propiedad.\n\n[[enlace]]\n\n¿Qué información te gustaría conocer? ¿O prefieres coordinar una visita?"},
+                        {"label":"Solicitud de visita","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Recibí tu solicitud para visitar esta propiedad en [[comuna]].\n\n[[enlace]]\n\n¿Qué día y horario te acomodaría? Revisaré la disponibilidad."},
+                        {"label":"Consulta de arriendo","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Recibí tu consulta por esta propiedad.\n\n[[enlace]]\n\n¿Quieres revisar los requisitos de arriendo o coordinar una visita?"},
+                        {"label":"Consulta de compra","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Te contacto por esta propiedad.\n\n[[enlace]]\n\n¿Te interesa conocer más detalles, revisar condiciones de compra o visitarla?"},
+                        {"label":"Completar datos para visita","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Recibí tu solicitud de visita.\n\n[[enlace]]\n\n¿Sigues interesado/a en esta propiedad? Podemos revisar los datos necesarios para coordinarla."},
+                        {"label":"Cliente busca alternativas","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Quiero ayudarte a encontrar la propiedad que buscas.\n\n¿Qué comunas, presupuesto y características son prioritarias para ti?","omitPropertyLink":true},
+                        {"label":"Propiedad no disponible","channel":"wa","text":"Hola [[nombre]], soy [[ejecutivo]] de PROCASA. Te escribo por tu consulta.\n\n¿Quieres que te ayude a buscar alternativas similares? Cuéntame qué características y presupuesto tienes en mente.","omitPropertyLink":true},
                         { label: "📩 Confirmación Visita", channel: "email", subject: "Confirmación de Visita – [[propiedad]]", text: "[[nombre completo]],\n\nConfirmamos la visita a la propiedad ubicada en [[direccion]], [[comuna]].\n\nFecha: [[día]]\nHora: [[hora]]\n\nSus datos han sido correctamente registrados para la orden de visita.\n\nQuedo atento/a ante cualquier ajuste.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" },
                         { label: "📩 Datos para Visita", channel: "email", subject: "Información requerida para visita – [[propiedad]]", text: "[[nombre]],\n\nPara poder coordinar la visita solicitada, necesitamos completar sus datos para el registro correspondiente.\n\nAgradeceré nos indique:\n- Nombre completo\n- RUT\n\nQuedo atento/a para coordinar en cuanto recibamos esta información.\n\nSaludos,\n[[ejecutivo]]\nProcasa" },
                         { label: "📩 Información Detallada", channel: "email", subject: "Información detallada – [[propiedad]]", text: "[[nombre]],\n\nAdjunto encontrará la información detallada de la propiedad ubicada en [[direccion]].\n\nSi desea coordinar visita o revisar condiciones de financiamiento, quedo atento/a.\n\nSaludos cordiales,\n[[ejecutivo]]\nProcasa" }
@@ -4570,6 +4612,11 @@
         let currentCommChannel = 'wa';
         let currentTemplateLabel = "Mensaje Manual";
         let originalTemplateText = "";
+        let personalLibrary = {version: 0, templates: []};
+        let personalLibraryReady = false;
+        let personalEditingId = null;
+        let personalLibraryLoading = false;
+        let personalSaving = false;
 
 
         // --- LÓGICA CRM (CAPTURA DE DATOS COMPLETA) ---
@@ -5354,6 +5401,13 @@
             currentCommChannel = newChannel;
             currentTemplateLabel = "Directo / Manual";
             originalTemplateText = "";
+            document.getElementById('waTemplateSearch').value = '';
+            document.getElementById('waPersonalEditor').classList.add('d-none');
+            const personalMode = target === 'lead' && newChannel === 'wa';
+            document.getElementById('waComposerTools').classList.toggle('d-none', !personalMode);
+            document.getElementById('waDraftTools').classList.toggle('d-none', !personalMode);
+            document.getElementById('waPropertyHint').classList.toggle('d-none', !personalMode);
+            if (personalMode) refreshPersonalLibrary();
 
             // Logging moved to button click to avoid spam ("WhatsApp Iniciado" garbage)
             // logAction(logType, { target: target, channel: defaultChannel }, target);
@@ -5393,7 +5447,7 @@
             }
 
             renderCommTabs(target);
-            const firstTabId = commTemplates[target].tabs[0].id; // Reset to first tab
+            const firstTabId = personalMode ? 'stage1' : commTemplates[target].tabs[0].id;
             loadTemplates(target, firstTabId);
 
             new bootstrap.Modal(document.getElementById('commModal')).show();
@@ -5428,6 +5482,7 @@
             if (msgInput && !msgInput.dataset.listener) {
                 msgInput.addEventListener('input', () => {
                     window.crmExecutiveOutboundAttemptKey = null;
+                    updatePropertyHint();
                     // Read the current modal target at event time. Capturing the
                     // first open's `target` could redirect a later message to the
                     // previous recipient after switching between lead and owner.
@@ -5445,8 +5500,14 @@
         function renderCommTabs(target) {
             const tabsContainer = document.getElementById('commTabs');
             tabsContainer.innerHTML = "";
-            commTemplates[target].tabs.forEach((tab, index) => {
+            const tabs = target === 'lead' && currentCommChannel === 'wa'
+                ? [{id: 'stage1', label: 'Primer contacto'}, {id: 'personal', label: 'Mis plantillas'},
+                   ...commTemplates[target].tabs.filter(t => t.id !== 'stage1' && t.id !== 'recommendation'),
+                   {id: 'recommendation', label: 'Recomendador'}]
+                : commTemplates[target].tabs;
+            tabs.forEach((tab, index) => {
                 const btn = document.createElement('button');
+                btn.type = 'button';
                 btn.className = `stage-tab ${index === 0 ? 'active' : ''}`;
                 btn.innerText = tab.label;
                 btn.onclick = (e) => loadTemplates(target, tab.id, e.target);
@@ -5463,8 +5524,8 @@
                 document.querySelectorAll('.stage-tab').forEach(el => el.classList.remove('active'));
                 btnElement.classList.add('active');
 
-                // UX FIX: Clear message when explicitly clicking a different stage tab
-                document.getElementById('commMessage').value = "";
+                // Keep the draft when browsing WhatsApp templates for a lead.
+                if (!(target === 'lead' && currentCommChannel === 'wa')) document.getElementById('commMessage').value = "";
                 if (currentCommChannel === 'email') {
                     document.getElementById('emailSubject').value = "Consulta Propiedad " + leadData.propiedad;
                 } else {
@@ -5477,6 +5538,9 @@
             const tplList = document.getElementById('templateList');
             const msgContainer = document.getElementById('messageContainer');
             const footerBtn = document.getElementById('btnSendComm');
+            const personalMode = target === 'lead' && currentCommChannel === 'wa';
+            document.getElementById('waComposerTools').classList.toggle('d-none', !personalMode || category === 'recommendation');
+            if (category === 'recommendation') document.getElementById('waPersonalEditor').classList.add('d-none');
 
             if (category === 'recommendation') {
                 // UX FIX: Reset search whenever entering the recommendation tab
@@ -5495,8 +5559,16 @@
 
             const container = document.getElementById('templateList');
             container.innerHTML = "";
-            const allTemplates = commTemplates[target].data[category] || [];
-            const filteredTemplates = allTemplates.filter(t => t.channel === currentCommChannel);
+            const query = personalMode ? document.getElementById('waTemplateSearch').value.trim().toLowerCase() : '';
+            const personal = personalMode ? personalLibrary.templates.map(t => ({
+                label: t.title, text: t.body, channel: 'wa', category: t.category, personalId: t.id
+            })) : [];
+            const allTemplates = category === 'personal' ? personal :
+                query ? [...Object.entries(commTemplates[target].data).flatMap(([cat, entries]) =>
+                    entries.map(t => ({...t, category: cat}))), ...personal] :
+                [...(commTemplates[target].data[category] || []), ...personal.filter(t => t.category === category)];
+            const filteredTemplates = allTemplates.filter(t => t.channel === currentCommChannel &&
+                (!query || (t.label + ' ' + t.text).toLowerCase().includes(query)));
 
             if (filteredTemplates.length === 0) {
                 container.innerHTML = `<div class="text-center p-3 text-secondary small">No hay plantillas disponibles para este canal en esta etapa.</div>`;
@@ -5506,19 +5578,42 @@
             filteredTemplates.forEach(tpl => {
                 const card = document.createElement('div');
                 card.className = 'template-card';
+                card.setAttribute('role', 'button');
+                card.tabIndex = 0;
+                card.addEventListener('keydown', event => {
+                    if (event.target === card && ['Enter', ' '].includes(event.key)) {event.preventDefault(); card.click();}
+                });
                 card.onclick = () => {
                     document.querySelectorAll('.template-card').forEach(c => c.classList.remove('selected'));
                     card.classList.add('selected');
                     currentTemplateLabel = tpl.label;
-                    selectTemplate(tpl.text, tpl.subject || "");
+                    selectTemplate(tpl.text, tpl.subject || "", tpl.omitPropertyLink ? "no-property" : (tpl.category || category));
                 };
                 const icon = currentCommChannel === 'wa' ? '<i class="fa-brands fa-whatsapp text-success"></i>' : '<i class="fa-regular fa-envelope text-primary"></i>';
-                card.innerHTML = `<div class="tpl-info"><span class="tpl-title">${tpl.label}</span><span class="tpl-preview">${tpl.text.substring(0, 40)}...</span></div>${icon}`;
+                const info = document.createElement('div');
+                info.className = 'tpl-info';
+                const title = document.createElement('span');
+                title.className = 'tpl-title'; title.textContent = tpl.label;
+                const preview = document.createElement('span');
+                preview.className = 'tpl-preview'; preview.textContent = tpl.text.replace(/\n/g, ' ').slice(0, 100);
+                info.append(title, preview); card.append(info);
+                if (tpl.personalId) {
+                    const edit = document.createElement('button');
+                    edit.type = 'button'; edit.className = 'btn btn-sm btn-outline-secondary ms-2'; edit.textContent = 'Editar';
+                    edit.onclick = e => {e.stopPropagation(); openPersonalEditor(tpl.personalId);};
+                    const del = document.createElement('button');
+                    del.type = 'button'; del.className = 'btn btn-sm btn-outline-danger ms-1'; del.textContent = 'Eliminar';
+                    del.onclick = e => {e.stopPropagation(); if (confirm('¿Eliminar esta plantilla personal?')) persistPersonalLibrary(personalLibrary.templates.filter(t => t.id !== tpl.personalId));};
+                    const actions = document.createElement('div'); actions.className = 'd-flex flex-shrink-0'; actions.append(edit, del); card.append(actions);
+                } else {
+                    const badge = document.createElement('span');
+                    badge.className = 'small text-secondary'; badge.textContent = 'Usar'; card.append(badge);
+                }
                 container.appendChild(card);
             });
         }
 
-        function selectTemplate(text, subject = "") {
+        function selectTemplate(text, subject = "", templateCategory = semState.currentCategory) {
             const safeName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre.split(' ')[0] : "";
             const fullName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre : "Estimado Cliente";
             const safeExec = (leadData.execName && leadData.execName !== "None") ? leadData.execName.split(' ')[0] : "Agente";
@@ -5532,7 +5627,8 @@
                 .replace(/\[\[nombre\]\]/g, safeName || "Estimado(a)")
                 .replace(/\[\[nombre completo\]\]/g, fullName)
                 .replace(/\[\[ejecutivo\]\]/g, safeExec)
-                .replace(/\[\[owner_name\]\]/g, leadData.ownerName.split(' ')[0])
+                .replace(/\[\[owner_name\]\]/g, (leadData.ownerName || '').split(' ')[0])
+                .replace(/\[\[enlace\]\]/g, leadData.publicContactUrl || '')
                 .replace(/\[\[propiedad\]\]/g, safeProp)
                 .replace(/\[\[direccion\]\]/g, safeDir)
                 .replace(/\[\[comuna\]\]/g, safeComuna)
@@ -5543,6 +5639,9 @@
             // Cleanup potentially double spaces if name was empty
             processedText = processedText.replace(/  +/g, ' ');
 
+            if (currentCommTarget === 'lead' && currentCommChannel === 'wa' && templateCategory === 'stage1') {
+                processedText = addPropertyLink(processedText);
+            }
             originalTemplateText = processedText;
             document.getElementById('commMessage').value = processedText;
 
@@ -5553,11 +5652,14 @@
                 document.getElementById('emailSubject').value = processedSubject;
             }
 
+            window.crmExecutiveOutboundAttemptKey = null;
+            updatePropertyHint();
             // Force UI update so button turns green immediately
             updateSendLink(currentCommTarget, semState.currentCategory);
         }
 
         function updateSendLink(target, category) {
+            updatePropertyHint();
             const btn = document.getElementById('btnSendComm');
             const msgBody = document.getElementById('commMessage');
             const phone = target === 'lead' ? leadData.telefono : leadData.ownerPhone;

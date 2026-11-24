@@ -289,3 +289,28 @@ def test_crm_get_preflight_event_is_the_trigger_not_a_timer():
     assert "asyncio.create_task(notify_pablo_on_crm_failure(" in text
     assert "_queue_operator_alert(user=user, reason=\"session_unavailable\")" in text
     assert "mark_event_recovered(db, session_id=profile[\"session\"])" in text
+
+
+@pytest.mark.parametrize("reason", ["invalid_request", "invalid_recipient", "provider_rejected",
+                                    "subscription", "rate_limit", "delivery_unconfirmed"])
+def test_post_send_alert_is_per_lead_not_session_health(db, monkeypatch, reason):
+    monkeypatch.setenv(alerts.FLAG, "1")
+    calls = []
+    async def send(number, message):
+        calls.append((number, message))
+        return {"success": True, "provider_message_id": "office-receipt"}
+    lead_id = str(ObjectId())
+    async def notify(lead):
+        return await alerts.notify_pablo_on_crm_failure(
+            session_id="133527", executive_name="Paula Morales",
+            reason=reason, lead_id=lead, db=db, send=send)
+    assert asyncio.run(notify(lead_id)) == "accepted"
+    alerts.mark_event_recovered(db, session_id="133527")
+    assert asyncio.run(notify(lead_id)) == "already_notified"
+    assert asyncio.run(notify(str(ObjectId()))) == "accepted"
+    assert len(calls) == 2
+    assert all(number == alerts.PABLO_PHONE for number, _ in calls)
+    assert reason in calls[0][1]
+    assert lead_id in calls[0][1]
+    assert db[alerts.STATE_COLLECTION].count_documents({
+        "alert_provider_message_id": "office-receipt"}) == 2

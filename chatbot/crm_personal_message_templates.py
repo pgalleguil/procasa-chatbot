@@ -35,7 +35,7 @@ def validate_template(data, *, pilot=False):
         raise ValueError("Usa [[enlace]] y evita teléfonos o enlaces fijos de clientes")
     if set(re.findall(r"\[\[([^\[\]]+)\]\]", body)) - (VARIABLES | {"operacion", "consulta", "saludo", "origen", "referencia", "atributos", "visita_paso", "postulacion_paso", "costos", "financiamiento_paso", "orden_visita", "oferta_paso", "seguimiento_info", "busqueda_paso", "primer_paso", "primera_ficha"} if pilot else VARIABLES):
         raise ValueError("Variable no admitida")
-    if pilot and category == "stage1" and "[[enlace]]" not in body:
+    if pilot and category == "stage1" and "[[enlace]]" not in body and "[[primera_ficha]]" not in body:
         body = body.rstrip() + "\n\n[[enlace]]"
         if len(body) > 2000:
             raise ValueError("El mensaje de primer contacto debe incluir el enlace automático")

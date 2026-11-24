@@ -344,12 +344,28 @@ def validate_sla_short_link(
     )
 
 
+def build_assignment_notification_short_url(
+    db: Any, *, lead_id: Any, recipient_user_id: Any, assignment_cycle_id: Any,
+) -> str:
+    """Issue a link for the exact notification identity, never a newer cycle.
+
+    Reuse the same owner/pointer validation as the web route before creating
+    the mapping. An old queued notification cannot obtain a new owner's link.
+    """
+    identity = dict(lead_id=lead_id, recipient_user_id=recipient_user_id,
+                    assignment_cycle_id=assignment_cycle_id)
+    token = issue_sla_cycle_link_token(**identity)
+    validate_sla_cycle_link(db, token, authenticated_user_id=recipient_user_id)
+    ensure_sla_short_link(db, **identity, policy_version="crm_initial_assignment_v1")
+    return build_sla_short_url(**identity)
+
+
 __all__ = [
     "INVALID_LINK_CODE", "SLA_EXPIRED_PENDING_REASSIGNMENT", "LINK_PATH",
     "SHORT_LINK_COLLECTION", "SHORT_LINK_PATH", "SHORT_LINK_VERSION",
     "SHORT_ID_LENGTH", "SlaCycleLinkConfigurationError",
     "SlaCycleLinkError", "SlaCycleLinkResolution", "build_sla_cycle_url",
-    "build_sla_short_url", "ensure_sla_short_link", "ensure_sla_short_link_async", "issue_sla_short_id",
+    "build_assignment_notification_short_url", "build_sla_short_url", "ensure_sla_short_link", "ensure_sla_short_link_async", "issue_sla_short_id",
     "issue_sla_cycle_link_token", "validate_sla_cycle_link", "validate_sla_short_link",
     "verify_sla_cycle_link_token",
 ]

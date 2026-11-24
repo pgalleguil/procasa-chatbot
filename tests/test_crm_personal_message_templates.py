@@ -115,13 +115,15 @@ def test_legacy_composer_restored_and_pilot_isolated():
     assert "document.getElementById('commMessage').rows = active ? 12 : 5" in html
 
 
-def test_pablo_only_pilot_and_private_favorites():
+def test_team_composer_and_private_favorites():
     from chatbot.crm_personal_message_templates import (
-        composer_pilot_enabled, PABLO_COMPOSER_PILOT_USER_ID,
+        composer_pilot_enabled, PABLO_COMPOSER_PILOT_USER_ID, COMPOSER_TEAM_USER_IDS,
     )
     from bson import ObjectId
     uid = PABLO_COMPOSER_PILOT_USER_ID
     assert composer_pilot_enabled(ObjectId(uid))
+    assert len(COMPOSER_TEAM_USER_IDS) == 6
+    assert all(composer_pilot_enabled(ObjectId(x)) for x in COMPOSER_TEAM_USER_IDS)
     assert not composer_pilot_enabled("Pablo Galleguillos")
     assert not composer_pilot_enabled(None)
     assert not composer_pilot_enabled("other")
@@ -132,6 +134,12 @@ def test_pablo_only_pilot_and_private_favorites():
     b = write_library(db, uid, {"version": 1, "templates": a["templates"], "favorites": ["builtin:1", key]})
     assert b["favorites"] == ["builtin:1", key]
     assert read_library(db, uid) == b
+    for executive_id in COMPOSER_TEAM_USER_IDS - {uid}:
+        assert read_library(db, executive_id) == {"version": 0, "templates": [], "favorites": []}
+        private = write_library(db, executive_id, {"version": 0, "templates": [entry(body="Mensaje propio [[nombre]]")], "favorites": ["builtin:8"]})
+        assert read_library(db, executive_id) == private
+        assert private["templates"][0]["id"] != a["templates"][0]["id"]
+        assert read_library(db, uid) == b
     assert read_library(db, "other") == {"version": 0, "templates": []}
     with pytest.raises(ValueError):
         write_library(db, "other", {"version": 0, "templates": [], "favorites": ["builtin:1"]})

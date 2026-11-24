@@ -388,6 +388,25 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
     ctx["hot_context"] = notification.get("hot_context") or (
         notification.get("payload") or {}
     ).get("hot_context") or "initial_hot"
+    # Do not take a link from the current context if it belongs to a
+    # newer assignment. Bind the URL to the claimed notification itself.
+    from .crm_sla_cycle_links import (
+        SlaCycleLinkError, build_assignment_notification_short_url,
+    )
+    try:
+        ctx["secure_url"] = build_assignment_notification_short_url(
+            db, lead_id=lead["_id"], recipient_user_id=str(exec_user["_id"]),
+            assignment_cycle_id=notification["assignment_cycle_id"],
+        )
+    except SlaCycleLinkError:
+        finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                         state="suppressed", error="stale_assignment_link", now=current)
+        return {"status": "suppressed", "reason": "stale_assignment_link"}
+    except Exception as exc:
+        logger.exception("[HOT_LINK] Could not persist assignment link")
+        finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
+                         state="failed_retryable", error=type(exc).__name__, now=current)
+        return {"status": "failed_retryable", "error": type(exc).__name__}
     message = build_hot_lead_message(ctx)
 
     logger.info("[HOT_SEND] notif=%s user=%s phone_end=%s",

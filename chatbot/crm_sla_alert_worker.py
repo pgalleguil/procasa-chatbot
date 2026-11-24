@@ -25,7 +25,7 @@ from .crm_metrics import (
 )
 from .crm_sla_alert_evaluator import (
     _is_test_lead, CLOSED_STAGES, EXCLUDED_ORIGINS,
-    alert_level_for_sla_status,
+    alert_level_for_sla_status, is_current_alert_deadline,
 )
 from .crm_sla_alert_repository import (
     COLLECTION, ST_PENDING, ST_PROCESSING, ST_SENT, ST_FAILED_RETRYABLE,
@@ -122,8 +122,9 @@ async def _revalidate(db, alert: dict) -> str | None:
         return f"excluded_cycle_origin:{cycle.get('cycle_origin')}"
 
     temp = resolve_cycle_sla_temperature(cycle=cycle, lead=lead)
+    now = utc_now()
     sla = calculate_cycle_sla(
-        cycle=cycle, lead=lead, now=utc_now(),
+        cycle=cycle, lead=lead, now=now,
         management_results=mgmt, events=events,
     )
     current_level = alert_level_for_sla_status(sla.get("status"), temperature=temp)
@@ -133,6 +134,10 @@ async def _revalidate(db, alert: dict) -> str | None:
         return "sla_not_due_or_insufficient_data"
     if current_level != alert_level:
         return "sla_level_changed"
+    # Recheck the actual deadline immediately before delivery (including old
+    # pending/retryable rows). Never send a historical breached notification.
+    if current_level == "breached" and not is_current_alert_deadline(sla.get("deadline_at"), now):
+        return "historical_deadline"
     return None
 
 

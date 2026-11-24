@@ -389,7 +389,8 @@ def test_pilot_first_contact_guard_precedes_log_and_provider():
     html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
     assert "#commModal.wa-composer-pilot #waInsertProperty, #commModal.wa-composer-pilot #waVariableButtons { display:none !important; }" in html
     assert "pilotDraftCategory = templateCategory" in html
-    assert "pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category)" in html
+    assert "pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category,leadData,pilotSelectedKey)" in html
+    assert 'const safeExec = (execName && execName !== "None") ? execName.trim() : "Agente";' in html
     assert "if (hasMessage && !pilotBlocked && !requiredLinkProblem && !unresolvedPilotFields)" in html
     assert "senderName: {{ (user_name or \"\") | tojson }}" in html
     send = html[html.index("        function updateSendLink("):html.index("        // --- NOTES SYSTEM ---")]
@@ -448,3 +449,17 @@ def test_commercial_context_uses_customer_evidence_and_verified_history():
     assert result["requested_visit"] == ""
     db["universo_cartera_prop360_historial"].update_one({}, {"$set":{"moneda_anterior":"UF"}})
     assert build_pilot_message_context(lead, detail, db, now=now)["price_drop"] is None
+
+
+def test_pilot_intake_channel_uses_real_dialogue():
+    from chatbot.crm_personal_message_templates import build_pilot_message_context
+    db = mongomock.MongoClient()["test"]
+    portal = {"source_type": "prop360", "messages": [{"role": "user", "source": "prop360", "content": "Consulta"}]}
+    ctx = build_pilot_message_context(portal, {}, db)
+    assert ctx["intake"] == "prop360" and not ctx["chatbot_dialogue"]
+    manual = {"source_type": "manual", "messages": [{"role": "user", "source": "executive_whatsapp", "content": "Hola"}]}
+    ctx = build_pilot_message_context(manual, {}, db)
+    assert ctx["intake"] == "manual" and not ctx["chatbot_dialogue"]
+    chat = {"messages": [{"role": "user", "content": "Busco departamento"}, {"role": "assistant", "content": "¿En qué comuna?"}]}
+    assert build_pilot_message_context(chat, {}, db)["chatbot_dialogue"]
+    assert validate_template(entry(body="Hola [[ejecutivo]] [[primera_ficha]] [[primer_paso]]"), pilot=True)["body"].endswith("[[primer_paso]]")

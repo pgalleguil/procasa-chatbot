@@ -126,10 +126,12 @@ def test_message_sent_completes_management_and_attempt_but_not_effective_contact
                          now=local(20, 14))["status"] == "fulfilled"
 
 
-def test_message_sent_creates_follow_up_and_no_sla_after_three_hours():
+def test_message_sent_waits_for_response_without_alarm_or_sla_after_three_hours():
     db, lead, cycle = fixture(); record(db, "MESSAGE_SENT_WAITING_RESPONSE")
     lead, cycle = refreshed(db)
     assert lead["follow_up_required"] is True and lead["follow_up_status"] == "pending"
+    assert not lead.get("next_follow_up_at")
+    assert not db["crm_tasks"].docs
     sla = evaluate_sla_shadow(leads=[lead], cycles=[cycle], users=[{"_id": "user-1", "active": True}],
                               deliveries=[{"state": "sent", "metadata": {"assignment_cycle_id": "cycle-1"}}],
                               as_of=local(20, 14))
@@ -380,3 +382,17 @@ def test_cold_uses_same_management_definition_without_individual_sla():
 
 def test_no_test_uses_a_real_provider():
     assert all("whatsapp_client" not in str(value) for value in (record, fixture, refreshed))
+
+
+def test_followup_alarm_is_optional_and_explicit_date_is_preserved():
+    for result in ("MESSAGE_SENT_WAITING_RESPONSE", "CALL_NO_ANSWER", "EMAIL_SENT"):
+        db, _, _ = fixture()
+        record(db, result)
+        assert not db["crm_tasks"].docs
+        lead, cycle = refreshed(db)
+        assert cycle["sla_first_management_status"] == "completed"
+        assert not lead.get("next_follow_up_at")
+        db, _, _ = fixture()
+        record(db, result, next_at=local(21, 10))
+        assert len(db["crm_tasks"].docs) == 1
+        assert db["crm_tasks"].docs[0]["execute_at"] == local(21, 10)

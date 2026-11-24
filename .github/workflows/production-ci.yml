@@ -124,6 +124,8 @@ jobs:
           - suite: CRM management SLA
             tests: >-
               tests/test_crm_management_sla.py
+              tests/test_assignment_notification_preferences.py
+              tests/test_manual_non_hot_digest.py
               tests/test_crm_admin_cycle_inbox.py
               tests/test_sla_business_minutes.py
               tests/test_business_calendar_fast_span.py

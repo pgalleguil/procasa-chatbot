@@ -55,3 +55,37 @@ def test_sunday_after_hours_notice_does_not_change_sla_calculation():
 
     assert executive_wants_immediate_assignment_notification(db, "mariela-id") is True
     assert calculate_sla(assigned_at=assigned, now=now, temperature="HOT") == expected
+
+
+def test_manual_assignment_honors_opt_in_before_opening_after_close_and_weekend():
+    from chatbot.manual_entry import _manual_assignment_at
+    from chatbot.crm_metrics import commercial_sla_start_at
+    from chatbot.lead_router import get_next_business_slot
+
+    db = _DB([
+        {"_id": "mariela-id", "nombre": "Mariela Arriagada",
+         "notification_preferences": {"assignment_immediate_outside_business_hours": True}},
+        {"_id": "other-id", "nombre": "Otra Ejecutiva"},
+    ])
+    for local_time in (
+        datetime(2026, 11, 24, 8, 44, 15),
+        datetime(2026, 11, 24, 20, 4),
+        datetime(2026, 11, 28, 14, 0),
+        datetime(2026, 11, 24, 12, 0),
+    ):
+        now = CHILE_TZ.localize(local_time)
+        slot = get_next_business_slot(now)
+        opted_in = _manual_assignment_at(db, recipient="mariela-id", now=now, business_slot=slot)
+        ordinary = _manual_assignment_at(db, recipient="other-id", now=now, business_slot=slot)
+        missing = _manual_assignment_at(db, recipient="unknown", now=now, business_slot=slot)
+
+        assert opted_in == now
+        assert ordinary == missing == slot
+        assert commercial_sla_start_at(opted_in) == commercial_sla_start_at(slot)
+
+
+def test_manual_creation_uses_preference_for_both_new_assignment_paths():
+    from pathlib import Path
+
+    source = Path("chatbot/manual_entry.py").read_text(encoding="utf-8")
+    assert source.count("assigned_at = _manual_assignment_at(") == 2

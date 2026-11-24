@@ -253,6 +253,13 @@ def get_real_property_data(db, codigo_propiedad):
     venta = bool(operation.get("venta"))
     arriendo = bool(operation.get("arriendo"))
     operation_label = "Venta y arriendo" if venta and arriendo else ("Venta" if venta else ("Arriendo" if arriendo else prop.get("operacion", "Venta")))
+    # Unlike the legacy display default, the composer must not infer a sale
+    # when the operation is unknown or the property supports both operations.
+    explicit_operation = str(prop.get("operacion") or "").strip().casefold()
+    contact_operation = (
+        "" if venta and arriendo else "venta" if venta else "arriendo" if arriendo
+        else explicit_operation if explicit_operation in {"venta", "arriendo"} else ""
+    )
     calle = prop.get("calle") or location.get("calle") or ""
     numero = prop.get("numeracion") or prop.get("numero") or location.get("numero") or ""
     precio_uf = prop.get("precio_uf") or summary.get("precio_uf")
@@ -267,6 +274,7 @@ def get_real_property_data(db, codigo_propiedad):
         "codigo": prop.get("codigo"),
         "tipo": tipo,
         "operacion": operation_label,
+        "contact_operation": contact_operation,
         "precio_uf": precio_uf if precio_uf is not None else 0,
         "comuna": comuna,
         "region": region,

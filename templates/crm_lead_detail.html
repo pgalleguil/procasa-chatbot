@@ -1363,7 +1363,7 @@
         #commModal.wa-composer-pilot .template-card .tpl-info { min-width:0; flex:1; }
         #commModal.wa-composer-pilot .wa-pilot-action { padding:.2rem .35rem; color:var(--text-secondary); background:transparent; border:0; }
         #commModal.wa-composer-pilot .wa-pilot-action.is-favorite { color:#d4a238; }
-        #commModal.theme-wa.wa-composer-pilot #commMessage { min-height:420px; height:auto; resize:vertical; overflow-y:auto; }
+        #commModal.theme-wa.wa-composer-pilot #commMessage { min-height:max(420px, 52vh); height:auto; resize:vertical; overflow-y:auto; }
         #commModal.wa-composer-pilot #messageContainer .btn-outline-primary, #commModal.wa-composer-pilot #waComposerTools .btn-outline-primary { color:var(--text-primary); border-color:var(--border-color); }
         #commModal.wa-composer-pilot #waInsertProperty:not(:disabled) { color:#39c77a; border-color:#39c77a; }
         #commModal.wa-composer-pilot #waPropertyHint { color:var(--text-secondary); }
@@ -5846,7 +5846,8 @@
             const input = document.getElementById('commMessage');
             if (!input || !pilotComposerActive()) return;
             input.style.height = 'auto';
-            input.style.height = Math.max(window.innerWidth <= 700 ? 300 : 420, input.scrollHeight + 4) + 'px';
+            const minimum = window.innerWidth <= 700 ? 300 : Math.max(420, Math.round(window.innerHeight * 0.52));
+            input.style.height = Math.max(minimum, input.scrollHeight + 4) + 'px';
         }
 
         function configurePilotComposerLayout() {
@@ -5890,7 +5891,7 @@
             if (category === 'stage1') return pilotFirstContactKeys(data);
             if (category === 'stage2') {
                 const visit = pilotVisitLabel(context.visit_at) ? 'builtin:5' : 'builtin:4';
-                const keys = ['builtin:18','builtin:3',visit,'builtin:7','builtin:14','builtin:6'];
+                const keys = pilotHasSpecificProperty(data) ? ['builtin:18','builtin:3',visit,'builtin:7','builtin:14','builtin:6'] : ['builtin:3','builtin:14'];
                 // Requisitos y financiamiento are consolidated in builtin:3.
                 return keys;
             }
@@ -5906,9 +5907,9 @@
             const keys = pilotPrimaryKeys(category,data);
             const primary = [], extra = [];
             for (const tpl of entries) {
-                if (category === 'stage1' && !keys.includes(tpl.key)) continue;
+                if (['stage1','stage2'].includes(category) && !keys.includes(tpl.key)) continue;
                 if (keys.includes(tpl.key) && !pilotTemplateBlockReason(tpl,data)) primary.push(tpl);
-                else extra.push(tpl);
+                else if (category !== 'stage2') extra.push(tpl);
             }
             primary.sort((a,b)=>keys.indexOf(a.key)-keys.indexOf(b.key));
             return {primary,extra};
@@ -6012,7 +6013,7 @@
             const {primary,extra} = pilotPartitionTemplates(allEntries,category,leadData);
             const expanded = pilotExpandedGroups.has(category);
             const entries = expanded ? [...primary,...extra] : primary;
-            if (!allEntries.length) {
+            if (!entries.length) {
                 const empty = document.createElement('span'); empty.className = 'text-secondary small p-2';
                 empty.textContent = 'No hay plantillas en esta sección.'; list.append(empty);
             }
@@ -6046,7 +6047,7 @@
                 }
                 list.append(card);
             }
-            if (extra.length) {
+            if (category !== 'stage2' && extra.length) {
                 const toggle = document.createElement('button');
                 toggle.type = 'button';
                 toggle.className = 'btn btn-sm btn-outline-secondary w-100 mt-2';

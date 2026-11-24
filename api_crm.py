@@ -288,7 +288,8 @@ def get_real_property_data(db, codigo_propiedad):
         "precio_arriendo": operation.get("precio_arriendo") or {},
         "gastos_comunes": operation.get("gastos_comunes"),
         "features": [x for x in features if isinstance(x, str) and x in {
-            "has_terrace", "has_patio", "bodega", "piscina", "gimnasio", "jardin"
+            "has_terrace", "has_patio", "bodega", "piscina", "gimnasio", "jardin",
+            "has_balcony", "has_security", "has_guest_parking", "jardinformado", "has_air_conditioning", "has_common_laundry"
         }],
     }
     return {
@@ -2290,6 +2291,7 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
         "last_intent": lead.get("last_intent"),
         "last_intent_at": lead.get("last_intent_at"),
         "assignment_cycle_id": str(active_cycle.get("assignment_cycle_id") or "") if active_cycle else "",
+        "contact_visit_confirmed_in_cycle": bool(active_cycle and active_cycle.get("last_management_result") == "VISIT_SCHEDULED"),
         "ejecutivo_asignado": ejec_asignado # Requerido para RBAC en detalle
     }
 

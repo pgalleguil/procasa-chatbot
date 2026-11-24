@@ -97,3 +97,21 @@ def test_api_scopes_library_to_authenticated_user_and_keeps_provider_logic():
     assert 'write_library(_sync_db(), user["_id"], payload)' in route
     assert "run_in_executor" in route
     assert "send_whatsapp" not in route
+
+
+def test_lead_whatsapp_commercial_groups_are_compact_and_complete():
+    import json
+    html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    lead_templates = html[html.index("const commTemplates = {"):html.index("            owner: {", html.index("const commTemplates = {"))]
+    rows = [json.loads(line.strip().rstrip(",")) for line in lead_templates.splitlines()
+            if '"channel":"wa"' in line]
+    assert len(rows) == 16
+    assert len({r["label"] for r in rows}) == len(rows)
+    assert all("[[enlace]]" in r["text"] and "[[nombre]]" in r["text"] for r in rows[:4])
+    assert all("[[día]]" not in r["text"] and "[[hora]]" not in r["text"] for r in rows)
+    assert all("RUT" not in r["text"] and "10:00" not in r["text"] for r in rows[:4])
+    tabs = html[html.index("        function renderCommTabs("):html.index("        function loadTemplates(")]
+    for name in ("Primer contacto", "Gestionar interés y visitas", "Seguimiento", "Mis plantillas", "Recomendador"):
+        assert name in tabs
+    assert "commTemplates[target].tabs.filter" not in tabs
+    assert "['stage2', 'stage3', 'stage4', 'stage5']" in html

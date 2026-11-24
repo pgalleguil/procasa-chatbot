@@ -2,7 +2,7 @@
 
 Runs every PROP360_POLL_INTERVAL_SECONDS. Each cycle:
   1. Logs into Prop360 (fresh session per cycle).
-  2. Fetches leads from the last PROP360_POLL_WINDOW_HOURS (default 24h).
+  2. Fetches leads from the last PROP360_POLL_WINDOW_HOURS (minimum 7 days).
   3. Skips internal executives and properties not in the active cartera.
   4. Delegates identity/dedup to ingest_lead_event (phone/email lookup on the
      `leads` collection), so WhatsApp/manual/Prop360 converge on one document.
@@ -58,7 +58,7 @@ def _interval_seconds() -> int:
 
 
 def _window_hours() -> int:
-    return int(os.getenv("PROP360_POLL_WINDOW_HOURS", "24"))
+    return max(168, int(os.getenv("PROP360_POLL_WINDOW_HOURS", "168")))
 
 
 def _credentials() -> tuple:
@@ -85,7 +85,8 @@ def _active_cartera_codes() -> set:
 
 
 def _from_date_iso(window_hours: int) -> str:
-    start = datetime.now() - timedelta(hours=window_hours)
+    from .constants import CHILE_TZ
+    start = datetime.now(CHILE_TZ) - timedelta(hours=window_hours)
     return start.strftime("%Y-%m-%dT00:00:00")
 
 
@@ -159,6 +160,8 @@ def run_prop360_poll_cycle(db=None) -> dict:
         "skipped_no_contact": 0,
         "skipped_property_inactive": 0,
         "skipped_stale_id": 0,
+        "skipped_confirmed_event": 0,
+        "recovery_candidates_below_watermark": 0,
         "inactive_property_events_processed": 0,
         "unprocessed_events": 0,
     }
@@ -210,23 +213,25 @@ def run_prop360_poll_cycle(db=None) -> dict:
             checkpoint_blocked = True
             continue
 
-        # Monotonic idContacto watermark: leads already seen before are skipped
-        # without any DB lookup. Falls back to the identity dedup below when the
-        # checkpoint is missing or the id is unknown.
-        # The ingest ledger allows incomplete work to resume even if the ID is
-        # already below the saved watermark.
+        # The watermark is telemetry, not evidence that an event was ingested.
+        # Late arrivals and gaps below it must still be processed.
         ledger = db["lead_ingest_events"].find_one({
             "source_system": "prop360", "source_event_id": str(cid),
         }, {"status": 1}) or {}
-        resumable = ledger.get("status") in {
+        status = ledger.get("status")
+        resumable = status in {
             "processing", "lead_persisted", "commercial_cycle_created", "notification_enqueued",
         }
-        if last_id is not None and cid <= last_id:
-            if not resumable:
+        if status in {
+            "completed", "created", "updated", "opportunity_review_required",
+            "assignment_review_required",
+        }:
+            metrics["skipped_confirmed_event"] += 1
+            if last_id is not None and cid <= last_id:
                 metrics["skipped_stale_id"] += 1
-                if cid > max_confirmed_id:
-                    max_confirmed_id = cid
-                continue
+            if not checkpoint_blocked and cid > max_confirmed_id:
+                max_confirmed_id = cid
+            continue
 
         if _is_internal(norm):
             metrics["skipped_internal"] += 1
@@ -245,6 +250,9 @@ def run_prop360_poll_cycle(db=None) -> dict:
             # A stale availability flag must not discard a legitimate lead.
             # Keep the property status as CRM context and ingest the event.
             metrics["inactive_property_events_processed"] += 1
+
+        if not ledger and last_id is not None and cid <= last_id:
+            metrics["recovery_candidates_below_watermark"] += 1
 
         try:
             outcome = extractor.process_lead(raw, resume_incomplete_event=resumable)
@@ -276,19 +284,25 @@ def run_prop360_poll_cycle(db=None) -> dict:
             max_confirmed_id = cid
 
     metrics["finished_at"] = datetime.now().isoformat()
+    metrics["status"] = "partial_error" if metrics["errors"] or metrics["unprocessed_events"] else "ok"
     _save_checkpoint(extractor, metrics, db, max_confirmed_id=max_confirmed_id)
-    _persist_cycle_status("ok", {
+    _persist_cycle_status(metrics["status"], {
+        "reason": None, "traceback": None,
         "fetched": metrics["fetched"],
+        "skipped_confirmed_event": metrics["skipped_confirmed_event"],
+        "recovery_candidates_below_watermark": metrics["recovery_candidates_below_watermark"],
+        "unprocessed_events": metrics["unprocessed_events"],
         "created": metrics["leads_created"],
         "updated": metrics["leads_updated"],
         "errors": metrics["errors"],
     })
     logger.info(
         "[PROP360_POLL] cycle done: fetched=%s created=%s updated=%s "
-        "dupes=%s stale_id=%s notif=%s errors=%s",
+        "dupes=%s stale_id=%s notif=%s errors=%s recovered_candidates=%s unprocessed=%s",
         metrics["fetched"], metrics["leads_created"], metrics["leads_updated"],
         metrics["duplicates_skipped"], metrics["skipped_stale_id"],
         metrics["notifications_enqueued"], metrics["errors"],
+        metrics["recovery_candidates_below_watermark"], metrics["unprocessed_events"],
     )
     return metrics
 

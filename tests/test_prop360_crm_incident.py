@@ -295,7 +295,7 @@ def _prepare_poll_cycle(monkeypatch, leads, active_codes, outcomes, last_id=9):
     monkeypatch.setattr(extractor_prop360, "Prop360Extractor", FakeExtractor)
     monkeypatch.setattr(prop360_poll_loop, "_feature_enabled", lambda: True)
     monkeypatch.setattr(prop360_poll_loop, "_credentials", lambda: ("email", "password"))
-    monkeypatch.setattr(prop360_poll_loop, "_window_hours", lambda: 48)
+    monkeypatch.setattr(prop360_poll_loop, "_window_hours", lambda: 72)
     monkeypatch.setattr(prop360_poll_loop, "_from_date_iso", lambda _hours: "2026-10-01")
     monkeypatch.setattr(prop360_poll_loop, "_active_cartera_codes", lambda: active_codes)
     monkeypatch.setattr(prop360_poll_loop, "_last_contacto_id", lambda _db: last_id)
@@ -600,3 +600,67 @@ def test_prop360_notice_cannot_become_hot_from_template_keywords():
         event, message=event.message, contact_date="2026-11-18T14:08:08",
         portal_source="Yapo", now_iso="2026-11-18T20:00:00+00:00",
     ) is None
+
+
+def test_poll_recovers_missing_older_events_without_replaying_confirmed_ones(monkeypatch):
+    leads = [
+        {"idContacto": 7, "codigo": "17252", "contFono": "+56911111111"},
+        {"idContacto": 8, "codigo": "17252", "contFono": "+56922222222"},
+        {"idContacto": 9, "codigo": "17252", "contFono": "+56933333333"},
+        {"idContacto": 10, "codigo": "17252", "contFono": "+56944444444"},
+        {"idContacto": 11, "codigo": "17252", "contFono": "+56955555555"},
+    ]
+    db, processed, checkpoints = _prepare_poll_cycle(
+        monkeypatch, leads, {"17252"}, {7: "created", 9: "resumed"}, last_id=10,
+    )
+    for cid, status in [(8, "completed"), (9, "lead_persisted"),
+                        (10, "assignment_review_required"), (11, "updated")]:
+        db["lead_ingest_events"].insert_one({
+            "source_system": "prop360", "source_event_id": str(cid), "status": status,
+        })
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+    assert processed == [(7, "17252", False), (9, "17252", True)]
+    assert result["recovery_candidates_below_watermark"] == 1
+    assert result["skipped_confirmed_event"] == 3
+    assert result["unprocessed_events"] == 0
+    assert checkpoints[-1]["max_confirmed_id"] == 11
+
+def test_poll_window_covers_weekends_even_with_legacy_env(monkeypatch):
+    monkeypatch.setenv("PROP360_POLL_WINDOW_HOURS", "48")
+    assert prop360_poll_loop._window_hours() == 72
+    monkeypatch.setenv("PROP360_POLL_WINDOW_HOURS", "240")
+    assert prop360_poll_loop._window_hours() == 72
+
+def test_poll_reports_partial_errors_instead_of_ok(monkeypatch):
+    leads = [{"idContacto": 7, "codigo": "17252", "contFono": "+56911111111"}]
+    db, processed, checkpoints = _prepare_poll_cycle(
+        monkeypatch, leads, {"17252"}, {7: "error"}, last_id=10,
+    )
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+    assert processed == [(7, "17252", False)]
+    assert result["status"] == "partial_error"
+    assert result["unprocessed_events"] == 1
+    assert checkpoints[-1]["max_confirmed_id"] == 10
+
+
+def test_poll_repeated_source_rows_are_processed_once(monkeypatch):
+    row = {"idContacto": 7, "codigo": "17252", "contFono": "+56911111111"}
+    db, processed, _ = _prepare_poll_cycle(
+        monkeypatch, [row, row.copy()], {"17252"}, {7: "created"}, last_id=10,
+    )
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+    assert processed == [(7, "17252", False)]
+    assert result["recovery_candidates_below_watermark"] == 1
+
+def test_poll_fetch_error_preserves_checkpoint_and_reports_failure(monkeypatch):
+    db, _, checkpoints = _prepare_poll_cycle(monkeypatch, [], set(), {}, last_id=10)
+    statuses = []
+    def fail_fetch(self, **kwargs):
+        raise RuntimeError("portal unavailable")
+    monkeypatch.setattr(extractor_prop360.Prop360Extractor, "fetch_leads", fail_fetch)
+    monkeypatch.setattr(prop360_poll_loop, "_persist_cycle_status",
+                        lambda status, extra: statuses.append((status, extra)))
+    result = prop360_poll_loop.run_prop360_poll_cycle(db=db)
+    assert result["status"] == "error"
+    assert checkpoints == []
+    assert statuses == [("error", {"reason": "fetch_failed"})]

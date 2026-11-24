@@ -245,9 +245,15 @@ def mark_event_recovered(db, *, session_id: str) -> None:
     )
 
 
+_CRM_SEND_ALERT_REASONS = _CRM_ALERT_REASONS | frozenset({
+    "invalid_request", "invalid_recipient", "provider_rejected",
+    "subscription", "rate_limit", "delivery_unconfirmed",
+})
+
+
 async def notify_pablo_on_crm_failure(
     *, session_id: str, executive_name: str, reason: str,
-    db=None, send=None,
+    lead_id: str | None = None, db=None, send=None,
 ) -> str:
     """Send at most one operator alert per outage *on an executive CRM action*.
 
@@ -260,8 +266,17 @@ async def notify_pablo_on_crm_failure(
         return "disabled"
     if dict(EXECUTIVES).get(session_id) != executive_name:
         return "executive_not_authorized"
-    if reason not in _CRM_ALERT_REASONS:
+    if lead_id is not None and not ObjectId.is_valid(lead_id):
+        return "invalid_lead_id"
+    if reason not in (_CRM_SEND_ALERT_REASONS if lead_id else _CRM_ALERT_REASONS):
         return "reason_not_alertable"
+    # Post-send errors are scoped per lead and reason, not session health.
+    # A connected preflight cannot re-arm them. Deduplicate repeated clicks
+    # during the local calendar day without suppressing other affected leads.
+    from .constants import CHILE_TZ
+    alert_id = (f"crm-send:{session_id}:{lead_id}:{reason}:"
+                f"{datetime.now(CHILE_TZ).date().isoformat()}"
+                if lead_id else session_id)
     from .storage import get_db
     from .whatsapp_client import send_whatsapp_message_detailed
     try:
@@ -271,15 +286,17 @@ async def notify_pablo_on_crm_failure(
         # Ensure the document exists without overwriting prior state or any
         # other session's health. _id is indexed, avoiding collection scans.
         await asyncio.to_thread(
-            collection.update_one, {"_id": session_id},
+            collection.update_one, {"_id": alert_id},
             {"$setOnInsert": {"alert_claimed": False}}, upsert=True,
         )
         claimed = await asyncio.to_thread(
             collection.find_one_and_update,
-            {"_id": session_id, "alert_claimed": False},
+            {"_id": alert_id, "alert_claimed": False},
             {"$set": {
                 "alert_claimed": True, "alert_delivery": "reserved",
                 "alert_reason": reason,
+                "session_id": session_id,
+                **({"lead_id": ObjectId(lead_id)} if lead_id else {}),
                 "last_status": reason,
                 "alert_reserved_at": datetime.now(timezone.utc),
             }},
@@ -291,7 +308,7 @@ async def notify_pablo_on_crm_failure(
         recipient = await asyncio.to_thread(_pablo_recipient, db)
         if recipient is None:
             await asyncio.to_thread(
-                collection.update_one, {"_id": session_id},
+                collection.update_one, {"_id": alert_id},
                 {"$set": {"alert_delivery": "recipient_unverified"}},
             )
             logger.error(
@@ -305,13 +322,18 @@ async def notify_pablo_on_crm_failure(
             f"Ejecutivo: {executive_name}\\n"
             f"Sesión WaSender: {session_id}\\n"
             f"Motivo: {reason}\\n"
-            "No se pudo confirmar el envío por API desde el CRM. "
-            "El ejecutivo puede utilizar WhatsApp Web cuando el sistema "
-            "ofrezca esa alternativa de forma segura."
+            + (f"Lead: {lead_id}\\n" if lead_id else "")
+            + ("Envío incierto: no reenviar hasta verificar la entrega."
+               if reason == "delivery_unconfirmed" else
+               "No se pudo confirmar el envío por API desde el CRM. "
+               "El ejecutivo puede utilizar WhatsApp Web cuando el sistema "
+               "ofrezca esa alternativa de forma segura.")
         )
         sender = send or send_whatsapp_message_detailed
+        provider_id = None
         try:
             result = await sender(recipient, message)
+            provider_id = result.get("provider_message_id")
             delivery = (
                 "accepted" if result.get("success") is True
                 and result.get("provider_message_id")
@@ -329,9 +351,10 @@ async def notify_pablo_on_crm_failure(
             delivery = "delivery_unknown"
         await asyncio.to_thread(
             collection.update_one,
-            {"_id": session_id, "alert_delivery": "reserved"},
+            {"_id": alert_id, "alert_delivery": "reserved"},
             {"$set": {
                 "alert_delivery": delivery,
+                "alert_provider_message_id": provider_id,
                 "alert_result_at": datetime.now(timezone.utc),
             }},
         )

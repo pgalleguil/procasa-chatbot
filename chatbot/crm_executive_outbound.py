@@ -223,6 +223,41 @@ def _provider_rejection_reason(http_status: int, body: dict) -> str:
     return "provider_rejected"
 
 
+def _provider_validation_diagnostics(body: dict) -> dict:
+    """Retain allowlisted validation fields/rules, never raw provider text."""
+    errors = body.get("errors") if isinstance(body, dict) else None
+    if not isinstance(errors, dict):
+        return {}
+    diagnostics = {}
+    for field in ("to", "text"):
+        if field not in errors:
+            continue
+        values = errors[field]
+        if not isinstance(values, list):
+            values = [values]
+        rules = set()
+        for value in values[:10]:
+            if not isinstance(value, str):
+                continue
+            raw = value[:500].lower()
+            if "not on whatsapp" in raw or "not registered" in raw:
+                rules.add("not_registered")
+            elif "required" in raw:
+                rules.add("required")
+            elif "too long" in raw or "maximum" in raw or "greater than" in raw or "characters" in raw:
+                rules.add("length")
+            elif "format" in raw or "e.164" in raw:
+                rules.add("format")
+            elif "invalid" in raw or "valid" in raw:
+                rules.add("invalid")
+            else:
+                rules.add("other")
+        diagnostics[field] = sorted(rules) or ["unspecified"]
+    if any(key not in ("to", "text") for key in errors):
+        diagnostics["other"] = ["unspecified"]
+    return diagnostics
+
+
 def _credited_first_management(db, *, lead_id, actor_user_id: str,
                                cycle_id: str, session_id: str,
                                provider_message_id: str) -> str:
@@ -312,6 +347,7 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
     headers = {"Authorization": "Bearer " + session["token"], "Content-Type": "application/json"}
     do_post = post or requests.post
     http_status, reason = None, None
+    validation = {}
     try:
         response = do_post(
             url, json={"to": info["recipient"], "text": message},
@@ -338,6 +374,8 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         else:
             state = "rejected"
             reason = _provider_rejection_reason(http_status, body)
+            if http_status in (400, 422):
+                validation = _provider_validation_diagnostics(body)
     except Exception as exc:
         # A network exception may occur after the provider accepted delivery.
         # Preserve idempotency and log only the exception CLASS, never contents.
@@ -348,10 +386,12 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         "state": state, "provider_message_id": pid,
         "provider_result_at": datetime.now(timezone.utc),
         "provider_http_status": http_status, "provider_error_reason": reason,
+        **({"provider_validation_fields": validation,
+            "provider_request_text_chars": len(message)} if http_status in (400, 422) else {}),
     }})
     if state != "accepted":
-        logger.warning("CRM_EXEC_WA_SEND session=%s state=%s http_status=%s reason=%s",
-                       sid, state, http_status, reason)
+        logger.warning("CRM_EXEC_WA_SEND session=%s state=%s http_status=%s reason=%s validation=%s",
+                       sid, state, http_status, reason, validation)
         return {"status": state, **({"reason_code": reason} if state == "rejected" else {})}
     # A signed messages.upsert webhook can arrive before the send-message API
     # response. Reconcile it instead of writing a second canonical row.

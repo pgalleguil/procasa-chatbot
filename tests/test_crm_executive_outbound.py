@@ -1348,3 +1348,54 @@ def test_team_send_does_not_enable_erika_or_rocio_without_link(monkeypatch):
                          "nombre": "Erika Garrido", "rol": "agente"}) is None
     assert api._profile({"_id": ObjectId("6995e9be6a099d6e9612d120"),
                          "nombre": "Rocío Aliaga", "rol": "agente"}) is None
+
+
+@pytest.mark.parametrize("reason", ["invalid_request", "invalid_recipient", "provider_rejected",
+                                    "subscription", "rate_limit", "delivery_unconfirmed"])
+def test_crm_post_send_failure_calls_operator_alert(pablo_fallback_context, monkeypatch, reason):
+    import asyncio
+    from fastapi import HTTPException
+    api, db, user = pablo_fallback_context
+    async def auth(_request):
+        return user
+    monkeypatch.setattr(api, "_user", auth)
+    monkeypatch.setattr(api, "_session_status", lambda session, get=None: "connected")
+    monkeypatch.setattr(api, "send_manual", lambda *_a, **_k:
+        {"status": "delivery_unknown"} if reason == "delivery_unconfirmed"
+        else {"status": "rejected", "reason_code": reason})
+    alerts = []
+    monkeypatch.setattr(api, "_queue_operator_alert", lambda **kw: alerts.append(kw))
+    class Request:
+        async def json(self):
+            return {"lead_id": str(LEAD_ID), "text": "Hola",
+                    "idempotency_key": "alert-rejection-12345"}
+    if reason in ("delivery_unconfirmed", "invalid_recipient"):
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(api.crm_executive_whatsapp_send(Request()))
+        assert error.value.status_code == (503 if reason == "delivery_unconfirmed" else 422)
+    else:
+        assert asyncio.run(api.crm_executive_whatsapp_send(Request())) == {
+            "status": "manual_fallback", "method": "wa_me"}
+    assert alerts == [{"user": user, "reason": reason, "lead_id": str(LEAD_ID)}]
+
+
+def test_provider_validation_diagnostics_preserve_fields_without_private_data(context):
+    db, _ = context
+    body = {"success": False, "message": "Validation failed", "errors": {
+        "to": ["The +56912345678 number is invalid"],
+        "text": ["The text must not exceed 100 characters: PRIVATE CONTENT"],
+        "private-field": ["private-session-token"],
+    }}
+    result = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-validation-details", post=lambda *_a, **_kw:
+        SimpleNamespace(status_code=422, content=b"error", json=lambda: body),
+    )
+    assert result == {"status": "rejected", "reason_code": "invalid_request"}
+    saved = next(iter(db[outgoing.OUTBOX].docs.values()))
+    assert saved["provider_validation_fields"] == {
+        "to": ["invalid"], "text": ["length"], "other": ["unspecified"]}
+    assert saved["provider_request_text_chars"] == 4
+    assert "+56912345678" not in str(saved)
+    assert "PRIVATE CONTENT" not in str(saved)
+    assert "private-session-token" not in str(saved)

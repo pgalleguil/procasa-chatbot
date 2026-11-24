@@ -10,7 +10,7 @@ from pymongo.errors import DuplicateKeyError
 COLLECTION = "crm_personal_message_templates_v1"
 MAX_TEMPLATES = 30
 PABLO_COMPOSER_PILOT_USER_ID = "69796bc4bbebf240378eb739"
-PILOT_BUILTIN_KEYS = frozenset(f"builtin:{i}" for i in range(1, 30))
+PILOT_BUILTIN_KEYS = frozenset(f"builtin:{i}" for i in range(1, 32))
 
 
 def composer_pilot_enabled(user_id):
@@ -33,7 +33,7 @@ def validate_template(data, *, pilot=False):
         raise ValueError("Nombre, contenido o categoría inválidos")
     if re.search(r"https?://|www\.|(?:wa\.me/)|(?:\+?56[ -]?9(?:[ -]?\d){8})", title + "\n" + body, re.I):
         raise ValueError("Usa [[enlace]] y evita teléfonos o enlaces fijos de clientes")
-    if set(re.findall(r"\[\[([^\[\]]+)\]\]", body)) - (VARIABLES | {"operacion", "consulta", "saludo", "origen", "referencia", "atributos", "visita_paso", "postulacion_paso", "costos", "financiamiento_paso", "orden_visita", "oferta_paso", "seguimiento_info", "busqueda_paso"} if pilot else VARIABLES):
+    if set(re.findall(r"\[\[([^\[\]]+)\]\]", body)) - (VARIABLES | {"operacion", "consulta", "saludo", "origen", "referencia", "atributos", "visita_paso", "postulacion_paso", "costos", "financiamiento_paso", "orden_visita", "oferta_paso", "seguimiento_info", "busqueda_paso", "primer_paso", "primera_ficha"} if pilot else VARIABLES):
         raise ValueError("Variable no admitida")
     if pilot and category == "stage1" and "[[enlace]]" not in body:
         body = body.rstrip() + "\n\n[[enlace]]"
@@ -238,7 +238,26 @@ def build_pilot_message_context(lead, detail, db, *, now=None):
         except Exception:
             # Fail closed: unavailable price history must not prevent opening a lead.
             drop = None
+    source = str(lead.get("source_type") or "").casefold()
+    channel = _pilot_text(lead.get("canal_envio"))
+    if source == "manual" or "lead manual" in channel:
+        intake = "manual"
+    elif source == "prop360" or "prop360" in channel:
+        intake = "prop360"
+    else:
+        intake = "unknown"
+    office_user = False
+    chatbot_dialogue = False
+    for msg in messages:
+        if not isinstance(msg, dict) or not str(msg.get("content") or "").strip():
+            continue
+        if msg.get("role") == "user" and msg.get("source") in (None, "", "office_whatsapp", "chatbot"):
+            office_user = True
+        if office_user and msg.get("role") == "assistant":
+            chatbot_dialogue = True
+            break
     return {
+        "intake": intake, "chatbot_dialogue": chatbot_dialogue,
         "criteria": known, "finance": finance, "employment": employment,
         "applicant": applicant, "followup": followup, "visit_at": visit,
         "price_drop": drop, "requested_visit": requested_visit,

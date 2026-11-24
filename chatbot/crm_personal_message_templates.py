@@ -207,7 +207,8 @@ def build_pilot_message_context(lead, detail, db, *, now=None):
     visit = None
     visit_at = _pilot_datetime(lead.get("visit_date"))
     if (str(lead.get("pipeline_stage") or "").upper() == "VISIT_SCHEDULED"
-            and detail.get("assignment_cycle_id") and visit_at and visit_at > now):
+            and detail.get("assignment_cycle_id") and detail.get("contact_visit_confirmed_in_cycle")
+            and visit_at and visit_at > now):
         visit = visit_at.isoformat()
 
     operation = str(prop.get("contact_operation") or "").casefold()

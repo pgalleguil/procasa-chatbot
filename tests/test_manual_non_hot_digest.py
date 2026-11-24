@@ -54,3 +54,18 @@ def test_manual_creation_exposes_and_logs_digest_identity():
     assert "digest_enqueued" in source
     assert '"notification_id": str(notification.get("_id"))' in source
     assert "cycle_creation_failed" in source
+
+
+
+def test_manual_origin_includes_enlace_inmobiliario():
+    from bs4 import BeautifulSoup
+
+    source = Path("templates/manual_lead_entry.html").read_text(encoding="utf-8")
+    soup = BeautifulSoup(source, "html.parser")
+    origin = soup.select_one('select#origen[name="origen"]')
+    assert origin is not None and origin.has_attr("required")
+    options = origin.find_all("option", value="Enlace Inmobiliario")
+    assert len(options) == 1
+    assert options[0].get_text(strip=True) == "Enlace Inmobiliario"
+    assert not options[0].has_attr("disabled")
+    assert not options[0].has_attr("selected")

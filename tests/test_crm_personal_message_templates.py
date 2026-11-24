@@ -272,8 +272,21 @@ assert(!partition(saleRows,'stage2',funded).primary.some(r=>r.key==='builtin:19'
 const booked = {...rentLead,pilotMessageContext:{visit_at:'2099-11-24T16:00:00Z'}};
 assert(partition(rentRows,'stage2',booked).primary.some(r=>r.key==='builtin:5'));
 assert(!partition(rentRows,'stage2',booked).primary.some(r=>r.key==='builtin:4'));
-assert.equal(partition(rentRows,'stage6',rentLead).primary.length,5);
-assert(partition(rentRows,'stage6',rentLead).extra.some(r=>r.key==='builtin:29'));
+assert.equal(partition(rentRows,'stage6',rentLead).primary.length,7);
+assert.equal(partition(rentRows,'stage6',rentLead).extra.length,0);
+assert.equal(partition(saleRows,'stage6',saleLead).primary.length,7);
+assert(!partition(rentRows,'stage6',rentLead).primary.some(r=>['builtin:12','builtin:24','builtin:25','builtin:29'].includes(r.key)));
+const generalFollowup=partition(unknownRows,'stage6',{pilotMessageContext:{}});
+assert.deepEqual(generalFollowup.primary.map(r=>r.key),['builtin:8','builtin:9','builtin:11','builtin:13']);
+assert.equal(generalFollowup.extra.length,0);
+assert(rentRows.find(r=>r.key==='builtin:10').text.includes('postulación'));
+assert(saleRows.find(r=>r.key==='builtin:10').text.includes('oferta'));
+assert(rentRows.find(r=>r.key==='builtin:15').text.includes('garantías'));
+assert(saleRows.find(r=>r.key==='builtin:15').text.includes('preaprobación'));
+assert(rentRows.find(r=>r.key==='builtin:17').text.includes('fecha de ingreso'));
+assert(saleRows.find(r=>r.key==='builtin:17').text.includes('oferta'));
+assert(!pilotCommercialFields({pilotMessageContext:{followup:'financing'}},'arriendo').seguimiento_info.includes('financiamiento'));
+assert(!pilotCommercialFields({},'venta').seguimiento_info.includes('que te compartí'));
 const discounted = {...rentLead,pilotMessageContext:{price_drop:{before:435000,after:400000,currency:'CLP'}}};
 assert(partition(rentRows,'stage6',discounted).primary.some(r=>r.key==='builtin:29'));
 assert.equal(pilotPartitionTemplates(rentRows,'favorites',rentLead).primary.length,rentRows.length);
@@ -487,3 +500,13 @@ def test_pilot_intake_channel_uses_real_dialogue():
     chat = {"messages": [{"role": "user", "content": "Busco departamento"}, {"role": "assistant", "content": "¿En qué comuna?"}]}
     assert build_pilot_message_context(chat, {}, db)["chatbot_dialogue"]
     assert validate_template(entry(body="Hola [[ejecutivo]] [[primera_ficha]] [[primer_paso]]"), pilot=True)["body"].endswith("[[primer_paso]]")
+
+
+def test_recommendation_editor_is_visible_and_edits_survive_status_refresh():
+    html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    assert "#commModal.wa-composer-pilot #semRecommendAreaModal { display:none" not in html
+    assert 'id="semRecommendMsgModal"' in html
+    assert "Mensaje de recomendación editable" in html
+    assert "msgBox.dataset.generated !== generated" in html
+    assert "msgBox.value === msgBox.dataset.generated" in html
+    assert "input.value = recommendation" in html

@@ -288,7 +288,7 @@ class Config:
     # through ingest_lead_event (identity-based dedup against `leads`).
     PROP360_POLL_ENABLED = os.getenv("PROP360_POLL_ENABLED", "false").lower() == "true"
     PROP360_POLL_INTERVAL_SECONDS = int(os.getenv("PROP360_POLL_INTERVAL_SECONDS", "3600"))
-    PROP360_POLL_WINDOW_HOURS = int(os.getenv("PROP360_POLL_WINDOW_HOURS", "24"))
+    PROP360_POLL_WINDOW_HOURS = max(168, int(os.getenv("PROP360_POLL_WINDOW_HOURS", "168")))
 
     # === After-hours notification policy ===
     # These flags control whether HOT notifications are deferred outside business

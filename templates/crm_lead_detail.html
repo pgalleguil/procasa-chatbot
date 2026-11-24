@@ -1363,7 +1363,7 @@
         #commModal.wa-composer-pilot .template-card .tpl-info { min-width:0; flex:1; }
         #commModal.wa-composer-pilot .wa-pilot-action { padding:.2rem .35rem; color:var(--text-secondary); background:transparent; border:0; }
         #commModal.wa-composer-pilot .wa-pilot-action.is-favorite { color:#d4a238; }
-        #commModal.theme-wa.wa-composer-pilot #commMessage { min-height:250px; resize:vertical; }
+        #commModal.theme-wa.wa-composer-pilot #commMessage { min-height:max(420px, 52vh); height:auto; resize:vertical; overflow-y:auto; }
         #commModal.wa-composer-pilot #messageContainer .btn-outline-primary, #commModal.wa-composer-pilot #waComposerTools .btn-outline-primary { color:var(--text-primary); border-color:var(--border-color); }
         #commModal.wa-composer-pilot #waInsertProperty:not(:disabled) { color:#39c77a; border-color:#39c77a; }
         #commModal.wa-composer-pilot #waPropertyHint { color:var(--text-secondary); }
@@ -1377,12 +1377,12 @@
             #commModal.wa-composer-pilot #waPilotSidebar { grid-column:1; grid-row:1; }
             #commModal.wa-composer-pilot #messageContainer, #commModal.wa-composer-pilot #recommendationContainer { grid-column:1; grid-row:2; }
             #commModal.wa-composer-pilot #waPersonalEditor { grid-row:3; }
-            #commModal.wa-composer-pilot #commMessage { min-height:220px; }
+            #commModal.wa-composer-pilot #commMessage { min-height:320px; }
         }
         #commModal.theme-wa.wa-composer-pilot .comm-stage-tabs { flex-wrap: wrap; gap: .35rem; white-space: normal; }
         #commModal.theme-wa.wa-composer-pilot .templates-list { grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); max-height: 245px; }
         #commModal.theme-wa.wa-composer-pilot .tpl-preview { white-space: normal; max-width: none; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-        #commModal.theme-wa.wa-composer-pilot #commMessage { min-height: 160px; }
+        @media(max-width:700px) { #commModal.theme-wa.wa-composer-pilot #commMessage { min-height:300px; } }
         #commModal.theme-wa.wa-composer-pilot .template-card:focus-visible { outline: 2px solid var(--accent); }
         #commModal .modal-content {
             background-color: var(--bg-card);
@@ -5536,6 +5536,7 @@
             const msgInput = document.getElementById('commMessage');
             if (msgInput && !msgInput.dataset.listener) {
                 msgInput.addEventListener('input', () => {
+                    if (pilotComposerActive()) pilotFitMessageEditor();
                     window.crmExecutiveOutboundAttemptKey = null;
                     updatePropertyHint();
                     // Read the current modal target at event time. Capturing the
@@ -5576,22 +5577,34 @@
                 {"key":"builtin:30","category":"stage1","label":"Continuar conversación","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Revisé tu conversación con nuestro asistente y continuaré ayudándote personalmente.\n\n[[primera_ficha]]\n\n[[primer_paso]]"},
                 {"key":"builtin:31","category":"stage1","label":"Presentación y contacto","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Me gustaría ayudarte con tu búsqueda inmobiliaria.\n\n[[primera_ficha]]\n\n[[primer_paso]]"},
                 {"key":"builtin:18","category":"stage2","label":"Presentar características de la propiedad","text":"[[nombre]], te comparto las principales características de [[referencia]]:\n[[atributos]]\n\nFotografías y ficha:\n[[enlace]]\n\n¿Se ajusta a lo que buscas?"},
-                {"key":"builtin:3","category":"stage2","label":"Requisitos y condiciones","text":"Hola [[nombre]], [[consulta]]"},
-                {"key":"builtin:21","category":"stage2","label":"Evaluar capacidad para postular","text":"[[nombre]], para evaluar tu postulación al arriendo, [[postulacion_paso]]\n\nAsí podremos revisar si cumples las condiciones del propietario antes de solicitar documentos."},
-                {"key":"builtin:22","category":"stage2","label":"Costos iniciales del arriendo","text":"[[nombre]], estos son los costos informados del arriendo:\n[[costos]]\n\nFalta confirmar garantía, comisión y otros cargos aplicables. Te informaré el total antes de cualquier pago."},
-                {"key":"builtin:19","category":"stage2","label":"Apoyo para obtener crédito hipotecario","text":"[[nombre]], puedo orientarte con el financiamiento de la compra. [[financiamiento_paso]]"},
-                {"key":"builtin:20","category":"stage2","label":"Antecedentes para formalizar la compraventa","text":"[[nombre]], para avanzar con la compraventa necesitamos confirmar el precio acordado, la forma de pago y los plazos. ¿Revisamos estos antecedentes para preparar la documentación?"},
+                {"key":"builtin:3","category":"stage2","label":"Requisitos y condiciones","text":"[[consulta]]"},
+                {"key":"builtin:21","category":"legacy-commercial","label":"Evaluar capacidad para postular","text":"[[nombre]], para evaluar tu postulación al arriendo, [[postulacion_paso]]\n\nAsí podremos revisar si cumples las condiciones del propietario antes de solicitar documentos."},
+                {"key":"builtin:22","category":"legacy-commercial","label":"Costos iniciales del arriendo","text":"[[nombre]], estos son los costos informados del arriendo:\n[[costos]]\n\nFalta confirmar garantía, comisión y otros cargos aplicables. Te informaré el total antes de cualquier pago."},
+                {"key":"builtin:19","category":"legacy-commercial","label":"Apoyo para obtener crédito hipotecario","text":"[[nombre]], puedo orientarte con el financiamiento de la compra. [[financiamiento_paso]]"},
+                {"key":"builtin:20","category":"stage4","label":"Antecedentes para formalizar la compraventa","text":"[[nombre]], para avanzar con la compraventa necesitamos confirmar el precio acordado, la forma de pago y los plazos. ¿Revisamos estos antecedentes para preparar la documentación?"},
                 {"key":"builtin:4","category":"stage2","label":"Coordinar visita","text":"[[nombre]], coordinemos una visita. [[visita_paso]]"},
                 {"key":"builtin:5","category":"stage2","label":"Confirmación de visita","text":"Hola [[nombre]], te confirmo nuestra visita a [[referencia]], el [[visita_confirmada]]. ¿Me confirmas tu asistencia?"},
                 {"key":"builtin:6","category":"stage2","label":"Reagendar visita","text":"No hay problema, [[nombre]]. ¿Qué otro día y horario te acomodan para reagendar la visita?"},
-                {"key":"builtin:23","category":"stage2","label":"Preparar orden de visita","text":"[[nombre]], para preparar la orden de visita, [[orden_visita]]"},
-                {"key":"builtin:7","category":"stage2","label":"Presentar una oferta","text":"[[nombre]], [[oferta_paso]]\n\nCon esos datos puedo presentar tu propuesta al propietario, sujeta a su confirmación."},
-                {"key":"builtin:26","category":"stage2","label":"Oferta aceptada","text":"¡Buenas noticias, [[nombre]]! El propietario aceptó tu propuesta:\n[[condiciones_confirmadas]]\n\nRevisemos los siguientes pasos y la documentación antes de cualquier pago."},
-                {"key":"builtin:27","category":"stage2","label":"Contraoferta o propuesta rechazada","text":"[[nombre]], recibí esta respuesta del propietario:\n[[condiciones_confirmadas]]\n\n¿Prefieres revisar las condiciones, mantener tu propuesta o buscar otra alternativa?"},
-                {"key":"builtin:28","category":"stage2","label":"Postulación aprobada","text":"¡Buenas noticias, [[nombre]]! Tu postulación fue aprobada:\n[[condiciones_confirmadas]]\n\nRevisemos los montos acordados, el contrato y la fecha de entrega antes de cualquier pago."},
+                {"key":"builtin:23","category":"legacy-commercial","label":"Preparar orden de visita","text":"[[nombre]], para preparar la orden de visita, [[orden_visita]]"},
+                {"key":"builtin:7","category":"stage2","label":"Oferta y negociación","text":"[[oferta_paso]]\n\nPuedo presentar tu propuesta al propietario y, si existe disposición de ambas partes, coordinar una reunión para buscar un acuerdo."},
+                {"key":"builtin:26","category":"stage4","label":"Oferta aceptada","text":"¡Buenas noticias, [[nombre]]! El propietario aceptó tu propuesta:\n[[condiciones_confirmadas]]\n\nRevisemos los siguientes pasos y la documentación antes de cualquier pago."},
+                {"key":"builtin:27","category":"stage4","label":"Contraoferta o propuesta rechazada","text":"[[nombre]], recibí esta respuesta del propietario:\n[[condiciones_confirmadas]]\n\n¿Prefieres revisar las condiciones, mantener tu propuesta o buscar otra alternativa?"},
+                {"key":"builtin:28","category":"stage4","label":"Postulación aprobada","text":"¡Buenas noticias, [[nombre]]! Tu postulación fue aprobada:\n[[condiciones_confirmadas]]\n\nRevisemos los montos acordados, el contrato y la fecha de entrega antes de cualquier pago."},
                 {"key":"builtin:14","category":"stage2","label":"Coordinar llamada telefónica","text":"[[nombre]], ¿te puedo llamar unos minutos para resolver tus dudas? ¿Qué horario te acomoda?"},
-                {"key":"builtin:15","category":"stage2","label":"Documentación pendiente","text":"Hola [[nombre]], ¿pudiste reunir los documentos que quedaron pendientes? Si te falta alguno, dime cuál para ayudarte a revisar alternativas y el canal seguro de entrega."},
-                {"key":"builtin:16","category":"stage2","label":"Objeción de precio","text":"Entiendo, [[nombre]]. Si la propiedad te gusta, podemos evaluar una propuesta al propietario. ¿Qué valor se ajustaría a tu presupuesto?"},
+                {"key":"builtin:15","category":"stage6","label":"Documentación pendiente","text":"Hola [[nombre]], ¿pudiste reunir los documentos que quedaron pendientes? Si te falta alguno, dime cuál para ayudarte a revisar alternativas y el canal seguro de entrega."},
+                {"key":"builtin:16","category":"stage3","label":"Precio demasiado alto","text":"Si la propiedad cumple con lo que buscas, pero el precio supera tu presupuesto, podemos evaluar una propuesta. ¿Qué valor estarías dispuesto a ofrecer? Puedo presentarlo al propietario y, si existe disposición de ambas partes, coordinar una reunión para buscar un acuerdo."},
+                {"key":"builtin:32","category":"stage3","label":"Sin crédito preaprobado","text":"Si todavía no tienes un crédito preaprobado, podemos orientarte en el proceso. ¿Qué presupuesto de compra tienes y con cuánto pie cuentas aproximadamente? Así podremos evaluar alternativas sin comprometernos a una aprobación."},
+                {"key":"builtin:33","category":"stage3","label":"Pie insuficiente","text":"Podemos revisar qué alternativas de financiamiento o propiedades se ajustarían a tu pie disponible. ¿Cuál es el monto que podrías destinar inicialmente? Cualquier alternativa dependerá de la evaluación de la entidad financiera."},
+                {"key":"builtin:34","category":"stage3","label":"Gastos comunes elevados","text":"Entiendo tu preocupación. Revisemos el costo mensual total y los servicios incluidos. ¿Cuál sería un gasto mensual que te acomodaría? Puedo comparar con otras opciones que se ajusten a ese presupuesto."},
+                {"key":"builtin:35","category":"stage3","label":"Reparaciones o mejoras necesarias","text":"Si la propiedad te interesa, revisemos cuáles son las mejoras que consideras necesarias y su impacto en el presupuesto. Podemos plantear una propuesta al propietario que considere esas condiciones, sin comprometer su aceptación."},
+                {"key":"builtin:36","category":"stage3","label":"No cumple requisitos de arriendo","text":"Podemos revisar qué requisito te dificulta postular. Según las condiciones del propietario, podríamos evaluar complementar ingresos o presentar garantías adicionales. Si no es viable, buscaremos alternativas que se ajusten a tus antecedentes."},
+                {"key":"builtin:37","category":"stage3","label":"Encontró una opción más económica","text":"Si me cuentas las características y el precio de la otra propiedad, podemos comparar ambas considerando ubicación, superficie, estado y costo total. Si esta sigue siendo de tu interés, también podemos explorar una propuesta."},
+                {"key":"builtin:38","category":"stage3","label":"Necesita pensarlo","text":"Por supuesto, es importante que tomes una decisión informada. ¿Qué aspecto te falta aclarar para avanzar: precio, características, financiamiento o condiciones? Puedo ayudarte a revisarlo sin compromiso."},
+                {"key":"builtin:39","category":"stage3","label":"Debe vender antes de comprar","text":"Si necesitas vender tu propiedad para concretar la compra, podemos ayudarte a evaluar su valor comercial y coordinar ambos procesos. ¿En qué comuna está y qué tipo de propiedad es?"},
+                {"key":"builtin:40","category":"stage3","label":"La ubicación no le convence","text":"¿Qué necesitas mejorar respecto de la ubicación: conectividad, cercanía al trabajo, servicios o entorno? Podemos buscar opciones en sectores que se ajusten mejor a tus prioridades."},
+                {"key":"builtin:41","category":"stage3","label":"Objeción a honorarios de corretaje","text":"Entiendo que quieras evaluar todos los costos. Los honorarios corresponden al servicio de intermediación y acompañamiento de la operación. Puedo aclararte el monto aplicable y qué incluye, para que evalúes el costo total antes de decidir."},
+                {"key":"builtin:42","category":"stage3","label":"La propiedad no le interesa","text":"Gracias por comentármelo. ¿Qué aspecto no se ajustó a lo que buscas? Puedo revisar alternativas considerando tu presupuesto, ubicación y características prioritarias."},
+                {"key":"builtin:43","category":"legacy-commercial","label":"Vender para financiar compra","text":"Si necesitas vender tu propiedad actual para concretar la compra, también podemos ayudarte con su evaluación comercial y comercialización. ¿En qué comuna está y qué tipo de propiedad es?"},
                 {"key":"builtin:8","category":"stage6","label":"Cliente no respondió al primer contacto","text":"Hola [[nombre]], ¿sigues buscando una propiedad como esta?\n[[enlace]]\n\nSi no te acomoda, puedo buscarte otras alternativas según tu presupuesto y sector."},
                 {"key":"builtin:9","category":"stage6","label":"Seguimiento de información enviada","text":"Hola [[nombre]], [[seguimiento_info]]"},
                 {"key":"builtin:10","category":"stage6","label":"Seguimiento después de la visita","text":"Hola [[nombre]], ¿qué te pareció la propiedad que visitamos? ¿Te gustaría avanzar con ella o prefieres que busquemos otra alternativa?"},
@@ -5604,12 +5617,12 @@
                 {"key":"builtin:13","category":"stage6","label":"Cliente terminó su búsqueda","text":"Muchas gracias por avisarme, [[nombre]]. Si más adelante necesitas ayuda inmobiliaria, estaremos disponibles. ¡Que te vaya muy bien!"}
             ];
             return rows.filter(row => {
-                if (['builtin:19','builtin:20'].includes(row.key)) return operation === 'venta';
-                if (['builtin:21','builtin:22','builtin:28'].includes(row.key)) return operation === 'arriendo';
+                if (['builtin:19','builtin:20','builtin:32','builtin:33','builtin:39','builtin:43'].includes(row.key)) return operation === 'venta';
+                if (['builtin:21','builtin:22','builtin:28','builtin:36'].includes(row.key)) return operation === 'arriendo';
                 if (['builtin:26','builtin:27','builtin:29'].includes(row.key)) return ['venta','arriendo'].includes(operation);
                 return true;
             }).map(row => row.key === 'builtin:3'
-                ? {...row,label:operation === 'arriendo' ? 'Documentos para postular al arriendo' : operation === 'venta' ? 'Crédito hipotecario y preaprobación' : 'Condiciones de la operación'}
+                ? {...row,label:operation === 'arriendo' ? 'Documentos para postular al arriendo' : operation === 'venta' ? 'Financiamiento y preaprobación' : 'Condiciones de la operación'}
                 : row);
         }
 
@@ -5702,11 +5715,12 @@
             const documents = ['• Cédula de identidad vigente.'];
             if (employment !== 'independent') documents.push('• Trabajadores dependientes: contrato de trabajo, últimas 3 liquidaciones de sueldo y certificado de cotizaciones previsionales, cuando corresponda.');
             if (employment !== 'dependent') documents.push('• Trabajadores independientes: carpeta tributaria o antecedentes que acrediten ingresos y documentación tributaria de su actividad.');
-            const rental = 'te comparto los antecedentes que habitualmente se solicitan para evaluar una postulación de arriendo.\n\n'+documents.join('\n')+'\n\nDependiendo de las condiciones del propietario, también podrían solicitarse antecedentes comerciales y documentación de un aval o codeudor.\n\nConfirmaré los requisitos exactos y te indicaré cómo entregarlos de manera segura.'+(!employment?' ¿Trabajas de forma dependiente o independiente?':'');
+            const isCommercial = /oficina|local|bodega|industrial|galp[oó]n|comercial/i.test(String(data.contactPublicFacts?.tipo || ''));
+            const rental = isCommercial ? 'Para avanzar con el arriendo comercial, revisemos la actividad que desarrollarás, si contratarías como empresa o persona natural, la fecha de inicio y tu presupuesto. Según el propietario, pueden requerirse antecedentes financieros o tributarios y garantías. ¿Cuentas con estos antecedentes?' : 'Para avanzar con el arriendo, habitualmente se solicita acreditar ingresos suficientes y antecedentes comerciales favorables.\n\n'+documents.join('\n')+'\n\nConsidera también el arriendo, la garantía y los honorarios aplicables. Podemos revisar complementación de ingresos según el propietario. Confirmaré los requisitos exactos y el canal seguro de entrega. ¿Cuentas con estos antecedentes?';
             const purchase = preapproved ? 'gracias por informar que cuentas con una preaprobación. ¿El monto aprobado te permite financiar esta propiedad?' :
                 cash ? 'como comprarías al contado, ¿qué plazo de compra tienes previsto?' :
                 finance === 'evaluating' || finance === 'not_preapproved' ? '¿necesitas orientación para evaluar el crédito y el pie disponible?' :
-                '¿cuentas con un crédito hipotecario preaprobado, estás evaluando financiamiento o comprarías al contado?';
+                '¿Cuentas con un crédito hipotecario preaprobado o comprarías al contado? Si necesitas financiamiento, sería útil conocer tu presupuesto máximo y pie disponible. Podemos orientarte si aún no tienes una evaluación bancaria.';
             const missing = [];
             if (!context.name_known) missing.push('tu nombre completo');
             if (!context.email_known) missing.push('tu correo electrónico');
@@ -5828,6 +5842,14 @@
             ).join('');
         }
 
+        function pilotFitMessageEditor() {
+            const input = document.getElementById('commMessage');
+            if (!input || !pilotComposerActive()) return;
+            input.style.height = 'auto';
+            const minimum = window.innerWidth <= 700 ? 300 : Math.max(420, Math.round(window.innerHeight * 0.52));
+            input.style.height = Math.max(minimum, input.scrollHeight + 4) + 'px';
+        }
+
         function configurePilotComposerLayout() {
             const active = pilotComposerActive();
             const modal = document.getElementById('commModal');
@@ -5838,7 +5860,9 @@
             sidebar.classList.toggle('d-none', !active);
             document.getElementById('waPilotClear').classList.toggle('d-none', !active);
             document.getElementById('waMessageLabel').textContent = active ? 'Mensaje editable' : 'Mensaje:';
-            document.getElementById('commMessage').rows = active ? 7 : 5;
+            document.getElementById('commMessage').rows = active ? 12 : 5;
+            if (active) requestAnimationFrame(pilotFitMessageEditor);
+            else document.getElementById('commMessage').style.height = '';
             document.getElementById('waInsertProperty').textContent = 'Insertar ficha';
             document.getElementById('waPersonalHelp').textContent = active
                 ? 'Los datos del lead se completan automáticamente. Conserva los textos entre « » para reutilizarlos con cada cliente.'
@@ -5867,9 +5891,8 @@
             if (category === 'stage1') return pilotFirstContactKeys(data);
             if (category === 'stage2') {
                 const visit = pilotVisitLabel(context.visit_at) ? 'builtin:5' : 'builtin:4';
-                const keys = ['builtin:18','builtin:3',visit,'builtin:7','builtin:14'];
-                if (operation === 'arriendo') keys.splice(2,0,'builtin:21','builtin:22');
-                if (operation === 'venta' && !['cash','preapproved'].includes(context.finance)) keys.splice(2,0,'builtin:19');
+                const keys = pilotHasSpecificProperty(data) ? ['builtin:18','builtin:3',visit,'builtin:7','builtin:14','builtin:6'] : ['builtin:3','builtin:14'];
+                // Requisitos y financiamiento are consolidated in builtin:3.
                 return keys;
             }
             if (category === 'stage6') {
@@ -5884,9 +5907,9 @@
             const keys = pilotPrimaryKeys(category,data);
             const primary = [], extra = [];
             for (const tpl of entries) {
-                if (category === 'stage1' && !keys.includes(tpl.key)) continue;
+                if (['stage1','stage2'].includes(category) && !keys.includes(tpl.key)) continue;
                 if (keys.includes(tpl.key) && !pilotTemplateBlockReason(tpl,data)) primary.push(tpl);
-                else extra.push(tpl);
+                else if (category !== 'stage2') extra.push(tpl);
             }
             primary.sort((a,b)=>keys.indexOf(a.key)-keys.indexOf(b.key));
             return {primary,extra};
@@ -5900,13 +5923,15 @@
             tabs.replaceChildren();
             const rows = pilotCommercialTemplates(pilotDetectedOperation(leadData));
             const counts = {};
-            for (const category of ['stage1','stage2','stage6']) {
+            for (const category of ['stage1','stage2','stage3','stage4','stage6']) {
                 const parts = pilotPartitionTemplates(rows.filter(t=>t.category===category),category,leadData);
                 counts[category] = parts.primary.length + (parts.extra.length ? ' +' : '');
             }
             const groups = [
                 ['stage1','Primer contacto','fa-handshake',counts.stage1],
                 ['stage2','Gestión comercial','fa-calendar-check',counts.stage2],
+                ['stage3','Manejo de objeciones','fa-comments',counts.stage3],
+                ['stage4','Formalización y cierre','fa-file-signature',counts.stage4],
                 ['stage6','Seguimiento','fa-comments',counts.stage6],
                 ['favorites','Favoritos','fa-star',(personalLibrary.favorites || []).length],
                 ['personal','Mis plantillas','fa-bookmark',personalLibrary.templates.length],
@@ -5988,7 +6013,7 @@
             const {primary,extra} = pilotPartitionTemplates(allEntries,category,leadData);
             const expanded = pilotExpandedGroups.has(category);
             const entries = expanded ? [...primary,...extra] : primary;
-            if (!allEntries.length) {
+            if (!entries.length) {
                 const empty = document.createElement('span'); empty.className = 'text-secondary small p-2';
                 empty.textContent = 'No hay plantillas en esta sección.'; list.append(empty);
             }
@@ -6022,7 +6047,7 @@
                 }
                 list.append(card);
             }
-            if (extra.length) {
+            if (category !== 'stage2' && extra.length) {
                 const toggle = document.createElement('button');
                 toggle.type = 'button';
                 toggle.className = 'btn btn-sm btn-outline-secondary w-100 mt-2';
@@ -6390,11 +6415,22 @@
                 .replace(/\[\[día\]\]/g, safeDay)
                 .replace(/\[\[hora\]\]/g, safeHour);
 
+            if (pilotComposerActive() && ['stage2','stage3','stage4','legacy-commercial'].includes(templateCategory) && pilotSelectedKey?.startsWith('builtin:')) {
+                processedText = processedText.replace(/^Hola(?:\s+[^,]+)?,\s*/i, '');
+                if (safeName && processedText.toLocaleLowerCase('es-CL').startsWith((safeName+',').toLocaleLowerCase('es-CL'))) processedText = processedText.slice(safeName.length+1).trimStart();
+                processedText = processedText.charAt(0).toUpperCase() + processedText.slice(1);
+                const last = new Date(leadData.pilotMessageContext?.last_executive_contact_at || '');
+                const localDay = d => new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);
+                if (!Number.isFinite(last.getTime()) || localDay(last) !== localDay(new Date())) {
+                    processedText = 'Hola'+(safeName?' '+safeName:'')+', '+pilotGreeting()+'.\n\n'+processedText;
+                }
+            }
             // Cleanup potentially double spaces if name was empty
             processedText = processedText.replace(/  +/g, ' ');
 
             originalTemplateText = processedText;
             document.getElementById('commMessage').value = processedText;
+            if (pilotComposerActive()) pilotFitMessageEditor();
 
             if (currentCommChannel === 'email' && subject) {
                 let processedSubject = subject
@@ -6422,7 +6458,7 @@
             const safeHour = "10:00"; // Placeholder default
 
             if (window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa') {
-                pilotDraftCategory = templateCategory;
+                pilotDraftCategory = templateCategory === 'legacy-commercial' ? 'stage2' : templateCategory;
                 text = pilotResolveContext(text, pilotDetectedOperation(leadData), leadData.publicContactUrl, {...leadData,pilotConfirmedTerms});
             }
             let processedText = (currentCommTarget === 'lead' && currentCommChannel === 'wa' && !safeName

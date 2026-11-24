@@ -112,7 +112,7 @@ def test_legacy_composer_restored_and_pilot_isolated():
     assert "if (!pilotComposerActive()) return selectLegacyTemplate(text,subject);" in html
     assert "renderLegacyCommTabs(target);" in html
     assert "#commModal.theme-wa #commModalDialog" not in html
-    assert "document.getElementById('commMessage').rows = active ? 7 : 5" in html
+    assert "document.getElementById('commMessage').rows = active ? 12 : 5" in html
 
 
 def test_pablo_only_pilot_and_private_favorites():
@@ -186,13 +186,26 @@ currentCommChannel = 'wa';
 const saleRows = pilotCommercialTemplates('venta');
 const rentRows = pilotCommercialTemplates('arriendo');
 const unknownRows = pilotCommercialTemplates();
-assert.equal(saleRows.length,28);
-assert.equal(rentRows.length,29);
-assert.equal(unknownRows.length,23);
+assert.equal(saleRows.length,39);
+assert.equal(rentRows.length,37);
+assert.equal(unknownRows.length,30);
 assert.equal(saleRows.filter(r=>r.category==='stage1').length,4);
-assert.equal(saleRows.filter(r=>r.category==='stage2').length,14);
-assert.equal(saleRows.filter(r=>r.category==='stage6').length,10);
-assert.equal(new Set(saleRows.map(r=>r.key)).size,28);
+assert.equal(saleRows.filter(r=>r.category==='stage2').length,7);
+assert.equal(rentRows.filter(r=>r.category==='stage2').length,7);
+assert.equal(saleRows.filter(r=>r.category==='stage4').length,3);
+assert.equal(rentRows.filter(r=>r.category==='stage4').length,3);
+assert(saleRows.find(r=>r.key==='builtin:19').category==='legacy-commercial');
+assert(rentRows.find(r=>r.key==='builtin:21').category==='legacy-commercial');
+assert.equal(saleRows.filter(r=>r.category==='stage3').length,11);
+assert.equal(rentRows.filter(r=>r.category==='stage3').length,9);
+assert.equal(unknownRows.filter(r=>r.category==='stage3').length,8);
+assert(saleRows.find(r=>r.key==='builtin:16').text.includes('propietario'));
+assert(rentRows.some(r=>r.key==='builtin:36'));
+assert(!saleRows.some(r=>r.key==='builtin:36'));
+assert(!rentRows.some(r=>r.key==='builtin:32'));
+assert(pilotCommercialFields({contactPublicFacts:{tipo:'Oficina'}},'arriendo').consulta.includes('arriendo comercial'));
+assert.equal(saleRows.filter(r=>r.category==='stage6').length,11);
+assert.equal(new Set(saleRows.map(r=>r.key)).size,saleRows.length);
 assert(saleRows.slice(0,2).every(r=>r.text.includes('[[enlace]]')));
 assert(saleRows.some(r=>r.label.includes('preaprobación')));
 assert(rentRows.some(r=>r.label.includes('Documentos para postular')));
@@ -243,11 +256,16 @@ function linkForCompact(){return 'https://www.procasa.cl/6318';}
 const saleLead = {...rentLead,contactOperation:'venta'};
 const partition = (rows,category,data)=>pilotPartitionTemplates(rows.filter(r=>r.category===category),category,data);
 const rentPrimary = partition(rentRows,'stage2',rentLead);
-assert.equal(rentPrimary.primary.length,7);
-assert.equal(rentPrimary.primary.length+rentPrimary.extra.length,rentRows.filter(r=>r.category==='stage2').length);
-assert(rentPrimary.primary.some(r=>r.key==='builtin:21'));
+assert.equal(rentPrimary.primary.length,6);
+assert.equal(rentPrimary.extra.length,0);
+assert.equal(partition(saleRows,'stage2',saleLead).extra.length,0);
+const noProperty = partition(unknownRows,'stage2',{pilotMessageContext:{}});
+assert.deepEqual(noProperty.primary.map(r=>r.key),['builtin:3','builtin:14']);
+assert.equal(noProperty.extra.length,0);
+assert(rentPrimary.primary.some(r=>r.key==='builtin:3'));
+assert(!rentPrimary.primary.some(r=>['builtin:21','builtin:22','builtin:23'].includes(r.key)));
 assert(!rentPrimary.primary.some(r=>r.key==='builtin:5'));
-assert(rentPrimary.extra.some(r=>r.key==='builtin:5'));
+assert(!rentPrimary.extra.some(r=>r.key==='builtin:5'));
 assert.equal(partition(saleRows,'stage2',saleLead).primary.length,6);
 const funded = {...saleLead,pilotMessageContext:{finance:'preapproved'}};
 assert(!partition(saleRows,'stage2',funded).primary.some(r=>r.key==='builtin:19'));

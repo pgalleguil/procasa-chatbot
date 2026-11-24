@@ -68,7 +68,7 @@ const leadData = {nombre:'Ana Pérez',execName:'Hernán Castro',propiedad:'6318'
 function updateSendLink(){}
 """ + source + """
 selectTemplate('Hola [[nombre]], soy [[ejecutivo]]. [[enlace]]');
-assert.equal(element('commMessage').value,'Hola Ana, soy Hernán. https://www.procasa.cl/6318');
+assert.equal(element('commMessage').value,'Hola Ana, soy Hernán Castro. https://www.procasa.cl/6318');
 selectTemplate('Hola [[nombre]], ¿coordinamos visita?');
 assert(element('commMessage').value.includes(leadData.publicContactUrl));
 assert.equal(element('commMessage').value.split(leadData.publicContactUrl).length, 2);
@@ -186,13 +186,13 @@ currentCommChannel = 'wa';
 const saleRows = pilotCommercialTemplates('venta');
 const rentRows = pilotCommercialTemplates('arriendo');
 const unknownRows = pilotCommercialTemplates();
-assert.equal(saleRows.length,26);
-assert.equal(rentRows.length,27);
-assert.equal(unknownRows.length,21);
-assert.equal(saleRows.filter(r=>r.category==='stage1').length,2);
+assert.equal(saleRows.length,28);
+assert.equal(rentRows.length,29);
+assert.equal(unknownRows.length,23);
+assert.equal(saleRows.filter(r=>r.category==='stage1').length,4);
 assert.equal(saleRows.filter(r=>r.category==='stage2').length,14);
 assert.equal(saleRows.filter(r=>r.category==='stage6').length,10);
-assert.equal(new Set(saleRows.map(r=>r.key)).size,26);
+assert.equal(new Set(saleRows.map(r=>r.key)).size,28);
 assert(saleRows.slice(0,2).every(r=>r.text.includes('[[enlace]]')));
 assert(saleRows.some(r=>r.label.includes('preaprobación')));
 assert(rentRows.some(r=>r.label.includes('Documentos para postular')));
@@ -262,6 +262,24 @@ assert.equal(pilotPartitionTemplates(rentRows,'favorites',rentLead).primary.leng
 assert(pilotCommercialFields(rentLead,'arriendo').postulacion_paso.includes('renta líquida mensual'));
 assert(!saleRows[0].text.includes('Me asignaron tu contacto'));
 assert(saleRows[0].text.includes('[[enlace]]'));
+const manual = {pilotMessageContext:{intake:'manual'}};
+const portal = {propiedad:'6318',publicContactUrl:'https://www.procasa.cl/6318',pilotMessageContext:{intake:'prop360'}};
+const chat = {...portal,pilotMessageContext:{intake:'unknown',chatbot_dialogue:true}};
+assert.deepEqual(pilotFirstContactKeys(manual),['builtin:31']);
+assert.deepEqual(pilotFirstContactKeys(portal),['builtin:1']);
+assert.deepEqual(pilotFirstContactKeys({...portal,pilotMessageContext:{intake:'prop360',visit_requested:true}}),['builtin:2','builtin:1']);
+assert.deepEqual(pilotFirstContactKeys(chat),['builtin:30']);
+assert.deepEqual(pilotFirstContactKeys({...chat,pilotMessageContext:{intake:'manual',chatbot_dialogue:true}}),['builtin:30']);
+assert.deepEqual(pilotFirstContactKeys({...chat,pilotMessageContext:{intake:'prop360',chatbot_dialogue:true,visit_requested:true}}),['builtin:30','builtin:2']);
+assert.deepEqual(pilotFirstContactKeys({...portal,pilotMessageContext:{intake:'manual'}}),['builtin:31']);
+assert.equal(pilotFirstContactError('Hola','','stage1','stage1',manual,'builtin:31'),'');
+assert(pilotFirstContactError('Hola','','stage1','stage1',{...portal,publicContactUrl:''},'builtin:1'));
+assert(pilotFirstContactError('Hola',portal.publicContactUrl,'stage1','stage1',portal,'builtin:31'));
+assert(pilotResolveContext(saleRows.find(r=>r.key==='builtin:30').text,'venta',chat.publicContactUrl,chat).includes(chat.publicContactUrl));
+assert(pilotResolveContext(saleRows.find(r=>r.key==='builtin:31').text,'','',manual).includes('¿Buscas comprar o arrendar?'));
+assert(!pilotTemplateBlockReason(saleRows.find(r=>r.key==='builtin:31'),manual));
+assert(pilotTemplateBlockReason(saleRows[0],manual));
+
 
 const link='https://www.procasa.cl/6318';
 assert(pilotHasPublicLink('Revisa '+link+'.',link));
@@ -375,7 +393,8 @@ def test_pilot_first_contact_guard_precedes_log_and_provider():
     html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
     assert "#commModal.wa-composer-pilot #waInsertProperty, #commModal.wa-composer-pilot #waVariableButtons { display:none !important; }" in html
     assert "pilotDraftCategory = templateCategory" in html
-    assert "pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category)" in html
+    assert "pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category,leadData,pilotSelectedKey)" in html
+    assert 'const safeExec = (execName && execName !== "None") ? execName.trim() : "Agente";' in html
     assert "if (hasMessage && !pilotBlocked && !requiredLinkProblem && !unresolvedPilotFields)" in html
     assert "senderName: {{ (user_name or \"\") | tojson }}" in html
     send = html[html.index("        function updateSendLink("):html.index("        // --- NOTES SYSTEM ---")]
@@ -434,3 +453,19 @@ def test_commercial_context_uses_customer_evidence_and_verified_history():
     assert result["requested_visit"] == ""
     db["universo_cartera_prop360_historial"].update_one({}, {"$set":{"moneda_anterior":"UF"}})
     assert build_pilot_message_context(lead, detail, db, now=now)["price_drop"] is None
+
+
+def test_pilot_intake_channel_uses_real_dialogue():
+    from chatbot.crm_personal_message_templates import build_pilot_message_context
+    db = mongomock.MongoClient()["test"]
+    portal = {"source_type": "prop360", "messages": [{"role": "user", "source": "prop360", "content": "Consulta"}]}
+    ctx = build_pilot_message_context(portal, {}, db)
+    assert ctx["intake"] == "prop360" and not ctx["chatbot_dialogue"] and not ctx["visit_requested"]
+    portal["messages"][0]["content"] = "Quiero coordinar una visita"
+    assert build_pilot_message_context(portal, {}, db)["visit_requested"]
+    manual = {"source_type": "manual", "messages": [{"role": "user", "source": "executive_whatsapp", "content": "Hola"}]}
+    ctx = build_pilot_message_context(manual, {}, db)
+    assert ctx["intake"] == "manual" and not ctx["chatbot_dialogue"]
+    chat = {"messages": [{"role": "user", "content": "Busco departamento"}, {"role": "assistant", "content": "¿En qué comuna?"}]}
+    assert build_pilot_message_context(chat, {}, db)["chatbot_dialogue"]
+    assert validate_template(entry(body="Hola [[ejecutivo]] [[primera_ficha]] [[primer_paso]]"), pilot=True)["body"].endswith("[[primer_paso]]")

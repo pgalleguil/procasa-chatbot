@@ -1370,7 +1370,7 @@
         #commModal.wa-composer-pilot #waTemplateStatus:empty { display:none; }
         #commModal.wa-composer-pilot .modal-header, #commModal.wa-composer-pilot .modal-footer { padding:.65rem 1rem; }
         #commModal.wa-composer-pilot #waComposerTools { margin-top:.65rem; }
-        #commModal.wa-composer-pilot #waPersonalCategory, #commModal.wa-composer-pilot label[for="waPersonalCategory"] { display:none; }
+        #commModal.wa-composer-pilot #waPersonalCategory, #commModal.wa-composer-pilot label[for="waPersonalCategory"], #commModal.wa-composer-pilot #waInsertProperty, #commModal.wa-composer-pilot #waVariableButtons { display:none !important; }
         #commModal.wa-composer-pilot #semRecommendAreaModal { display:none !important; }
         @media(max-width:700px) {
             #commModal.wa-composer-pilot .modal-body { grid-template-columns:1fr; gap:.8rem; }
@@ -5548,38 +5548,75 @@
         // The pilot is separate from the team-wide WaSender API capability.
         // A server-authenticated immutable user ID controls the rendered flag.
         let pilotSelectedKey = null;
+        let pilotDraftCategory = null;
         function pilotComposerActive() {
             return window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa';
         }
 
         function pilotCommercialTemplates() {
             return [
-                {"key":"builtin:1","category":"stage1","label":"Consulta por propiedad","text":"Hola [[nombre]], ¿cómo estás? Soy [[ejecutivo]], asesor inmobiliario de PROCASA.\n\nTe contacto por tu consulta sobre esta propiedad [[operacion]]:\n[[enlace]]\n\n¿Te gustaría conocer más detalles o coordinar una visita?"},
-                {"key":"builtin:2","category":"stage1","label":"Solicitud de visita","text":"Hola [[nombre]], ¿cómo estás? Soy [[ejecutivo]], asesor inmobiliario de PROCASA.\n\nRecibí tu solicitud para visitar esta propiedad:\n[[enlace]]\n\n¿Qué día y horario te acomodaría? Revisaré la disponibilidad para coordinar contigo."},
-                {"key":"builtin:3","category":"stage2","label":"Resolver dudas","text":"Claro, [[nombre]]. Con gusto te ayudo a resolver tus consultas sobre la propiedad. [[consulta]]"},
-                {"key":"builtin:4","category":"stage2","label":"Coordinar visita","text":"Perfecto, [[nombre]]. ¿Qué días y horarios tienes disponibles para visitar la propiedad? Así podré coordinar contigo."},
-                {"key":"builtin:5","category":"stage2","label":"Confirmar visita","text":"Hola [[nombre]], te escribo para confirmar la visita que coordinamos. ¿Me confirmas si mantenemos el horario acordado?"},
-                {"key":"builtin:6","category":"stage2","label":"Reagendar visita","text":"Hola [[nombre]], podemos coordinar la visita en otro momento. ¿Qué día y horario te acomodaría mejor?"},
-                {"key":"builtin:7","category":"stage2","label":"Presentar oferta","text":"[[nombre]], si la propiedad se ajusta a lo que estás buscando, podemos preparar una propuesta para presentarla al propietario.\n\n¿Qué precio y condiciones te permitirían avanzar?"},
-                {"key":"builtin:8","category":"stage6","label":"Cliente no respondió","text":"Hola [[nombre]], ¿cómo estás?\n\nQuería saber si pudiste revisar la propiedad que consultaste:\n[[enlace]]\n\n¿Sigue siendo una opción para ti o prefieres que revisemos otras alternativas?"},
-                {"key":"builtin:9","category":"stage6","label":"Información enviada","text":"Hola [[nombre]], quería saber si pudiste revisar la información que te compartí.\n\n¿Te quedó alguna duda que pueda ayudarte a resolver?"},
-                {"key":"builtin:10","category":"stage6","label":"Después de la visita","text":"Hola [[nombre]], muchas gracias por tu tiempo durante la visita.\n\n¿Qué te pareció la propiedad? ¿Se ajusta a lo que estás buscando o hay algún aspecto que te gustaría encontrar en otras alternativas?"},
-                {"key":"builtin:11","category":"stage6","label":"Buscar alternativas","text":"[[nombre]], me gustaría ayudarte a encontrar una propiedad que se ajuste mejor a tus necesidades.\n\n¿Qué comunas estás considerando, cuál es tu presupuesto máximo y qué características son indispensables para ti?"},
-                {"key":"builtin:12","category":"stage6","label":"Propiedad no disponible","text":"Hola [[nombre]], la propiedad que consultaste ya no está disponible.\n\nPuedo ayudarte a encontrar una alternativa similar. ¿Mantienes el mismo presupuesto y sector de búsqueda?"},
-                {"key":"builtin:13","category":"stage6","label":"Cliente terminó su búsqueda","text":"Muchas gracias por avisarme, [[nombre]]. Daré por finalizado el seguimiento de tu búsqueda.\n\nSi más adelante necesitas asesoría inmobiliaria, puedes contar conmigo."}
+                {"key":"builtin:1","category":"stage1","label":"Consulta por propiedad","text":"Hola [[nombre]], ¿cómo estás? Soy [[ejecutivo]], asesor inmobiliario de PROCASA.\n\nGracias por tu interés en esta propiedad [[operacion]]. Te comparto su ficha:\n[[enlace]]\n\n¿Hay alguna condición o característica que necesites revisar antes de decidir si la visitamos? Puedo ayudarte a aclararla y coordinar una visita."},
+                {"key":"builtin:2","category":"stage1","label":"Solicitud de visita","text":"Hola [[nombre]], soy [[ejecutivo]], asesor inmobiliario de PROCASA.\n\nRecibí tu solicitud de visita a esta propiedad:\n[[enlace]]\n\n¿Qué día y en qué rango horario tienes disponibilidad? Revisaré el acceso a la propiedad y te confirmaré las opciones para coordinar."},
+                {"key":"builtin:3","category":"stage2","label":"Requisitos y condiciones","text":"[[nombre]], para orientarte antes de avanzar, [[consulta]]"},
+                {"key":"builtin:4","category":"stage2","label":"Coordinar visita","text":"Perfecto, [[nombre]]. Para organizar la visita sin hacerte perder tiempo, ¿me puedes indicar dos días o rangos horarios que te acomoden?\n\nRevisaré la disponibilidad y te confirmaré la alternativa que podamos coordinar."},
+                {"key":"builtin:5","category":"stage2","label":"Confirmar visita acordada","text":"Hola [[nombre]], te escribo para confirmar la visita que coordinamos. ¿Mantienes tu disponibilidad para el horario acordado?\n\nSi necesitas algún ajuste, avísame para revisar otra opción y evitar que hagas el traslado innecesariamente."},
+                {"key":"builtin:6","category":"stage2","label":"Reagendar visita","text":"Hola [[nombre]], podemos reorganizar la visita. ¿Qué día y horario te acomoda mejor esta semana?\n\nRevisaré la disponibilidad antes de confirmar un nuevo horario."},
+                {"key":"builtin:7","category":"stage2","label":"Presentar una oferta","text":"[[nombre]], si la propiedad cumple con lo que buscas, podemos presentar una propuesta al propietario.\n\n¿Qué monto tienes en mente y qué condiciones necesitas considerar para avanzar? Con esos antecedentes podré revisar la propuesta antes de presentarla, sin comprometer su aceptación."},
+                {"key":"builtin:14","category":"stage2","label":"Coordinar llamada","text":"[[nombre]], para resolver tus dudas y revisar los próximos pasos, podemos conversar por teléfono unos minutos.\n\n¿Te acomoda que te llame hoy o prefieres indicarme un horario?"},
+                {"key":"builtin:15","category":"stage2","label":"Antecedentes pendientes","text":"[[nombre]], para continuar con la gestión necesitamos revisar los antecedentes que quedaron pendientes.\n\n¿Pudiste reunirlos? Si te falta alguno o tienes dudas sobre cómo entregarlos de forma segura, puedo orientarte para que avancemos."},
+                {"key":"builtin:16","category":"stage2","label":"Objeción de precio o condiciones","text":"Entiendo, [[nombre]]. Para saber si existe una alternativa viable, ¿lo que te impide avanzar es el precio, las condiciones de la operación o alguna característica de la propiedad?\n\nSi me indicas qué necesitarías ajustar, podré revisar las opciones sin comprometer condiciones que aún no estén autorizadas."},
+                {"key":"builtin:8","category":"stage6","label":"Sin respuesta al primer contacto","text":"Hola [[nombre]], quería retomar tu consulta por esta propiedad:\n[[enlace]]\n\n¿Sigue dentro de tus opciones? Si no se ajusta a lo que buscas, cuéntame qué necesitas cambiar y revisamos alternativas."},
+                {"key":"builtin:9","category":"stage6","label":"Seguimiento de información enviada","text":"Hola [[nombre]], ¿pudiste revisar la información que te compartí?\n\n¿Hay algún requisito, condición o dato que te esté impidiendo avanzar? Si me cuentas cuál, puedo ayudarte a resolverlo antes de coordinar el próximo paso."},
+                {"key":"builtin:10","category":"stage6","label":"Evaluación después de la visita","text":"Hola [[nombre]], gracias por tu tiempo durante la visita. Me gustaría conocer tu opinión.\n\n¿Qué te pareció la propiedad? ¿Hay algo que te impida avanzar, como el precio, la distribución o la ubicación? Con tu respuesta podré evaluar si conviene presentar una propuesta o buscar una mejor alternativa."},
+                {"key":"builtin:11","category":"stage6","label":"Buscar alternativas","text":"[[nombre]], si esta propiedad no se ajusta a lo que buscas, puedo revisar otras opciones.\n\n¿Cuál es la principal característica que necesitas cambiar: ubicación, presupuesto, tamaño u otra condición? Así enfocaré la búsqueda en lo que realmente necesitas."},
+                {"key":"builtin:12","category":"stage6","label":"Propiedad no disponible","text":"Hola [[nombre]], la propiedad que consultaste ya no está disponible.\n\n¿Mantienes los mismos requisitos de búsqueda o hay algo que haya cambiado? Puedo revisar alternativas disponibles."},
+                {"key":"builtin:13","category":"stage6","label":"Cliente terminó su búsqueda","text":"Gracias por avisarme, [[nombre]]. Daré por finalizado el seguimiento de esta búsqueda.\n\nSi más adelante necesitas asesoría inmobiliaria, puedes contar con PROCASA."},
+                {"key":"builtin:17","category":"stage6","label":"Cliente necesita tiempo para decidir","text":"Hola [[nombre]], entiendo que quieras tomarte un tiempo para evaluar la propiedad.\n\n¿Hay algún antecedente que te ayude a decidir, o prefieres que retomemos el contacto en otra fecha? Así respetamos tus tiempos y evitamos mensajes innecesarios."}
             ];
         }
 
         function pilotResolveContext(text, operation, publicUrl) {
             const op = operation === 'venta' ? 'en venta' : operation === 'arriendo' ? 'en arriendo' : '';
             const question = operation === 'arriendo'
-                ? '¿Te gustaría revisar los requisitos de arriendo o tienes alguna duda sobre la propiedad?'
+                ? '¿Para cuándo necesitas arrendar y postularías de manera individual o con otra persona? Con eso puedo confirmar los requisitos específicos de este arriendo y explicarte los antecedentes necesarios.'
                 : operation === 'venta'
-                    ? '¿Hay algún aspecto de la propiedad o del proceso de compra que te gustaría revisar?'
-                    : '¿Qué información necesitas que revisemos?';
+                    ? '¿Tienes previsto financiar la compra con crédito hipotecario o con recursos propios? Si usarás crédito, ¿ya cuentas con una preaprobación o estás evaluándolo? Así podremos revisar los próximos pasos.'
+                    : '¿Qué condición de la operación necesitas revisar antes de avanzar? Puedo confirmar los antecedentes que correspondan.';
             let result = text.replace(/\[\[operacion\]\]/g, op).replace(/\[\[consulta\]\]/g, question);
             if (!publicUrl) result = result.replace(/:\s*\n\[\[enlace\]\]/g, '.').replace(/\[\[enlace\]\]/g, '');
             return result.replace(/ +([:,.?])/g, '$1');
+        }
+
+        // The first-contact rule follows the draft rather than the open accordion.
+        function pilotFirstContactRequired(draftCategory, activeCategory) {
+            return draftCategory === 'stage1' || (!draftCategory && activeCategory === 'stage1');
+        }
+
+        function pilotHasPublicLink(text, url) {
+            if (!url) return false;
+            const links = String(text || '').match(/https?:\/\/[^\s<>"']+/gi) || [];
+            return links.some(link => link.replace(/[.,;:!?)}\]]+$/, '') === url);
+        }
+
+        function pilotEnsureFirstContactLink(text, url) {
+            if (!url || !String(text || '').trim() || pilotHasPublicLink(text, url)) return text;
+            return String(text).trimEnd() + '\n\n' + url;
+        }
+
+        function pilotFirstContactError(text, url, draftCategory, activeCategory) {
+            if (!pilotFirstContactRequired(draftCategory, activeCategory)) return '';
+            if (!url) return 'No se puede enviar el primer contacto: la propiedad no tiene un enlace público verificado.';
+            if (!pilotHasPublicLink(text, url)) return 'El enlace de la propiedad es obligatorio. Se reincorporará al terminar de editar.';
+            return '';
+        }
+
+        function pilotRestoreRequiredLink(input) {
+            if (!pilotComposerActive() || !pilotFirstContactRequired(pilotDraftCategory, semState.currentCategory)) return;
+            const restored = pilotEnsureFirstContactLink(input.value, leadData.publicContactUrl);
+            if (restored !== input.value) {
+                input.value = restored;
+                input.dispatchEvent(new Event('input', {bubbles:true}));
+            }
         }
 
         function configurePilotComposerLayout() {
@@ -5592,11 +5629,11 @@
             modal.classList.toggle('wa-composer-pilot', active);
             sidebar.classList.toggle('d-none', !active);
             document.getElementById('waPilotClear').classList.toggle('d-none', !active);
-            document.getElementById('waInsertProperty').textContent = active ? 'Insertar enlace' : 'Insertar ficha';
+            document.getElementById('waInsertProperty').textContent = 'Insertar ficha';
             document.getElementById('waNewTemplate').textContent = active ? '+ Nueva plantilla' : 'Crear plantilla personal';
             if (active) {
                 sidebar.append(tools);
-                pilotSelectedKey = null;
+                if (!document.getElementById('commMessage').value.trim()) { pilotSelectedKey = null; pilotDraftCategory = null; }
             } else {
                 document.getElementById('waPersonalEditor').before(tools);
                 document.getElementById('recommendationContainer').before(list);
@@ -5615,10 +5652,11 @@
             // Do not detach the existing list when rebuilding headers.
             if (tabs.contains(list)) document.getElementById('waPilotSidebar').append(list);
             tabs.replaceChildren();
+            const counts = pilotCommercialTemplates().reduce((acc,t) => (acc[t.category]=(acc[t.category]||0)+1,acc),{});
             const groups = [
-                ['stage1','Primer contacto','fa-handshake',2],
-                ['stage2','Gestión comercial','fa-calendar-check',5],
-                ['stage6','Seguimiento','fa-comments',6],
+                ['stage1','Primer contacto','fa-handshake',counts.stage1],
+                ['stage2','Gestión comercial','fa-calendar-check',counts.stage2],
+                ['stage6','Seguimiento','fa-comments',counts.stage6],
                 ['favorites','Favoritos','fa-star',(personalLibrary.favorites || []).length],
                 ['personal','Mis plantillas','fa-bookmark',personalLibrary.templates.length],
                 ['recommendation','Recomendador de propiedades','fa-magnifying-glass',null]
@@ -5703,6 +5741,7 @@
             if (input.value.trim() && input.value.trim() !== originalTemplateText.trim()
                 && !confirm('¿Reemplazar el mensaje que estás editando?')) return false;
             pilotSelectedKey = null;
+            pilotDraftCategory = 'stage6';
             currentTemplateLabel = 'Recomendación de propiedades';
             originalTemplateText = recommendation;
             input.value = recommendation;
@@ -5712,11 +5751,12 @@
             return false;
         }
 
+        document.getElementById('commMessage').addEventListener('blur', function () { pilotRestoreRequiredLink(this); });
         document.getElementById('waPilotClear').onclick = () => {
             if (!pilotComposerActive() || semState.currentCategory === 'recommendation') return;
             const input = document.getElementById('commMessage');
             if (input.value.trim() && input.value.trim() !== originalTemplateText.trim() && !confirm('¿Limpiar el mensaje editado?')) return;
-            input.value = ''; originalTemplateText = ''; pilotSelectedKey = null; currentTemplateLabel = 'Directo / Manual';
+            input.value = ''; originalTemplateText = ''; pilotSelectedKey = null; pilotDraftCategory = null; currentTemplateLabel = 'Directo / Manual';
             renderPilotTemplates(semState.currentCategory);
             input.dispatchEvent(new Event('input',{bubbles:true}));
             input.focus();
@@ -5866,8 +5906,10 @@
             const included = !!leadData.publicContactUrl && body.includes(leadData.publicContactUrl);
             hint.className = 'small mt-2 ' + (!active ? 'd-none' : included ? 'text-success' : 'text-warning');
             if (window.crmWhatsappComposerPilot === true && active) {
-                hint.className = 'small mt-2 ' + (included ? 'text-success' : 'text-secondary');
-                hint.textContent = included ? '✓ Enlace incluido.' : leadData.publicContactUrl ? 'Enlace opcional; inclúyelo en el primer contacto.' : 'Sin enlace público verificado.';
+                const required = pilotFirstContactRequired(pilotDraftCategory, semState.currentCategory);
+                const problem = pilotFirstContactError(body,leadData.publicContactUrl,pilotDraftCategory,semState.currentCategory);
+                hint.className = 'small mt-2 ' + (!required ? 'd-none' : problem ? 'text-warning' : 'text-success');
+                hint.textContent = !required ? '' : problem || '✓ Enlace obligatorio incluido.';
                 return;
             }
             hint.textContent = !active ? '' : !leadData.publicContactUrl
@@ -5999,8 +6041,10 @@
             const safeDay = "mañana"; // Placeholder default
             const safeHour = "10:00"; // Placeholder default
 
-            if (window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa')
+            if (window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa') {
+                pilotDraftCategory = templateCategory;
                 text = pilotResolveContext(text, leadData.contactOperation, leadData.publicContactUrl);
+            }
             let processedText = (currentCommTarget === 'lead' && currentCommChannel === 'wa' && !safeName
                 ? text.replace(/Hola \[\[nombre\]\],/gi, 'Hola,') : text)
                 .replace(/\[\[nombre\]\]/g, safeName || "Estimado(a)")
@@ -6019,7 +6063,9 @@
             processedText = processedText.replace(/  +/g, ' ');
 
             if (currentCommTarget === 'lead' && currentCommChannel === 'wa' && templateCategory === 'stage1') {
-                processedText = addPropertyLink(processedText);
+                processedText = window.crmWhatsappComposerPilot === true
+                    ? pilotEnsureFirstContactLink(processedText,leadData.publicContactUrl)
+                    : addPropertyLink(processedText);
             }
             processedText = processedText.replace(/\n{3,}/g, "\n\n").trim();
             originalTemplateText = processedText;
@@ -6085,7 +6131,9 @@
             // Validation for standard modes
             const hasMessage = msgBody.value.trim().length > 0;
             const pilotBlocked = pilotWhatsapp && !['executive_wasender_api', 'wa_me'].includes(waMethod);
-            if (hasMessage && !pilotBlocked) {
+            const requiredLinkProblem = pilotComposerActive()
+                ? pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category) : '';
+            if (hasMessage && !pilotBlocked && !requiredLinkProblem) {
                 btn.disabled = false;
                 btn.style.opacity = '1';
                 if (currentCommChannel === 'wa') {
@@ -6108,7 +6156,12 @@
             btn.onclick = async function (e) {
                 e.preventDefault();
                 if (btn.dataset.sending === '1') return;
-                // 1. Obtener mensaje
+                // Fail closed before logging or calling the provider.
+                if (pilotComposerActive()) {
+                    pilotRestoreRequiredLink(msgBody);
+                    const linkProblem = pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,semState.currentCategory);
+                    if (linkProblem) { showStrongToast('Primer contacto',linkProblem,'warning'); return; }
+                }
                 const finalMsg = msgBody.value;
 
                 // Log action triggers ONLY here (actual click)

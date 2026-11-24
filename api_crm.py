@@ -270,8 +270,27 @@ def get_real_property_data(db, codigo_propiedad):
     nombre = owner.get("nombre") or prop.get("nombre_propietario") or "No registrado"
     comuna = prop.get("comuna") or location.get("comuna") or ""
     region = prop.get("region") or location.get("region") or ""
+    car = prop.get("caracteristicas") or {}
+    # Public-facing facts only; do not expose owner contact data or infer amenities.
+    features = car.get("features") or []
+    if not isinstance(features, list):
+        features = []
+    public_facts = {
+        "tipo": tipo,
+        "comuna": comuna,
+        "dormitorios": car.get("dormitorios"),
+        "banos": car.get("banos"),
+        "superficie_util": car.get("superficie_util"),
+        "superficie_terreno": car.get("superficie_terreno"),
+        "estacionamientos": car.get("estacionamientos"),
+        "bodegas": car.get("bodegas"),
+        "features": [x for x in features if isinstance(x, str) and x in {
+            "has_terrace", "has_patio", "bodega", "piscina", "gimnasio", "jardin"
+        }],
+    }
     return {
         "codigo": prop.get("codigo"),
+        "contact_public_facts": public_facts,
         "tipo": tipo,
         "operacion": operation_label,
         "contact_operation": contact_operation,
@@ -2262,6 +2281,8 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
         "crm_history": formatted_new_history, 
         "sticky_notes": lead.get("sticky_notes", []),
         "datos_propiedad": datos_propiedad,
+        "contact_origin": str(lead.get("origen") or "").strip(),
+        "contact_lead_operation": str(prospecto.get("operacion") or "").strip(),
         "last_intent": lead.get("last_intent"),
         "last_intent_at": lead.get("last_intent_at"),
         "assignment_cycle_id": str(active_cycle.get("assignment_cycle_id") or "") if active_cycle else "",

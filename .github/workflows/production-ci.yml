@@ -139,6 +139,7 @@ jobs:
           - suite: CRM phone visibility
             tests: >-
               tests/test_crm_phone_visibility.py
+              tests/test_crm_personal_message_templates.py
               tests/test_crm_chat_timeline_timezone.py
               tests/test_mongo_client_resilience.py
               tests/test_executive_pilot_webhook.py

@@ -149,7 +149,7 @@ def test_pilot_contexts_and_recommendation_draft_behavior():
         pytest.skip("Node required")
     html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
     webhook = Path("webhook.py").read_text(encoding="utf-8")
-    assert 'composer_pilot = composer_pilot_enabled(user.get("_id")) and data.get("phone_visibility") == "full"' in webhook
+    assert 'composer_pilot = composer_pilot_enabled(user.get("_id")) and str(data.get("phone_visibility") or "").casefold() == "full"' in webhook
     assert '"crm_whatsapp_composer_pilot": composer_pilot' in webhook
     assert 'if composer_pilot:\n        data["pilot_message_context"]' in webhook
     assert "crm_whatsapp_composer_pilot|default(false)" in html

@@ -295,7 +295,7 @@ def _prepare_poll_cycle(monkeypatch, leads, active_codes, outcomes, last_id=9):
     monkeypatch.setattr(extractor_prop360, "Prop360Extractor", FakeExtractor)
     monkeypatch.setattr(prop360_poll_loop, "_feature_enabled", lambda: True)
     monkeypatch.setattr(prop360_poll_loop, "_credentials", lambda: ("email", "password"))
-    monkeypatch.setattr(prop360_poll_loop, "_window_hours", lambda: 48)
+    monkeypatch.setattr(prop360_poll_loop, "_window_hours", lambda: 72)
     monkeypatch.setattr(prop360_poll_loop, "_from_date_iso", lambda _hours: "2026-10-01")
     monkeypatch.setattr(prop360_poll_loop, "_active_cartera_codes", lambda: active_codes)
     monkeypatch.setattr(prop360_poll_loop, "_last_contacto_id", lambda _db: last_id)
@@ -627,9 +627,9 @@ def test_poll_recovers_missing_older_events_without_replaying_confirmed_ones(mon
 
 def test_poll_window_covers_weekends_even_with_legacy_env(monkeypatch):
     monkeypatch.setenv("PROP360_POLL_WINDOW_HOURS", "48")
-    assert prop360_poll_loop._window_hours() == 168
+    assert prop360_poll_loop._window_hours() == 72
     monkeypatch.setenv("PROP360_POLL_WINDOW_HOURS", "240")
-    assert prop360_poll_loop._window_hours() == 240
+    assert prop360_poll_loop._window_hours() == 72
 
 def test_poll_reports_partial_errors_instead_of_ok(monkeypatch):
     leads = [{"idContacto": 7, "codigo": "17252", "contFono": "+56911111111"}]

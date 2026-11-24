@@ -5613,6 +5613,134 @@
             });
         }
 
+
+        function addPropertyLink(message) {
+            const url = leadData.publicContactUrl;
+            if (!url || !message.trim() || message.includes(url)) return message;
+            return message.trimEnd() + '\n\nFicha de la propiedad: ' + url;
+        }
+
+        function updatePropertyHint() {
+            const hint = document.getElementById('waPropertyHint');
+            const insert = document.getElementById('waInsertProperty');
+            if (!hint || !insert) return;
+            const active = currentCommTarget === 'lead' && currentCommChannel === 'wa';
+            insert.disabled = !leadData.publicContactUrl;
+            const body = document.getElementById('commMessage').value;
+            const included = !!leadData.publicContactUrl && body.includes(leadData.publicContactUrl);
+            hint.className = 'small mt-2 ' + (!active ? 'd-none' : included ? 'text-success' : 'text-warning');
+            hint.textContent = !active ? '' : !leadData.publicContactUrl
+                ? 'Sin ficha activa identificada. Verifica la propiedad antes de incluir un enlace.'
+                : included ? '✓ Ficha de la propiedad incluida.'
+                : 'Recuerda incluir la ficha en el primer contacto, cuando corresponda.';
+        }
+
+        function templateStatus(message) {
+            document.getElementById('waTemplateStatus').textContent = message;
+        }
+
+        async function refreshPersonalLibrary() {
+            if (personalLibraryLoading || personalSaving) return;
+            personalLibraryLoading = true;
+            personalLibraryReady = false;
+            try {
+                const response = await fetch('/api/crm/my-whatsapp-templates', {credentials: 'same-origin', cache: 'no-store'});
+                if (!response.ok) throw new Error('No se pudieron cargar tus plantillas.');
+                personalLibrary = await response.json();
+                personalLibraryReady = true;
+                templateStatus(personalLibrary.templates.length + ' plantillas personales');
+                if (currentCommTarget === 'lead' && currentCommChannel === 'wa' && semState.currentCategory !== 'recommendation')
+                    loadTemplates('lead', semState.currentCategory || 'stage1');
+            } catch (err) {
+                personalLibrary = {version: 0, templates: []};
+                templateStatus(err.message);
+            } finally { personalLibraryLoading = false; }
+        }
+
+        async function persistPersonalLibrary(items) {
+            if (!personalLibraryReady || personalSaving) {templateStatus('Carga la biblioteca antes de guardar.'); return false;}
+            personalSaving = true;
+            const save = document.getElementById('waSavePersonal');
+            save.disabled = true;
+            try {
+                const response = await fetch('/api/crm/my-whatsapp-templates', {
+                    method: 'PUT', credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                    body: JSON.stringify({version: personalLibrary.version, templates: items})
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'No se pudo guardar.');
+                personalLibrary = data;
+                templateStatus('Biblioteca actualizada · ' + data.templates.length + ' plantillas');
+                document.getElementById('waPersonalEditor').classList.add('d-none');
+                if (currentCommTarget === 'lead' && currentCommChannel === 'wa' && semState.currentCategory !== 'recommendation')
+                    loadTemplates('lead', semState.currentCategory || 'stage1');
+                return true;
+            } catch (err) {
+                templateStatus(err.message);
+                return false;
+            } finally { personalSaving = false; save.disabled = false; }
+        }
+
+        function reusableDraft() {
+            let value = document.getElementById('commMessage').value.trim();
+            const mappings = [[leadData.publicContactUrl, '[[enlace]]'],
+                [leadData.nombre, '[[nombre]]'], [(leadData.nombre || '').split(' ')[0], '[[nombre]]'],
+                [leadData.execName, '[[ejecutivo]]'], [(leadData.execName || '').split(' ')[0], '[[ejecutivo]]'],
+                [leadData.comuna, '[[comuna]]']];
+            for (const [literal, token] of mappings) {
+                if (literal && literal.length > 1 && literal !== 'None' && literal !== 'S/I' && literal !== 'Estimado(a)')
+                    value = value.split(literal).join(token);
+            }
+            return value;
+        }
+
+        function openPersonalEditor(id = null, fromDraft = false) {
+            if (!personalLibraryReady) {templateStatus('Cargando biblioteca; vuelve a intentarlo.'); refreshPersonalLibrary(); return;}
+            const existing = personalLibrary.templates.find(t => t.id === id);
+            personalEditingId = existing ? existing.id : null;
+            document.getElementById('waPersonalTitle').value = existing ? existing.title : '';
+            document.getElementById('waPersonalCategory').value = existing ? existing.category :
+                (/^stage[1-6]$/.test(semState.currentCategory || '') ? semState.currentCategory : 'stage1');
+            document.getElementById('waPersonalBody').value = existing ? existing.body : fromDraft ? reusableDraft() : '';
+            document.getElementById('waPersonalEditor').classList.remove('d-none');
+            document.getElementById('waPersonalTitle').focus();
+        }
+
+        document.getElementById('waTemplateSearch').addEventListener('input', () => {
+            loadTemplates('lead', semState.currentCategory || 'stage1');
+        });
+        document.getElementById('waNewTemplate').onclick = () => openPersonalEditor();
+        document.getElementById('waSaveDraft').onclick = () => openPersonalEditor(null, true);
+        document.getElementById('waCancelPersonal').onclick = () => document.getElementById('waPersonalEditor').classList.add('d-none');
+        document.getElementById('waInsertProperty').onclick = () => {
+            const input = document.getElementById('commMessage');
+            if (!leadData.publicContactUrl) return;
+            input.value = input.value.trim() ? addPropertyLink(input.value) : 'Ficha de la propiedad: ' + leadData.publicContactUrl;
+            input.dispatchEvent(new Event('input', {bubbles: true}));
+            input.focus();
+        };
+        for (const name of ['nombre', 'ejecutivo', 'propiedad', 'comuna', 'enlace']) {
+            const button = document.createElement('button');
+            button.type = 'button'; button.className = 'btn btn-outline-secondary btn-sm'; button.textContent = name;
+            button.onclick = () => {
+                const field = document.getElementById('waPersonalBody');
+                field.setRangeText('[[' + name + ']]', field.selectionStart, field.selectionEnd, 'end');
+                field.focus();
+            };
+            document.getElementById('waVariableButtons').append(button);
+        }
+        document.getElementById('waSavePersonal').onclick = () => {
+            const title = document.getElementById('waPersonalTitle').value.trim();
+            const body = document.getElementById('waPersonalBody').value.trim();
+            const category = document.getElementById('waPersonalCategory').value;
+            if (!title || !body) {templateStatus('Completa nombre y contenido de la plantilla.'); return;}
+            const entry = {title, body, category};
+            if (personalEditingId) entry.id = personalEditingId;
+            const next = personalEditingId ? personalLibrary.templates.map(t => t.id === personalEditingId ? entry : t) : [...personalLibrary.templates, entry];
+            persistPersonalLibrary(next);
+        };
+
         function selectTemplate(text, subject = "", templateCategory = semState.currentCategory) {
             const safeName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre.split(' ')[0] : "";
             const fullName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre : "Estimado Cliente";

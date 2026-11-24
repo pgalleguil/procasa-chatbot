@@ -796,7 +796,7 @@ def pablo_fallback_context(monkeypatch):
     from chatbot import crm_executive_outbound_api as api, storage
 
     db = mongomock.MongoClient().test
-    db["leads"].insert_one({"_id": LEAD_ID, "phone": "+56996762064", "lifecycle": {
+    db["leads"].insert_one({"_id": LEAD_ID, "phone": "+56996762064", "ejecutivo_asignado": api._PABLO_NAME, "lifecycle": {
         "assigned_to_user_id": api._PABLO_USER_ID,
         "current_assignment_cycle_id": CYCLE,
     }})
@@ -839,7 +839,7 @@ def test_connected_session_resolves_preflight_incident(
     assert db[api._INCIDENTS].count_documents({"status": "resolved"}) == 1
 
 
-def test_uncertain_send_blocks_repeated_api_and_manual_fallback(
+def test_uncertain_send_blocks_api_but_offers_manual_review(
         pablo_fallback_context, monkeypatch):
     api, db, user = pablo_fallback_context
     monkeypatch.setattr(api, "_session_status",
@@ -850,7 +850,7 @@ def test_uncertain_send_blocks_repeated_api_and_manual_fallback(
         "executive_id": api._PABLO_USER_ID, "state": "delivery_unknown",
     })
     assert api._assess(db, user=user, lead_id=str(LEAD_ID)) == {
-        "method": "blocked", "available": False,
+        "method": "wa_me", "available": False, "fallback": True,
         "reason": "delivery_unconfirmed",
     }
     assert db[api._INCIDENTS].count_documents({"reason": "delivery_unconfirmed"}) == 1
@@ -912,7 +912,7 @@ def test_explicit_provider_rejection_unlocks_manual_fallback_only_after_attempt(
     assert db[api._INCIDENTS].count_documents({"status": "open"}) == 1
 
 
-def test_unknown_provider_result_is_never_manual_fallback(
+def test_unknown_provider_result_offers_manual_review(
         pablo_fallback_context, monkeypatch):
     import asyncio
     from fastapi import HTTPException
@@ -927,10 +927,8 @@ def test_unknown_provider_result_is_never_manual_fallback(
         async def json(self):
             return {"lead_id": str(LEAD_ID), "text": "Hola",
                     "idempotency_key": "uncertain-once-1234"}
-    with pytest.raises(HTTPException) as err:
-        asyncio.run(api.crm_executive_whatsapp_send(Request()))
-    assert err.value.status_code == 503
-    assert err.value.detail == {"code": "delivery_unconfirmed"}
+    assert asyncio.run(api.crm_executive_whatsapp_send(Request())) == {
+        "status": "manual_fallback", "method": "wa_me", "reason": "delivery_unconfirmed"}
     assert db[api._INCIDENTS].count_documents({"reason": "delivery_unconfirmed"}) == 1
 
 
@@ -964,7 +962,7 @@ def test_admin_banner_and_manual_fallback_are_scoped_in_templates():
     lead_list = (root / "templates/crm_leads_list.html").read_text(encoding="utf-8")
     assert "window.crmExecutiveWaMethod = 'wa_me'" in detail
     assert "result.status === 'manual_fallback'" in detail
-    assert "No repitas el envío" in detail
+    assert "Revisa la conversación en WhatsApp Web antes de enviar" in detail
     assert "window.open(url, '_blank')" in detail
     assert "crmWhatsAppIncidents" in lead_list
     assert "can_administer_leads" in lead_list
@@ -998,7 +996,7 @@ def mariela_crm_api_rig(monkeypatch):
     cycle_id = "mariela-cycle-20261123"
     phone = "+56996762064"
     db["leads"].insert_one({
-        "_id": lead_id, "phone": phone, "messages": [],
+        "_id": lead_id, "phone": phone, "messages": [], "ejecutivo_asignado": api._MARIELA_NAME,
         "lifecycle": {"assigned_to_user_id": owner,
                       "current_assignment_cycle_id": cycle_id},
     })
@@ -1154,7 +1152,7 @@ def test_mariela_off_preserves_manual_web_and_blocks_post(
     assert db[outgoing.OUTBOX].count_documents({}) == 0
 
 
-def test_mariela_unconfirmed_dispatch_is_scoped_and_no_manual_retry(
+def test_mariela_unconfirmed_dispatch_is_scoped_and_manual_review(
         mariela_crm_api_rig):
     api, db, mariela, lead_id, cycle_id, _ = mariela_crm_api_rig
     db[outgoing.OUTBOX].insert_one({
@@ -1164,7 +1162,7 @@ def test_mariela_unconfirmed_dispatch_is_scoped_and_no_manual_retry(
         "state": "delivery_unknown", "session_id": "133526",
     })
     assert api._assess(db, user=mariela, lead_id=str(lead_id)) == {
-        "method": "blocked", "available": False,
+        "method": "wa_me", "available": False, "fallback": True,
         "reason": "delivery_unconfirmed",
     }
     row = db[api._INCIDENTS].find_one({"reason": "delivery_unconfirmed"})
@@ -1239,7 +1237,7 @@ def team_api_rig(monkeypatch, request):
     db = mongomock.MongoClient().test
     lead_id = ObjectId("6b046d3e1318876d74b06ae0")
     cycle_id = "team-cycle-20261123"
-    db["leads"].insert_one({"_id": lead_id, "phone": "+56996762064", "messages": [],
+    db["leads"].insert_one({"_id": lead_id, "phone": "+56996762064", "messages": [], "ejecutivo_asignado": name,
         "lifecycle": {"assigned_to_user_id": owner,
                       "current_assignment_cycle_id": cycle_id}})
     db["usuarios"].insert_one({"_id": ObjectId(owner), "nombre": name,
@@ -1336,7 +1334,7 @@ def test_team_connection_down_or_uncertain_never_sends_twice(
         "session_id": str(user["wasender"]["session_id"]),
         "state": "delivery_unknown"})
     blocked = api._assess(db, user=user, lead_id=str(lead_id))
-    assert blocked == {"method": "blocked", "available": False,
+    assert blocked == {"method": "wa_me", "available": False, "fallback": True,
                        "reason": "delivery_unconfirmed"}
 
 
@@ -1369,10 +1367,13 @@ def test_crm_post_send_failure_calls_operator_alert(pablo_fallback_context, monk
         async def json(self):
             return {"lead_id": str(LEAD_ID), "text": "Hola",
                     "idempotency_key": "alert-rejection-12345"}
-    if reason in ("delivery_unconfirmed", "invalid_recipient"):
+    if reason == "delivery_unconfirmed":
+        assert asyncio.run(api.crm_executive_whatsapp_send(Request())) == {
+            "status": "manual_fallback", "method": "wa_me", "reason": reason}
+    elif reason == "invalid_recipient":
         with pytest.raises(HTTPException) as error:
             asyncio.run(api.crm_executive_whatsapp_send(Request()))
-        assert error.value.status_code == (503 if reason == "delivery_unconfirmed" else 422)
+        assert error.value.status_code == 422
     else:
         assert asyncio.run(api.crm_executive_whatsapp_send(Request())) == {
             "status": "manual_fallback", "method": "wa_me"}
@@ -1499,3 +1500,18 @@ def test_unregistered_recipient_no_web_fallback_and_notifies_admin(pablo_fallbac
     assert asyncio.run(api.crm_executive_whatsapp_send(Request())) == {
         "status": "recipient_not_registered", "method": "blocked"}
     assert alerts == [{"user": user, "reason": "recipient_not_registered", "lead_id": str(LEAD_ID)}]
+
+
+def test_legacy_cycle_without_pointer_offers_manual_contact(pablo_fallback_context, monkeypatch):
+    api, db, user = pablo_fallback_context
+    db["leads"].update_one({"_id": LEAD_ID}, {"$unset": {"lifecycle.current_assignment_cycle_id": 1, "lifecycle.assigned_to_user_id": 1}})
+    db["crm_assignment_cycles"].insert_one({"lead_id": LEAD_ID, "assignment_cycle_id": CYCLE,
+        "assigned_to_user_id": api._PABLO_USER_ID, "cycle_status": "active", "unassigned_at": None})
+    def fail(*args, **kwargs):
+        raise outgoing.OutboundBlocked("current_assignment_required")
+    monkeypatch.setattr(api, "_eligible_pablo", fail)
+    assert not api._outstanding_uncertain(db, str(LEAD_ID))
+    assert api._assess(db, user=user, lead_id=str(LEAD_ID)) == {
+        "method": "wa_me", "available": False, "fallback": True, "reason": "current_assignment_required"}
+    db["crm_assignment_cycles"].update_one({"lead_id": LEAD_ID}, {"$set": {"assigned_to_user_id": str(ObjectId())}})
+    assert api._assess(db, user=user, lead_id=str(LEAD_ID))["method"] == "blocked"

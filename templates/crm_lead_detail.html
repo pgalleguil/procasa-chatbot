@@ -4077,10 +4077,10 @@
             propiedad: "{{ lead.datos_propiedad.codigo }}",
             publicContactUrl: {{ (lead.datos_propiedad.public_contact_url or "") | tojson }},
             contactOperation: {{ (lead.datos_propiedad.contact_operation or "") | tojson }},
-            contactOrigin: {{ (lead.contact_origin or "") | tojson }},
-            contactLeadOperation: {{ (lead.contact_lead_operation or "") | tojson }},
+            contactOrigin: {{ ((lead.contact_origin or "") if crm_whatsapp_composer_pilot|default(false) else "") | tojson }},
+            contactLeadOperation: {{ ((lead.contact_lead_operation or "") if crm_whatsapp_composer_pilot|default(false) else "") | tojson }},
             contactOperations: {{ (lead.datos_propiedad.contact_operations or []) | tojson }},
-            contactPublicFacts: {{ (lead.datos_propiedad.contact_public_facts or {}) | tojson }},
+            contactPublicFacts: {{ ((lead.datos_propiedad.contact_public_facts or {}) if crm_whatsapp_composer_pilot|default(false) else {}) | tojson }},
             direccion: "{{ lead.datos_propiedad.calle }}",
             comuna: "{{ lead.datos_propiedad.comuna }}",
             precio: "{{ lead.datos_propiedad.precio_uf }}",
@@ -5616,12 +5616,12 @@
             const attrs = [];
             const number = value => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
             const fmt = value => new Intl.NumberFormat('es-CL',{maximumFractionDigits:2}).format(value);
-            if (number(facts.dormitorios)) attrs.push(fmt(facts.dormitorios)+' dormitorios');
-            if (number(facts.banos)) attrs.push(fmt(facts.banos)+' baños');
+            if (number(facts.dormitorios)) attrs.push(fmt(facts.dormitorios)+(facts.dormitorios === 1 ? ' dormitorio' : ' dormitorios'));
+            if (number(facts.banos)) attrs.push(fmt(facts.banos)+(facts.banos === 1 ? ' baño' : ' baños'));
             if (number(facts.superficie_util)) attrs.push(fmt(facts.superficie_util)+' m² útiles');
             if (type && /casa|parcela|terreno/i.test(type) && number(facts.superficie_terreno)) attrs.push(fmt(facts.superficie_terreno)+' m² de terreno');
-            if (number(facts.estacionamientos)) attrs.push(fmt(facts.estacionamientos)+' estacionamientos');
-            if (number(facts.bodegas)) attrs.push(fmt(facts.bodegas)+' bodegas');
+            if (number(facts.estacionamientos)) attrs.push(fmt(facts.estacionamientos)+(facts.estacionamientos === 1 ? ' estacionamiento' : ' estacionamientos'));
+            if (number(facts.bodegas)) attrs.push(fmt(facts.bodegas)+(facts.bodegas === 1 ? ' bodega' : ' bodegas'));
             const labels = {has_terrace:'Terraza',has_patio:'Patio',bodega:'Bodega',piscina:'Piscina',gimnasio:'Gimnasio',jardin:'Jardín'};
             for (const key of (Array.isArray(facts.features) ? facts.features : [])) {
                 if (labels[key] && !(key === 'bodega' && number(facts.bodegas))) attrs.push(labels[key]);
@@ -5640,7 +5640,7 @@
             const op = operation === 'venta' ? 'en venta' : operation === 'arriendo' ? 'en arriendo' : '';
             const context = pilotPublicContext(data,operation);
             const question = operation === 'arriendo'
-                ? 'para preparar una postulación al arriendo, estos son los antecedentes habituales que conviene tener disponibles:\n\n• Cédula de identidad vigente.\n• Comprobantes de ingresos (por ejemplo, liquidaciones de sueldo o antecedentes tributarios si trabajas de forma independiente).\n• Certificado de cotizaciones, cuando corresponda.\n• Informe comercial, si se solicita.\n• Antecedentes de quien complemente renta o del aval, solo si se exige.\n\nConfirmaré los requisitos exactos de esta propiedad antes de solicitar documentos y te indicaré un canal seguro para entregarlos. ¿Postularías individualmente o complementarías renta?'
+                ? 'para preparar una postulación al arriendo, estos son los antecedentes habituales que conviene tener disponibles:\n\n• Cédula de identidad vigente.\n• Si trabajas de forma dependiente: contrato de trabajo y últimas liquidaciones de sueldo (habitualmente tres).\n• Si trabajas de forma independiente: antecedentes tributarios y respaldo de ingresos.\n• Certificado de cotizaciones previsionales, cuando corresponda.\n• Informe comercial, si se solicita.\n• Antecedentes de quien complemente renta o del aval, solo si se exige.\n\nConfirmaré los requisitos exactos de esta propiedad antes de solicitar documentos y te indicaré un canal seguro para entregarlos. ¿Postularías individualmente o complementarías renta?'
                 : operation === 'venta'
                     ? 'para orientar la compra, ¿ya tienes crédito hipotecario preaprobado o estás en proceso de evaluación? Si comprarías con recursos propios, también podemos avanzar con esa modalidad. Si necesitas apoyo para entender el financiamiento, puedo orientarte sobre los próximos pasos.'
                     : '¿Qué condiciones de la operación necesitas revisar para avanzar?';
@@ -5648,7 +5648,7 @@
                 .replace(/\[\[saludo\]\]/g,pilotGreeting()).replace(/\[\[origen\]\]/g,context.origin)
                 .replace(/\[\[referencia\]\]/g,context.reference).replace(/\[\[atributos\]\]/g,context.attributes);
             if (!publicUrl) result = result.replace(/:\s*\n\[\[enlace\]\]/g, '.').replace(/\[\[enlace\]\]/g, '');
-            return result.replace(/ +([:,.?])/g, '$1').replace(/ {2,}/g,' ');
+            return result.replace(/ +([:,.?])/g, '$1').replace(/ {2,}/g,' ').replace(/\bde el\b/g,'del').replace(/\ba el\b/g,'al');
         }
 
         // The first-contact rule follows the draft rather than the open accordion.

@@ -5430,6 +5430,7 @@
                 ? 'checking' : 'wa_me';
             window.crmExecutiveOutboundAttemptKey = null;
             window.crmExecutiveWaFallback = false;
+            window.crmExecutiveWaReason = '';
             window.crmExecutiveWaPreflightId = (window.crmExecutiveWaPreflightId || 0) + 1;
             const thisPreflight = window.crmExecutiveWaPreflightId;
 
@@ -5518,6 +5519,7 @@
                         ? 'executive_wasender_api'
                         : (data.method === 'wa_me' && data.fallback === true ? 'wa_me' : 'blocked');
                     window.crmExecutiveWaMethod = method;
+                    window.crmExecutiveWaReason = data.reason || '';
                     window.crmExecutiveWaFallback = method === 'wa_me';
                     window.crmExecutiveDirectReady = method === 'executive_wasender_api';
                     updateSendLink(currentCommTarget, semState.currentCategory || firstTabId);
@@ -6490,9 +6492,11 @@
                 fallbackNotice.classList.toggle('d-none', !pilotWhatsapp || waMethod === 'executive_wasender_api');
                 fallbackNotice.textContent = !pilotWhatsapp ? '' :
                     waMethod === 'wa_me'
-                    ? 'WaSender no está disponible. Puedes abrir WhatsApp Web y enviar manualmente. Este clic no confirma el envío ni detiene el SLA; la conversación podría no quedar registrada.'
+                    ? (window.crmExecutiveWaReason === 'delivery_unconfirmed'
+                        ? 'Envío anterior no confirmado. Revisa la conversación en WhatsApp Web antes de enviar para evitar duplicados.'
+                        : 'Envío por API no disponible. Puedes continuar por WhatsApp Web. Este clic no confirma el envío ni detiene el SLA; la conversación podría no quedar registrada.')
                     : waMethod === 'checking' ? 'Comprobando la sesión de WhatsApp…'
-                    : waMethod === 'blocked' ? 'No se puede confirmar un envío seguro. No reenvíes: podría existir un intento anterior. Revisa el lead o contacta al administrador.' : '';
+                    : waMethod === 'blocked' ? 'No se pudo autorizar el contacto o verificar sus datos. Revisa el lead o contacta al administrador.' : '';
             }
             if (currentCommChannel === 'wa') {
                 btn.innerHTML = pilotWhatsapp
@@ -6618,10 +6622,13 @@
                                 // Do NOT open the alternate channel automatically.
                                 // The user must click again and explicitly send in WhatsApp Web.
                                 window.crmExecutiveWaMethod = 'wa_me';
+                                window.crmExecutiveWaReason = result.reason || '';
                                 window.crmExecutiveWaFallback = true;
                                 updateSendLink(target, category);
                                 showStrongToast('WhatsApp Web disponible',
-                                    'WaSender no envió el mensaje. Pulsa Abrir WhatsApp Web para enviarlo manualmente.', 'warning');
+                                    result.reason === 'delivery_unconfirmed'
+                                        ? 'Revisa la conversación antes de enviar manualmente; el intento anterior pudo llegar.'
+                                        : 'Pulsa Abrir WhatsApp Web para continuar manualmente.', 'warning');
                             } else {
                                 window.crmExecutiveWaMethod = 'blocked';
                                 updateSendLink(target, category);
@@ -6640,8 +6647,9 @@
                         }
                         return;
                     }
-                    // Safe manual fallback: only after explicit user click, and
-                    // never after a pending/uncertain provider attempt.
+                    // Manual fallback never performs a second API dispatch.
+                    if (pilotWhatsapp && window.crmExecutiveWaReason === 'delivery_unconfirmed'
+                        && !confirm('Revisa en WhatsApp si el mensaje anterior llegó. ¿Abrir la conversación para continuar manualmente?')) return;
                     const cleanPhone = phone.replace(/\D/g, '');
                     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`;
                     window.open(url, '_blank');

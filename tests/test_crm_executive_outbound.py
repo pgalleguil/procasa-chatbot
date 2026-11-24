@@ -1377,3 +1377,25 @@ def test_crm_post_send_failure_calls_operator_alert(pablo_fallback_context, monk
         assert asyncio.run(api.crm_executive_whatsapp_send(Request())) == {
             "status": "manual_fallback", "method": "wa_me"}
     assert alerts == [{"user": user, "reason": reason, "lead_id": str(LEAD_ID)}]
+
+
+def test_provider_validation_diagnostics_preserve_fields_without_private_data(context):
+    db, _ = context
+    body = {"success": False, "message": "Validation failed", "errors": {
+        "to": ["The +56912345678 number is invalid"],
+        "text": ["The text must not exceed 100 characters: PRIVATE CONTENT"],
+        "private-field": ["private-session-token"],
+    }}
+    result = outgoing.send_manual(
+        db, lead_id=LEAD_ID, actor_user_id=OWNER, message="Hola",
+        idempotency_key="request-validation-details", post=lambda *_a, **_kw:
+        SimpleNamespace(status_code=422, content=b"error", json=lambda: body),
+    )
+    assert result == {"status": "rejected", "reason_code": "invalid_request"}
+    saved = next(iter(db[outgoing.OUTBOX].docs.values()))
+    assert saved["provider_validation_fields"] == {
+        "to": ["invalid"], "text": ["length"], "other": ["unspecified"]}
+    assert saved["provider_request_text_chars"] == 4
+    assert "+56912345678" not in str(saved)
+    assert "PRIVATE CONTENT" not in str(saved)
+    assert "private-session-token" not in str(saved)

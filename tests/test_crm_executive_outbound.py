@@ -975,7 +975,7 @@ def test_crm_lead_detail_uses_api_only_for_pablo_link_for_everyone_else():
     assert "window.crmPabloApiPilot" in text
     assert "fetch('/api/crm/executive-whatsapp/send'" in text
     assert "fetch('/api/crm/executive-whatsapp/available/" in text
-    assert "['executive_wasender_api','retry'].includes(window.crmExecutiveWaMethod)" in text
+    assert "['executive_wasender_api','retry','wa_me'].includes(window.crmExecutiveWaMethod)" in text
     assert "window.crmExecutiveOutboundAttemptKey" in text
 
 
@@ -1501,3 +1501,12 @@ def test_legacy_cycle_without_pointer_is_not_disconnection(pablo_fallback_contex
         "method": "retry", "available": False, "reason": "current_assignment_required"}
     db["crm_assignment_cycles"].update_one({"lead_id": LEAD_ID}, {"$set": {"assigned_to_user_id": str(ObjectId())}})
     assert api._assess(db, user=user, lead_id=str(LEAD_ID))["method"] == "blocked"
+
+
+def test_manual_web_rechecks_session_on_actual_click():
+    from pathlib import Path
+    html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    assert "const wasWeb = window.crmExecutiveWaMethod === 'wa_me'" in html
+    assert "if (wasWeb && pendingWeb)" in html
+    assert "pendingWeb.location.replace(" in html
+    assert "result.status === 'manual_fallback' && result.method === 'wa_me'" in html

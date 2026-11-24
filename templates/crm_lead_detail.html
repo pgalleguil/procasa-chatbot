@@ -6406,8 +6406,7 @@
 
             if (pilotComposerActive() && ['stage2','stage3'].includes(templateCategory) && pilotSelectedKey?.startsWith('builtin:')) {
                 processedText = processedText.replace(/^Hola(?:\s+[^,]+)?,\s*/i, '');
-                if (safeName) processedText = processedText.replace(new RegExp('^'+safeName.replace(/[.*+?^${}()|[\]\\]/g,'\\            // Cleanup potentially double spaces if name was empty
-            processedText = processedText.replace(/  +/g, ' ');')+',\\s*','i'),'');
+                if (safeName && processedText.toLocaleLowerCase('es-CL').startsWith((safeName+',').toLocaleLowerCase('es-CL'))) processedText = processedText.slice(safeName.length+1).trimStart();
                 processedText = processedText.charAt(0).toUpperCase() + processedText.slice(1);
                 const last = new Date(leadData.pilotMessageContext?.last_executive_contact_at || '');
                 const localDay = d => new Intl.DateTimeFormat('en-CA',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);

@@ -2,7 +2,7 @@
 
 Runs every PROP360_POLL_INTERVAL_SECONDS. Each cycle:
   1. Logs into Prop360 (fresh session per cycle).
-  2. Fetches leads from the last PROP360_POLL_WINDOW_HOURS (minimum 7 days).
+  2. Fetches leads from the last 72 hours (calendar-date API).
   3. Skips internal contacts and confirms prior processing against the ingest ledger.
   4. Delegates identity/dedup to ingest_lead_event (phone/email lookup on the
      `leads` collection), so WhatsApp/manual/Prop360 converge on one document.
@@ -58,7 +58,9 @@ def _interval_seconds() -> int:
 
 
 def _window_hours() -> int:
-    return max(168, int(os.getenv("PROP360_POLL_WINDOW_HOURS", "168")))
+    # Normal hourly polling is deliberately limited to three days.
+    # Historical recovery is a separate operation, not an hourly workload.
+    return 72
 
 
 def _credentials() -> tuple:

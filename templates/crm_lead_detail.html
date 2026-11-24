@@ -6653,6 +6653,7 @@
                         // Reserve a tab synchronously to avoid browser popup blocking.
                         const wasWeb = window.crmExecutiveWaMethod === 'wa_me';
                         const pendingWeb = wasWeb ? window.open('about:blank', '_blank') : null;
+                        let webOpened = false;
                         try {
                             const response = await fetch('/api/crm/executive-whatsapp/send', {
                                 method: 'POST', credentials: 'same-origin',
@@ -6674,6 +6675,8 @@
                                 throw new Error(code || 'delivery_unconfirmed');
                             }
                             if (result.status === 'accepted' && result.recorded === true) {
+                                window.crmExecutiveWaMethod = 'executive_wasender_api';
+                                window.crmExecutiveWaFallback = false;
                                 showStrongToast('Aceptado por WaSender',
                                     'Mensaje registrado en el lead. La entrega al destinatario se comprueba por separado.', 'success');
                                 hideModal();
@@ -6694,6 +6697,7 @@
                                     const cleanPhone = phone.replace(/\D/g, '');
                                     pendingWeb.opener = null;
                                     pendingWeb.location.replace(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`);
+                                    webOpened = true;
                                     hideModal();
                                 } else showStrongToast('WhatsApp Web disponible',
                                     'Sesión desconectada. Pulsa Abrir WhatsApp Web para continuar.', 'warning');
@@ -6723,7 +6727,7 @@
                             showStrongToast('Estado del mensaje pendiente',
                                 'Puedes comprobar nuevamente el estado de la API o continuar con un nuevo mensaje.', 'warning');
                         } finally {
-                            if (pendingWeb && !pendingWeb.closed && window.crmExecutiveWaMethod !== 'wa_me') pendingWeb.close();
+                            if (pendingWeb && !pendingWeb.closed && !webOpened) pendingWeb.close();
                             btn.dataset.sending = '0';
                             btn.style.opacity = '1';
                         }

@@ -1122,7 +1122,7 @@ def test_mariela_cannot_send_to_unassigned_lead_or_wrong_session(
                                          "capture_enabled": True, "token": "wrong"}
                         if sid == "133526" else None)
     state = asyncio.run(api.crm_executive_whatsapp_available(object(), str(lead_id)))
-    assert state["method"] == "wa_me" and state["fallback"] is True
+    assert state == {"method": "retry", "available": False, "reason": "pilot_session_mismatch"}
     assert db[outgoing.OUTBOX].count_documents({}) == 0
 
 

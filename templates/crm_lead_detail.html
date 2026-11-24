@@ -5569,10 +5569,10 @@
 
         function pilotCommercialTemplates(operation = '') {
             const rows = [
-                {"key":"builtin:1","category":"stage1","label":"Consulta recibida desde portal","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Recibí tu consulta [[origen]] por [[referencia]].\n\nTe comparto la publicación:\n[[enlace]]\n\n¿Tienes alguna consulta sobre la propiedad o te gustaría coordinar una visita?"},
-                {"key":"builtin:2","category":"stage1","label":"Cliente solicitó visita","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Recibí tu solicitud para visitar [[referencia]].\n\nTe comparto la publicación:\n[[enlace]]\n\n[[visita_paso]]"},
-                {"key":"builtin:30","category":"stage1","label":"Continuar conversación del chatbot","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Revisé tu conversación con nuestro asistente y continuaré ayudándote personalmente.\n\n[[primera_ficha]]\n\n[[primer_paso]]"},
-                {"key":"builtin:31","category":"stage1","label":"Primer contacto manual","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Me gustaría ayudarte con tu búsqueda inmobiliaria.\n\n[[primera_ficha]]\n\n[[primer_paso]]"},
+                {"key":"builtin:1","category":"stage1","label":"Responder consulta de propiedad","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Recibí tu consulta [[origen]] por [[referencia]].\n\nTe comparto la publicación:\n[[enlace]]\n\n¿Tienes alguna consulta sobre la propiedad o te gustaría coordinar una visita?"},
+                {"key":"builtin:2","category":"stage1","label":"Coordinar visita solicitada","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Recibí tu solicitud para visitar [[referencia]].\n\nTe comparto la publicación:\n[[enlace]]\n\n[[visita_paso]]"},
+                {"key":"builtin:30","category":"stage1","label":"Continuar conversación","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Revisé tu conversación con nuestro asistente y continuaré ayudándote personalmente.\n\n[[primera_ficha]]\n\n[[primer_paso]]"},
+                {"key":"builtin:31","category":"stage1","label":"Presentación y contacto","text":"Hola [[nombre]], [[saludo]]. Soy [[ejecutivo]], asesor inmobiliario de PROCASA. Me gustaría ayudarte con tu búsqueda inmobiliaria.\n\n[[primera_ficha]]\n\n[[primer_paso]]"},
                 {"key":"builtin:18","category":"stage2","label":"Presentar características de la propiedad","text":"[[nombre]], te comparto las principales características de [[referencia]]:\n[[atributos]]\n\nFotografías y ficha:\n[[enlace]]\n\n¿Se ajusta a lo que buscas?"},
                 {"key":"builtin:3","category":"stage2","label":"Requisitos y condiciones","text":"Hola [[nombre]], [[consulta]]"},
                 {"key":"builtin:21","category":"stage2","label":"Evaluar capacidad para postular","text":"[[nombre]], para evaluar tu postulación al arriendo, [[postulacion_paso]]\n\nAsí podremos revisar si cumples las condiciones del propietario antes de solicitar documentos."},
@@ -5769,11 +5769,14 @@
         function pilotFirstContactKeys(data) {
             const ctx = data.pilotMessageContext || {};
             const specific = pilotHasSpecificProperty(data);
-            const keys = [];
-            if (ctx.chatbot_dialogue) keys.push('builtin:30');
-            if (ctx.intake === 'prop360' && specific) keys.push('builtin:1');
-            if (ctx.intake === 'manual' || !keys.length) keys.push('builtin:31');
-            if (specific) keys.push('builtin:2');
+            // One channel-specific introduction. A previous office dialogue wins
+            // over the original ingestion mechanism, which is retained for reporting.
+            const keys = [ctx.chatbot_dialogue ? 'builtin:30' :
+                ctx.intake === 'prop360' && specific ? 'builtin:1' : 'builtin:31'];
+            if (specific && (ctx.visit_requested || ctx.requested_visit || pilotVisitLabel(ctx.visit_at))) {
+                if (ctx.chatbot_dialogue) keys.push('builtin:2');
+                else keys.unshift('builtin:2');
+            }
             return keys;
         }
 
@@ -5849,7 +5852,7 @@
         }
 
         function pilotAllTemplates() {
-            return [...pilotCommercialTemplates(pilotDetectedOperation(leadData)), ...personalLibrary.templates.map(t => ({
+            return [...pilotCommercialTemplates(pilotDetectedOperation(leadData)).map(t => t.key === 'builtin:31' && !pilotHasSpecificProperty(leadData) ? {...t,label:'Conocer necesidades del cliente'} : t), ...personalLibrary.templates.map(t => ({
                 key:'personal:' + t.id, category:t.category, label:t.title, text:t.body, personalId:t.id
             }))];
         }
@@ -5979,7 +5982,7 @@
             list.classList.remove('d-none');
             const favorites = personalLibrary.favorites || [];
             const allEntries = pilotAllTemplates().filter(t => category === 'favorites'
-                ? favorites.includes(t.key) : category === 'personal' ? !!t.personalId : !t.personalId && t.category === category);
+                ? favorites.includes(t.key) && (t.personalId || t.category !== 'stage1' || pilotFirstContactKeys(leadData).includes(t.key)) : category === 'personal' ? !!t.personalId : !t.personalId && t.category === category);
             const {primary,extra} = pilotPartitionTemplates(allEntries,category,leadData);
             const expanded = pilotExpandedGroups.has(category);
             const entries = expanded ? [...primary,...extra] : primary;

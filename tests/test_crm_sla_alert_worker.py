@@ -116,6 +116,10 @@ class FakeDB(dict):
 @pytest.fixture(autouse=True)
 def reassignment_live_for_existing_alert_contract(monkeypatch):
     monkeypatch.setenv("CRM_SLA_REASSIGNMENT_ENABLED", "true")
+    # Existing fixtures model a NORMAL SLA starting at 09:00. Freeze only
+    # the SLA clock, not repository lease timestamps, at a fresh breach.
+    monkeypatch.setattr("chatbot.crm_sla_alert_worker.utc_now",
+                        lambda: chile_dt(12, 5).astimezone(timezone.utc))
 
 
 @pytest.fixture
@@ -419,3 +423,18 @@ class TestBatch:
             r = await process_alerts_batch(db=db, worker_id="w1", sender=FakeSender(),
                                            max_total=10, max_per_recipient=10)
         assert r["processed"] == 3
+
+
+@pytest.mark.asyncio
+async def test_historical_pending_breach_is_cancelled_without_provider_call(db, monkeypatch):
+    alert = _alert_doc({"state": ST_PROCESSING, "lease_owner": "w1"})
+    db[COLLECTION]._docs.append(alert)
+    db["leads"]._docs.append(make_lead())
+    db["crm_assignment_cycles"]._docs.append(make_cycle())
+    monkeypatch.setattr("chatbot.crm_sla_alert_worker.utc_now",
+                        lambda: chile_dt(13, 0).astimezone(timezone.utc))
+    sender = FakeSender()
+    result = await process_one_alert(db=db, worker_id="w1", sender=sender,
+                                     pre_claimed=alert)
+    assert result == {"status": "cancelled", "reason": "historical_deadline"}
+    assert sender._calls == []

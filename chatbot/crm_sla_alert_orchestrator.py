@@ -61,9 +61,13 @@ async def run_sla_alert_cycle(db=None):
         # 2. Evaluate + persist (idempotent)
         persist_report = await run_evaluation_and_persist_once(db=db, max_cycles=500)
         logger.info(
-            "[SLA_ALERT][MONITOR] candidates=%s persisted=%s already_exists=%s "
+            "[SLA_ALERT][MONITOR] scanned=%s current_window=%s outside_window=%s "
+            "candidates=%s persisted=%s already_exists=%s "
             "excluded_no_phone=%s excluded_by_limit=%s excluded_by_catch_up=%s "
             "catch_up_cutover=%s",
+            persist_report.get("total_cycles_scanned", 0),
+            persist_report.get("current_window_cycles", 0),
+            persist_report.get("excluded_outside_current_window", 0),
             persist_report.get("candidates_evaluated", 0),
             persist_report.get("persisted", 0),
             persist_report.get("already_exists", 0),

@@ -69,7 +69,8 @@ async def run_evaluation_and_persist_once(
 
     # Evaluate
     eval_report = await evaluate_sla_alerts(db=db, limit_cycles=max_cycles,
-                                             alert_cutover=CUTOVER_AT, now=now)
+                                             alert_cutover=CUTOVER_AT, now=now,
+                                             live_current_only=True)
     candidates = eval_report.get("alerts", [])
     logger.info(
         "[SLA_PIPELINE] eval cycles=%s included=%s excluded=%s as_of=%s",
@@ -165,6 +166,9 @@ async def run_evaluation_and_persist_once(
     return {
         "status": "completed",
         "candidates_evaluated": len(candidates),
+        "total_cycles_scanned": eval_report.get("total_cycles_evaluated", 0),
+        "current_window_cycles": eval_report.get("current_window_cycles", 0),
+        "excluded_outside_current_window": eval_report.get("excluded_by_reason", {}).get("outside_current_alert_window", 0),
         "authorized": len(authorized),
         "persisted": persisted,
         "already_exists": already_exists,

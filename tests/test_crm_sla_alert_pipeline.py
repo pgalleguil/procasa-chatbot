@@ -137,7 +137,7 @@ async def test_breached_alert_is_suppressed_while_reassignment_emergency_stop_is
     db = populated_db()
     monkeypatch.setenv("CRM_SLA_REASSIGNMENT_ENABLED", "false")
     with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
-        result = await run_evaluation_and_persist_once(db=db, now=cl(10, 30))
+        result = await run_evaluation_and_persist_once(db=db, now=cl(10, 5))
     assert result["persisted"] == 0
     assert result["suppressed_reassignment_disabled"] == 1
     assert db[COLLECTION].docs == []
@@ -146,7 +146,7 @@ async def test_breached_alert_is_suppressed_while_reassignment_emergency_stop_is
 @pytest.mark.asyncio
 async def test_enabled_persists_one_breached_without_warning_retroactive():
     db = populated_db()
-    now = cl(10, 30)
+    now = cl(10, 5)
     with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
         result = await run_evaluation_and_persist_once(db=db, now=now)
     assert result["persisted"] == 1
@@ -160,7 +160,7 @@ async def test_previous_cutover_cycle_is_excluded():
     db["leads"].docs.append(lead("old"))
     db["crm_assignment_cycles"].docs.append(cycle("old", "old-cycle", assigned=cl(18, 0, day=2)))
     with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
-        result = await run_evaluation_and_persist_once(db=db, now=cl(10, 30))
+        result = await run_evaluation_and_persist_once(db=db, now=cl(10, 5))
     assert result["persisted"] == 1
     assert result["excluded_by_cutover"] == 0 if "excluded_by_cutover" in result else True
     assert all(d["assignment_cycle_id"] == "c1" for d in db[COLLECTION].docs)
@@ -175,7 +175,7 @@ async def test_only_active_agents_with_phone_are_recipients():
         user("u-no-phone", "No Phone", phone=""),
     ])
     with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
-        result = await run_evaluation_and_persist_once(db=db, now=cl(10, 30))
+        result = await run_evaluation_and_persist_once(db=db, now=cl(10, 5))
     assert result["persisted"] == 1
     assert db[COLLECTION].docs[0]["recipient_user_id"] == "u-erika"
 
@@ -195,11 +195,11 @@ async def test_catch_up_guard_excludes_backlog_before_recovery_marker():
     db = populated_db()
     # Fixture cycle c1 starts at cl(10) (after the marker).
     db["crm_assignment_cycles"].docs[0] = cycle("l1", "c1", assigned=cl(10))
-    # Cycle "c-old" starts at cl(9) (after evaluator cutover but BEFORE marker).
+    # Cycle "c-old" starts at cl(9, 50) (after evaluator cutover but BEFORE marker).
     db["leads"].docs.append(lead("l-old"))
-    db["crm_assignment_cycles"].docs.append(cycle("l-old", "c-old", assigned=cl(9)))
-    # Recovery marker at cl(9, 30): only cycles started at/after it produce alerts.
-    db["crm_sla_alert_meta"].docs[0]["value"] = cl(9, 30)
+    db["crm_assignment_cycles"].docs.append(cycle("l-old", "c-old", assigned=cl(9, 50)))
+    # Recovery marker at cl(9, 55): only cycles started at/after it produce alerts.
+    db["crm_sla_alert_meta"].docs[0]["value"] = cl(9, 55)
     with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
         result = await run_evaluation_and_persist_once(db=db, now=cl(11))
     # c1 (cl(10)) is after the marker -> persisted.  c-old (cl(9)) is before -> backlog.
@@ -213,13 +213,13 @@ async def test_catch_up_guard_runs_before_batch_limit_so_fresh_leads_are_not_sta
     db = populated_db()
     db["leads"].docs.append(lead("l-new"))
     db["crm_assignment_cycles"].docs = [
-        cycle("l1", "c-backlog", assigned=cl(9)),
+        cycle("l1", "c-backlog", assigned=cl(9, 50)),
         cycle("l-new", "c-fresh", assigned=cl(10)),
     ]
     # The old candidate sorts first by deadline. With the previous ordering,
     # MAX_PER_RUN=1 selected it and the catch-up guard discarded the whole
     # batch, so the fresh candidate was never persisted.
-    db["crm_sla_alert_meta"].docs[0]["value"] = cl(9, 30)
+    db["crm_sla_alert_meta"].docs[0]["value"] = cl(9, 55)
     with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True), \
          patch("chatbot.crm_sla_alert_pipeline.MAX_PER_RUN", 1):
         result = await run_evaluation_and_persist_once(db=db, now=cl(11))
@@ -245,3 +245,61 @@ async def test_catch_up_marker_is_initialized_once_on_first_run():
     # backlog and excluded on both runs.
     assert result1["persisted"] == 0
     assert result2["persisted"] == 0
+
+
+@pytest.mark.asyncio
+async def test_live_monitor_recovers_recent_warning_after_500_old_active_cycles():
+    db = populated_db()
+    old_cycles = [cycle(f"old-{i}", f"old-cycle-{i}", assigned=cl(9))
+                  for i in range(501)]
+    db["crm_assignment_cycles"].docs = old_cycles + [
+        cycle("l1", "c1", assigned=cl(11))]
+    db["leads"].docs.extend(lead(f"old-{i}") for i in range(501))
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
+        result = await run_evaluation_and_persist_once(db=db, now=cl(11, 35), max_cycles=500)
+        again = await run_evaluation_and_persist_once(db=db, now=cl(11, 36), max_cycles=500)
+    assert result["total_cycles_scanned"] == 502
+    assert result["current_window_cycles"] == 1
+    assert result["excluded_outside_current_window"] == 501
+    assert result["persisted"] == 1 and again["persisted"] == 0
+    assert len(db[COLLECTION].docs) == 1
+    assert db[COLLECTION].docs[0]["assignment_cycle_id"] == "c1"
+    assert db[COLLECTION].docs[0]["alert_level"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_live_monitor_never_replays_old_breaches_even_after_catchup_marker():
+    db = populated_db()
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
+        result = await run_evaluation_and_persist_once(db=db, now=cl(11))
+    assert result["persisted"] == 0
+    assert result["excluded_outside_current_window"] == 1
+    assert db[COLLECTION].docs == []
+
+
+@pytest.mark.asyncio
+async def test_live_monitor_keeps_normal_warning_and_recent_hot_breach():
+    db = populated_db()
+    db["leads"].docs.append(lead("normal", temp="COLD"))
+    normal = cycle("normal", "normal-cycle", assigned=cl(9))
+    normal.update({"temperature_at_assignment": "COLD", "temperature_on_assignment": "COLD"})
+    db["crm_assignment_cycles"].docs = [
+        normal, cycle("l1", "c1", assigned=cl(10, 30))]
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
+        result = await run_evaluation_and_persist_once(db=db, now=cl(11, 35))
+    assert result["persisted"] == 2
+    assert {d["assignment_cycle_id"]: d["alert_level"] for d in db[COLLECTION].docs} == {
+        "normal-cycle": "warning", "c1": "breached"}
+
+
+@pytest.mark.asyncio
+async def test_live_monitor_includes_old_assignment_with_new_hot_transition():
+    db = populated_db()
+    old = cycle("l1", "c1", assigned=cl(9))
+    old.update({"temperature_on_assignment": "COLD",
+                "hot_started_at": cl(11), "temperature_transitioned_at": cl(11)})
+    db["crm_assignment_cycles"].docs = [old]
+    with patch("chatbot.crm_sla_alert_pipeline.CRM_SLA_ALERTS_ENABLED", True):
+        result = await run_evaluation_and_persist_once(db=db, now=cl(11, 35))
+    assert result["persisted"] == 1
+    assert db[COLLECTION].docs[0]["alert_level"] == "warning"

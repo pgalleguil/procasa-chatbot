@@ -3,7 +3,7 @@
 Runs every PROP360_POLL_INTERVAL_SECONDS. Each cycle:
   1. Logs into Prop360 (fresh session per cycle).
   2. Fetches leads from the last PROP360_POLL_WINDOW_HOURS (minimum 7 days).
-  3. Skips internal executives and properties not in the active cartera.
+  3. Skips internal contacts and confirms prior processing against the ingest ledger.
   4. Delegates identity/dedup to ingest_lead_event (phone/email lookup on the
      `leads` collection), so WhatsApp/manual/Prop360 converge on one document.
   5. Enqueues HOT or non-HOT digest notifications via the canonical flow.
@@ -172,7 +172,7 @@ def run_prop360_poll_cycle(db=None) -> dict:
         logger.error("[PROP360_POLL] login failed:\n%s", traceback.format_exc())
         metrics["status"] = "error"
         metrics["reason"] = "login_failed"
-        _save_checkpoint(extractor, metrics, db)
+        _persist_cycle_status("error", {"reason": "login_failed"})
         return metrics
 
     try:
@@ -182,7 +182,7 @@ def run_prop360_poll_cycle(db=None) -> dict:
         logger.error("[PROP360_POLL] fetch failed:\n%s", traceback.format_exc())
         metrics["status"] = "error"
         metrics["reason"] = "fetch_failed"
-        _save_checkpoint(extractor, metrics, db)
+        _persist_cycle_status("error", {"reason": "fetch_failed"})
         return metrics
 
     metrics["fetched"] = len(leads)
@@ -196,6 +196,7 @@ def run_prop360_poll_cycle(db=None) -> dict:
             norm = extractor.normalize_lead(raw)
         except Exception:
             metrics["errors"] += 1
+            metrics["unprocessed_events"] += 1
             normalization_failed = True
             continue
         normalized_events.append((_norm_id(norm), raw, norm))
@@ -205,6 +206,18 @@ def run_prop360_poll_cycle(db=None) -> dict:
     normalized_events.sort(key=lambda item: (item[0] is None, item[0] or 0))
     checkpoint_blocked = normalization_failed
 
+    # Read ledger statuses in a single indexed query for the whole window.
+    # Canonical ingestion still atomically reserves each unconfirmed event.
+    event_ids = list({str(cid) for cid, _, _ in normalized_events if cid is not None})
+    ledger_by_id = {
+        str(row["source_event_id"]): row
+        for row in db["lead_ingest_events"].find(
+            {"source_system": "prop360", "source_event_id": {"$in": event_ids}},
+            {"source_event_id": 1, "status": 1},
+        )
+    } if event_ids else {}
+    seen_ids = set()
+
     for cid, raw, norm in normalized_events:
 
         if cid is None:
@@ -213,11 +226,13 @@ def run_prop360_poll_cycle(db=None) -> dict:
             checkpoint_blocked = True
             continue
 
+        if cid in seen_ids:
+            continue
+        seen_ids.add(cid)
+
         # The watermark is telemetry, not evidence that an event was ingested.
         # Late arrivals and gaps below it must still be processed.
-        ledger = db["lead_ingest_events"].find_one({
-            "source_system": "prop360", "source_event_id": str(cid),
-        }, {"status": 1}) or {}
+        ledger = ledger_by_id.get(str(cid), {})
         status = ledger.get("status")
         resumable = status in {
             "processing", "lead_persisted", "commercial_cycle_created", "notification_enqueued",

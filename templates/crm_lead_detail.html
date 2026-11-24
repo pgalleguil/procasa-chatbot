@@ -3698,7 +3698,7 @@
                     </div>
                     <div id="waPersonalEditor" class="d-none border rounded p-3 mb-3">
                         <h6>Guardar plantilla personal</h6>
-                        <p class="small text-secondary">Se guarda para tu cuenta. Usa variables reutilizables, no datos particulares de un cliente.</p>
+                        <p id="waPersonalHelp" class="small text-secondary">Se guarda para tu cuenta. Usa variables reutilizables, no datos particulares de un cliente.</p>
                         <label for="waPersonalTitle" class="data-label">Nombre de plantilla</label>
                         <input id="waPersonalTitle" class="form-control form-control-sm mb-2" maxlength="70">
                         <label for="waPersonalCategory" class="data-label">Contexto</label>
@@ -4090,6 +4090,7 @@
             last_action_relative: "{{ lead.last_action_relative or '' }}",
             assignment_cycle_id: "{{ lead.assignment_cycle_id or '' }}",
             param_auth_user: "{{ user_email }}",
+            senderName: {{ (user_name or "") | tojson }},
             execName: "{{ lead.ejecutivo_asignado or user_name }}"
         };
 
@@ -5619,6 +5620,25 @@
             }
         }
 
+        function pilotPersonalDisplay(text) {
+            const labels = {nombre:'Nombre del cliente',ejecutivo:'Nombre del ejecutivo',propiedad:'Código de propiedad',comuna:'Comuna de la propiedad',enlace:'Enlace de la propiedad',operacion:'Tipo de operación',consulta:'Pregunta según la operación'};
+            return String(text || '').replace(/\[\[([^\[\]]+)\]\]/g, (match,key) => labels[key] ? '«'+labels[key]+'»' : match);
+        }
+
+        function pilotPersonalStorage(text) {
+            const labels = {'Nombre del cliente':'nombre','Nombre del ejecutivo':'ejecutivo','Código de propiedad':'propiedad','Comuna de la propiedad':'comuna','Enlace de la propiedad':'enlace','Tipo de operación':'operacion','Pregunta según la operación':'consulta'};
+            return String(text || '').replace(/«([^»]+)»/g, (match,label) => labels[label] ? '[['+labels[label]+']]' : match);
+        }
+
+        function pilotReplaceKnownValue(text, literal, token) {
+            // Escape all regex punctuation without changing Unicode names.
+            const escaped = Array.from(literal).map(ch => '\\^$.*+?()[]{}|'.includes(ch) ? '\\'+ch : ch).join('');
+            const pattern = new RegExp('(^|[^\\p{L}\\p{N}])'+escaped+'(?=$|[^\\p{L}\\p{N}])','gu');
+            return text.split(/(\[\[[^\[\]]+\]\])/g).map(part =>
+                part.startsWith('[[') ? part : part.replace(pattern, (_,prefix)=>prefix+token)
+            ).join('');
+        }
+
         function configurePilotComposerLayout() {
             if (window.crmWhatsappComposerPilot !== true) return;
             const active = pilotComposerActive();
@@ -5630,6 +5650,9 @@
             sidebar.classList.toggle('d-none', !active);
             document.getElementById('waPilotClear').classList.toggle('d-none', !active);
             document.getElementById('waInsertProperty').textContent = 'Insertar ficha';
+            document.getElementById('waPersonalHelp').textContent = active
+                ? 'Los datos del lead se completan automáticamente. Conserva los textos entre « » para reutilizarlos con cada cliente.'
+                : 'Se guarda para tu cuenta. Usa variables reutilizables, no datos particulares de un cliente.';
             document.getElementById('waNewTemplate').textContent = active ? '+ Nueva plantilla' : 'Crear plantilla personal';
             if (active) {
                 sidebar.append(tools);
@@ -5965,19 +5988,23 @@
             } finally { personalSaving = false; save.disabled = false; }
         }
 
-        function reusableDraft() {
-            let value = document.getElementById('commMessage').value.trim();
+        function reusableDraft(input = null) {
+            let value = (input === null ? document.getElementById('commMessage').value : String(input)).trim();
             const mappings = [[leadData.publicContactUrl, '[[enlace]]'],
                 [leadData.nombre, '[[nombre]]'], [(leadData.nombre || '').split(' ')[0], '[[nombre]]'],
                 [leadData.execName, '[[ejecutivo]]'], [(leadData.execName || '').split(' ')[0], '[[ejecutivo]]'],
                 [leadData.comuna, '[[comuna]]']];
             if (window.crmWhatsappComposerPilot === true) {
+                const sender = leadData.senderName || leadData.execName;
+                if (sender) { mappings[3] = [sender,'[[ejecutivo]]']; mappings[4] = [sender.split(' ')[0],'[[ejecutivo]]']; }
+                if (leadData.propiedad && /^\d+$/.test(leadData.propiedad)) mappings.push([leadData.propiedad,'[[propiedad]]']);
                 if (leadData.contactOperation === 'venta') mappings.push(['en venta','[[operacion]]']);
                 if (leadData.contactOperation === 'arriendo') mappings.push(['en arriendo','[[operacion]]']);
             }
             for (const [literal, token] of mappings) {
                 if (literal && literal.length > 1 && literal !== 'None' && literal !== 'S/I' && literal !== 'Estimado(a)')
-                    value = value.split(literal).join(token);
+                    value = window.crmWhatsappComposerPilot === true
+                        ? pilotReplaceKnownValue(value,literal,token) : value.split(literal).join(token);
             }
             return value;
         }
@@ -5987,11 +6014,18 @@
             const existing = personalLibrary.templates.find(t => t.id === id);
             personalEditingId = existing ? existing.id : null;
             document.getElementById('waPersonalTitle').value = existing ? existing.title : '';
-            const selectedCategory = existing ? existing.category : semState.currentCategory;
+            const selectedCategory = existing ? existing.category : pilotComposerActive() && fromDraft ? (pilotDraftCategory || semState.currentCategory) : semState.currentCategory;
             document.getElementById('waPersonalCategory').value =
                 ['stage2', 'stage3', 'stage4', 'stage5'].includes(selectedCategory) ? 'stage2' :
-                selectedCategory === 'stage6' ? 'stage6' : 'stage1';
-            document.getElementById('waPersonalBody').value = existing ? existing.body : fromDraft ? reusableDraft() : '';
+                selectedCategory === 'stage6' ? 'stage6' : pilotComposerActive() && selectedCategory !== 'stage1' ? 'stage2' : 'stage1';
+            const selected = pilotComposerActive() ? pilotAllTemplates().find(t => t.key === pilotSelectedKey) : null;
+            const unchanged = document.getElementById('commMessage').value.trim() === originalTemplateText.trim();
+            const templateBody = existing ? existing.body : fromDraft
+                ? (selected && unchanged ? selected.text : reusableDraft())
+                : pilotComposerActive() && selectedCategory === 'stage1'
+                    ? 'Hola [[nombre]], soy [[ejecutivo]] de PROCASA.\n\n[[enlace]]\n\n'
+                    : '';
+            document.getElementById('waPersonalBody').value = pilotComposerActive() ? pilotPersonalDisplay(templateBody) : templateBody;
             document.getElementById('waPersonalEditor').classList.remove('d-none');
             document.getElementById('waPersonalTitle').focus();
         }
@@ -6021,7 +6055,8 @@
         }
         document.getElementById('waSavePersonal').onclick = () => {
             const title = document.getElementById('waPersonalTitle').value.trim();
-            const body = document.getElementById('waPersonalBody').value.trim();
+            const rawBody = document.getElementById('waPersonalBody').value.trim();
+            const body = pilotComposerActive() ? reusableDraft(pilotPersonalStorage(rawBody)) : rawBody;
             const category = document.getElementById('waPersonalCategory').value;
             if (!title || !body) {templateStatus('Completa nombre y contenido de la plantilla.'); return;}
             const entry = {title, body, category};
@@ -6034,7 +6069,9 @@
             const rawName = (leadData.nombre || '').trim();
             const safeName = /^(none|desconocido|sin nombre|cliente|s\/n|s\/i)$/i.test(rawName) ? "" : rawName.split(' ')[0];
             const fullName = (leadData.nombre && leadData.nombre !== "None") ? leadData.nombre : "Estimado Cliente";
-            const safeExec = (leadData.execName && leadData.execName !== "None") ? leadData.execName.split(' ')[0] : "Agente";
+            const execName = window.crmWhatsappComposerPilot === true && currentCommTarget === 'lead' && currentCommChannel === 'wa'
+                ? (leadData.senderName || leadData.execName) : leadData.execName;
+            const safeExec = (execName && execName !== "None") ? execName.split(' ')[0] : "Agente";
             const safeProp = (leadData.propiedad && leadData.propiedad !== "None") ? leadData.propiedad : "la propiedad";
             const safeDir = (leadData.direccion && leadData.direccion !== "None") ? leadData.direccion : "Ubicación pendiente";
             const safeComuna = (leadData.comuna && leadData.comuna !== "None") ? leadData.comuna : (currentCommTarget === "lead" && currentCommChannel === "wa" ? "la zona consultada" : "Santiago");

@@ -284,6 +284,9 @@ def get_real_property_data(db, codigo_propiedad):
         "superficie_terreno": car.get("superficie_terreno"),
         "estacionamientos": car.get("estacionamientos"),
         "bodegas": car.get("bodegas"),
+        "precio_venta": operation.get("precio_venta") or {},
+        "precio_arriendo": operation.get("precio_arriendo") or {},
+        "gastos_comunes": operation.get("gastos_comunes"),
         "features": [x for x in features if isinstance(x, str) and x in {
             "has_terrace", "has_patio", "bodega", "piscina", "gimnasio", "jardin"
         }],
@@ -294,6 +297,7 @@ def get_real_property_data(db, codigo_propiedad):
         "tipo": tipo,
         "operacion": operation_label,
         "contact_operation": contact_operation,
+        "contact_operations": [name for name, enabled in (("venta", venta), ("arriendo", arriendo)) if enabled],
         "precio_uf": precio_uf if precio_uf is not None else 0,
         "comuna": comuna,
         "region": region,

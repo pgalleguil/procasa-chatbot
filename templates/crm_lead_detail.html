@@ -1346,24 +1346,29 @@
 
         #commModal.theme-wa #commModalDialog { max-width: 860px; }
         /* Opt-in layout: only the authenticated pilot's lead WhatsApp modal. */
-        #commModal.wa-composer-pilot #commModalDialog { max-width: 1000px; }
-        #commModal.wa-composer-pilot .modal-body { display:grid; grid-template-columns:minmax(240px, .95fr) minmax(0, 1.6fr); gap:1.25rem; align-items:start; }
+        #commModal.wa-composer-pilot #commModalDialog { max-width: 920px; }
+        #commModal.wa-composer-pilot .modal-body { display:grid; grid-template-columns:minmax(220px, .85fr) minmax(0, 1.8fr); gap:1rem; align-items:start; padding:1rem; }
         #commModal.wa-composer-pilot #commTabs, #commModal.wa-composer-pilot #waTemplateSearch { display:none !important; }
         #commModal.wa-composer-pilot #waPilotSidebar { grid-column:1; grid-row:1; min-width:0; }
         #commModal.wa-composer-pilot #messageContainer, #commModal.wa-composer-pilot #recommendationContainer { grid-column:2; grid-row:1; min-width:0; }
         #commModal.wa-composer-pilot #waPersonalEditor { grid-column:1/-1; grid-row:2; }
-        #commModal.wa-composer-pilot #waPilotTabs { display:flex; flex-direction:column; gap:.35rem; }
-        #commModal.wa-composer-pilot .wa-pilot-group { width:100%; display:flex; gap:.55rem; align-items:center; text-align:left; padding:.65rem .75rem; border:1px solid var(--border-color); background:transparent; color:var(--text-primary); border-radius:8px; font-size:.88rem; font-weight:600; }
+        #commModal.wa-composer-pilot #waPilotTabs { display:flex; flex-direction:column; gap:.25rem; }
+        #commModal.wa-composer-pilot .wa-pilot-group { width:100%; display:flex; gap:.55rem; align-items:center; text-align:left; padding:.42rem .55rem; border:1px solid var(--border-color); background:transparent; color:var(--text-primary); border-radius:8px; font-size:.88rem; font-weight:600; }
         #commModal.wa-composer-pilot .wa-pilot-group.active { border-color:#23995c; background:rgba(35,153,92,.08); }
         #commModal.wa-composer-pilot .wa-pilot-group .wa-pilot-chevron { margin-left:auto; }
         #commModal.wa-composer-pilot #templateList { display:flex; flex-direction:column; gap:.25rem; max-height: none; margin:0 0 .4rem .45rem; padding:0; }
         #commModal.wa-composer-pilot #templateList.d-none { display:none !important; }
-        #commModal.wa-composer-pilot .template-card { display:flex; flex-wrap:nowrap; align-items:center; min-height:38px; padding:.4rem .45rem; gap:.25rem; border-radius:6px; }
+        #commModal.wa-composer-pilot .template-card { display:flex; flex-wrap:nowrap; align-items:center; min-height:30px; padding:.25rem .35rem; gap:.25rem; border-radius:6px; }
         #commModal.wa-composer-pilot .template-card .tpl-title { white-space:normal; font-size:.82rem; line-height:1.3; }
         #commModal.wa-composer-pilot .template-card .tpl-info { min-width:0; flex:1; }
         #commModal.wa-composer-pilot .wa-pilot-action { padding:.2rem .35rem; color:var(--text-secondary); background:transparent; border:0; }
         #commModal.wa-composer-pilot .wa-pilot-action.is-favorite { color:#d4a238; }
-        #commModal.wa-composer-pilot #commMessage { min-height:340px; resize:vertical; }
+        #commModal.theme-wa.wa-composer-pilot #commMessage { min-height:250px; resize:vertical; }
+        #commModal.wa-composer-pilot #messageContainer .btn-outline-primary, #commModal.wa-composer-pilot #waComposerTools .btn-outline-primary { color:var(--text-primary); border-color:var(--border-color); }
+        #commModal.wa-composer-pilot #waInsertProperty:not(:disabled) { color:#39c77a; border-color:#39c77a; }
+        #commModal.wa-composer-pilot #waPropertyHint { color:var(--text-secondary); }
+        #commModal.wa-composer-pilot #waTemplateStatus:empty { display:none; }
+        #commModal.wa-composer-pilot .modal-header, #commModal.wa-composer-pilot .modal-footer { padding:.65rem 1rem; }
         #commModal.wa-composer-pilot #waComposerTools { margin-top:.65rem; }
         #commModal.wa-composer-pilot #waPersonalCategory, #commModal.wa-composer-pilot label[for="waPersonalCategory"] { display:none; }
         #commModal.wa-composer-pilot #semRecommendAreaModal { display:none !important; }
@@ -5884,7 +5889,7 @@
                 if (!response.ok) throw new Error('No se pudieron cargar tus plantillas.');
                 personalLibrary = await response.json();
                 personalLibraryReady = true;
-                templateStatus(personalLibrary.templates.length + ' plantillas personales');
+                templateStatus(pilotComposerActive() ? '' : personalLibrary.templates.length + ' plantillas personales');
                 if (currentCommTarget === 'lead' && currentCommChannel === 'wa' && semState.currentCategory !== 'recommendation')
                     loadTemplates('lead', semState.currentCategory || 'stage1');
             } catch (err) {
@@ -6068,7 +6073,7 @@
             if (currentCommChannel === 'wa') {
                 btn.innerHTML = pilotWhatsapp
                     ? (waMethod === 'executive_wasender_api'
-                        ? '<i class="fa-brands fa-whatsapp me-1"></i> Enviar por WaSender'
+                        ? (pilotComposerActive() ? '<i class="fa-brands fa-whatsapp me-1"></i> Enviar WhatsApp' : '<i class="fa-brands fa-whatsapp me-1"></i> Enviar por WaSender')
                         : waMethod === 'wa_me'
                             ? '<i class="fa-brands fa-whatsapp me-1"></i> Abrir WhatsApp Web'
                             : waMethod === 'checking' ? 'Verificando sesión…' : 'Envío pendiente de revisión')
@@ -6543,7 +6548,15 @@
             const btnPage = document.getElementById('btnSemSearch');
             const btn = btnModal || btnPage;
 
-            if (!query || query.length < 3) return;
+            if (btn && btn.disabled) return;
+            if (!query || query.trim().length < 5) {
+                if (container) container.textContent = 'Escribe al menos 5 caracteres para buscar propiedades.';
+                return;
+            }
+            if (!leadData.id) {
+                if (container) container.textContent = 'No se pudo identificar el lead. Recarga la página.';
+                return;
+            }
 
             // Fijar moneda de presentación según lo que escribió el usuario
             semState.priceUnit = detectPriceUnit(query);
@@ -6580,9 +6593,11 @@
             try {
                 const response = await fetch('/api/crm/recommendations', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({
-                        query: query,
+                        lead_id: leadData.id,
+                        query: query.trim(),
                         exclude: excludeCodes, // Use the combined list
                         scope: scope,
                         limit: 50,
@@ -6590,8 +6605,18 @@
                     })
                 });
                 const data = await response.json();
+                if (!response.ok || data.status !== 'ok') {
+                    const error = document.createElement('div');
+                    error.className = 'sem-empty text-danger';
+                    error.textContent = response.status === 401 || response.status === 403
+                        ? 'No tienes acceso a la búsqueda de este lead. Revisa tu sesión.'
+                        : response.status === 400 ? 'No se pudo validar la consulta. Recarga el lead e inténtalo nuevamente.'
+                        : 'No se pudo completar la búsqueda. Inténtalo nuevamente.';
+                    container.replaceChildren(error);
+                    return;
+                }
 
-                if (data.status === 'ok' && data.results && data.results.length > 0) {
+                if (Array.isArray(data.results) && data.results.length > 0) {
                     semState.lastResults = data.results;
                     renderSemanticResults(data.results);
                 } else {
@@ -6601,8 +6626,7 @@
                 console.error(err);
                 container.innerHTML = '<div class="sem-empty text-danger">Error al buscar.</div>';
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-magnifying-glass me-1"></i> Buscar';
+                if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-magnifying-glass me-1"></i> Buscar'; }
             }
         }
 

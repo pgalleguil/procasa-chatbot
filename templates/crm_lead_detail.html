@@ -5578,6 +5578,7 @@
         }
 
         function configurePilotComposerLayout() {
+            if (window.crmWhatsappComposerPilot !== true) return;
             const active = pilotComposerActive();
             const modal = document.getElementById('commModal');
             const sidebar = document.getElementById('waPilotSidebar');
@@ -5773,8 +5774,7 @@
                 recContainer.classList.remove('d-none');
                 tplList.classList.add('d-none');
                 msgContainer.classList.add('d-none');
-                if (pilot) renderPilotTemplates(category);
-                updateSendLink(target, category);
+                if (pilot) { renderPilotTemplates(category); updateSendLink(target, category); }
                 return;
             } else {
                 recContainer.classList.add('d-none');
@@ -6046,10 +6046,12 @@
             if (category === 'recommendation') {
                 btn.innerHTML = pilotComposerActive() ? '<i class="fa-solid fa-arrow-right me-1"></i> Usar recomendaciones' : '<i class="fa-brands fa-whatsapp me-1"></i> Recomendar por WhatsApp';
                 btn.onclick = pilotComposerActive() ? preparePilotRecommendation : sendRecommendation;
+                if (pilotComposerActive()) btn.removeAttribute('target');
                 updateSelectionUI(); // This handles enabled/disabled for recommendations
                 return;
             }
 
+            if (pilotComposerActive()) btn.setAttribute('target','_blank');
             // Standard WhatsApp: only Pablo pilot uses provider API, and only
             // when the backend has verified a connected, authorized session.
             const pilotWhatsapp = currentCommChannel === 'wa' && window.crmPabloApiPilot && target === 'lead';

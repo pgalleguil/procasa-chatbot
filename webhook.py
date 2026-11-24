@@ -3358,7 +3358,7 @@ async def view_crm_detail_by_id(
     email = user.get("email") or user.get("username")
 
     from chatbot.crm_personal_message_templates import composer_pilot_enabled, build_pilot_message_context
-    composer_pilot = composer_pilot_enabled(user.get("_id")) and data.get("phone_visibility") == "full"
+    composer_pilot = composer_pilot_enabled(user.get("_id")) and str(data.get("phone_visibility") or "").casefold() == "full"
     if composer_pilot:
         data["pilot_message_context"] = await loop.run_in_executor(
             _WEB_THREAD_POOL, lambda: build_pilot_message_context(lead, data, _sync_db())

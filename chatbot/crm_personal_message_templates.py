@@ -33,7 +33,7 @@ def validate_template(data, *, pilot=False):
         raise ValueError("Nombre, contenido o categoría inválidos")
     if re.search(r"https?://|www\.|(?:wa\.me/)|(?:\+?56[ -]?9(?:[ -]?\d){8})", title + "\n" + body, re.I):
         raise ValueError("Usa [[enlace]] y evita teléfonos o enlaces fijos de clientes")
-    if set(re.findall(r"\[\[([^\[\]]+)\]\]", body)) - (VARIABLES | {"operacion", "consulta", "saludo", "origen", "referencia", "atributos"} if pilot else VARIABLES):
+    if set(re.findall(r"\[\[([^\[\]]+)\]\]", body)) - (VARIABLES | {"operacion", "consulta", "saludo", "origen", "referencia", "atributos", "visita_paso", "postulacion_paso", "costos", "financiamiento_paso", "orden_visita", "oferta_paso", "seguimiento_info", "busqueda_paso"} if pilot else VARIABLES):
         raise ValueError("Variable no admitida")
     if pilot and category == "stage1" and "[[enlace]]" not in body:
         body = body.rstrip() + "\n\n[[enlace]]"
@@ -155,6 +155,17 @@ def build_pilot_message_context(lead, detail, db, *, now=None):
         if text and "?" not in text and not re.search(r"\b(si|quizas|tal vez|podria|creo|supongo)\b", text):
             customer.append(text)
     finance, employment, applicant = "", "", ""
+    requested_visit = ""
+    # Only a specific weekday and clock time in a recent positive customer
+    # statement. Never turn this preference into a confirmed booking.
+    if customer:
+        latest = customer[-1]
+        if not re.search(r"\b(no|cancel|reagendar|otro)\b", latest) and re.search(r"\b(puedo|me acomoda|me sirve|prefiero|podemos)\b", latest):
+            match = re.search(r"\b(lunes|martes|miercoles|jueves|viernes|sabado|domingo)\s+(?:a\s+las\s+|a\s+la\s+)?([01]?\d|2[0-3]):([0-5]\d)\b", latest)
+            if match:
+                day = {"miercoles": "miércoles", "sabado": "sábado"}.get(match[1], match[1])
+                requested_visit = f"{day} a las {int(match[2]):02d}:{match[3]} horas"
+
     for text in reversed(customer):
         if not finance:
             if re.search(r"\b(no tengo|aun no tengo|todavia no tengo) (un )?(credito )?(hipotecario )?preaprobado\b", text):
@@ -229,7 +240,7 @@ def build_pilot_message_context(lead, detail, db, *, now=None):
     return {
         "criteria": known, "finance": finance, "employment": employment,
         "applicant": applicant, "followup": followup, "visit_at": visit,
-        "price_drop": drop,
+        "price_drop": drop, "requested_visit": requested_visit,
         "name_known": bool(str(prospect.get("nombre") or "").strip() and _pilot_text(prospect.get("nombre")) not in ("desconocido", "none", "s/i", "cliente", "sin nombre")),
         "email_known": "@" in str(prospect.get("email") or ""),
         "rut_known": bool(re.fullmatch(r"\d{1,2}\.?\d{3}\.?\d{3}-?[\dkK]", str(prospect.get("rut") or "").strip())),

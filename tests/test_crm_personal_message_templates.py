@@ -167,7 +167,7 @@ let originalTemplateText = 'old', currentTemplateLabel = 'old';
 const semState = {selected:[{codigo:6318}]};
 let loaded = null, dispatched = false, focused = false;
 const elements = {
-  commMessage:{value:'old',dispatchEvent(){dispatched=true},focus(){focused=true}},
+  commMessage:{value:'old',addEventListener(){},dispatchEvent(){dispatched=true},focus(){focused=true}},
   semRecommendMsgModal:{value:'Alternativa: https://www.procasa.cl/6318'}
 };
 const document={getElementById(id){return elements[id]}};
@@ -184,20 +184,41 @@ currentCommTarget = 'lead'; currentCommChannel = 'email';
 assert(!pilotComposerActive());
 currentCommChannel = 'wa';
 const rows = pilotCommercialTemplates();
-assert.equal(rows.length,13);
+assert.equal(rows.length,17);
 assert.equal(rows.filter(r=>r.category==='stage1').length,2);
-assert.equal(rows.filter(r=>r.category==='stage2').length,5);
-assert.equal(rows.filter(r=>r.category==='stage6').length,6);
-assert.equal(new Set(rows.map(r=>r.key)).size,13);
+assert.equal(rows.filter(r=>r.category==='stage2').length,8);
+assert.equal(rows.filter(r=>r.category==='stage6').length,7);
+assert.equal(new Set(rows.map(r=>r.key)).size,17);
 assert(rows.slice(0,2).every(r=>r.text.includes('[[enlace]]')));
 const sale=pilotResolveContext(rows[0].text,'venta','https://www.procasa.cl/6318');
 const rent=pilotResolveContext(rows[0].text,'arriendo','https://www.procasa.cl/6318');
-assert(sale.includes('propiedad en venta:'));
-assert(rent.includes('propiedad en arriendo:'));
-assert(pilotResolveContext(rows[2].text,'arriendo','x').includes('requisitos de arriendo'));
+assert(sale.includes('propiedad en venta.'));
+assert(rent.includes('propiedad en arriendo.'));
+assert(pilotResolveContext(rows[2].text,'arriendo','x').includes('requisitos específicos de este arriendo'));
+assert(pilotResolveContext(rows[2].text,'venta','x').includes('crédito hipotecario'));
 assert(!pilotResolveContext(rows[0].text,'','').includes('[[enlace]]'));
 assert(!pilotResolveContext(rows[0].text,'','').includes('en venta'));
-assert(!pilotResolveContext(rows[0].text,'','').includes('propiedad :'));
+assert(!pilotResolveContext(rows[0].text,'','').includes('propiedad .'));
+const link='https://www.procasa.cl/6318';
+assert(pilotHasPublicLink('Revisa '+link+'.',link));
+assert(!pilotHasPublicLink('Revisa '+link+'9',link));
+assert(!pilotHasPublicLink('Revisa '+link+'?other=1',link));
+assert(!pilotHasPublicLink('Revisa https://other.cl/'+link,link));
+assert.equal(pilotEnsureFirstContactLink('Hola',link),'Hola\\n\\n'+link);
+assert.equal(pilotEnsureFirstContactLink('Hola '+link,link),'Hola '+link);
+assert.equal(pilotEnsureFirstContactLink('Hola',''),'Hola');
+assert(pilotFirstContactRequired('stage1','stage6'));
+assert(!pilotFirstContactRequired('stage6','stage1'));
+assert(pilotFirstContactRequired(null,'stage1'));
+assert(pilotFirstContactError('Hola','', 'stage1','stage6'));
+assert(pilotFirstContactError('Hola',link,'stage1','favorites'));
+assert.equal(pilotFirstContactError('Hola '+link,link,'stage1','favorites'),'');
+assert.equal(pilotFirstContactError('Hola','', 'stage6','stage1'),'');
+const reusable='Hola [[nombre]], soy [[ejecutivo]]. [[enlace]] [[consulta]]';
+assert.equal(pilotPersonalStorage(pilotPersonalDisplay(reusable)),reusable);
+assert(!pilotPersonalDisplay(reusable).includes('[['));
+assert.equal(pilotReplaceKnownValue('Hola Ana, mañana Anaís. [[nombre]]','Ana','[[nombre]]'),'Hola [[nombre]], mañana Anaís. [[nombre]]');
+assert.equal(pilotReplaceKnownValue('Ficha '+link,link,'[[enlace]]'),'Ficha [[enlace]]');
 let prevented=false;
 preparePilotRecommendation({preventDefault(){prevented=true}});
 assert(prevented && focused && dispatched);
@@ -266,3 +287,35 @@ async function fetch(url,options){
 """
     completed = subprocess.run([node, "-e", script], capture_output=True, text=True)
     assert completed.returncode == 0, completed.stderr
+
+
+def test_pilot_personal_first_contact_link_is_automatic_only_for_pilot():
+    from chatbot.crm_personal_message_templates import PABLO_COMPOSER_PILOT_USER_ID
+    db = mongomock.MongoClient()["test"]
+    item = entry(body="Hola [[nombre]], gracias por tu consulta")
+    pilot = write_library(db, PABLO_COMPOSER_PILOT_USER_ID,
+                          {"version": 0, "templates": [item], "favorites": ["builtin:17"]})
+    assert pilot["templates"][0]["body"].endswith("[[enlace]]")
+    assert pilot["favorites"] == ["builtin:17"]
+    nonpilot = write_library(db, "other", {"version": 0, "templates": [item]})
+    assert nonpilot["templates"][0]["body"] == item["body"]
+    other_stage = dict(item, category="stage6")
+    assert validate_template(other_stage, pilot=True)["body"] == item["body"]
+    assert validate_template(entry(body="[[consulta]]"), pilot=True)["body"].endswith("[[enlace]]")
+    assert validate_template(entry(body="[[enlace]]"), pilot=True)["body"] == "[[enlace]]"
+    with pytest.raises(ValueError):
+        validate_template(entry(body="x" * 2000), pilot=True)
+
+
+def test_pilot_first_contact_guard_precedes_log_and_provider():
+    html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    assert "#commModal.wa-composer-pilot #waInsertProperty, #commModal.wa-composer-pilot #waVariableButtons { display:none !important; }" in html
+    assert "pilotDraftCategory = templateCategory" in html
+    assert "pilotFirstContactError(msgBody.value,leadData.publicContactUrl,pilotDraftCategory,category)" in html
+    assert "if (hasMessage && !pilotBlocked && !requiredLinkProblem)" in html
+    assert "senderName: {{ (user_name or \"\") | tojson }}" in html
+    send = html[html.index("        function updateSendLink("):html.index("        // --- NOTES SYSTEM ---")]
+    assert send.index("if (linkProblem)") < send.index("logAction(logType")
+    assert send.index("if (linkProblem)") < send.index("/api/crm/executive-whatsapp/send")
+    assert "pilotRestoreRequiredLink(msgBody)" in send
+    assert "pilotRestoreRequiredLink(this)" in html

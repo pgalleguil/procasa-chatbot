@@ -168,6 +168,8 @@ jobs:
             tests: >-
               tests/test_crm_sla_alert_evaluator.py
               tests/test_crm_sla_alert_pipeline.py
+              tests/test_crm_sla_short_links.py
+              tests/test_crm_sla_cycle_links.py
               tests/test_crm_sla_alert_worker.py
               tests/test_crm_sla_event_batch.py
               tests/test_crm_sla_5minute_policy.py

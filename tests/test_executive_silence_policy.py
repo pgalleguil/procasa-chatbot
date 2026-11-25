@@ -32,7 +32,7 @@ def fixture(timestamp="2026-11-24T11:00:00"):
         }],
     }
 
-def decide(lead=None, now="2026-11-25T11:00:00", **overrides):
+def decide(lead=None, now="2026-11-25T12:30:00", **overrides):
     args = dict(now=dt(now), enabled_since=dt("2026-11-18T09:00:00"),
                 contact_authorized=True, inquiry_verified=True, history_complete=True,
                 session_verified=True, followup_attempts=0, outstanding_own_action=False)
@@ -40,21 +40,39 @@ def decide(lead=None, now="2026-11-25T11:00:00", **overrides):
     return evaluate_silence(lead if lead is not None else fixture(), **args)
 
 class TestExecutiveSilencePolicy(TestCase):
-    def test_wait_one_business_day(self):
-        self.assertEqual(decide(now="2026-11-24T18:00:00")["state"], "WAIT")
-        self.assertEqual(decide()["state"], "CANDIDATE")
+    def test_wait_and_preferred_evening(self):
+        lead = fixture("2026-11-25T16:00:00")
+        self.assertEqual(decide(lead, now="2026-11-25T17:59:00")["state"], "WAIT")
+        planned = decide(lead, now="2026-11-25T18:00:00")
+        self.assertEqual(planned["state"], "WAIT")
+        self.assertEqual(planned["due_at"], dt("2026-11-25T18:30:00"))
+        self.assertEqual(decide(lead, now="2026-11-25T18:30:00")["state"], "CANDIDATE")
+        self.assertEqual(decide(fixture("2026-11-25T17:00:00"),
+                                now="2026-11-25T19:00:00")["state"], "CANDIDATE")
 
     def test_weekend_and_holiday(self):
-        lead = fixture("2026-11-20T17:00:00")
-        self.assertEqual(decide(lead, now="2026-11-23T16:59:00")["state"], "WAIT")
-        self.assertEqual(decide(lead, now="2026-11-23T17:00:00")["state"], "CANDIDATE")
-        # December 8 is a Chilean public holiday.
-        lead = fixture("2026-12-07T11:00:00")
-        self.assertEqual(decide(lead, now="2026-12-08T12:00:00")["state"], "WAIT")
-        self.assertEqual(decide(lead, now="2026-12-09T11:00:00")["state"], "CANDIDATE")
+        lead = fixture("2026-11-20T18:00:00")
+        self.assertEqual(decide(lead, now="2026-11-21T18:30:00")["state"], "WAIT")
+        self.assertEqual(decide(lead, now="2026-11-23T12:29:00")["state"], "WAIT")
+        self.assertEqual(decide(lead, now="2026-11-23T12:30:00")["state"], "CANDIDATE")
+        lead = fixture("2026-12-07T18:00:00")
+        self.assertEqual(decide(lead, now="2026-12-08T12:30:00")["state"], "WAIT")
+        self.assertEqual(decide(lead, now="2026-12-09T12:30:00")["state"], "CANDIDATE")
 
     def test_outside_send_window(self):
-        self.assertEqual(decide(now="2026-11-25T18:30:00")["reason"], "outside_send_window")
+        lead = fixture("2026-11-25T16:00:00")
+        self.assertEqual(decide(lead, now="2026-11-25T19:29:00")["state"], "CANDIDATE")
+        result = decide(lead, now="2026-11-25T19:30:00")
+        self.assertEqual(result["reason"], "outside_send_window")
+        self.assertEqual(result["due_at"], dt("2026-11-26T12:30:00"))
+        self.assertEqual(decide(lead, now="2026-11-25T20:00:00")["state"], "WAIT")
+
+    def test_lunch_and_late_anchor(self):
+        self.assertEqual(decide(fixture("2026-11-25T10:00:00"),
+                                now="2026-11-25T12:30:00")["state"], "CANDIDATE")
+        lead = fixture("2026-11-25T18:00:00")
+        self.assertEqual(decide(lead, now="2026-11-25T19:00:00")["state"], "WAIT")
+        self.assertEqual(decide(lead, now="2026-11-26T12:30:00")["state"], "CANDIDATE")
 
     def test_missing_authorization_or_attempt(self):
         for key, value in (("contact_authorized", False), ("inquiry_verified", False),

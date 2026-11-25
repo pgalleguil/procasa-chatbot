@@ -44,17 +44,19 @@ class TestExecutiveSilencePolicy(TestCase):
     def test_wait_and_preferred_evening(self):
         lead = fixture("2026-11-25T12:14:00")
         for now in ("2026-11-25T14:13:00", "2026-11-25T14:14:00",
-                    "2026-11-25T18:59:00"):
+                    "2026-11-25T17:59:00"):
             planned = decide(lead, now=now)
             self.assertEqual(planned["state"], "WAIT")
-            self.assertEqual(planned["due_at"], dt("2026-11-25T19:00:00"))
+            self.assertEqual(planned["due_at"], dt("2026-11-25T18:00:00"))
         self.assertEqual(decide(lead)["state"], "CANDIDATE")
         self.assertEqual(decide(lead)["scenario"], "INITIAL_NO_REPLY")
+        self.assertEqual(decide(lead, now="2026-11-25T18:00:00")["state"], "CANDIDATE")
+        self.assertEqual(decide(lead, now="2026-11-25T18:29:59")["state"], "CANDIDATE")
 
     def test_weekend_and_holiday(self):
         lead = fixture("2026-11-20T18:00:00")
         self.assertEqual(decide(lead, now="2026-11-21T19:00:00")["state"], "WAIT")
-        self.assertEqual(decide(lead, now="2026-11-23T18:59:00")["state"], "WAIT")
+        self.assertEqual(decide(lead, now="2026-11-23T17:59:00")["state"], "WAIT")
         self.assertEqual(decide(lead, now="2026-11-23T19:00:00")["state"], "CANDIDATE")
         lead = fixture("2026-12-07T18:00:00")
         self.assertEqual(decide(lead, now="2026-12-08T19:00:00")["state"], "WAIT")
@@ -65,7 +67,7 @@ class TestExecutiveSilencePolicy(TestCase):
         self.assertEqual(decide(lead, now="2026-11-25T19:59:00")["state"], "CANDIDATE")
         result = decide(lead, now="2026-11-25T20:00:00")
         self.assertEqual(result["reason"], "outside_send_window")
-        self.assertEqual(result["due_at"], dt("2026-11-26T19:00:00"))
+        self.assertEqual(result["due_at"], dt("2026-11-26T18:00:00"))
 
     def test_late_anchor(self):
         lead = fixture("2026-11-25T18:00:00")
@@ -168,12 +170,39 @@ class TestExecutiveSilencePolicy(TestCase):
         self.assertNotIn("proceso de compra", unknown)
 
 
-def test_same_day_recovery_does_not_extend_to_next_day(monkeypatch):
+def test_rollout_day_start_is_stable_for_all_future_contacts(monkeypatch):
     from chatbot.executive_silence_worker import _rollout_cutoff
     from datetime import datetime, timezone
     monkeypatch.setenv("PROCASA_EXEC_SILENCE_CUTOFF", "2026-11-25T18:14:15+00:00")
-    today = datetime(2026, 11, 25, 22, tzinfo=timezone.utc)
-    assert _rollout_cutoff(today, same_day_recovery=True) == datetime(2026, 11, 25, 3, tzinfo=timezone.utc)
-    assert _rollout_cutoff(today) == datetime(2026, 11, 25, 18, 14, 15, tzinfo=timezone.utc)
-    tomorrow = datetime(2026, 11, 26, 22, tzinfo=timezone.utc)
-    assert _rollout_cutoff(tomorrow, same_day_recovery=True) == _rollout_cutoff(tomorrow)
+    start = datetime(2026, 11, 25, 3, tzinfo=timezone.utc)
+    assert _rollout_cutoff(datetime(2026, 11, 25, 22, tzinfo=timezone.utc)) == start
+    assert _rollout_cutoff(datetime(2026, 11, 26, 22, tzinfo=timezone.utc)) == start
+    assert _rollout_cutoff(datetime(2026, 12, 1, 22, tzinfo=timezone.utc)) == start
+    monkeypatch.delenv("PROCASA_EXEC_SILENCE_CUTOFF")
+    assert _rollout_cutoff(datetime(2026, 11, 26, 22, tzinfo=timezone.utc)) is None
+
+
+def test_enqueue_all_executives_and_cancel_reply(monkeypatch):
+    from chatbot.executive_silence_worker import enqueue
+    from unittest.mock import MagicMock
+    monkeypatch.setenv("PROCASA_EXEC_SILENCE_WORKER_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_SILENCE_CUTOFF", "2026-11-25T18:14:15+00:00")
+    db = MagicMock()
+    leads, queue = MagicMock(), MagicMock()
+    db.__getitem__.side_effect = lambda k: {"leads": leads, "crm_exec_silence_queue": queue}[k]
+    for owner in ("owner-A", "owner-B"):
+        lead = fixture("2026-11-26T12:00:00")
+        lead["lifecycle"]["assigned_to_user_id"] = owner
+        lead["commercial_intelligence"]["summary"]["contact"].update(
+            last_actor="human_agent", last_agent_at="2026-11-26T12:00:00-03:00")
+        leads.find_one.return_value = lead
+        enqueue(db, owner, now=dt("2026-11-26T15:00:00"))
+        job = queue.update_one.call_args.args[1]["$setOnInsert"]
+        assert job["owner"] == owner
+        assert job["due_at"] == dt("2026-11-26T18:00:00")
+        queue.update_one.reset_mock()
+        lead["commercial_intelligence"]["summary"]["contact"].update(
+            last_actor="customer", awaiting="EXECUTIVE")
+        enqueue(db, owner, now=dt("2026-11-26T16:00:00"))
+        queue.update_one.assert_not_called()
+        assert queue.update_many.call_args.args[0] == {"lead_id": owner, "state": "pending"}

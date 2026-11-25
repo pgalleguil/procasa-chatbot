@@ -36,15 +36,13 @@ def ensure_indexes(db):
     db[OUTBOX].create_index([("mode", 1), ("phone", 1), ("attempted_at", 1)])
 
 
-def _rollout_cutoff(now, *, same_day_recovery=False):
+def _rollout_cutoff(now):
     cutoff = _time(os.getenv("PROCASA_EXEC_SILENCE_CUTOFF"))
-    if not cutoff or not same_day_recovery:
-        return cutoff
-    local = as_chile(now)
-    # Only recover the rollout day's earlier verified contacts; never historical
-    # leads or a recurring all-database scan. Consent and continuity still apply.
-    if as_chile(cutoff).date() != local.date():
-        return cutoff
+    if not cutoff:
+        return None
+    # The start date is stable for ALL executives and all future contacts.
+    # Do not reset at midnight or restrict recovery to a named pilot lead.
+    local = as_chile(cutoff)
     return CHILE.localize(datetime(local.year, local.month, local.day)).astimezone(timezone.utc)
 
 
@@ -66,6 +64,14 @@ def enqueue(db, lead_id, *, now=None):
     session = ci.get("pending_session_id")
     cutoff = _rollout_cutoff(now)
     sent = _time(contact.get("last_agent_at"))
+    # A classified reply or a change in assignment immediately cancels any
+    # obsolete pending job. In-flight sends still revalidate canonical history.
+    if ci.get("pending") is False and ci.get("status") == "ready":
+        invalid = {"lead_id": lead_id, "state": "pending"}
+        if contact.get("awaiting") == "CUSTOMER" and contact.get("last_actor") == "human_agent" and all((anchor, cycle, owner, session)):
+            invalid["$or"] = [{"anchor": {"$ne": anchor}}, {"cycle": {"$ne": str(cycle)}},
+                              {"owner": {"$ne": str(owner)}}, {"session": {"$ne": str(session)}}]
+        db[QUEUE].update_many(invalid, {"$set": {"state": "held", "reason": "superseded_or_customer_replied"}})
     if (not cutoff or not sent or not cutoff <= sent <= now
             or ci.get("pending") is not False or ci.get("status") != "ready"
             or contact.get("awaiting") != "CUSTOMER"
@@ -73,10 +79,6 @@ def enqueue(db, lead_id, *, now=None):
             or not all((anchor, cycle, owner, session))):
         return
     key = sha256(f"{lead_id}|{cycle}|{anchor}".encode()).hexdigest()
-    # Supersede only unclaimed older anchors for this lead and cycle.
-    db[QUEUE].update_many({"lead_id": lead_id, "cycle": str(cycle),
-                           "state": "pending", "anchor": {"$ne": anchor}},
-                          {"$set": {"state": "held", "reason": "superseded_by_new_outbound"}})
     db[QUEUE].update_one({"_id": key}, {"$setOnInsert": {
         "lead_id": lead_id, "cycle": str(cycle), "owner": str(owner),
         "session": str(session), "anchor": anchor, "state": "pending",
@@ -127,7 +129,7 @@ def _decision(db, job, *, now):
     if connected is None:
         return doc, {"state": "HOLD", "reason": "capture_continuity_unverified"}
     return doc, evaluate_silence(doc, now=now,
-        enabled_since=_rollout_cutoff(now, same_day_recovery=job.get("same_day_recovery") is True),
+        enabled_since=_rollout_cutoff(now),
         contact_authorized=reviewed, inquiry_verified=reviewed,
         history_complete=reviewed, session_verified=connected is not None,
         followup_attempts=int(bool(prior)), outstanding_own_action=False if reviewed else None,

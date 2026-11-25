@@ -20,7 +20,7 @@ WAIT_MINUTES = 120
 EXPIRY_MINUTES = 3000
 # Local time, target slots. The last slot ends at 20:00 exclusively.
 # These are pilot hypotheses, not measured PROCASA-optimal hours.
-SEND_SLOTS = ((19, 0), (19, 30))
+SEND_SLOTS = ((18, 0), (18, 30), (19, 0), (19, 30))
 SLOT_GRACE_MINUTES = 30
 OPEN = {"DETECTADA", "PENDIENTE_GESTION", "EN_GESTION"}
 STOP_INTENTS = {"OPT_OUT", "SEARCH_COMPLETE", "SEARCH_COMPLETED", "PROPERTY_DECLINED"}

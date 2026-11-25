@@ -308,3 +308,55 @@ def test_provider_log_bootstrap_requires_history_covering_anchor():
     assert _provider_connected_epoch([after], session_id="133517", anchor=anchor, now=now) is None
     for bad in ({**after, "status": "disconnected"}, {**after, "event_type": "session_restarted"}, {**after, "whatsapp_session_id": 123}):
         assert _provider_connected_epoch([bad, before], session_id="133517", anchor=anchor, now=now) is None
+
+
+def test_exceptional_recovery_window_is_bounded_and_keeps_guards():
+    lead = fixture("2026-11-25T12:14:00")
+    end = dt("2026-11-25T21:00:00")
+    assert decide(lead, now="2026-11-25T20:30:00")["state"] == "WAIT"
+    assert decide(lead, now="2026-11-25T20:30:00", recovery_until=end)["state"] == "CANDIDATE"
+    assert decide(lead, now="2026-11-25T21:00:00", recovery_until=end)["state"] == "WAIT"
+    assert decide(lead, now="2026-11-26T20:30:00", recovery_until=end)["state"] == "WAIT"
+    assert decide(lead, now="2026-11-25T20:30:00", recovery_until=end, continuity_since=None)["state"] == "HOLD"
+    assert decide(lead, now="2026-11-25T20:30:00", recovery_until=end, followup_attempts=1)["state"] == "HOLD"
+    assert decide(lead, now="2026-11-25T20:30:00", recovery_until=end, contact_authorized=False)["state"] == "HOLD"
+
+
+def test_exceptional_recovery_job_scope():
+    from chatbot.executive_silence_worker import _recovery_until, _RECOVERY_JOB_IDS
+    assert len(_RECOVERY_JOB_IDS) == 6
+    job = {"_id": next(iter(_RECOVERY_JOB_IDS)), "session": "133517", "owner": "6a681413140190dde11f26d1"}
+    assert _recovery_until(job) == dt("2026-11-25T21:00:00")
+    assert _recovery_until(dict(job, _id="other")) is None
+    assert _recovery_until(dict(job, session="other")) is None
+    assert _recovery_until(dict(job, owner="other")) is None
+
+
+def test_provider_recovery_uses_verified_session_log_key_on_auth_rejection(monkeypatch):
+    from chatbot import executive_capture_continuity as continuity
+    from chatbot import executive_whatsapp_audit as audit
+    from config import Config
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(Config, "WASENDER_PERSONAL_ACCESS_TOKEN", "mock-pat")
+    monkeypatch.setattr(audit, "_session", lambda db, sid: {
+        "user_id": "owner", "capture_enabled": True, "secret": "mock-secret", "token": "mock-session"
+    })
+    db, coll = MagicMock(), MagicMock()
+    db.__getitem__.return_value = coll
+    coll.find_one.side_effect = [None, {"connected_since": dt("2026-11-25T10:00:00")}]
+    detail, rejected, logs = MagicMock(), MagicMock(), MagicMock()
+    detail.json.return_value = {"success": True, "data": {"id": 133517,
+        "status": "connected", "webhook_enabled": True,
+        "webhook_events": ["messages.upsert"],
+        "webhook_url": "https://example.invalid/webhook/ejecutivos/133517",
+        "webhook_secret": "mock-secret"}}
+    rejected.status_code = 403
+    logs.json.return_value = {"success": True, "data": {"current_page": 1, "data": [{
+        "whatsapp_session_id": 133517, "event_type": "status_change",
+        "status": "connected", "occurred_at": "2026-11-25T13:00:00Z"}]}}
+    get = MagicMock(side_effect=[detail, rejected, logs])
+    assert continuity.recover_provider_continuity(db, session_id="133517", owner_id="owner",
+        anchor=dt("2026-11-25T12:14:00"), now=dt("2026-11-25T20:00:00"), get=get) == dt("2026-11-25T10:00:00")
+    assert get.call_count == 3
+    assert get.call_args.kwargs["headers"]["Authorization"] == "Bearer mock-session"
+    assert coll.update_one.call_count == 1

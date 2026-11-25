@@ -156,6 +156,27 @@ def _contact_evidence(db, doc, job, phone, now):
             return True
     return False
 
+# One-off user-authorized recovery for the exact six previously held anchors.
+# Expires at 21:00 Chile on 2026-11-25; no other lead or date is affected.
+_RECOVERY_JOB_IDS = frozenset((
+    "debd6253759629f18c7b05a209fb382c5ef26b8c3d12fe4fadb491cf5767e2c4",
+    "2a073ccec4b7590cb0d4eb2e7d5479a8c86da2ab25346118eff0e50fb327ff6e",
+    "45420dc5c6c38986b563f7a451617a48488abc16a50993b87df223d177ec8f7e",
+    "2858c55b7ea9dc133ffd52b9d3b64300914a786793b591f1139989387ec306b5",
+    "484fbf4e53aebecc974a2423181e26773adb93560c2ca1d32ab486105a1e5931",
+    "74277b4027fd4237f76d02a00183f46e2a12bef6e186e3e27560166de64e0a07",
+))
+_RECOVERY_UNTIL = datetime(2026, 11, 26, 0, 0, tzinfo=timezone.utc)
+
+
+def _recovery_until(job):
+    if (job.get("_id") in _RECOVERY_JOB_IDS
+            and job.get("session") == "133517"
+            and job.get("owner") == "6a681413140190dde11f26d1"):
+        return _RECOVERY_UNTIL
+    return None
+
+
 def _decision(db, job, *, now):
     doc = db["leads"].find_one({"_id": job["lead_id"]})
     if not doc:
@@ -206,7 +227,8 @@ def _decision(db, job, *, now):
         contact_authorized=authorized, inquiry_verified=authorized,
         history_complete=connected is not None, session_verified=connected is not None,
         followup_attempts=int(bool(prior)), outstanding_own_action=False,
-        continuity_since=connected, scheduled_contact_clear=True)
+        continuity_since=connected, scheduled_contact_clear=True,
+        recovery_until=_recovery_until(job))
 
 
 def _finish(db, job, *, state, reason, **extra):

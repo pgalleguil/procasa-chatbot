@@ -253,7 +253,7 @@ def test_normal_digest_individual_uses_cycle_link_but_group_uses_crm_list(monkey
     notification["assignment_cycle_ids"].append("cycle-2")
     grouped, count = build_digest_message_content(db, notification, cycle_bound_links=True)
     assert count == 2 and "/crm/s/" not in grouped and "/crm/lead-id/" not in grouped
-    assert "Ver mis leads nuevos en CRM" in grouped
+    assert "Ver mis nuevos clientes" in grouped
     assert db[SHORT_LINK_COLLECTION].count_documents({}) == 1
 
 

@@ -464,6 +464,12 @@ def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propo
             outcome = process_claimed(db, doc, llm_enabled=llm_enabled, propose=propose)
             if outcome in ("ready", "stale_assignment", "no_eligible_turns"):
                 processed += 1
+            if outcome == "ready" and os.getenv("PROCASA_EXEC_SILENCE_WORKER_ENABLED", "0") == "1":
+                try:
+                    from .executive_silence_worker import enqueue
+                    enqueue(db, doc["_id"])
+                except Exception as exc:
+                    logger.warning("EXEC_SILENCE enqueue_error=%s", type(exc).__name__)
         except Exception as exc:
             failures += 1
             # Fail closed. Preserve pending flag for a later retry after lease.
@@ -475,6 +481,7 @@ def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propo
 async def executive_intelligence_worker_loop() -> None:
     indexed = False
     refresh_ticks = 0
+    silence_indexed = False
     while True:
         try:
             if os.getenv("PROCASA_EXEC_INTELLIGENCE_ENABLED", "0") == "1":
@@ -492,6 +499,12 @@ async def executive_intelligence_worker_loop() -> None:
                         "EXEC_INTELLIGENCE processed=%s failures=%s",
                         result["processed"], result["failures"],
                     )
+                if os.getenv("PROCASA_EXEC_SILENCE_WORKER_ENABLED", "0") == "1":
+                    from .executive_silence_worker import ensure_indexes as silence_indexes, process_due
+                    if not silence_indexed:
+                        await asyncio.to_thread(silence_indexes, get_db())
+                        silence_indexed = True
+                    await asyncio.to_thread(process_due, get_db(), limit=2)
                 # Every ~15 min, re-evaluate unmatched active searches against
                 # the current inventory after new listings / price reductions.
                 # This creates executive follow-up tasks, never customer sends.

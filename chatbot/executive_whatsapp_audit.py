@@ -573,7 +573,7 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
         ):
             return "duplicate_or_reassigned"
         for original_source in ("crm_manual_api", "crm_admin_delegated_api",
-                                "crm_hot_auto_api", "price_drop_campaign_api"):
+                                "crm_hot_auto_api", "price_drop_campaign_api", "crm_exec_silence_api"):
             match = find_unique_echo_match(
                 stored.get("messages") or [],
                 source=original_source, content=parsed["content"],
@@ -594,6 +594,25 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
                     "messages.$.provider_echo_at": occurred.isoformat(),
                 }})
                 return "echo_reconciled" if reconciled.modified_count == 1 else "duplicate_or_reassigned"
+    silence_dispatch = None
+    if parsed["from_me"] and os.getenv("PROCASA_EXEC_SILENCE_WORKER_ENABLED", "0") == "1":
+        # The reserved, exact automation copy can echo before the API returns.
+        # Match only a current-cycle, same-session, same-content reservation.
+        # Do not let this echo count as human first management.
+        from hashlib import sha256
+        from datetime import timedelta
+        rows = list(db["crm_executive_whatsapp_dispatches"].find({
+            "mode": "crm_exec_silence_api", "lead_id": lead["_id"],
+            "executive_id": actor, "assignment_cycle_id": cycle_id,
+            "session_id": str(session["session_id"]),
+            "content_sha256": sha256(parsed["content"].encode()).hexdigest(),
+            "state": {"$in": ["provider_attempt", "accepted", "delivery_unknown",
+                               "accepted_without_provider_id"]},
+            "attempted_at": {"$gte": occurred - timedelta(minutes=5),
+                             "$lte": occurred + timedelta(seconds=5)},
+        }, {"_id": 1}).limit(2))
+        if len(rows) == 1:
+            silence_dispatch = rows[0]["_id"]
     entry = {
         "role": "agent" if parsed["from_me"] else "user",
         "content": parsed["content"],
@@ -611,6 +630,10 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
         "provider_message_id": provider_id,
         "timestamp_source": "provider",
     }
+    if silence_dispatch:
+        entry.update({"role": "assistant", "actor_type": "automation",
+                      "source": "crm_exec_silence_api", "automatic": True,
+                      "silence_dispatch_id": silence_dispatch})
     # An unambiguous global STOP from an assigned customer must suppress
     # future marketing in the *same atomic write as the authorized message*.
     # This does not pause responses to customer-initiated service requests,
@@ -686,7 +709,7 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
             )
         except Exception:
             logger.warning("EXEC_AUDIT campaign_reply_attribution_failed")
-    if result.modified_count == 1 and parsed["from_me"]:
+    if result.modified_count == 1 and parsed["from_me"] and not silence_dispatch:
         # A signed, authorized, persisted HUMAN outgoing WhatsApp counts as
         # first management, even when the message was sent directly from the
         # executive's phone instead of the CRM send button.

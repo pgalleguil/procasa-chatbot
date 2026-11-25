@@ -176,10 +176,11 @@ def _new_owner_message(context: Mapping[str, str]) -> str:
 
 def _previous_owner_message(context: Mapping[str, str]) -> str:
     return (
-        "🔄 Lead reasignado por vencimiento de SLA\n\n"
-        f"El lead de la propiedad {context['code']} superó el tiempo de gestión establecido "
-        "y fue reasignado automáticamente.\n\n"
-        "Este lead ya no está disponible para tu gestión en el CRM."
+        "🔄 *Cliente reasignado*\n\n"
+        f"Cliente: {context['client']}\n"
+        f"Propiedad: {context['code']}\n\n"
+        "El plazo de atención finalizó y este cliente fue asignado a otro ejecutivo.\n\n"
+        "Esta oportunidad ya no está disponible para tu gestión en el CRM."
     )
 
 

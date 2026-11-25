@@ -360,3 +360,72 @@ def test_provider_recovery_uses_verified_session_log_key_on_auth_rejection(monke
     assert get.call_count == 3
     assert get.call_args.kwargs["headers"]["Authorization"] == "Bearer mock-session"
     assert coll.update_one.call_count == 1
+
+
+def test_verified_initial_recovery_copy_matches_six_real_property_shapes(monkeypatch):
+    from chatbot import executive_silence_llm as llm
+    cases = [
+        ("Departamento", "Viña del Mar", ["VENTA"]),
+        ("Departamento", "Rancagua", ["VENTA", "ARRIENDO"]),
+        ("Casa", "San Bernardo", ["VENTA"]),
+        ("Casa", "Chillán", ["VENTA"]),
+        ("Casa", "Maipú", ["VENTA"]),
+        ("Departamento", "Valparaíso", ["VENTA"]),
+    ]
+    for kind, commune, ops in cases:
+        monkeypatch.setattr(llm, "property_context", lambda *a: {
+            "tipo": kind, "comuna": commune, "operaciones_publicadas": ops,
+            "orientacion_comercial": False})
+        text = llm.initial_recovery_draft(None, {}, {})
+        assert text.startswith(llm.PREFIX)
+        assert commune in text and kind.lower() in text
+        assert text.count("?") == 1
+        assert ("comprar o arrendar" in text) == (len(ops) == 2)
+        assert ("financiamiento" in text) == (len(ops) == 1)
+    monkeypatch.setattr(llm, "property_context", lambda *a: {})
+    assert llm.initial_recovery_draft(None, {}, {}) is None
+
+
+def test_explicit_model_hold_never_uses_recovery_copy(monkeypatch):
+    from chatbot import executive_silence_llm as llm
+    monkeypatch.setattr(llm, "build_context", lambda *a: {"turns": [{}]})
+    text, usage = llm.draft_followup(None, {}, {}, {}, scenario="INITIAL_NO_REPLY",
+        propose=lambda ctx: {"decision": "HOLD", "message": "unexpected"})
+    assert text is None
+
+
+def test_model_value_error_before_provider_does_not_pause_other_jobs(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    from datetime import datetime as RealDateTime
+    class FixedDateTime(RealDateTime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt("2026-11-25T20:25:00").astimezone(tz)
+    monkeypatch.setattr(worker, "datetime", FixedDateTime)
+    monkeypatch.setattr(worker, "_live_allowed", lambda job: True)
+    monkeypatch.setattr(worker, "eligible_manual_session", lambda *a, **k: {
+        "session": {"session_id": "133517", "user_oid": "owner"}})
+    monkeypatch.setattr(worker, "verify_provider_sender_identity", lambda *a, **k: None)
+    monkeypatch.setattr(worker, "_session_status", lambda *a: "connected")
+    doc = {"messages": [{"message_id": "m1"}]}
+    decision = {"state": "CANDIDATE", "scenario": "INITIAL_NO_REPLY"}
+    monkeypatch.setattr(worker, "_decision", lambda *a, **k: (doc, decision))
+    draft = MagicMock(side_effect=ValueError("draft_format"))
+    monkeypatch.setattr(worker, "draft_followup", draft)
+    fallback = MagicMock(return_value=None)
+    monkeypatch.setattr(worker, "initial_recovery_draft", fallback)
+    db, collection, post = MagicMock(), MagicMock(), MagicMock()
+    db.__getitem__.return_value = collection
+    collection.find_one.return_value = {}
+    job = {"_id": "unrelated", "owner": "owner", "session": "133517",
+           "anchor": "m1", "lease": "lease"}
+    assert worker.dispatch(db, job, doc, decision, now=dt("2026-11-25T20:25:00"), post=post) == "model_invalid"
+    fallback.assert_not_called()
+    post.assert_not_called()
+    collection.delete_one.assert_called_once()
+    assert collection.update_one.call_args.args[1]["$set"]["draft_error"] == "draft_format"
+    job.update(_id=next(iter(worker._RECOVERY_JOB_IDS)), owner="6a681413140190dde11f26d1")
+    assert worker.dispatch(db, job, doc, decision, now=dt("2026-11-25T20:25:00"), post=post) == "model_invalid"
+    fallback.assert_called_once()
+    post.assert_not_called()

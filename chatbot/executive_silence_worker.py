@@ -146,8 +146,15 @@ def dispatch(db, job, doc, decision, *, now, post=None):
     anchor = next((m for m in doc.get("messages", []) if m.get("message_id") == job["anchor"]), None)
     if not anchor:
         return "anchor_missing"
+    # Only structured customer-evidenced operation, never an inferred price,
+    # address, financing approval or inventory availability.
+    summary = (doc.get("commercial_intelligence") or {}).get("summary") or {}
+    demand = (summary.get("needs") or {}).get("DEMAND") or {}
+    evidence = (summary.get("field_evidence") or {}).get("DEMAND") or {}
+    operation = demand.get("operation") if evidence.get("operation") else ""
     text = followup_copy(scenario=decision["scenario"], attempt=1,
-                         last_agent=anchor.get("content") or "")
+                         last_agent=anchor.get("content") or "",
+                         verified_operation=operation)
     phone = normalize_phone_strict(doc.get("phone"))
     # One permanent reservation per normalized customer phone (pilot).
     key = sha256(f"{MODE}|{phone}".encode()).hexdigest()

@@ -107,7 +107,10 @@ def _load_window(db, doc):
                 {"$eq": ["$$m.assignment_cycle_id", cycle]},
                 {"$eq": ["$$m.assigned_executive_id", str(lifecycle["assigned_to_user_id"])]},
                 {"$eq": ["$$m.wasender_session_id", str(marker["pending_session_id"])]},
-                {"$in": ["$$m.actor_type", ["customer", "human_agent"]]},
+                {"$or": [{"$in": ["$m.actor_type", ["customer", "human_agent"]]},
+                          {"$and": [{"$eq": ["$m.actor_type", "automation"]},
+                                    {"$eq": ["$m.source", "crm_exec_silence_api"]},
+                                    {"$eq": ["$m.automatic", True]}]}]},
             ]}}}}},
         {"$project": {"messages": 1, "position": {"$indexOfArray": ["$messages.message_id", checkpoint]}}},
         {"$project": {
@@ -278,7 +281,10 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
         and str(m.get("assignment_cycle_id") or "") == cycle_id
         and str(m.get("assigned_executive_id") or "") == owner
         and str(m.get("wasender_session_id") or "") == session_id
-        and m.get("actor_type") in ("customer", "human_agent")
+        and (m.get("actor_type") in ("customer", "human_agent")
+             or (m.get("actor_type") == "automation"
+                 and m.get("source") == "crm_exec_silence_api"
+                 and m.get("automatic") is True))
     ]
     if not turns:
         return _finish(db, doc, summary=None, status="no_eligible_turns")

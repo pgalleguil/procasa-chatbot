@@ -46,7 +46,7 @@ def test_draft_receives_property_and_only_authorized_context_once():
         return {"decision": "DRAFT", "message": "Respecto al departamento en Rancagua, ¿busca comprar o arrendar?"}
     msg, usage = draft_followup(db, lead, job, anchor, scenario="INITIAL_NO_REPLY", propose=propose)
     assert len(calls) == 1 and len(db["universo_cartera_prop360"].calls) == 1
-    assert msg == "Respecto al departamento en Rancagua, ¿busca comprar o arrendar? — PROCASA"
+    assert msg == "Respecto al departamento en Rancagua, ¿busca comprar o arrendar?"
     assert "seguimiento automático" not in msg
     assert "comprar o arrendar" in msg
     assert usage["version"]

@@ -4033,6 +4033,7 @@
         const startTime = Date.now();
         const currentPhone = {{ (lead.first_contact_ref or lead.phone or "") | tojson }};
         let firstContactPhoneLocked = {{ "true" if lead.first_contact_phone_locked else "false" }};
+        let firstContactManualContingency = false;
 
         async function logAction(type, meta = {}, target = 'system') {
             try {
@@ -5437,6 +5438,7 @@
                 ? 'checking' : 'wa_me';
             window.crmExecutiveOutboundAttemptKey = null;
             window.crmExecutiveWaFallback = false;
+            firstContactManualContingency = false;
             window.crmExecutiveWaReason = '';
             window.crmExecutiveWaPreflightId = (window.crmExecutiveWaPreflightId || 0) + 1;
             const thisPreflight = window.crmExecutiveWaPreflightId;
@@ -6530,7 +6532,9 @@
         }
 
         function revealFirstContactPhone(data) {
-            if (!firstContactPhoneLocked || !data.phone_unlocked || !data.phone) return;
+            if (!data.phone_unlocked || !data.phone) return;
+            firstContactManualContingency = data.method === 'wa_me';
+            if (!firstContactPhoneLocked) return;
             leadData.telefono = data.phone;
             if (typeof semState !== 'undefined') semState.leadPhone = data.phone;
             firstContactPhoneLocked = false;
@@ -6676,6 +6680,22 @@
                         const pendingWeb = wasWeb ? window.open('about:blank', '_blank') : null;
                         let webOpened = false;
                         try {
+                            if (wasWeb && firstContactManualContingency) {
+                                const manual = await fetch('/crm/lead-id/' + encodeURIComponent(leadData.id) + '/contact/whatsapp', {
+                                    method: 'POST', credentials: 'same-origin',
+                                    headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                                    body: JSON.stringify({target: 'lead', message: finalMsg})
+                                });
+                                if (!manual.ok) throw new Error('manual_contact_not_authorized');
+                                const manualData = await manual.json();
+                                const url = new URL(manualData.url);
+                                if (url.protocol !== 'https:' || url.hostname !== 'wa.me') throw new Error('invalid_contact_url');
+                                if (!url.searchParams.has('text')) url.searchParams.set('text', finalMsg);
+                                if (pendingWeb) { pendingWeb.opener = null; pendingWeb.location.replace(url.href); webOpened = true; }
+                                else window.location.assign(url.href);
+                                hideModal();
+                                return;
+                            }
                             const response = await fetch('/api/crm/executive-whatsapp/send', {
                                 method: 'POST', credentials: 'same-origin',
                                 headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
@@ -6702,7 +6722,7 @@
                                 showStrongToast('Aceptado por WaSender',
                                     'Mensaje registrado en el lead. La entrega al destinatario se comprueba por separado.', 'success');
                                 hideModal();
-                                if (firstContactPhoneLocked) window.location.reload();
+                                if (firstContactPhoneLocked) window.location.replace('/crm/lead-id/' + encodeURIComponent(leadData.id));
                             } else if (result.status === 'recipient_not_registered') {
                                 window.crmExecutiveWaMethod = 'blocked';
                                 window.crmExecutiveWaFallback = false;

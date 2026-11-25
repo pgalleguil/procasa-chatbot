@@ -3859,7 +3859,7 @@ async def api_crm_detail_state(request: Request, phone: str):
         raise HTTPException(status_code=400, detail="Falta teléfono")
     _user, lead = await _get_authorized_crm_lead(request, phone)
     detail = await asyncio.get_running_loop().run_in_executor(
-        _WEB_THREAD_POOL, lambda: get_lead_detail_data(phone, lead_doc=lead)
+        _WEB_THREAD_POOL, lambda: get_lead_detail_data(str(lead.get("phone") or ""), lead_doc=lead)
     )
     return {
         "assignment_cycle_id": detail.get("assignment_cycle_id") or "",
@@ -4078,7 +4078,7 @@ async def api_crm_notes(request: Request):
         result = await loop.run_in_executor(
             _WEB_THREAD_POOL,
             lambda: manage_crm_notes(
-                phone, note_data, action,
+                str(lead.get("phone") or ""), note_data, action,
                 lead_id=lead["_id"],
                 actor_user_id=str(user.get("_id") or ""),
                 assignment_cycle_id=(cycle or {}).get("assignment_cycle_id"),
@@ -4179,9 +4179,12 @@ async def api_crm_send_recommendation(request: Request):
             request.state.crm_access_context = access_context
             if not access_context.access_allowed:
                 raise HTTPException(status_code=access_context.http_status, detail=safe_access_error(access_context))
+            _require_first_contact_phone(lead_for_access, user)
             phone = str(lead_for_access.get("phone") or "")
         elif Config.CRM_SLA_SECURITY_LAYER_ENABLED:
             user, _lead = await _get_authorized_crm_lead(request, phone)
+            _require_first_contact_phone(_lead, user)
+            phone = str(_lead.get("phone") or "")
         
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(

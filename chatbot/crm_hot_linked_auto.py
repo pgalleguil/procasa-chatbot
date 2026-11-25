@@ -569,6 +569,7 @@ def send_hot_auto(db, *, lead_id, post=None, now=None) -> dict:
     }, {
         "$push": {"messages": msg},
         "$set": {
+            "first_contact_phone_access.verified": True,
             "crm_hot_auto.latest_cycle_id": cycle_id,
             "crm_hot_auto.last_provider_message_id": pid,
             "crm_hot_auto.last_accepted_at": accepted_at,
@@ -589,6 +590,7 @@ def send_hot_auto(db, *, lead_id, post=None, now=None) -> dict:
             "messages.$.role": "assistant",
             "messages.$.source": "crm_hot_auto_api",
             "messages.$.automatic": True,
+            "first_contact_phone_access.verified": True,
         }})
         canonical = corrected.modified_count == 1
     if not canonical:

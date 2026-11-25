@@ -483,7 +483,8 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
         if echo:
             break
     if echo:
-        echo_fields = {"messages.$.crm_api_provider_message_id": pid}
+        echo_fields = {"messages.$.crm_api_provider_message_id": pid,
+                       "first_contact_phone_access.verified": True}
         if delegated:
             echo_fields.update({
                 "messages.$.source": "crm_admin_delegated_api",
@@ -537,6 +538,7 @@ def send_manual(db, *, lead_id, actor_user_id: str, message: str,
             "wasender_session_id": sid, "provider_message_id": pid
         }}}],
     }, {"$push": {"messages": entry}, "$set": {
+        "first_contact_phone_access.verified": True,
         "commercial_intelligence.pending": True,
         "commercial_intelligence.pending_message_id": entry["message_id"],
         "commercial_intelligence.pending_cycle_id": cycle_id,

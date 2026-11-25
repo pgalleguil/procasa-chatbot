@@ -419,12 +419,13 @@ async def crm_executive_whatsapp_send(request: Request):
 
     from .crm_first_contact_phone import enabled
     release = {}
-    if enabled() and result.get("status") in ("manual_fallback", "retry", "rejected",
-                                                "delivery_unknown", "accepted_without_provider_id"):
+    if enabled() and (result.get("status") in ("manual_fallback", "retry", "rejected",
+                                                "delivery_unknown", "accepted_without_provider_id")
+                      or (result.get("status") == "accepted" and result.get("recorded") is not True)):
         reason = result.get("reason_code") or result.get("reason") or result.get("status")
         release = await asyncio.to_thread(
             lambda: _phone_contingency(get_db(), user=user, lead_id=data["lead_id"], reason=reason))
-        if release and result.get("status") in ("manual_fallback", "retry", "delivery_unknown", "accepted_without_provider_id"):
+        if release and result.get("status") in ("manual_fallback", "retry", "delivery_unknown", "accepted_without_provider_id", "accepted"):
             _queue_operator_alert(user=user, reason=str(reason), lead_id=data["lead_id"])
     if result.get("status") == "accepted" and result.get("recorded") is True:
         return {"status": "accepted", "provider_message_id": result["provider_message_id"],

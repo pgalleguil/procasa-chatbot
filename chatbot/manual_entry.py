@@ -271,13 +271,8 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
     now = datetime.now(CHILE_TZ)
     final_phone = phone or f"no-phone-{now.timestamp()}"
     
-    messages = [
-        {
-            "role": "system",
-            "content": f"Lead ingresado manualmente. Origen: {origen}",
-            "timestamp": now.isoformat()
-        }
-    ]
+    # Administrative provenance lives in origen, stage_history and MANUAL_ENTRY.
+    messages = []
 
     # Si el usuario ingresó un mensaje inicial, lo agregamos como primer mensaje del usuario
     if mensaje:
@@ -433,25 +428,13 @@ def create_manual_lead(data: Dict[str, Any], background_tasks=None) -> Dict[str,
                     "pipeline_stage": PipelineStage.NEW,
                     "prospecto.codigo": property_code,
                 })
-            update_payload = {
-                "$set": returning_fields,
-                "$push": {
-                    "messages": {
-                        "role": "system",
-                        "content": f"El cliente se interesó en una nueva propiedad ({property_code}) vía {origen}.",
-                        "timestamp": now.isoformat()
-                    }
-                }
-            }
+            update_payload = {"$set": returning_fields}
+            # MANUAL_ENTRY records the administrative inquiry separately.
             if mensaje:
-                msg_system = update_payload["$push"]["messages"]
-                update_payload["$push"]["messages"] = {
-                    "$each": [
-                        msg_system,
-                        {"role": "user", "content": mensaje, "timestamp": now.isoformat()}
-                    ]
+                update_payload["$push"] = {
+                    "messages": {"role": "user", "content": mensaje, "timestamp": now.isoformat()}
                 }
-            
+
             # Lógica de ejecutivo: Priorizamos SIEMPRE mantener al ejecutivo que ya lo está atendiendo.
             current_exec = exec_name if reused_active_cycle else (
                 existing_lead.get("ejecutivo_asignado") or existing_lead.get("prospecto", {}).get("ejecutivo")

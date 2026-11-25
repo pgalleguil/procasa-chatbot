@@ -180,3 +180,29 @@ def test_rollout_day_start_is_stable_for_all_future_contacts(monkeypatch):
     assert _rollout_cutoff(datetime(2026, 12, 1, 22, tzinfo=timezone.utc)) == start
     monkeypatch.delenv("PROCASA_EXEC_SILENCE_CUTOFF")
     assert _rollout_cutoff(datetime(2026, 11, 26, 22, tzinfo=timezone.utc)) is None
+
+
+def test_enqueue_all_executives_and_cancel_reply(monkeypatch):
+    from chatbot.executive_silence_worker import enqueue
+    from unittest.mock import MagicMock
+    monkeypatch.setenv("PROCASA_EXEC_SILENCE_WORKER_ENABLED", "1")
+    monkeypatch.setenv("PROCASA_EXEC_SILENCE_CUTOFF", "2026-11-25T18:14:15+00:00")
+    db = MagicMock()
+    leads, queue = MagicMock(), MagicMock()
+    db.__getitem__.side_effect = lambda k: {"leads": leads, "crm_exec_silence_queue": queue}[k]
+    for owner in ("owner-A", "owner-B"):
+        lead = fixture("2026-11-26T12:00:00")
+        lead["lifecycle"]["assigned_to_user_id"] = owner
+        lead["commercial_intelligence"]["summary"]["contact"].update(
+            last_actor="human_agent", last_agent_at="2026-11-26T12:00:00-03:00")
+        leads.find_one.return_value = lead
+        enqueue(db, owner, now=dt("2026-11-26T15:00:00"))
+        job = queue.update_one.call_args.args[1]["$setOnInsert"]
+        assert job["owner"] == owner
+        assert job["due_at"] == dt("2026-11-26T18:00:00")
+        queue.update_one.reset_mock()
+        lead["commercial_intelligence"]["summary"]["contact"].update(
+            last_actor="customer", awaiting="EXECUTIVE")
+        enqueue(db, owner, now=dt("2026-11-26T16:00:00"))
+        queue.update_one.assert_not_called()
+        assert queue.update_many.call_args.args[0] == {"lead_id": owner, "state": "pending"}

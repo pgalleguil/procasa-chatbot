@@ -161,17 +161,22 @@ def _notification_context(
 
 
 def _new_owner_message(context: Mapping[str, str]) -> str:
-    return (
-        "🔄 Nuevo lead reasignado\n\n"
-        "Se te ha asignado un lead por vencimiento de SLA del ejecutivo anterior.\n\n"
-        f"Cliente: {context['client']}\n"
-        f"Propiedad: {context['code']}\n"
-        f"Operación: {context['operation']}\n"
-        f"Comuna: {context['commune']}\n"
-        f"Prioridad: {context['priority']}\n\n"
-        "⏱️ Tu SLA comenzará desde la entrega de esta notificación.\n\n"
-        f"👉 Gestionar lead:\n{context['secure_url']}"
-    )
+    priority = context.get("priority")
+    title = "🔥 *Nuevo cliente de atención prioritaria*" if priority == "HOT" else "📥 *Nuevo cliente para continuar su atención*"
+    details = [f"Cliente: {context['client']}", f"Propiedad: {context['code']}"]
+    operation = context.get("operation")
+    if operation and operation != "S/I":
+        operation = {"A": "Arriendo", "V": "Venta"}.get(operation.upper(), operation)
+        details.append(f"Operación: {operation}")
+    if context.get("commune") not in (None, "", "S/I"):
+        details.append(f"Comuna: {context['commune']}")
+    return "\n\n".join((
+        title,
+        "Se te ha asignado un cliente que requiere atención comercial.",
+        "\n".join(details),
+        "Revisa sus antecedentes y el historial de conversación antes de contactar al cliente.",
+        f"📲 *Atender cliente:*\n{context['secure_url']}",
+    ))
 
 
 def _previous_owner_message(context: Mapping[str, str]) -> str:

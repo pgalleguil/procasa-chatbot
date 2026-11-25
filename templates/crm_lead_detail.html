@@ -1149,7 +1149,11 @@
 
         /* Flex wrappers con ALINEACIÓN FORZADA */
         .chat-msg-user,
-        .chat-msg-assistant {
+        .chat-msg-assistant,
+        .chat-msg-executive,
+        .chat-msg-automation,
+        .chat-msg-system,
+        .chat-msg-portal {
             display: flex !important;
             width: 100% !important;
             margin-bottom: 12px !important;
@@ -1210,6 +1214,16 @@
             color: var(--wa-green);
         }
 
+        .chat-msg-executive, .chat-msg-automation { justify-content:flex-end !important; }
+        .chat-msg-executive .chat-bubble { background:#134b3d; color:var(--wa-text); border:1px solid #287d65; }
+        .chat-msg-executive .chat-name-tag { color:#a7f3d0; }
+        .chat-msg-automation .chat-bubble { background:#333052; color:var(--wa-text); border:1px solid #635e94; }
+        .chat-msg-automation .chat-name-tag { color:#d4c9ff; }
+        .chat-msg-system, .chat-msg-portal { justify-content:center !important; }
+        .chat-msg-system .chat-bubble, .chat-msg-portal .chat-bubble { background:#30343c; color:var(--wa-text); border:1px solid #68707c; }
+        .chat-msg-system .chat-name-tag, .chat-msg-portal .chat-name-tag { color:#d0d7e2; }
+        .chat-message-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+        .chat-message-time { display:block; text-align:right; font-size:.7rem; opacity:.8; margin-top:.3rem; }
         /* Contenedor con Fondo Doodle Auténtico */
         .chat-scroll-custom {
             background-color: var(--wa-doodle-bg);
@@ -2855,7 +2869,7 @@
                         <div class="chat-toggle-header" data-bs-toggle="collapse" data-bs-target="#chatHistoryCollapse"
                             style="cursor:pointer;">
                             <button class="btn-chat-toggle" type="button">
-                                <i class="fa-solid fa-comments me-2"></i> Ver conversación previa con IA
+                                <i class="fa-solid fa-comments me-2"></i> Ver historial de conversación comercial
                                 <i class="fa-solid fa-chevron-down transition-transform ms-2"></i>
                             </button>
                         </div>
@@ -2863,11 +2877,11 @@
                             <div class="bg-dark p-2 rounded border border-secondary chat-scroll-custom"
                                 style="max-height: 400px; overflow-y: auto;">
                                 {% for msg in lead.timeline %}
-                                {% set is_ia = msg.role == 'chat-bot' %}
-                                <div class="chat-msg-{{ 'assistant' if is_ia else 'user' }}">
+                                <div class="chat-msg-{{ msg.display_kind|default('system') }}">
                                     <div class="chat-bubble">
-                                        <span class="chat-name-tag">{{ 'IA Procasa' if is_ia else 'Lead' }}</span>
-                                        {{ msg.content }}
+                                        <span class="chat-name-tag">{{ msg.display_label|default('Remitente sin identificar') }}</span>
+                                        <div class="chat-message-text">{{ msg.content }}</div>
+                                        {% if msg.display_time %}<span class="chat-message-time">{{ msg.display_time }}</span>{% endif %}
                                     </div>
                                 </div>
                                 {% endfor %}

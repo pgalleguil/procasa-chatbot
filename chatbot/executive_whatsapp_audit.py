@@ -781,6 +781,15 @@ def _session_from_storage(session_id: str) -> dict | None:
 
 def _handle_from_storage(session: dict, payload: dict, write: bool) -> str:
     from .storage import get_db
+    if (payload.get("event") == "session.status" and write
+            and os.getenv("PROCASA_EXEC_SILENCE_CONTINUITY_ENABLED", "0") == "1"):
+        from .executive_capture_continuity import record_status
+        data = payload.get("data")
+        status = data.get("status") if isinstance(data, dict) else None
+        record_status(get_db(), session_id=session["session_id"],
+                      owner_id=session["user_id"],
+                      status=status if isinstance(status, str) else "unknown")
+        return "session_status_recorded"
     return _handle_authorized(get_db(), session, payload, write=write)
 
 

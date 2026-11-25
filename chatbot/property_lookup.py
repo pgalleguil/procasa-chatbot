@@ -403,7 +403,7 @@ def extract_property_external_id(url: str, portal: Optional[str] = None) -> Opti
     portal = portal or canonical_portal(value)
     if portal == "enlaceinmobiliario":
         path = urlsplit(value).path or ""
-        match = re.fullmatch(r"/usados/[^/]+/[^/]+/(\d{9})/\d+/?", path, re.I)
+        match = re.fullmatch(r"/(?:[a-z0-9-]+/)?usados/[^/]+/[^/]+/(\d{9})/\d+/?", path, re.I)
         return match.group(1) if match else None
     if portal in {"mercadolibre", "portal_inmobiliario"}:
         match = re.search(r"\bMLC[-_]?\d+\b", value, re.I)

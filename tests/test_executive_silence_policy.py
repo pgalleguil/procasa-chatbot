@@ -378,7 +378,7 @@ def test_verified_initial_recovery_copy_matches_six_real_property_shapes(monkeyp
             "orientacion_comercial": False})
         text = llm.initial_recovery_draft(None, {}, {})
         assert text.startswith("Hola, por su consulta sobre ")
-        assert text.endswith(llm.SIGNOFF)
+        assert not text.endswith("— PROCASA")
         assert "seguimiento automático" not in text
         assert "a el" not in text
         assert commune in text and kind.lower() in text
@@ -461,7 +461,8 @@ def test_reviewed_initial_recovery_requires_explicit_scope_and_single_verified_o
 def test_contextual_draft_uses_natural_copy_without_automated_prefix():
     from chatbot import executive_silence_llm as llm
     msg = "Hola, por su consulta sobre el departamento en Rancagua, ¿está buscando comprar o arrendar? Así podemos orientarle mejor."
-    assert llm.validate_draft({"decision": "DRAFT", "message": msg}) == msg + llm.SIGNOFF
+    assert llm.validate_draft({"decision": "DRAFT", "message": msg}) == msg
+    assert llm.validate_draft({"decision": "DRAFT", "message": msg + " — PROCASA"}) == msg
     msg = "Desde PROCASA podemos orientarle. ¿Prefiere revisar otras opciones?"
     assert llm.validate_draft({"decision": "DRAFT", "message": msg}) == msg
     for bad in ("Hola, seguimiento automático de PROCASA. ¿Busca comprar?",
@@ -486,5 +487,5 @@ def test_contextual_draft_resumes_dialogue_not_repeats_opening(monkeypatch):
         return {"decision": "DRAFT", "message": "¿Alguna de las propiedades que le compartimos se acerca a lo que busca o prefiere que revisemos otras opciones?"}
     text, usage = llm.draft_followup(None, {}, {}, {}, scenario="DIALOGUE_INTERRUPTED", propose=propose)
     assert text.startswith("¿Alguna de las propiedades")
-    assert text.endswith(llm.SIGNOFF)
+    assert not text.endswith("— PROCASA")
     assert usage["version"] == llm.VERSION

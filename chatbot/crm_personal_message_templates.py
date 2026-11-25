@@ -13,8 +13,20 @@ PABLO_COMPOSER_PILOT_USER_ID = "69796bc4bbebf240378eb739"
 PILOT_BUILTIN_KEYS = frozenset(f"builtin:{i}" for i in range(1, 44))
 
 
+# Approved CRM agents, identified by immutable authenticated account IDs.
+COMPOSER_ENABLED_USER_IDS = frozenset({
+    PABLO_COMPOSER_PILOT_USER_ID,
+    "6a681413140190dde11f26d1",  # Hernán Castro
+    "6989c6309dd2ba54e478196c",  # Mariela Arriagada
+    "6989c6309dd2ba54e478196b",  # Susana Ensignia
+    "699653a96a099d6e9612d519",  # Paula Morales
+    "6995e9be6a099d6e9612d120",  # Rocío Aliaga
+    "6989c6309dd2ba54e478196d",  # Erika Garrido
+})
+
+
 def composer_pilot_enabled(user_id):
-    return str(user_id or "") == PABLO_COMPOSER_PILOT_USER_ID
+    return str(user_id or "") in COMPOSER_ENABLED_USER_IDS
 
 VARIABLES = frozenset(("nombre", "ejecutivo", "propiedad", "comuna", "enlace"))
 CATEGORIES = frozenset(("stage1", "stage2", "stage3", "stage4", "stage5", "stage6"))

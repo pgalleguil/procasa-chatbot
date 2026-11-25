@@ -9,8 +9,7 @@ import re
 from .executive_silence_policy import _plain, _time
 from .executive_conversation_intelligence import _safe, _prompt_state
 
-VERSION = "silence_copy_llm_v2"
-SIGNOFF = " — PROCASA"
+VERSION = "silence_copy_llm_v3"
 MAX_TURNS = 12
 MAX_INPUT_CHARS = 6500
 MAX_OUTPUT_TOKENS = 600
@@ -39,7 +38,8 @@ Escribe español natural de Chile, trato de usted, cálido, breve, una sola preg
 concreta y útil. Varía la apertura según el diálogo; no repitas el saludo anterior.
 No digas seguimiento automático, mensaje automático, IA, chatbot, robot, sistema,
 ni uses frases de control interno. No afirmes ser el ejecutivo ni finjas acciones
-humanas. Puedes hablar en nombre de PROCASA como equipo, sin firma personal.
+humanas. Puedes hablar en nombre de PROCASA como equipo cuando sea pertinente.
+No agregues firmas, despedidas de marca ni sufijos como «— PROCASA».
 Evita muletillas, formalismo excesivo y preguntas genéricas sin aportar valor.
 Ejemplo inicial con operación doble: "Hola, por su consulta sobre el departamento
 en Rancagua, ¿está buscando comprar o arrendar? Así podemos orientarle mejor."
@@ -136,7 +136,9 @@ def validate_draft(raw):
         raise ValueError("draft_unsafe_claim")
     if re.search(r"\b(?:seguimiento automatico|mensaje automatico|chatbot|robot|inteligencia artificial|a el)\b", plain):
         raise ValueError("draft_format")
-    return msg if re.search(r"\bprocasa\b", plain) else msg + SIGNOFF
+    # No fixed signoff; remove only a standalone trailing brand signature.
+    msg = re.sub(r"\s*[-—–]\s*PROCASA\.?\s*$", "", msg, flags=re.I).strip()
+    return msg
 
 
 def draft_followup(db, lead, job, anchor, *, scenario, attempt=1, propose=None):

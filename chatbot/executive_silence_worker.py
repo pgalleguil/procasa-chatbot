@@ -13,7 +13,7 @@ from pymongo.errors import DuplicateKeyError
 import requests
 
 from config import Config
-from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES
+from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment
 from .business_calendar import add_business_minutes, as_chile, CHILE
 from .executive_silence_llm import draft_followup
 from .executive_capture_continuity import continuity_since, record_status
@@ -116,13 +116,15 @@ def _decision(db, job, *, now):
     if not phone:
         return doc, {"state": "HOLD", "reason": "invalid_phone"}
     # Existing pending tasks always win. Query by both canonical ID forms.
-    if db["crm_tasks"].find_one({"lead_id": {"$in": [doc["_id"], str(doc["_id"])]},
-            "status": {"$nin": ["completed", "cancelled", "canceled", "closed"]}}, {"_id": 1}):
+    if db["crm_tasks"].find_one({"$or": [
+            {"lead_id": {"$in": [doc["_id"], str(doc["_id"])]}},
+            {"phone": {"$in": [phone, phone.lstrip("+"), phone.lstrip("+")[2:]]}}],
+            "status": {"$nin": ["completed", "cancelled", "canceled", "closed", "done", "sent", "error"]}}, {"_id": 1}):
         return doc, {"state": "HOLD", "reason": "crm_task_pending"}
     reviewed = _review(doc, job, phone, now)
     prior = db[OUTBOX].find_one({"mode": MODE, "phone": phone}, {"_id": 1})
     connected = continuity_since(db, session_id=job["session"], owner_id=job["owner"])
-    if doc.get("follow_up_required") or doc.get("follow_up_status") == "pending":
+    if has_pending_commitment(doc):
         return doc, {"state": "HOLD", "reason": "crm_followup_pending"}
     if not reviewed:
         return doc, {"state": "HOLD", "reason": "pilot_review_missing"}

@@ -327,12 +327,53 @@ def detect_property_code(lead):
     if code: return f"ML: {code}"
     return None
 
-def process_chat_timeline(messages):
+def _timeline_participant(msg, actor_names):
+    """Use persisted sender metadata, never the current assignment or message text."""
+    role = str(msg.get("role") or "").strip().lower()
+    actor = str(msg.get("actor_type") or "").strip().lower()
+    source = str(msg.get("source") or "").strip().lower()
+    if actor == "automation" or msg.get("automatic") is True:
+        return "automation", "Seguimiento automático"
+    if actor == "human_agent" or role in {"agent", "executive"} or role.startswith("executive:"):
+        name = actor_names.get(str(msg.get("actor_id") or ""))
+        return "executive", "Ejecutivo · " + name if name else "Ejecutivo (sin identificar)"
+    if actor == "customer" or role == "user":
+        if source == "prop360":
+            return "portal", "Consulta del portal"
+        return "user", "Lead"
+    if role == "system":
+        return "system", "Sistema"
+    if actor in {"chatbot", "bot", "ai"} or role in {"assistant", "chat-bot", "chatbot"}:
+        return "assistant", "Chatbot PROCASA"
+    return "system", "Remitente sin identificar"
+
+
+def _timeline_actor_names(db, messages):
+    from bson import ObjectId
+    ids = set()
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        kind, _ = _timeline_participant(msg, {})
+        actor_id = str(msg.get("actor_id") or "")
+        if kind == "executive" and ObjectId.is_valid(actor_id):
+            ids.add(ObjectId(actor_id))
+    if not ids:
+        return {}
+    return {str(user["_id"]): user["nombre"].strip()
+            for user in db["usuarios"].find({"_id": {"$in": list(ids)}}, {"nombre": 1})
+            if isinstance(user.get("nombre"), str) and user["nombre"].strip()}
+
+
+def process_chat_timeline(messages, actor_names=None):
     processed = []
     if not messages: return []
     for msg in messages:
+        if not isinstance(msg, dict):
+            continue
         role = msg.get("role", "user")
         css_class = "chat-bot" if role in ["assistant", "system"] else "user-message"
+        kind, label = _timeline_participant(msg, actor_names or {})
         
         ts_obj = msg.get("timestamp")
         if isinstance(ts_obj, str):
@@ -357,7 +398,10 @@ def process_chat_timeline(messages):
             ts_obj = datetime.min
             
         processed.append({
-            "role": css_class, 
+            "role": css_class,
+            "display_kind": kind,
+            "display_label": label,
+            "display_time": ts_obj.strftime("%d/%m/%Y %H:%M") if isinstance(ts_obj, datetime) and ts_obj.year > 1 else "",
             "content": msg.get("content", ""),
             "timestamp": ts_obj
         })
@@ -2316,7 +2360,8 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
             "channel": channel
         })
         
-    timeline = process_chat_timeline(lead.get("messages", []))
+    messages = lead.get("messages", [])
+    timeline = process_chat_timeline(messages, _timeline_actor_names(db, messages))
     prospecto = lead.get("prospecto", {})
 
     # Buscar próxima tarea pendiente (Auditoría Canónica)

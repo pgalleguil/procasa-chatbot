@@ -407,6 +407,9 @@ def process_one_hot_sync(db, *, worker_id, now=None, sender=None):
         finalize_attempt(db, notification_id=notification["_id"], worker_id=worker_id,
                          state="failed_retryable", error=type(exc).__name__, now=current)
         return {"status": "failed_retryable", "error": type(exc).__name__}
+    # Only report an automatic greeting with canonical current-cycle evidence.
+    from .crm_hot_linked_auto import sla_exemption
+    ctx["hot_auto_contact_confirmed"] = sla_exemption(cycle, lead) is not None
     message = build_hot_lead_message(ctx)
 
     logger.info("[HOT_SEND] notif=%s user=%s phone_end=%s",

@@ -1,8 +1,8 @@
 """Prospective, bounded phase-one follow-up worker.
 
 No historical scan, no new worker loop, no personal chats, no SLA changes.
-A candidate is not permission: pilot approval is bound to the lead, cycle,
-anchor and session. Production sending is separately gated and off by default.
+A candidate is not permission: verified inquiry evidence and capture continuity
+are checked automatically. Production sending remains separately gated.
 """
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
@@ -86,20 +86,30 @@ def enqueue(db, lead_id, *, now=None):
     }}, upsert=True)
 
 
-def _review(doc, job, phone, now):
-    """Explicit pilot authorization, never infer it from a portal source."""
-    a = (doc.get("commercial_intelligence") or {}).get("silence_pilot_review") or {}
-    reviewed, expiry = _time(a.get("reviewed_at")), _time(a.get("expires_at"))
-    return bool(a.get("status") == "APPROVED" and a.get("reviewed_by")
-                and a.get("evidence_reference") and a.get("revoked_at") is None
-                and reviewed and expiry and reviewed <= now < expiry
-                and a.get("phone") == phone and a.get("cycle") == job["cycle"]
-                and a.get("session") == job["session"] and a.get("anchor") == job["anchor"]
-                and a.get("contact_authorized") is True
-                and a.get("history_verified") is True
-                and a.get("no_own_pending_action") is True
-                and a.get("scheduled_contact_clear") is True)
+def _contact_evidence(db, doc, job, phone, now):
+    """Automatically reuse real inquiry evidence; no per-lead pilot approval.
 
+    Never infer permission from silence, a manually typed phone or a CRM
+    contact-result flag. The scoped history and opt-out checks still apply.
+    """
+    from .crm_hot_linked_auto import _verified_whatsapp_permission, _verified_recent_office_job
+    if (_verified_whatsapp_permission(doc, phone=phone, now=now)
+            or _verified_recent_office_job(db, lead=doc, phone=phone, now=now)):
+        return True
+    for msg in doc.get("messages") or []:
+        if not isinstance(msg, dict):
+            continue
+        timestamp = _time(msg.get("timestamp"))
+        if (msg.get("actor_type") == "customer"
+                and msg.get("role") in {"user", "customer"}
+                and msg.get("channel") == "executive_whatsapp"
+                and str(msg.get("assigned_executive_id")) == job["owner"]
+                and str(msg.get("assignment_cycle_id")) == job["cycle"]
+                and str(msg.get("wasender_session_id")) == job["session"]
+                and msg.get("provider_message_id")
+                and timestamp and now - timedelta(hours=24) <= timestamp <= now):
+            return True
+    return False
 
 def _decision(db, job, *, now):
     doc = db["leads"].find_one({"_id": job["lead_id"]})
@@ -121,21 +131,21 @@ def _decision(db, job, *, now):
             {"phone": {"$in": [phone, phone.lstrip("+"), phone.lstrip("+")[2:]]}}],
             "status": {"$nin": ["completed", "cancelled", "canceled", "closed", "done", "sent", "error"]}}, {"_id": 1}):
         return doc, {"state": "HOLD", "reason": "crm_task_pending"}
-    reviewed = _review(doc, job, phone, now)
+    authorized = _contact_evidence(db, doc, job, phone, now)
     prior = db[OUTBOX].find_one({"mode": MODE, "phone": phone}, {"_id": 1})
     connected = continuity_since(db, session_id=job["session"], owner_id=job["owner"])
     if has_pending_commitment(doc):
         return doc, {"state": "HOLD", "reason": "crm_followup_pending"}
-    if not reviewed:
-        return doc, {"state": "HOLD", "reason": "pilot_review_missing"}
+    if not authorized:
+        return doc, {"state": "HOLD", "reason": "inquiry_contact_evidence_missing"}
     if connected is None:
         return doc, {"state": "HOLD", "reason": "capture_continuity_unverified"}
     return doc, evaluate_silence(doc, now=now,
         enabled_since=_rollout_cutoff(now),
-        contact_authorized=reviewed, inquiry_verified=reviewed,
-        history_complete=reviewed, session_verified=connected is not None,
-        followup_attempts=int(bool(prior)), outstanding_own_action=False if reviewed else None,
-        continuity_since=connected, scheduled_contact_clear=reviewed)
+        contact_authorized=authorized, inquiry_verified=authorized,
+        history_complete=connected is not None, session_verified=connected is not None,
+        followup_attempts=int(bool(prior)), outstanding_own_action=False,
+        continuity_since=connected, scheduled_contact_clear=True)
 
 
 def _finish(db, job, *, state, reason, **extra):

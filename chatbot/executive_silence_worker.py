@@ -15,7 +15,7 @@ import requests
 from config import Config
 from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES
 from .business_calendar import add_business_minutes
-from .executive_silence_copy import followup_copy
+from .executive_silence_llm import draft_followup
 from .executive_capture_continuity import continuity_since, record_status
 from .crm_executive_outbound import (OUTBOX, eligible_manual_session,
     verify_provider_sender_identity, OutboundBlocked)
@@ -146,15 +146,21 @@ def dispatch(db, job, doc, decision, *, now, post=None):
     anchor = next((m for m in doc.get("messages", []) if m.get("message_id") == job["anchor"]), None)
     if not anchor:
         return "anchor_missing"
-    # Only structured customer-evidenced operation, never an inferred price,
-    # address, financing approval or inventory availability.
-    summary = (doc.get("commercial_intelligence") or {}).get("summary") or {}
-    demand = (summary.get("needs") or {}).get("DEMAND") or {}
-    evidence = (summary.get("field_evidence") or {}).get("DEMAND") or {}
-    operation = demand.get("operation") if evidence.get("operation") else ""
-    text = followup_copy(scenario=decision["scenario"], attempt=1,
-                         last_agent=anchor.get("content") or "",
-                         verified_operation=operation)
+    # Generate exactly once per claimed eligible anchor. Never invoke the
+    # model on polling, an ineligible lead or a scheduled WAIT.
+    text, usage = draft_followup(db, doc, job, anchor,
+                                 scenario=decision["scenario"], attempt=1)
+    db[QUEUE].update_one({"_id": job["_id"], "lease": job["lease"]},
+                         {"$set": {"draft_usage": usage,
+                                   "draft_decision": "DRAFT" if text else "HOLD"}})
+    if not text:
+        return "model_hold"
+    # Model latency must not allow a newly received message, CRM task,
+    # permission revocation or expired send window to slip past the gate.
+    now = datetime.now(timezone.utc)
+    fresh, rechecked = _decision(db, job, now=now)
+    if fresh != doc or rechecked["state"] != "CANDIDATE" or not _live_allowed(job):
+        return "superseded_after_draft"
     phone = normalize_phone_strict(doc.get("phone"))
     # One permanent reservation per normalized customer phone (pilot).
     key = sha256(f"{MODE}|{phone}".encode()).hexdigest()
@@ -163,7 +169,7 @@ def dispatch(db, job, doc, decision, *, now, post=None):
            "session_id": job["session"], "anchor_message_id": job["anchor"],
            "state": "provider_attempt", "attempted_at": now,
            "content_sha256": sha256(text.encode()).hexdigest(),
-           "scenario": decision["scenario"]}
+           "scenario": decision["scenario"], "draft_usage": usage}
     try:
         db[OUTBOX].insert_one(row)
     except DuplicateKeyError:

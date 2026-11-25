@@ -377,7 +377,10 @@ def test_verified_initial_recovery_copy_matches_six_real_property_shapes(monkeyp
             "tipo": kind, "comuna": commune, "operaciones_publicadas": ops,
             "orientacion_comercial": False})
         text = llm.initial_recovery_draft(None, {}, {})
-        assert text.startswith(llm.PREFIX)
+        assert text.startswith("Hola, por su consulta sobre ")
+        assert text.endswith(llm.SIGNOFF)
+        assert "seguimiento automático" not in text
+        assert "a el" not in text
         assert commune in text and kind.lower() in text
         assert text.count("?") == 1
         assert ("comprar o arrendar" in text) == (len(ops) == 2)
@@ -453,3 +456,35 @@ def test_reviewed_initial_recovery_requires_explicit_scope_and_single_verified_o
     assert run(None, job, doc, anchor, dict(decision, scenario="DIALOGUE_INTERRUPTED"), now) is None
     assert run(None, job, doc, anchor, decision, dt("2026-11-25T21:00:00")) is None
     assert draft.call_count == 1
+
+
+def test_contextual_draft_uses_natural_copy_without_automated_prefix():
+    from chatbot import executive_silence_llm as llm
+    msg = "Hola, por su consulta sobre el departamento en Rancagua, ¿está buscando comprar o arrendar? Así podemos orientarle mejor."
+    assert llm.validate_draft({"decision": "DRAFT", "message": msg}) == msg + llm.SIGNOFF
+    msg = "Desde PROCASA podemos orientarle. ¿Prefiere revisar otras opciones?"
+    assert llm.validate_draft({"decision": "DRAFT", "message": msg}) == msg
+    for bad in ("Hola, seguimiento automático de PROCASA. ¿Busca comprar?",
+                "Respecto a el departamento, ¿busca comprar?",
+                "Hola, soy Hernán. ¿Busca comprar?"):
+        try:
+            llm.validate_draft({"decision": "DRAFT", "message": bad})
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Unacceptable copy passed validation")
+
+
+def test_contextual_draft_resumes_dialogue_not_repeats_opening(monkeypatch):
+    from chatbot import executive_silence_llm as llm
+    context = {"scenario": "DIALOGUE_INTERRUPTED", "turns": [
+        {"actor": "CLIENTE", "texto": "Busco arriendo cerca del Metro"},
+        {"actor": "EJECUTIVO", "texto": "Le compartimos alternativas"}]}
+    monkeypatch.setattr(llm, "build_context", lambda *a: context)
+    def propose(ctx):
+        assert ctx is context
+        return {"decision": "DRAFT", "message": "¿Alguna de las propiedades que le compartimos se acerca a lo que busca o prefiere que revisemos otras opciones?"}
+    text, usage = llm.draft_followup(None, {}, {}, {}, scenario="DIALOGUE_INTERRUPTED", propose=propose)
+    assert text.startswith("¿Alguna de las propiedades")
+    assert text.endswith(llm.SIGNOFF)
+    assert usage["version"] == llm.VERSION

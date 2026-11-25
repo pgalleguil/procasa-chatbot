@@ -46,7 +46,8 @@ def test_draft_receives_property_and_only_authorized_context_once():
         return {"decision": "DRAFT", "message": "Respecto al departamento en Rancagua, ¿busca comprar o arrendar?"}
     msg, usage = draft_followup(db, lead, job, anchor, scenario="INITIAL_NO_REPLY", propose=propose)
     assert len(calls) == 1 and len(db["universo_cartera_prop360"].calls) == 1
-    assert msg.startswith("Hola, seguimiento automático de PROCASA.")
+    assert msg == "Respecto al departamento en Rancagua, ¿busca comprar o arrendar? — PROCASA"
+    assert "seguimiento automático" not in msg
     assert "comprar o arrendar" in msg
     assert usage["version"]
 
@@ -75,6 +76,8 @@ def test_model_hold_is_not_replaced_with_generic_message():
     "¿Le interesa por 3700 UF?",
     "¿Está interesado? ¿Quiere visitar?",
     "¿Le interesa? https://example.com",
+    "Hola, seguimiento automático de PROCASA. ¿Busca comprar?",
+    "Respecto a el departamento, ¿busca comprar?",
 ])
 def test_unsafe_draft_is_rejected(text):
     with pytest.raises(ValueError):

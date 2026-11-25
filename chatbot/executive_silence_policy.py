@@ -190,6 +190,10 @@ def evaluate_silence(
         return _result("HOLD", "latest_outbound_not_verified")
     if anchor > now or anchor < cutoff:
         return _result("HOLD", "outside_prospective_rollout")
+    if ci.get("silence_unparsed_event_at") is not None:
+        # No text-only classifier can decide whether a voice note, photo or
+        # attachment resolved a request. Require explicit human reconciliation.
+        return _result("HOLD", "unparsed_commercial_event")
     continuous = _time(continuity_since)
     if continuous is None or continuous > anchor:
         return _result("HOLD", "capture_continuity_unverified")

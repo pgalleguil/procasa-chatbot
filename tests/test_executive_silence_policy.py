@@ -218,3 +218,26 @@ def test_waiting_response_is_not_a_scheduled_commitment():
     assert decide(lead, contact_authorized=False)["state"] == "HOLD"
     lead["management_status"] = "managed_contacted"
     assert decide(lead)["reason"] == "crm_followup_pending"
+
+
+def test_automatic_contact_evidence_without_manual_pilot_approval(monkeypatch):
+    from chatbot.executive_silence_worker import _contact_evidence
+    from chatbot import crm_hot_linked_auto
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(crm_hot_linked_auto, "_verified_whatsapp_permission", lambda *a, **kw: False)
+    monkeypatch.setattr(crm_hot_linked_auto, "_verified_recent_office_job", lambda *a, **kw: False)
+    db = MagicMock()
+    doc = fixture("2026-11-25T12:22:00")
+    job = {"cycle": "cycle", "owner": "owner", "session": "session", "anchor": "m1"}
+    now = dt("2026-11-25T19:00:00")
+    phone = "+56912345678"
+    assert not _contact_evidence(db, doc, job, phone, now)
+    customer = deepcopy(doc["messages"][0])
+    customer.update(actor_type="customer", role="user", timestamp=dt("2026-11-25T12:00:00").isoformat())
+    doc["messages"].insert(0, customer)
+    assert _contact_evidence(db, doc, job, phone, now)
+    customer["wasender_session_id"] = "other"
+    assert not _contact_evidence(db, doc, job, phone, now)
+    monkeypatch.setattr(crm_hot_linked_auto, "_verified_recent_office_job", lambda *a, **kw: True)
+    assert _contact_evidence(db, doc, job, phone, now)
+    assert "silence_pilot_review" not in doc["commercial_intelligence"]

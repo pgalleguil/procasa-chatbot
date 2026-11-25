@@ -331,6 +331,21 @@ def _assess(db, *, user: dict, lead_id: str, get=None) -> dict:
     return {"method": "executive_wasender_api", "available": True}
 
 
+def _phone_contingency(db, *, user, lead_id, reason):
+    from .crm_first_contact_phone import locked_for_user, release_contingency, cycle_id
+    if not _manual_contact_allowed(db, user=user, lead_id=lead_id):
+        return {}
+    lead = db["leads"].find_one({"_id": ObjectId(lead_id)}) or {}
+    if locked_for_user(lead, user):
+        if not release_contingency(db, lead, reason):
+            return {}
+    else:
+        existing = (lead.get("first_contact_phone_access") or {}).get("contingency") or {}
+        if not cycle_id(lead) or existing.get("cycle_id") != cycle_id(lead):
+            return {}
+    return {"phone_unlocked": True, "phone": str(lead.get("phone") or "")}
+
+
 @router.get("/api/crm/executive-whatsapp/available/{lead_id}")
 async def crm_executive_whatsapp_available(request: Request, lead_id: str):
     user = await _user(request)
@@ -352,9 +367,18 @@ async def crm_executive_whatsapp_available(request: Request, lead_id: str):
     assessment = await asyncio.to_thread(lambda: _assess(
         get_db(), user=user, lead_id=lead_id,
     ))
-    if (assessment.get("fallback") is True
-            and assessment.get("reason") == "session_unavailable"):
-        _queue_operator_alert(user=user, reason="session_unavailable")
+    if assessment.get("method") in ("wa_me", "retry") and not assessment.get("available"):
+        from .crm_first_contact_phone import enabled
+        if enabled():
+            release = await asyncio.to_thread(
+                lambda: _phone_contingency(get_db(), user=user, lead_id=lead_id,
+                                           reason=assessment.get("reason") or "session_unavailable"))
+            if release:
+                assessment.update(release)
+                assessment.update(method="wa_me", fallback=True)
+                _queue_operator_alert(user=user, reason=assessment.get("reason") or "session_unavailable", lead_id=lead_id)
+        elif assessment.get("fallback") is True and assessment.get("reason") == "session_unavailable":
+            _queue_operator_alert(user=user, reason="session_unavailable")
     return assessment
 
 
@@ -393,6 +417,16 @@ async def crm_executive_whatsapp_send(request: Request):
             "code": "operation_blocked",
         }) from None
 
+    from .crm_first_contact_phone import enabled
+    release = {}
+    if enabled() and (result.get("status") in ("manual_fallback", "retry", "rejected",
+                                                "delivery_unknown", "accepted_without_provider_id")
+                      or (result.get("status") == "accepted" and result.get("recorded") is not True)):
+        reason = result.get("reason_code") or result.get("reason") or result.get("status")
+        release = await asyncio.to_thread(
+            lambda: _phone_contingency(get_db(), user=user, lead_id=data["lead_id"], reason=reason))
+        if release and result.get("status") in ("manual_fallback", "retry", "delivery_unknown", "accepted_without_provider_id", "accepted"):
+            _queue_operator_alert(user=user, reason=str(reason), lead_id=data["lead_id"])
     if result.get("status") == "accepted" and result.get("recorded") is True:
         return {"status": "accepted", "provider_message_id": result["provider_message_id"],
                 "recorded": True}
@@ -402,9 +436,9 @@ async def crm_executive_whatsapp_send(request: Request):
         # The POST can detect a disconnection after the initial GET preflight.
         if result.get("reason") == "session_unavailable":
             _queue_operator_alert(user=user, reason="session_unavailable")
-        return {"status": "manual_fallback", "method": "wa_me"}
+        return {"status": "manual_fallback", "method": "wa_me", **release}
     if result.get("status") == "retry":
-        return {"status": "retry", "reason": result.get("reason")}
+        return {"status": "manual_fallback", "method": "wa_me", **release} if release else {"status": "retry", "reason": result.get("reason")}
     if result.get("status") == "blocked":
         raise HTTPException(status_code=409, detail={"code": "operation_blocked"})
     if result.get("status") == "rejected":
@@ -420,10 +454,10 @@ async def crm_executive_whatsapp_send(request: Request):
         # Every explicit provider rejection must reach the administrator.
         _queue_operator_alert(user=user, reason=reason, lead_id=data["lead_id"])
         if reason == "recipient_not_registered":
-            return {"status": "recipient_not_registered", "method": "blocked"}
+            return {"status": "recipient_not_registered", "method": "blocked", **release}
         if reason == "session_disconnected":
             return {"status": "manual_fallback", "method": "wa_me"}
-        return {"status": "rejected", "reason": reason}
+        return {"status": "manual_fallback", "method": "wa_me", **release} if release else {"status": "rejected", "reason": reason}
     if result.get("status") in ("accepted", "accepted_without_provider_id",
                                 "delivery_unknown"):
         db = await asyncio.to_thread(get_db)
@@ -433,7 +467,7 @@ async def crm_executive_whatsapp_send(request: Request):
                                 session_id=profile["session"],
                                 executive_id=profile["id"],
                                 executive_name=profile["name"])
-        return {"status": "delivery_unconfirmed", "method": "executive_wasender_api"}
+        return {"status": "delivery_unconfirmed", "method": "executive_wasender_api", **release}
     raise HTTPException(status_code=502, detail={"code": "operation_blocked"})
 
 

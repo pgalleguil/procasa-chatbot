@@ -2807,7 +2807,8 @@
                             <div class="info-row">
                                 <div class="info-item">
                                     <span class="info-label">Teléfono</span>
-                                    <span class="info-value">{{ lead.whatsapp_display or lead.phone or 'Sin teléfono' }}</span>
+                                    <span class="info-value" id="firstContactPhoneDisplay">{{ lead.whatsapp_display or lead.phone or 'Sin teléfono' }}</span>
+                                    {% if lead.first_contact_phone_locked %}<small id="firstContactPhoneNotice" class="text-secondary d-block">Disponible tras el primer WhatsApp enviado desde el CRM.</small>{% endif %}
                                 </div>
                                 <div class="info-item">
                                     <span class="info-label">Email</span>
@@ -2839,7 +2840,7 @@
 
                         <!-- Botones de Acción Directa -->
                         <div class="comm-grid">
-                            <button onclick="openCommPanel('lead', 'phone')" class="btn-comm ph btn-call-mobile-only">
+                            <button id="firstContactCallButton" onclick="openCommPanel('lead', 'phone')" class="btn-comm ph btn-call-mobile-only" {% if lead.first_contact_phone_locked %}disabled title="Envía primero un WhatsApp desde el CRM"{% endif %}>
                                 <i class="fa-solid fa-phone"></i> Llamar
                             </button>
                             <button onclick="openCommPanel('lead', 'whatsapp')" class="btn-comm wa">
@@ -4032,7 +4033,9 @@
 
         // --- LOGGING & ANALYTICS (ORIGINAL) ---
         const startTime = Date.now();
-        const currentPhone = "{{ lead.phone }}";
+        const currentPhone = {{ (lead.first_contact_ref or lead.phone or "") | tojson }};
+        let firstContactPhoneLocked = {{ "true" if lead.first_contact_phone_locked else "false" }};
+        let firstContactManualContingency = false;
 
         async function logAction(type, meta = {}, target = 'system') {
             try {
@@ -4103,7 +4106,7 @@
 
         async function refreshDetailManagementState() {
             try {
-                const response = await fetch(`/api/crm/detail-state?phone=${encodeURIComponent(leadData.telefono)}`, {headers: {'Accept': 'application/json'}});
+                const response = await fetch(`/api/crm/detail-state?phone=${encodeURIComponent(currentPhone)}`, {headers: {'Accept': 'application/json'}});
                 if (!response.ok) throw new Error('STATE_REFRESH_FAILED');
                 const data = await response.json();
                 leadData.assignment_cycle_id = data.assignment_cycle_id || '';
@@ -4119,9 +4122,10 @@
         }
 
         function openDetailQuickManagement(preselectedResult = null) {
+            if (firstContactPhoneLocked) { showStrongToast("Primer contacto", "Envía primero un WhatsApp desde el CRM.", "warning"); return; }
             if (!window.CRMQuickManagement) return;
             window.CRMQuickManagement.open({
-                phone: leadData.telefono,
+                phone: currentPhone,
                 leadName: leadData.nombre,
                 assignmentCycleId: leadData.assignment_cycle_id,
                 onSuccess: async () => {
@@ -4410,7 +4414,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
                     body: JSON.stringify({
-                        phone: leadData.telefono,
+                        phone: currentPhone,
                         assignment_cycle_id: leadData.assignment_cycle_id,
                         management_request_id: requestId,
                         idempotency_key: requestId,
@@ -5339,7 +5343,7 @@
             }
 
             const managementPayload = {
-                phone: leadData.telefono,
+                phone: currentPhone,
                 estado: document.getElementById('estado_actual').value,
                 resultado_gestion: document.getElementById('resultado_gestion').value,
                 interaction_type: document.querySelector('input[name="interaction_type"]:checked')?.value,
@@ -5423,6 +5427,10 @@
 
         // --- FUNCIONES SISTEMA DE COMUNICACIÓN (LOGGING CORREGIDO) ---
         function openCommPanel(target, defaultChannel = 'wa') {
+            if (firstContactPhoneLocked && target === 'lead' && defaultChannel === 'phone') {
+                showStrongToast('Primer contacto', 'Envía primero un WhatsApp desde el CRM.', 'warning');
+                return;
+            }
             const newChannel = defaultChannel === 'whatsapp' ? 'wa' : defaultChannel;
             // The pilot is presentation-only here: the API enforces the
             // authenticated agent ID, current owner/cycle and verified sender.
@@ -5432,6 +5440,7 @@
                 ? 'checking' : 'wa_me';
             window.crmExecutiveOutboundAttemptKey = null;
             window.crmExecutiveWaFallback = false;
+            firstContactManualContingency = false;
             window.crmExecutiveWaReason = '';
             window.crmExecutiveWaPreflightId = (window.crmExecutiveWaPreflightId || 0) + 1;
             const thisPreflight = window.crmExecutiveWaPreflightId;
@@ -5517,6 +5526,7 @@
                     return response.json();
                 }).then(data => {
                     if (thisPreflight !== window.crmExecutiveWaPreflightId) return;
+                    revealFirstContactPhone(data);
                     const method = data.available && data.method === 'executive_wasender_api'
                         ? 'executive_wasender_api'
                         : (data.method === 'wa_me' && data.fallback === true ? 'wa_me' : data.method === 'retry' ? 'retry' : 'blocked');
@@ -6523,6 +6533,21 @@
             updateSendLink(currentCommTarget, semState.currentCategory);
         }
 
+        function revealFirstContactPhone(data) {
+            if (!data.phone_unlocked || !data.phone) return;
+            firstContactManualContingency = data.method === 'wa_me';
+            if (!firstContactPhoneLocked) return;
+            leadData.telefono = data.phone;
+            if (typeof semState !== 'undefined') semState.leadPhone = data.phone;
+            firstContactPhoneLocked = false;
+            const display = document.getElementById('firstContactPhoneDisplay');
+            if (display) display.textContent = data.phone;
+            const notice = document.getElementById('firstContactPhoneNotice');
+            if (notice) notice.textContent = 'Teléfono disponible por contingencia de WhatsApp.';
+            const call = document.getElementById('firstContactCallButton');
+            if (call) { call.disabled = false; call.removeAttribute('title'); }
+        }
+
         function updateSendLink(target, category) {
             updatePropertyHint();
             const btn = document.getElementById('btnSendComm');
@@ -6631,7 +6656,7 @@
 
                 if (currentCommChannel === 'wa') {
                     // --- LÓGICA WHATSAPP con Validación ---
-                    if (!phone || phone === 'None' || phone.replace(/\D/g, '').length < 6) {
+                    if (!(window.crmPabloApiPilot && target === 'lead' && firstContactPhoneLocked) && (!phone || phone === 'None' || phone.replace(/\D/g, '').length < 6)) {
                         alert("⚠️ Error: El destinatario no tiene un número de teléfono válido registrado.");
                         return;
                     }
@@ -6657,6 +6682,22 @@
                         const pendingWeb = wasWeb ? window.open('about:blank', '_blank') : null;
                         let webOpened = false;
                         try {
+                            if (wasWeb && firstContactManualContingency) {
+                                const manual = await fetch('/crm/lead-id/' + encodeURIComponent(leadData.id) + '/contact/whatsapp', {
+                                    method: 'POST', credentials: 'same-origin',
+                                    headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                                    body: JSON.stringify({target: 'lead', message: finalMsg})
+                                });
+                                if (!manual.ok) throw new Error('manual_contact_not_authorized');
+                                const manualData = await manual.json();
+                                const url = new URL(manualData.url);
+                                if (url.protocol !== 'https:' || url.hostname !== 'wa.me') throw new Error('invalid_contact_url');
+                                if (!url.searchParams.has('text')) url.searchParams.set('text', finalMsg);
+                                if (pendingWeb) { pendingWeb.opener = null; pendingWeb.location.replace(url.href); webOpened = true; }
+                                else window.location.assign(url.href);
+                                hideModal();
+                                return;
+                            }
                             const response = await fetch('/api/crm/executive-whatsapp/send', {
                                 method: 'POST', credentials: 'same-origin',
                                 headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
@@ -6676,12 +6717,14 @@
                                     ? result.detail.code : 'delivery_unconfirmed';
                                 throw new Error(code || 'delivery_unconfirmed');
                             }
+                            revealFirstContactPhone(result);
                             if (result.status === 'accepted' && result.recorded === true) {
                                 window.crmExecutiveWaMethod = 'executive_wasender_api';
                                 window.crmExecutiveWaFallback = false;
                                 showStrongToast('Aceptado por WaSender',
                                     'Mensaje registrado en el lead. La entrega al destinatario se comprueba por separado.', 'success');
                                 hideModal();
+                                if (firstContactPhoneLocked) window.location.replace('/crm/lead-id/' + encodeURIComponent(leadData.id));
                             } else if (result.status === 'recipient_not_registered') {
                                 window.crmExecutiveWaMethod = 'blocked';
                                 window.crmExecutiveWaFallback = false;
@@ -6696,7 +6739,7 @@
                                 window.crmExecutiveWaFallback = true;
                                 updateSendLink(target, category);
                                 if (wasWeb && pendingWeb) {
-                                    const cleanPhone = phone.replace(/\D/g, '');
+                                    const cleanPhone = (leadData.telefono || phone).replace(/\D/g, '');
                                     pendingWeb.opener = null;
                                     pendingWeb.location.replace(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(finalMsg)}`);
                                     webOpened = true;
@@ -7397,6 +7440,7 @@
             const logType = `CLICK_WHATSAPP_RECOMMEND_${target.toUpperCase()}`;
 
             // Open WhatsApp
+            if (firstContactPhoneLocked) { showStrongToast('Primer contacto', 'Envía primero un WhatsApp desde el CRM.', 'warning'); return; }
             const url = `https://wa.me/${semState.leadPhone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(msg)}`;
             window.open(url, '_blank');
 

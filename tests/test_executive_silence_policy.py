@@ -170,12 +170,13 @@ class TestExecutiveSilencePolicy(TestCase):
         self.assertNotIn("proceso de compra", unknown)
 
 
-def test_same_day_recovery_does_not_extend_to_next_day(monkeypatch):
+def test_rollout_day_start_is_stable_for_all_future_contacts(monkeypatch):
     from chatbot.executive_silence_worker import _rollout_cutoff
     from datetime import datetime, timezone
     monkeypatch.setenv("PROCASA_EXEC_SILENCE_CUTOFF", "2026-11-25T18:14:15+00:00")
-    today = datetime(2026, 11, 25, 22, tzinfo=timezone.utc)
-    assert _rollout_cutoff(today, same_day_recovery=True) == datetime(2026, 11, 25, 3, tzinfo=timezone.utc)
-    assert _rollout_cutoff(today) == datetime(2026, 11, 25, 18, 14, 15, tzinfo=timezone.utc)
-    tomorrow = datetime(2026, 11, 26, 22, tzinfo=timezone.utc)
-    assert _rollout_cutoff(tomorrow, same_day_recovery=True) == _rollout_cutoff(tomorrow)
+    start = datetime(2026, 11, 25, 3, tzinfo=timezone.utc)
+    assert _rollout_cutoff(datetime(2026, 11, 25, 22, tzinfo=timezone.utc)) == start
+    assert _rollout_cutoff(datetime(2026, 11, 26, 22, tzinfo=timezone.utc)) == start
+    assert _rollout_cutoff(datetime(2026, 12, 1, 22, tzinfo=timezone.utc)) == start
+    monkeypatch.delenv("PROCASA_EXEC_SILENCE_CUTOFF")
+    assert _rollout_cutoff(datetime(2026, 11, 26, 22, tzinfo=timezone.utc)) is None

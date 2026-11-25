@@ -13,7 +13,8 @@ from pymongo.errors import DuplicateKeyError
 import requests
 
 from config import Config
-from .executive_silence_policy import evaluate_silence, _time
+from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES
+from .business_calendar import add_business_minutes
 from .executive_silence_copy import followup_copy
 from .executive_capture_continuity import continuity_since, record_status
 from .crm_executive_outbound import (OUTBOX, eligible_manual_session,
@@ -63,7 +64,7 @@ def enqueue(db, lead_id, *, now=None):
     db[QUEUE].update_one({"_id": key}, {"$setOnInsert": {
         "lead_id": lead_id, "cycle": str(cycle), "owner": str(owner),
         "session": str(session), "anchor": anchor, "state": "pending",
-        "created_at": now, "due_at": now,
+        "created_at": now, "due_at": next_followup_slot(add_business_minutes(sent, WAIT_MINUTES)),
     }}, upsert=True)
 
 

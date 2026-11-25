@@ -15,12 +15,12 @@ from .business_calendar import (
     CHILE,
 )
 
-VERSION = "silence_followup_v2"
+VERSION = "silence_followup_v3"
 WAIT_MINUTES = 120
 EXPIRY_MINUTES = 3000
 # Local time, target slots. The last slot ends at 19:30 exclusively.
 # These are pilot hypotheses, not measured PROCASA-optimal hours.
-SEND_SLOTS = ((12, 30), (18, 30), (19, 0))
+SEND_SLOTS = ((19, 0), (19, 30))
 SLOT_GRACE_MINUTES = 30
 OPEN = {"DETECTADA", "PENDIENTE_GESTION", "EN_GESTION"}
 STOP_INTENTS = {"OPT_OUT", "SEARCH_COMPLETE", "SEARCH_COMPLETED", "PROPERTY_DECLINED"}
@@ -33,6 +33,8 @@ ASK = re.compile(
     r"(?:aun|todavia|sigue|sigues) (?:le |te )?(?:interesa|interesad[oa]|buscando)|"
     r"(?:pudo|pudiste|ha podido) revisar (?:la|el) (?:propiedad|departamento|casa)|"
     r"que le parecieron las caracteristicas|"
+    r"que (?:le|te) parecen (?:las |los )?(?:alternativas|opciones|departamentos|casas|propiedades)|"
+    r"(?:le|te) (?:sirve|acomoda) (?:esta|esa|el|la) (?:opcion|propiedad|departamento|casa)|"
     r"(?:cual|que) (?:es |seria )?(?:su|tu) presupuesto)\b"
 )
 OWN_ACTION = re.compile(
@@ -48,7 +50,9 @@ CUSTOMER_HOLD = re.compile(
     r"quiero|me sirve|tengo presupuesto|se ni que es)|"
     r"no me (?:escrib|contact|llam)\w*|"
     r"denme de baja|elimin\w* mi numero|equivocad[oa]|"
-    r"otro dia|mas adelante|yo (?:te|le) (?:aviso|escribo|llamo)|stop)\b"
+    r"otro dia|mas adelante|yo (?:te|le) (?:aviso|escribo|llamo)|stop|"
+    r"(?:escrib|contact|llam)\w* (?:manana|el lunes|el martes|el miercoles|el jueves|el viernes|el sabado|el domingo|a las|despues)|"
+    r"proxim[oa] (?:lunes|martes|miercoles|jueves|viernes|semana)|estoy esperando)\b"
 )
 ACK = re.compile(r"^(?:(?:ok(?:ay)?|gracias|muchas gracias|perfecto|listo|entendido|dale)[ ,.!]*)+$")
 
@@ -108,6 +112,8 @@ def evaluate_silence(
     history_complete: bool = False, session_verified: bool = False,
     followup_attempts: int | None = None,
     outstanding_own_action: bool | None = None,
+    continuity_since: datetime | None = None,
+    scheduled_contact_clear: bool = False,
 ) -> dict:
     """Return HOLD, WAIT or CANDIDATE (never a SEND instruction).
 
@@ -121,6 +127,10 @@ def evaluate_silence(
     if not all(x is True for x in (
             contact_authorized, inquiry_verified, history_complete, session_verified)):
         return _result("HOLD", "unverified_prerequisite")
+    if scheduled_contact_clear is not True:
+        return _result("HOLD", "scheduled_contact_pending_or_unknown")
+    if lead.get("follow_up_status") == "pending" or lead.get("follow_up_required"):
+        return _result("HOLD", "crm_followup_pending")
     if type(followup_attempts) is not int or followup_attempts != 0:
         return _result("HOLD", "attempt_already_exists_or_unknown")
     if outstanding_own_action is not False:
@@ -180,6 +190,9 @@ def evaluate_silence(
         return _result("HOLD", "latest_outbound_not_verified")
     if anchor > now or anchor < cutoff:
         return _result("HOLD", "outside_prospective_rollout")
+    continuous = _time(continuity_since)
+    if continuous is None or continuous > anchor:
+        return _result("HOLD", "capture_continuity_unverified")
     # Other channels can invalidate the snapshot, but are not used to infer a
     # new commercial intent. Ignore Prop360 form markers, not customer replies.
     for msg in messages:
@@ -192,6 +205,10 @@ def evaluate_silence(
             if t >= anchor and msg.get("message_id") != last.get("message_id"):
                 return _result("HOLD", "newer_or_concurrent_message")
     customers = [m for m in scoped if m.get("actor_type") == "customer"]
+    # A post-reconnect conversation must have fresh evidence from both sides.
+    # Never interpret pre-gap questions or acknowledgements as resolved.
+    if customers and any(_time(m["timestamp"]) < continuous for m in customers):
+        return _result("HOLD", "pre_connection_dialogue_unreconciled")
     if customers:
         prior = _plain(customers[-1].get("content"))
         if (not prior or CUSTOMER_HOLD.search(prior) or ACK.fullmatch(prior)
@@ -202,12 +219,13 @@ def evaluate_silence(
         return _result("HOLD", "no_clear_customer_reply_expected")
     if calculate_business_minutes(anchor, now) >= EXPIRY_MINUTES:
         return _result("HOLD", "stale_conversation")
+    scenario = "DIALOGUE_INTERRUPTED" if customers else "INITIAL_NO_REPLY"
     due = next_followup_slot(add_business_minutes(anchor, WAIT_MINUTES))
     if now < due:
-        return _result("WAIT", "silence_timer", due_at=due, anchor_message_id=last["message_id"])
+        return _result("WAIT", "silence_timer", due_at=due, anchor_message_id=last["message_id"], scenario=scenario)
     if not _in_followup_slot(now, due):
         return _result("WAIT", "outside_send_window",
                        due_at=next_followup_slot(now),
-                       anchor_message_id=last["message_id"])
+                       anchor_message_id=last["message_id"], scenario=scenario)
     return _result("CANDIDATE", "customer_reply_overdue", due_at=due,
-                   anchor_message_id=last["message_id"])
+                   anchor_message_id=last["message_id"], scenario=scenario)

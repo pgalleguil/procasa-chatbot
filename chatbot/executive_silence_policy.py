@@ -123,6 +123,7 @@ def evaluate_silence(
     outstanding_own_action: bool | None = None,
     continuity_since: datetime | None = None,
     scheduled_contact_clear: bool = False,
+    recovery_until: datetime | None = None,
 ) -> dict:
     """Return HOLD, WAIT or CANDIDATE (never a SEND instruction).
 
@@ -236,7 +237,18 @@ def evaluate_silence(
     due = next_followup_slot(add_business_minutes(anchor, WAIT_MINUTES))
     if now < due:
         return _result("WAIT", "silence_timer", due_at=due, anchor_message_id=last["message_id"], scenario=scenario)
-    if not _in_followup_slot(now, due):
+    # A separately authorized, same-day recovery window never waives the
+    # minimum silence, expiry, contact or history checks above.
+    recovery_end = _time(recovery_until)
+    local_now, local_anchor = as_chile(now), as_chile(anchor)
+    recovery_window = (
+        recovery_end is not None and now < recovery_end
+        and local_now.date() == local_anchor.date() == as_chile(recovery_end).date()
+        and is_business_day(local_now.date())
+        and 20 <= local_now.hour < 21
+        and (as_chile(recovery_end).hour, as_chile(recovery_end).minute) == (21, 0)
+    )
+    if not _in_followup_slot(now, due) and not recovery_window:
         return _result("WAIT", "outside_send_window",
                        due_at=next_followup_slot(now),
                        anchor_message_id=last["message_id"], scenario=scenario)

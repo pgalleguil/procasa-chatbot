@@ -241,3 +241,32 @@ def test_automatic_contact_evidence_without_manual_pilot_approval(monkeypatch):
     monkeypatch.setattr(crm_hot_linked_auto, "_verified_recent_office_job", lambda *a, **kw: True)
     assert _contact_evidence(db, doc, job, phone, now)
     assert "silence_pilot_review" not in doc["commercial_intelligence"]
+
+
+def test_session_guard_serializes_and_pauses_on_rate_limit(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    from pymongo.errors import DuplicateKeyError
+    db, guard = MagicMock(), MagicMock()
+    db.__getitem__.return_value = guard
+    job = {"session": "133517"}
+    now = dt("2026-11-25T19:00:00")
+    monkeypatch.setattr(worker, "_live_allowed", lambda job: True)
+    send = MagicMock(return_value="accepted")
+    monkeypatch.setattr(worker, "_dispatch_locked", send)
+    assert worker.dispatch(db, job, {}, {}, now=now) == "accepted"
+    guard.delete_one.assert_called_once()
+    guard.delete_one.reset_mock()
+    guard.insert_one.side_effect = DuplicateKeyError("already locked")
+    guard.find_one.return_value = {"state": "sending"}
+    assert worker.dispatch(db, job, {}, {}, now=now) == "session_busy"
+    send.assert_called_once()
+    guard.insert_one.side_effect = None
+    send.return_value = "rate_limited"
+    assert worker.dispatch(db, job, {}, {}, now=now) == "rate_limited"
+    guard.delete_one.assert_not_called()
+    assert guard.update_one.call_args.args[1]["$set"]["state"] == "paused"
+    guard.insert_one.side_effect = DuplicateKeyError("paused")
+    guard.find_one.return_value = {"state": "paused"}
+    assert worker.dispatch(db, job, {}, {}, now=now) == "session_paused"
+    assert send.call_count == 2

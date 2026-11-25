@@ -37,3 +37,95 @@ def continuity_since(db, *, session_id: str, owner_id: str):
     if not isinstance(value, datetime):
         return None
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _provider_connected_epoch(rows, *, session_id, anchor, now):
+    """A bounded log page must cover the anchor, without a later interruption."""
+    if not isinstance(rows, list) or not rows:
+        return None
+    parsed = []
+    for row in rows:
+        if not isinstance(row, dict) or str(row.get("whatsapp_session_id")) != str(session_id):
+            return None
+        try:
+            at = datetime.fromisoformat(str(row["occurred_at"]).replace("Z", "+00:00"))
+        except (KeyError, TypeError, ValueError):
+            return None
+        if at.tzinfo is None or at > now:
+            return None
+        parsed.append((at, row.get("status"), row.get("event_type")))
+    parsed.sort(reverse=True, key=lambda x: x[0])
+    for at, status, event in parsed:
+        if status != "connected":
+            return None
+        if at <= anchor:
+            return at
+        if event != "status_change":
+            return None
+    return None
+
+
+def recover_provider_continuity(db, *, session_id, owner_id, anchor, now, get=None):
+    """Bootstrap missing session metadata using authenticated provider evidence.
+
+    Never overwrite an observed disconnect, never backdate a current status,
+    and never assert that provider logs guarantee complete message replay.
+    The caller requires a canonical signed webhook echo for the lead anchor.
+    """
+    import hmac
+    from urllib.parse import urlparse
+    import requests
+    from config import Config
+    from pymongo.errors import DuplicateKeyError
+    from .executive_whatsapp_audit import _session
+
+    sid = str(session_id)
+    existing = db[COLLECTION].find_one({"_id": sid})
+    if existing:
+        return continuity_since(db, session_id=sid, owner_id=owner_id)
+    session = _session(db, sid)
+    if not session or session.get("user_id") != str(owner_id) or not session.get("capture_enabled"):
+        return None
+    pat = getattr(Config, "WASENDER_PERSONAL_ACCESS_TOKEN", None)
+    if not pat:
+        return None
+    base = Config.WASENDER_BASE_URL.rstrip("/") + "/whatsapp-sessions/" + sid
+    headers = {"Authorization": "Bearer " + pat}
+    fetch = get or requests.get
+    try:
+        response = fetch(base, headers=headers, timeout=5)
+        response.raise_for_status()
+        envelope = response.json()
+        detail = envelope.get("data") or {}
+        events = detail.get("webhook_events")
+        secret = detail.get("webhook_secret")
+        if (envelope.get("success") is not True or str(detail.get("id")) != sid
+                or detail.get("status") != "connected" or detail.get("webhook_enabled") is not True
+                or not isinstance(events, list)
+                or not ({"messages.upsert", "messages.received"} & set(events))
+                or urlparse(str(detail.get("webhook_url") or "")).path.rstrip("/") != "/webhook/ejecutivos/" + sid
+                or not isinstance(secret, str) or not hmac.compare_digest(secret, session["secret"])):
+            return None
+        response = fetch(base + "/session-logs", headers=headers,
+                         params={"page": 1, "per_page": 100}, timeout=5)
+        response.raise_for_status()
+        envelope = response.json()
+        page = envelope.get("data") or {}
+        if envelope.get("success") is not True or page.get("current_page") != 1:
+            return None
+        epoch = _provider_connected_epoch(page.get("data"), session_id=sid, anchor=anchor, now=now)
+        if epoch is None:
+            return None
+    except (requests.RequestException, ValueError, TypeError, AttributeError, KeyError):
+        return None
+    # Do not overwrite a newer signed status event during the provider calls.
+    try:
+        db[COLLECTION].update_one({"_id": sid}, {"$setOnInsert": {
+            "owner_id": str(owner_id), "status": "connected",
+            "connected_since": epoch, "status_observed_at": now,
+            "evidence_source": "provider_session_logs",
+            "provider_webhook_configuration_checked_at": now,
+        }}, upsert=True)
+    except DuplicateKeyError:
+        pass
+    return continuity_since(db, session_id=sid, owner_id=owner_id)

@@ -156,3 +156,13 @@ class TestExecutiveSilencePolicy(TestCase):
         self.assertIn("presupuesto", second)
         self.assertNotEqual(first, second)
         self.assertIn("No insistiremos", followup_copy(scenario="DIALOGUE_INTERRUPTED", attempt=3))
+
+    def test_verified_operation_copy(self):
+        from chatbot.executive_silence_copy import followup_copy
+        rental = followup_copy(scenario="INITIAL_NO_REPLY", attempt=1, verified_operation="ARRIENDO")
+        sale = followup_copy(scenario="INITIAL_NO_REPLY", attempt=1, verified_operation="VENTA")
+        unknown = followup_copy(scenario="INITIAL_NO_REPLY", attempt=1, verified_operation="UNKNOWN")
+        self.assertIn("requisitos para postular", rental)
+        self.assertIn("proceso de compra", sale)
+        self.assertNotIn("postular", unknown)
+        self.assertNotIn("proceso de compra", unknown)

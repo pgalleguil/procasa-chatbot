@@ -551,7 +551,7 @@ def format_hot_whatsapp_template(lead_data: Dict[str, Any], executive_name: str,
             f"🕐 *Transición*: {created_at}\n\n"
             f"📝 *Mensaje del cliente*: {mensaje_usuario}\n\n"
             f"🔗 *Gestionar ahora en CRM*:\n{crm_url}\n\n"
-            f"💡 _Toda gestión debe registrarse en el CRM para el control SLA y seguimiento._\n"
+            f"💡 _Revisa la conversación y da continuidad a la atención del cliente._\n"
             f"¡Mucho éxito! 🚀"
         )
 
@@ -567,7 +567,7 @@ def format_hot_whatsapp_template(lead_data: Dict[str, Any], executive_name: str,
             f"🕐 *Asignado*: {created_at}\n\n"
             f"📝 *Mensaje del cliente*: {mensaje_usuario}\n\n"
             f"🔗 *Gestionar ahora en CRM*:\n{crm_url}\n\n"
-            f"💡 _Toda gestión debe registrarse en el CRM para el control SLA y seguimiento._\n"
+            f"💡 _Revisa la conversación y da continuidad a la atención del cliente._\n"
             f"¡Mucho éxito! 🚀"
         )
 
@@ -583,7 +583,7 @@ def format_hot_whatsapp_template(lead_data: Dict[str, Any], executive_name: str,
         f"🕐 *Asignado*: {created_at}\n\n"
         f"📝 *Mensaje del cliente*: {mensaje_usuario}\n\n"
         f"🔗 *Gestionar ahora en CRM*:\n{crm_url}\n\n"
-        f"💡 _Toda gestión debe registrarse en el CRM para el control SLA y seguimiento._\n"
+        f"💡 _Revisa la conversación y da continuidad a la atención del cliente._\n"
         f"¡Mucho éxito! 🚀"
     )
 
@@ -656,19 +656,26 @@ def format_whatsapp_template(lead_data: Dict[str, Any], executive_name: str, pro
 
     mensaje_usuario = lead_data.get("last_message", "Interesado en esta propiedad")
 
-    template = (
-        f"{header}\n\n"
-        f"Hola {executive_name}, se ha asignado un nuevo lead a tu gestión. "
-        f"Realiza la gestión a la brevedad para maximizar la conversión. ⚡\n\n"
-        f"🏠 *Propiedad*: {property_code} | {operacion}\n"
-        f"{ubicacion_lines}"
-        f"{cliente_line}"
-        f"{contexto_extra}"
-        f"📝 *Comentario*: {mensaje_usuario}\n\n"
-        f"🔗 *Ver y Gestionar en CRM*:\n{crm_url}\n\n"
-        f"💡 _Recuerda ingresar con tu correo corporativo Procasa._\n"
-        f"¡Mucho éxito con la gestión! 🚀"
-    )
+    if is_new_assignment:
+        header = "🔥 *Nuevo cliente de atención prioritaria*" if hot_context else "📥 *Nuevo cliente asignado*"
+        intro = f"Hola {executive_name}, tienes un nuevo cliente para atender."
+        action = "Revisa su consulta y toma contacto para avanzar con su búsqueda."
+    else:
+        header = "💬 *Actualización de cliente asignado*"
+        intro = f"Hola {executive_name}, tienes novedades de un cliente de tu cartera."
+        action = "Revisa la consulta y da continuidad a su atención."
+    details = [f"🏠 *Propiedad*: {property_code}"]
+    if operacion and operacion != "Operación no especificada":
+        details.append(f"Operación: {operacion}")
+    if comuna:
+        details.append(f"Comuna: {comuna}")
+    if nombre_cliente:
+        details.insert(0, f"👤 Cliente: {nombre_cliente}")
+    paragraphs = [header, intro, "\n".join(details)]
+    if lead_data.get("last_message"):
+        paragraphs.append(f"📝 Consulta: {lead_data['last_message']}")
+    paragraphs.extend((action, f"📲 *Atender cliente:*\n{crm_url}"))
+    template = "\n\n".join(paragraphs)
     return template
 
 def format_summary_whatsapp_template(leads_list: list, executive_name: str) -> str:
@@ -766,36 +773,34 @@ def build_hot_lead_message(ctx: dict) -> str:
     prop_line = " ".join(prop_parts)
 
     if hot_context == HOT_CONTEXT_ESCALATED:
-        header = "\U0001F525 *LEAD ASIGNADO PAS\u00D3 A HOT*"
-        intro = (
-            f"Hola {exec_name}, este lead ya estaba asignado a ti y acaba de pasar a HOT."
-        )
-        continuity = "No es una nueva asignaci\u00F3n; es una actualizaci\u00F3n prioritaria del mismo lead."
+        header = "🔥 *Un cliente de tu cartera requiere atención prioritaria*"
+        intro = f"Hola {exec_name}, uno de tus clientes asignados requiere atención preferente."
+        action = "Revisa su nueva solicitud y da continuidad a su atención."
+        link_label = "Continuar atención"
     elif hot_context == HOT_CONTEXT_REASSIGNMENT:
-        header = "\U0001F525 *LEAD HOT \u2014 NUEVA ASIGNACI\u00D3N*"
-        intro = f"Hola {exec_name}, se te ha reasignado un lead HOT que requiere gesti\u00F3n inmediata."
-        continuity = ""
+        header = "🔥 *Nuevo cliente reasignado de atención prioritaria*"
+        intro = f"Hola {exec_name}, tienes un cliente asignado que requiere atención preferente."
+        action = "Revisa sus antecedentes y da continuidad a su atención."
+        link_label = "Atender cliente"
     else:
-        header = "\U0001F525 *NUEVO LEAD HOT*"
-        intro = f"Hola {exec_name}, tienes un lead prioritario pendiente de gesti\u00F3n."
-        continuity = ""
+        header = "🔥 *Nuevo cliente de atención prioritaria*"
+        intro = f"Hola {exec_name}, tienes un nuevo cliente que requiere atención preferente."
+        action = "Revisa su consulta y prioriza su atención."
+        link_label = "Atender cliente"
 
-    lines = [header, "", intro]
-    if continuity:
-        lines.extend([continuity])
-    lines.extend(["", prop_line])
-    if hot_reason:
-        lines.append(f"\U0001F3AF Motivo: {hot_reason}")
+    details = []
     if nombre_cliente:
-        lines.append(f"\U0001F464 Cliente: {nombre_cliente}")
-    lines.extend([
-        "",
-        f"\U0001F517 *Gestionar en CRM:*",
-        url,
-        "",
-        "\u26A0\uFE0F Registra el resultado en el CRM. Abrir WhatsApp o llamar no cuenta como gesti\u00F3n.",
-    ])
-    return "\n".join(lines)
+        details.append(f"👤 Cliente: {nombre_cliente}")
+    details.append(prop_line)
+    if hot_reason:
+        details.append(f"🎯 Interés: {hot_reason}")
+    paragraphs = [header, intro, "\n".join(details)]
+    if ctx.get("hot_auto_contact_confirmed") is True:
+        paragraphs.append("El saludo inicial ya fue enviado desde tu WhatsApp. Revisa la conversación y continúa la atención.")
+    else:
+        paragraphs.append(action)
+    paragraphs.append(f"📲 *{link_label}:*\n{url}")
+    return "\n\n".join(paragraphs)
 
 
 def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
@@ -838,7 +843,7 @@ def build_digest_lead_message(contexts: list[dict], exec_name: str = "") -> str:
 
     lines.extend([
         "",
-        "\u26A0\uFE0F Registra el resultado de la gesti\u00F3n en el CRM. Abrir WhatsApp o llamar no cuenta como gesti\u00F3n.",
+        "\u26A0\uFE0F Revisa las consultas y da inicio a la atención de los clientes.",
     ])
     return "\n".join(lines)
 

@@ -187,7 +187,7 @@ def test_notification_delivery_uses_thread_safe_sync_path_and_new_owner_phone():
     assert delivered["status"] == "sent"
     assert len(calls) == 1
     assert calls[0][0] == "+56911111111"
-    assert "vencimiento de SLA" in calls[0][1]
+    assert "Se te ha asignado un cliente" in calls[0][1]
     notification = db["crm_notifications_v1"].find_one({"delivery_id": delivered["delivery_id"]})
     assert notification["state"] == "sent"
     assert notification["actually_delivered"] is False

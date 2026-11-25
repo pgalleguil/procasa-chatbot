@@ -604,3 +604,16 @@ def test_recovery_reuses_same_identity_for_all_retryable_terminal_states(state):
     assert stored["state"] == "pending"
     assert stored["individual_identity"] == identity
     assert db[COLLECTION].count_documents({}) == 1
+
+
+def test_previous_owner_notification_is_informational():
+    from chatbot.crm_sla_reassignment_notifications import _previous_owner_message
+
+    message = _previous_owner_message({"client": "Moisés", "code": "6717"})
+    assert "Cliente reasignado" in message
+    assert "Cliente: Moisés" in message
+    assert "Propiedad: 6717" in message
+    assert "fue asignado a otro ejecutivo" in message
+    assert "ya no está disponible" in message
+    assert "https://" not in message
+    assert "SLA" not in message

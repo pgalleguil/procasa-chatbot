@@ -35,7 +35,7 @@ def test_individual_hot_message_contains_direct_link_not_crm_root():
         "7788",
     )
     assert "/crm/lead/56912345678?codigo=7788" in message
-    assert "Ver y Gestionar en CRM" in message
+    assert "Atender cliente" in message
     assert "onrender.com/\n\n" not in message
 
 

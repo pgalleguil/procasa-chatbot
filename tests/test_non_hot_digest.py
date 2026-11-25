@@ -512,7 +512,7 @@ def test_single_lead_singular_message():
 
     content, count = build_digest_message_content(db, notif)
     assert count == 1
-    assert "Nuevo Lead Asignado" in content or "LEAD" in content
+    assert "Nuevo cliente asignado" in content
 
 def test_multiple_leads_plural_message():
     """Multiple leads produce a plural message."""
@@ -529,7 +529,7 @@ def test_multiple_leads_plural_message():
 
     content, count = build_digest_message_content(db, notif)
     assert count == 2
-    assert "2 NUEVOS LEADS ASIGNADOS" in content
+    assert "2 nuevos clientes asignados" in content
 
 
 def test_different_executives_independent_digests():
@@ -838,7 +838,7 @@ def test_manual_and_portal_leads_grouped():
     # Message content mentions both
     content, count = build_digest_message_content(db, notif)
     assert count == 2
-    assert "2 NUEVOS LEADS ASIGNADOS" in content
+    assert "2 nuevos clientes asignados" in content
 
 
 def test_digest_single_lead_sends_even_if_alone():
@@ -2413,3 +2413,22 @@ def test_surrogate_character_normalization():
     payload = {"message": surrogate_text}
     h = content_hash(payload)
     assert isinstance(h, str) and len(h) == 64
+
+
+@pytest.mark.parametrize("context", ["initial_hot", "escalated_after_digest", "new_assignment_cycle"])
+def test_canonical_hot_message_respects_confirmed_automatic_contact(context):
+    from chatbot.lead_router import build_hot_lead_message
+
+    data = {"hot_context": context, "exec_name": "Hernán", "nombre_cliente": "Ana",
+            "property_code": "6303", "secure_url": "https://crm.example.com/lead",
+            "hot_reason": "Solicitó coordinar una visita"}
+    pending = build_hot_lead_message(data)
+    assert "El saludo inicial ya fue enviado" not in pending
+    assert "Solicitó coordinar una visita" in pending
+    assert pending.count(data["secure_url"]) == 1
+    assert "Registra el resultado" not in pending
+    confirmed = build_hot_lead_message({**data, "hot_auto_contact_confirmed": True})
+    assert "El saludo inicial ya fue enviado desde tu WhatsApp" in confirmed
+    if context == "escalated_after_digest":
+        assert "Un cliente de tu cartera" in pending
+        assert "Nuevo cliente" not in pending

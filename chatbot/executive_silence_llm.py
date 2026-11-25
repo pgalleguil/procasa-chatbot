@@ -150,4 +150,35 @@ def draft_followup(db, lead, job, anchor, *, scenario, attempt=1, propose=None):
         if not isinstance(body, str) or len(body) > 1800:
             raise ValueError("draft_invalid")
         raw = json.loads(body)
+    # An explicit model HOLD must never be converted into a recovery draft.
+    if isinstance(raw, dict) and raw.get("decision") == "HOLD":
+        return None, usage
     return validate_draft(raw), usage
+
+
+def initial_recovery_draft(db, lead, anchor):
+    """Verified copy for a bounded recovery of initial, unanswered contact.
+
+    Caller must have established the exact authorized job scope and must
+    recheck the canonical timeline and all eligibility before dispatch.
+    Never infer operation, location, or property type from an unrelated listing.
+    """
+    prop = property_context(db, lead, anchor)
+    kind = prop.get("tipo", "").lower()
+    commune = prop.get("comuna", "")
+    operations = set(prop.get("operaciones_publicadas", []))
+    if kind not in {"casa", "departamento"} or not commune:
+        return None
+    reference = ("la casa" if kind == "casa" else "el departamento") + " en " + commune
+    if operations == {"VENTA", "ARRIENDO"}:
+        question = "¿está buscando para comprar o arrendar?"
+    elif prop.get("orientacion_comercial") and operations in ({"VENTA"}, {"ARRIENDO"}):
+        question = "¿qué tipo de uso tiene pensado para la propiedad?"
+    elif operations == {"VENTA"}:
+        question = "¿le sería útil recibir orientación sobre el proceso de compra o financiamiento?"
+    elif operations == {"ARRIENDO"}:
+        question = "¿le gustaría recibir orientación sobre el proceso de arriendo?"
+    else:
+        return None
+    return validate_draft({"decision": "DRAFT", "message":
+        "Respecto a " + reference + " que consultó, " + question})

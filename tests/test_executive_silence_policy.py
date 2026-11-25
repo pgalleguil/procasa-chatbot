@@ -166,3 +166,14 @@ class TestExecutiveSilencePolicy(TestCase):
         self.assertIn("proceso de compra", sale)
         self.assertNotIn("postular", unknown)
         self.assertNotIn("proceso de compra", unknown)
+
+
+def test_same_day_recovery_does_not_extend_to_next_day(monkeypatch):
+    from chatbot.executive_silence_worker import _rollout_cutoff
+    from datetime import datetime, timezone
+    monkeypatch.setenv("PROCASA_EXEC_SILENCE_CUTOFF", "2026-11-25T18:14:15+00:00")
+    today = datetime(2026, 11, 25, 22, tzinfo=timezone.utc)
+    assert _rollout_cutoff(today, same_day_recovery=True) == datetime(2026, 11, 25, 3, tzinfo=timezone.utc)
+    assert _rollout_cutoff(today) == datetime(2026, 11, 25, 18, 14, 15, tzinfo=timezone.utc)
+    tomorrow = datetime(2026, 11, 26, 22, tzinfo=timezone.utc)
+    assert _rollout_cutoff(tomorrow, same_day_recovery=True) == _rollout_cutoff(tomorrow)

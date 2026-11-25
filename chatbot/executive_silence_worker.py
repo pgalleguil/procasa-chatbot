@@ -14,7 +14,7 @@ import requests
 
 from config import Config
 from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES
-from .business_calendar import add_business_minutes
+from .business_calendar import add_business_minutes, as_chile, CHILE
 from .executive_silence_llm import draft_followup
 from .executive_capture_continuity import continuity_since, record_status
 from .crm_executive_outbound import (OUTBOX, eligible_manual_session,
@@ -36,6 +36,18 @@ def ensure_indexes(db):
     db[OUTBOX].create_index([("mode", 1), ("phone", 1), ("attempted_at", 1)])
 
 
+def _rollout_cutoff(now, *, same_day_recovery=False):
+    cutoff = _time(os.getenv("PROCASA_EXEC_SILENCE_CUTOFF"))
+    if not cutoff or not same_day_recovery:
+        return cutoff
+    local = as_chile(now)
+    # Only recover the rollout day's earlier verified contacts; never historical
+    # leads or a recurring all-database scan. Consent and continuity still apply.
+    if as_chile(cutoff).date() != local.date():
+        return cutoff
+    return CHILE.localize(datetime(local.year, local.month, local.day)).astimezone(timezone.utc)
+
+
 def enqueue(db, lead_id, *, now=None):
     """One new anchor per classified lead; do not overwrite existing jobs."""
     if not enabled():
@@ -52,7 +64,7 @@ def enqueue(db, lead_id, *, now=None):
     cycle = lc.get("current_assignment_cycle_id")
     owner = lc.get("assigned_to_user_id")
     session = ci.get("pending_session_id")
-    cutoff = _time(os.getenv("PROCASA_EXEC_SILENCE_CUTOFF"))
+    cutoff = _rollout_cutoff(now)
     sent = _time(contact.get("last_agent_at"))
     if (not cutoff or not sent or not cutoff <= sent <= now
             or ci.get("pending") is not False or ci.get("status") != "ready"
@@ -61,6 +73,10 @@ def enqueue(db, lead_id, *, now=None):
             or not all((anchor, cycle, owner, session))):
         return
     key = sha256(f"{lead_id}|{cycle}|{anchor}".encode()).hexdigest()
+    # Supersede only unclaimed older anchors for this lead and cycle.
+    db[QUEUE].update_many({"lead_id": lead_id, "cycle": str(cycle),
+                           "state": "pending", "anchor": {"$ne": anchor}},
+                          {"$set": {"state": "held", "reason": "superseded_by_new_outbound"}})
     db[QUEUE].update_one({"_id": key}, {"$setOnInsert": {
         "lead_id": lead_id, "cycle": str(cycle), "owner": str(owner),
         "session": str(session), "anchor": anchor, "state": "pending",
@@ -104,8 +120,14 @@ def _decision(db, job, *, now):
     reviewed = _review(doc, job, phone, now)
     prior = db[OUTBOX].find_one({"mode": MODE, "phone": phone}, {"_id": 1})
     connected = continuity_since(db, session_id=job["session"], owner_id=job["owner"])
+    if doc.get("follow_up_required") or doc.get("follow_up_status") == "pending":
+        return doc, {"state": "HOLD", "reason": "crm_followup_pending"}
+    if not reviewed:
+        return doc, {"state": "HOLD", "reason": "pilot_review_missing"}
+    if connected is None:
+        return doc, {"state": "HOLD", "reason": "capture_continuity_unverified"}
     return doc, evaluate_silence(doc, now=now,
-        enabled_since=_time(os.getenv("PROCASA_EXEC_SILENCE_CUTOFF")),
+        enabled_since=_rollout_cutoff(now, same_day_recovery=job.get("same_day_recovery") is True),
         contact_authorized=reviewed, inquiry_verified=reviewed,
         history_complete=reviewed, session_verified=connected is not None,
         followup_attempts=int(bool(prior)), outstanding_own_action=False if reviewed else None,

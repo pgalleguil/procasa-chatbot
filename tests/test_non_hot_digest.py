@@ -30,6 +30,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 from unittest.mock import patch
 
+import pytest
 from pymongo.errors import DuplicateKeyError
 
 CHILE_TZ = timezone(timedelta(hours=-4))

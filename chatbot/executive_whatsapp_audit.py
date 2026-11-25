@@ -753,6 +753,16 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
                      if payload.get("event") == "message.sent" else payload)
     parsed = _parse_message(parse_payload, phone, lid)
     if parsed is None:
+        if write and os.getenv("PROCASA_EXEC_SILENCE_CONTINUITY_ENABLED", "0") == "1":
+            # Audio, images, attachments or unparseable text may be a real
+            # commercial reply. Store only a marker on the authorized lead,
+            # never the attachment or private payload.
+            db["leads"].update_one({
+                "_id": lead["_id"],
+                "lifecycle.current_assignment_cycle_id": str(cycle["assignment_cycle_id"]),
+                "lifecycle.assigned_to_user_id": session["user_id"],
+            }, {"$set": {"commercial_intelligence.silence_unparsed_event_at":
+                         datetime.now(timezone.utc)}})
         return _ignored(session, "text_unavailable")
     if not write:
         _audit_diagnostic(session, "capture_disabled")

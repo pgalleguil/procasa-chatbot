@@ -206,3 +206,15 @@ def test_enqueue_all_executives_and_cancel_reply(monkeypatch):
         enqueue(db, owner, now=dt("2026-11-26T16:00:00"))
         queue.update_one.assert_not_called()
         assert queue.update_many.call_args.args[0] == {"lead_id": owner, "state": "pending"}
+
+
+def test_waiting_response_is_not_a_scheduled_commitment():
+    lead = fixture("2026-11-25T12:22:00")
+    lead.update(follow_up_required=True, follow_up_status="pending",
+                management_status="managed_waiting_response",
+                contact_attempted=True, effective_contact=False)
+    assert decide(lead)["state"] == "CANDIDATE"
+    assert decide(lead, scheduled_contact_clear=False)["state"] == "HOLD"
+    assert decide(lead, contact_authorized=False)["state"] == "HOLD"
+    lead["management_status"] = "managed_contacted"
+    assert decide(lead)["reason"] == "crm_followup_pending"

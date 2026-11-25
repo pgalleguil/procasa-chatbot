@@ -106,6 +106,15 @@ def _in_followup_slot(value: datetime, due: datetime) -> bool:
     )
 
 
+def has_pending_commitment(lead: dict) -> bool:
+    """Waiting for a customer is not a scheduled executive commitment."""
+    if not (lead.get("follow_up_status") == "pending" or lead.get("follow_up_required")):
+        return False
+    return not (lead.get("management_status") == "managed_waiting_response"
+                and lead.get("contact_attempted") is True
+                and lead.get("effective_contact") is False)
+
+
 def evaluate_silence(
     lead: dict, *, now: datetime, enabled_since: datetime,
     contact_authorized: bool = False, inquiry_verified: bool = False,
@@ -129,7 +138,7 @@ def evaluate_silence(
         return _result("HOLD", "unverified_prerequisite")
     if scheduled_contact_clear is not True:
         return _result("HOLD", "scheduled_contact_pending_or_unknown")
-    if lead.get("follow_up_status") == "pending" or lead.get("follow_up_required"):
+    if has_pending_commitment(lead):
         return _result("HOLD", "crm_followup_pending")
     if type(followup_attempts) is not int or followup_attempts != 0:
         return _result("HOLD", "attempt_already_exists_or_unknown")

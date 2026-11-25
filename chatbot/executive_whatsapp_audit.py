@@ -661,6 +661,7 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
             "phone": lead["phone"],
             "lifecycle.current_assignment_cycle_id": cycle_id,
             "lifecycle.assigned_to_user_id": actor,
+            **({"messages.silence_dispatch_id": {"$ne": silence_dispatch}} if silence_dispatch else {}),
             "$nor": [
                 {"messages": {"$elemMatch": {
                     "wasender_session_id": session["session_id"],

@@ -177,6 +177,30 @@ def _recovery_until(job):
     return None
 
 
+def _reviewed_initial_recovery(db, job, doc, anchor, decision, now):
+    """Only the individually reviewed, explicitly requeued initial contacts.
+    
+    The independent eligibility decision and current canonical timeline must
+    still pass; a model HOLD on a dialogue is never overridden.
+    """
+    end = _recovery_until(job)
+    if (end is None or now >= end
+            or job.get("reviewed_initial_copy") is not True
+            or job.get("draft_decision") != "HOLD"
+            or decision.get("state") != "CANDIDATE"
+            or decision.get("scenario") != "INITIAL_NO_REPLY"):
+        return None
+    messages = doc.get("messages") or []
+    if (len(messages) != 1 or messages[0] != anchor
+            or anchor.get("actor_type") != "human_agent"
+            or anchor.get("source") != "crm_manual_api"
+            or anchor.get("message_id") != job.get("anchor")
+            or not anchor.get("provider_echo_message_id")
+            or not anchor.get("provider_echo_at")):
+        return None
+    return initial_recovery_draft(db, doc, anchor)
+
+
 def _decision(db, job, *, now):
     doc = db["leads"].find_one({"_id": job["lead_id"]})
     if not doc:
@@ -299,8 +323,12 @@ def _dispatch_locked(db, job, doc, decision, *, now, post=None):
     # Generate exactly once per claimed eligible anchor. Never invoke the
     # model on polling, an ineligible lead or a scheduled WAIT.
     try:
-        text, usage = draft_followup(db, doc, job, anchor,
-                                     scenario=decision["scenario"], attempt=1)
+        if job.get("reviewed_initial_copy") is True:
+            text = _reviewed_initial_recovery(db, job, doc, anchor, decision, now)
+            usage = {"version": "reviewed_initial_recovery_v1"}
+        else:
+            text, usage = draft_followup(db, doc, job, anchor,
+                                         scenario=decision["scenario"], attempt=1)
     except ValueError as exc:
         # This branch is strictly before any outbox reservation or provider
         # call. A formatting failure cannot create uncertain delivery.

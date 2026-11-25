@@ -429,3 +429,27 @@ def test_model_value_error_before_provider_does_not_pause_other_jobs(monkeypatch
     assert worker.dispatch(db, job, doc, decision, now=dt("2026-11-25T20:25:00"), post=post) == "model_invalid"
     fallback.assert_called_once()
     post.assert_not_called()
+
+
+def test_reviewed_initial_recovery_requires_explicit_scope_and_single_verified_outbound(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    draft = MagicMock(return_value="verified copy")
+    monkeypatch.setattr(worker, "initial_recovery_draft", draft)
+    anchor = {"actor_type": "human_agent", "source": "crm_manual_api",
+              "message_id": "m1", "provider_echo_message_id": "p1", "provider_echo_at": "stamp"}
+    doc = {"messages": [anchor]}
+    job = {"_id": next(iter(worker._RECOVERY_JOB_IDS)), "owner": "6a681413140190dde11f26d1",
+           "session": "133517", "anchor": "m1", "reviewed_initial_copy": True, "draft_decision": "HOLD"}
+    now = dt("2026-11-25T20:40:00")
+    decision = {"state": "CANDIDATE", "scenario": "INITIAL_NO_REPLY"}
+    run = worker._reviewed_initial_recovery
+    assert run(None, job, doc, anchor, decision, now) == "verified copy"
+    for bad in (dict(job, reviewed_initial_copy=False), dict(job, _id="other"),
+                dict(job, draft_decision="DRAFT"), dict(job, anchor="other")):
+        assert run(None, bad, doc, anchor, decision, now) is None
+    assert run(None, job, {"messages": [anchor, {"actor_type": "customer"}]}, anchor, decision, now) is None
+    assert run(None, job, doc, anchor, dict(decision, state="HOLD"), now) is None
+    assert run(None, job, doc, anchor, dict(decision, scenario="DIALOGUE_INTERRUPTED"), now) is None
+    assert run(None, job, doc, anchor, decision, dt("2026-11-25T21:00:00")) is None
+    assert draft.call_count == 1

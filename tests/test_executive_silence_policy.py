@@ -44,17 +44,19 @@ class TestExecutiveSilencePolicy(TestCase):
     def test_wait_and_preferred_evening(self):
         lead = fixture("2026-11-25T12:14:00")
         for now in ("2026-11-25T14:13:00", "2026-11-25T14:14:00",
-                    "2026-11-25T18:59:00"):
+                    "2026-11-25T17:59:00"):
             planned = decide(lead, now=now)
             self.assertEqual(planned["state"], "WAIT")
-            self.assertEqual(planned["due_at"], dt("2026-11-25T19:00:00"))
+            self.assertEqual(planned["due_at"], dt("2026-11-25T18:00:00"))
         self.assertEqual(decide(lead)["state"], "CANDIDATE")
         self.assertEqual(decide(lead)["scenario"], "INITIAL_NO_REPLY")
+        self.assertEqual(decide(lead, now="2026-11-25T18:00:00")["state"], "CANDIDATE")
+        self.assertEqual(decide(lead, now="2026-11-25T18:29:59")["state"], "CANDIDATE")
 
     def test_weekend_and_holiday(self):
         lead = fixture("2026-11-20T18:00:00")
         self.assertEqual(decide(lead, now="2026-11-21T19:00:00")["state"], "WAIT")
-        self.assertEqual(decide(lead, now="2026-11-23T18:59:00")["state"], "WAIT")
+        self.assertEqual(decide(lead, now="2026-11-23T17:59:00")["state"], "WAIT")
         self.assertEqual(decide(lead, now="2026-11-23T19:00:00")["state"], "CANDIDATE")
         lead = fixture("2026-12-07T18:00:00")
         self.assertEqual(decide(lead, now="2026-12-08T19:00:00")["state"], "WAIT")
@@ -65,7 +67,7 @@ class TestExecutiveSilencePolicy(TestCase):
         self.assertEqual(decide(lead, now="2026-11-25T19:59:00")["state"], "CANDIDATE")
         result = decide(lead, now="2026-11-25T20:00:00")
         self.assertEqual(result["reason"], "outside_send_window")
-        self.assertEqual(result["due_at"], dt("2026-11-26T19:00:00"))
+        self.assertEqual(result["due_at"], dt("2026-11-26T18:00:00"))
 
     def test_late_anchor(self):
         lead = fixture("2026-11-25T18:00:00")

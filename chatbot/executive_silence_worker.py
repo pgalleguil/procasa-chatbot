@@ -89,15 +89,57 @@ def enqueue(db, lead_id, *, now=None):
     }}, upsert=True)
 
 
+def _verified_portal_first_contact(db, doc, job, now):
+    """Validate the CRM's existing inquiry and accepted first human contact.
+
+    This is operational eligibility for service follow-up to a known inquiry,
+    not evidence that the recipient gave explicit WhatsApp opt-in. Never
+    create or alter a customer consent record from an outbound send.
+    """
+    if doc.get("source_type") != "manual" or not doc.get("_id"):
+        return False
+    prospect = doc.get("prospecto") or {}
+    origin = str(prospect.get("canal_origen") or doc.get("origen") or "").strip().lower()
+    if not any(portal in origin for portal in ("enlace inmobiliario", "enlaceinmobiliario",
+                                               "portalinmobiliario", "portal inmobiliario",
+                                               "yapo", "toctoc", "toc toc", "chilepropiedades")):
+        return False
+    if not str(prospect.get("codigo") or "").isdigit():
+        return False
+    for m in doc.get("messages") or []:
+        if not isinstance(m, dict):
+            continue
+        sent = _time(m.get("timestamp"))
+        if (m.get("message_id") != job["anchor"]
+                or m.get("role") != "agent" or m.get("actor_type") != "human_agent"
+                or m.get("source") != "crm_manual_api" or m.get("channel") != "executive_whatsapp"
+                or str(m.get("assigned_executive_id")) != job["owner"]
+                or str(m.get("assignment_cycle_id")) != job["cycle"]
+                or str(m.get("wasender_session_id")) != job["session"]
+                or not m.get("provider_message_id") or not sent
+                or not now - timedelta(hours=24) <= sent <= now):
+            continue
+        return bool(db[OUTBOX].find_one({
+            "lead_id": doc["_id"], "mode": "manual_crm", "state": "accepted",
+            "canonical_recorded": True, "provider_send_attempted": True,
+            "executive_id": job["owner"], "assignment_cycle_id": job["cycle"],
+            "session_id": job["session"], "provider_message_id": str(m["provider_message_id"]),
+        }, {"_id": 1}))
+    return False
+
+
 def _contact_evidence(db, doc, job, phone, now):
     """Automatically reuse real inquiry evidence; no per-lead pilot approval.
 
-    Never infer permission from silence, a manually typed phone or a CRM
-    contact-result flag. The scoped history and opt-out checks still apply.
+    A documented portal inquiry with a provider-verified human first contact
+    is also eligible under the CRM service-follow-up rule. This does not
+    establish explicit opt-in; opt-out and continuity checks still apply.
     """
     from .crm_hot_linked_auto import _verified_whatsapp_permission, _verified_recent_office_job
     if (_verified_whatsapp_permission(doc, phone=phone, now=now)
             or _verified_recent_office_job(db, lead=doc, phone=phone, now=now)):
+        return True
+    if _verified_portal_first_contact(db, doc, job, now):
         return True
     for msg in doc.get("messages") or []:
         if not isinstance(msg, dict):

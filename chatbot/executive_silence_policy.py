@@ -6,20 +6,22 @@ not permission. Never use this module alone as authorization to send.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import re
 import unicodedata
 
 from .business_calendar import (
-    add_business_minutes, calculate_business_minutes, is_business_time,
-    next_business_slot_utc,
+    add_business_minutes, calculate_business_minutes, as_chile, is_business_day,
+    CHILE,
 )
 
-VERSION = "silence_followup_v1"
-WAIT_MINUTES = 600
+VERSION = "silence_followup_v2"
+WAIT_MINUTES = 120
 EXPIRY_MINUTES = 3000
-SEND_START = 10
-SEND_END = 18
+# Local time, target slots. The last slot ends at 19:30 exclusively.
+# These are pilot hypotheses, not measured PROCASA-optimal hours.
+SEND_SLOTS = ((12, 30), (18, 30), (19, 0))
+SLOT_GRACE_MINUTES = 30
 OPEN = {"DETECTADA", "PENDIENTE_GESTION", "EN_GESTION"}
 STOP_INTENTS = {"OPT_OUT", "SEARCH_COMPLETE", "SEARCH_COMPLETED", "PROPERTY_DECLINED"}
 STOP_SEARCH = {"COMPLETED", "CLOSED", "STOPPED", "INACTIVE", "SEARCH_COMPLETE"}
@@ -69,6 +71,35 @@ def _time(value):
 
 def _result(state, reason, **extra):
     return {"version": VERSION, "state": state, "reason": reason, **extra}
+
+
+def next_followup_slot(value: datetime) -> datetime:
+    """First preferred local slot at or after a minimum-silence threshold.
+
+    Calendar is independent of send hours: waiting accrues 09–19 on
+    Chilean working days; the final allowed slot can extend past 19:00.
+    No midnight, weekend or holiday sends.
+    """
+    local = as_chile(value)
+    day = local.date()
+    while True:
+        if is_business_day(day):
+            for hour, minute in SEND_SLOTS:
+                slot = CHILE.localize(datetime(day.year, day.month, day.day, hour, minute), is_dst=None)
+                if slot >= local:
+                    return slot.astimezone(timezone.utc)
+        day += timedelta(days=1)
+
+
+def _in_followup_slot(value: datetime, due: datetime) -> bool:
+    local = as_chile(value)
+    if not is_business_day(local.date()) or value < due:
+        return False
+    return any(
+        hour * 60 + minute <= local.hour * 60 + local.minute
+        < hour * 60 + minute + SLOT_GRACE_MINUTES
+        for hour, minute in SEND_SLOTS
+    )
 
 
 def evaluate_silence(
@@ -171,15 +202,12 @@ def evaluate_silence(
         return _result("HOLD", "no_clear_customer_reply_expected")
     if calculate_business_minutes(anchor, now) >= EXPIRY_MINUTES:
         return _result("HOLD", "stale_conversation")
-    due = next_business_slot_utc(
-        add_business_minutes(anchor, WAIT_MINUTES),
-        start_hour=SEND_START, end_hour=SEND_END,
-    )
+    due = next_followup_slot(add_business_minutes(anchor, WAIT_MINUTES))
     if now < due:
         return _result("WAIT", "silence_timer", due_at=due, anchor_message_id=last["message_id"])
-    if not is_business_time(now, start_hour=SEND_START, end_hour=SEND_END):
+    if not _in_followup_slot(now, due):
         return _result("WAIT", "outside_send_window",
-                       due_at=next_business_slot_utc(now, start_hour=SEND_START, end_hour=SEND_END),
+                       due_at=next_followup_slot(now),
                        anchor_message_id=last["message_id"])
     return _result("CANDIDATE", "customer_reply_overdue", due_at=due,
                    anchor_message_id=last["message_id"])

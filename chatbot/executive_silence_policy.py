@@ -18,7 +18,7 @@ from .business_calendar import (
 VERSION = "silence_followup_v3"
 WAIT_MINUTES = 120
 EXPIRY_MINUTES = 3000
-# Local time, target slots. The last slot ends at 19:30 exclusively.
+# Local time, target slots. The last slot ends at 20:00 exclusively.
 # These are pilot hypotheses, not measured PROCASA-optimal hours.
 SEND_SLOTS = ((19, 0), (19, 30))
 SLOT_GRACE_MINUTES = 30
@@ -211,7 +211,7 @@ def evaluate_silence(
         return _result("HOLD", "pre_connection_dialogue_unreconciled")
     if customers:
         prior = _plain(customers[-1].get("content"))
-        if (not prior or CUSTOMER_HOLD.search(prior) or ACK.fullmatch(prior)
+        if (not prior or any(CUSTOMER_HOLD.search(_plain(m.get("content"))) for m in customers) or ACK.fullmatch(prior)
                 or not re.search(r"[a-z]", prior)):
             return _result("HOLD", "customer_closure_or_deferral")
     outbound = _plain(last.get("content"))

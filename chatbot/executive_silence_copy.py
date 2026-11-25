@@ -5,12 +5,14 @@ Never infer a property feature, financing status, availability or appointment.
 """
 from .executive_silence_policy import _plain
 
-def followup_copy(*, scenario: str, attempt: int, last_agent: str = "") -> str:
+def followup_copy(*, scenario: str, attempt: int, last_agent: str = "",
+                  verified_operation: str = "") -> str:
     if scenario not in {"INITIAL_NO_REPLY", "DIALOGUE_INTERRUPTED"}:
         raise ValueError("unknown_scenario")
     if type(attempt) is not int or attempt not in (1, 2, 3):
         raise ValueError("invalid_attempt")
     prefix = "Hola, seguimiento automático de PROCASA. "
+    operation = verified_operation if verified_operation in {"VENTA", "ARRIENDO"} else ""
     if attempt == 3:
         return prefix + ("¿Sigue necesitando ayuda en su búsqueda inmobiliaria? "
                          "Si ya encontró propiedad, no es necesario responder. "
@@ -19,6 +21,12 @@ def followup_copy(*, scenario: str, attempt: int, last_agent: str = "") -> str:
         return prefix + ("¿Continúa buscando propiedad o cambió lo que necesita? "
                          "Si le acomoda, podemos retomar su consulta o revisar alternativas.")
     if scenario == "INITIAL_NO_REPLY":
+        if operation == "ARRIENDO":
+            return prefix + ("¿Sigue interesado en el arriendo por el que consultó? "
+                             "Podemos orientarle sobre los requisitos para postular.")
+        if operation == "VENTA":
+            return prefix + ("¿Pudo revisar la propiedad en venta por la que consultó? "
+                             "Podemos orientarle sobre el proceso de compra y sus dudas.")
         return prefix + ("¿Pudo revisar la propiedad por la que consultó? "
                          "Si tiene dudas sobre sus características o necesita más información, "
                          "quedamos disponibles para ayudarle.")
@@ -30,5 +38,11 @@ def followup_copy(*, scenario: str, attempt: int, last_agent: str = "") -> str:
                                        "parecieron las caracteristicas")):
         return prefix + ("¿Pudo revisar lo que le compartimos? Si algo no se ajusta a "
                          "lo que necesita, cuéntenos y podremos orientar mejor su búsqueda.")
+    if operation == "ARRIENDO":
+        return prefix + ("¿Le quedó alguna duda sobre el arriendo que conversamos? "
+                         "Podemos orientarle para que sepa cómo avanzar.")
+    if operation == "VENTA":
+        return prefix + ("¿Le quedó alguna duda sobre la compra que conversamos? "
+                         "Podemos orientarle sobre los siguientes pasos.")
     return prefix + ("Retomamos la conversación sobre su consulta inmobiliaria. "
                      "¿Le quedó alguna duda o necesita ayuda para avanzar?")

@@ -128,13 +128,13 @@ def _build_grouped_digest_message(*, executive_name, lead_count):
     # query-parameter filter is needed (and those params are not supported).
     crm_url = f"{base_url}/crm"
     return _sanitize_surrogates("\n".join([
-        f"\U0001F4E5 *{lead_count} NUEVOS LEADS ASIGNADOS*",
+        f"📥 *{lead_count} nuevos clientes asignados*",
         "",
-        f"Hola {executive_name}, tienes *{lead_count} nuevos leads* para revisar.",
+        f"Hola {executive_name}, tienes {lead_count} nuevos clientes pendientes de atención.",
         "",
-        f"\U0001F517 *Ver mis leads nuevos en CRM:*\n{crm_url}",
+        "Revisa sus consultas y comienza a gestionar sus solicitudes.",
         "",
-        "\u26A0\uFE0F Registra el resultado de la gesti\u00F3n en el CRM. Abrir WhatsApp o llamar no cuenta como gesti\u00F3n.",
+        f"📲 *Ver mis nuevos clientes:*\n{crm_url}",
     ]))
 
 

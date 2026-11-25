@@ -815,6 +815,73 @@ CANONICAL_MANAGEMENT_RESULTS = frozenset({
 })
 
 
+# Display-only labels for the detail timeline; raw event values remain untouched.
+_HISTORY_STATE_LABELS = {
+    "new": "Nuevo", "nuevo": "Nuevo",
+    "contacted": "Contactado", "gestion": "En gestión",
+    "interested": "Interesado", "visit_scheduled": "Visita agendada",
+    "visita": "Visita", "visit_done": "Visita realizada",
+    "offer": "Oferta", "negotiation": "En negociación",
+    "closed_won": "Cerrado ganado", "closed_lost": "Cerrado perdido",
+    "cerrado": "Cerrado", "archived": "Archivado",
+    "rejected": "Rechazado", "suppressed": "No disponible",
+}
+_HISTORY_REASON_LABELS = {
+    "auto_promotion_on_gestion": "Estado actualizado tras registrar una gestión.",
+    "reconcile_invalid_management": "Estado revisado según las gestiones registradas.",
+    "critical_threshold": "Vencimiento del plazo de atención.",
+    "near_critical_threshold": "Plazo de atención próximo a vencer.",
+}
+_HISTORY_RESULT_DETAILS = {
+    "message_sent_waiting_response": "WhatsApp enviado. A la espera de respuesta del cliente.",
+    "call_no_answer": "No se obtuvo respuesta a la llamada.",
+}
+
+
+def _history_human_text(value):
+    """Translate known internal identifiers; never display unknown bare codes."""
+    if not isinstance(value, str):
+        return ""
+    value = value.strip()
+    if not value:
+        return ""
+    key = value.lower()
+    label = (_HISTORY_REASON_LABELS.get(key) or _HISTORY_STATE_LABELS.get(key)
+             or RESULTADO_LABELS.get(key))
+    if label:
+        return label
+    if re.fullmatch(r"[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+", value):
+        return ""
+    return value
+
+
+def _history_display_body(evt, title):
+    """Readable history description, without changing persisted event evidence."""
+    meta = evt.get("meta") or {}
+    event_type = str(evt.get("type") or "").upper()
+    result = str(evt.get("result") or meta.get("result") or "").strip().lower()
+    if event_type == "STATUS_CHANGE":
+        previous = _HISTORY_STATE_LABELS.get(str(meta.get("from") or "").lower())
+        current = _HISTORY_STATE_LABELS.get(str(meta.get("to") or "").lower())
+        if current and previous and previous != current:
+            return f"{previous} → {current}"
+        if current:
+            return f"Estado: {current}"
+        return "Se actualizó el estado del cliente."
+    if event_type == "SEND_WA_LEAD" and result == "message_sent_waiting_response":
+        notes = str(meta.get("notes") or "").strip()
+        if not notes or notes == "WhatsApp enviado y guardado; pendiente respuesta":
+            return _HISTORY_RESULT_DETAILS[result]
+    for field in ("notes", "reason", "outcome", "to", "content_preview"):
+        value = _history_human_text(meta.get(field))
+        if value and value.casefold() != str(title or "").casefold():
+            return value
+    label = _HISTORY_RESULT_DETAILS.get(result) or RESULTADO_LABELS.get(result)
+    if label and label.casefold() != str(title or "").casefold():
+        return label
+    return ""
+
+
 def _is_canonical_management_event(ev) -> bool:
     if not ev:
         return False
@@ -2144,7 +2211,7 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
     formatted_new_history = []
     _last_status_transition = None
     for evt in new_events_cursor:
-        meta = evt.get("meta", {})
+        meta = evt.get("meta") or {}
         # Distincion de tipo para UI y filtro de ruido
         evt_type = evt.get("type")
         if evt_type in ["CLICK_WHATSAPP_LEAD", "ASSIGNMENT", "assignment", "MANUAL_ENTRY", "CLICK_WHATSAPP_OWNER"]:
@@ -2168,7 +2235,7 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
             "SEND_EMAIL_OWNER": "Email Enviado (Prop.)",
             "STATUS_CHANGE": "Cambio de Estado",
             "GESTION_LOG": "Gestión Registrada",
-            "HUMAN_NOTE": meta.get("action_label", "Nota de Gestión"),
+            "HUMAN_NOTE": "Nota de gestión",
             "ASSIGNMENT": "Asignación de Lead",
             "assignment": "Asignación de Lead",
             "ALERT_SENT": "Alerta Enviada",
@@ -2179,7 +2246,7 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
 
         result_value = str(evt.get("result") or meta.get("result") or "").strip().lower()
         user_action_display = (
-            meta.get("action_label")
+            _history_human_text(meta.get("action_label"))
             or RESULTADO_LABELS.get(result_value)
             or type_labels.get(evt_type, "Gestión registrada" if evt_type == "CONTACT_RESULT" else "Actividad")
         )
@@ -2238,6 +2305,7 @@ def get_lead_detail_data(phone, property_code=None, lead_doc=None):
             "timestamp": ts_obj,
             "user_action": user_action_display if evt_type != "STATUS_CHANGE" else "Cambio de Estado",
             "result": evt.get("result") or meta.get("result", ""),
+            "display_body": _history_display_body(evt, user_action_display),
             "notes": (meta.get("notes", "") or meta.get("reason", "")
                       or meta.get("outcome", "") or meta.get("to", "")
                       or meta.get("content_preview", "")),

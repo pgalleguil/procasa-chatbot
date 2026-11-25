@@ -3640,7 +3640,9 @@
                             <div class="tl-title fw-bold text-white" style="color: var(--text-primary) !important;">
                                 {{
                                 h.user_action or 'Acción CRM' }}</div>
-                            <div class="tl-body small text-secondary">{{ h.notes or '' }} ({{ h.result }})</div>
+                            {% if h.display_body %}
+                            <div class="tl-body small text-secondary">{{ h.display_body }}</div>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}

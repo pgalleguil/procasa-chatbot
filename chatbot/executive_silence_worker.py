@@ -16,7 +16,7 @@ from config import Config
 from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment
 from .business_calendar import add_business_minutes, as_chile, CHILE
 from .executive_silence_llm import draft_followup
-from .executive_capture_continuity import continuity_since, record_status
+from .executive_capture_continuity import continuity_since, record_status, recover_provider_continuity
 from .crm_executive_outbound import (OUTBOX, eligible_manual_session,
     verify_provider_sender_identity, OutboundBlocked)
 from .crm_executive_outbound_api import _session_status
@@ -184,7 +184,23 @@ def _decision(db, job, *, now):
     if not authorized:
         return doc, {"state": "HOLD", "reason": "inquiry_contact_evidence_missing"}
     if connected is None:
-        return doc, {"state": "HOLD", "reason": "capture_continuity_unverified"}
+        # A signed webhook echo proves the commercial anchor was captured.
+        # Consult actual provider history only for an authorized due job,
+        # never for unrelated chats or on every idle worker poll.
+        anchor = next((m for m in doc.get("messages", []) if isinstance(m, dict)
+                       and m.get("message_id") == job["anchor"]
+                       and m.get("provider_echo_message_id")
+                       and m.get("provider_echo_at")
+                       and m.get("source") == "crm_manual_api"
+                       and str(m.get("assigned_executive_id")) == job["owner"]
+                       and str(m.get("wasender_session_id")) == job["session"]
+                       and str(m.get("assignment_cycle_id")) == job["cycle"]), None)
+        anchor_at = _time(anchor.get("timestamp")) if anchor else None
+        if anchor_at is not None and _time(anchor.get("provider_echo_at")) is not None:
+            connected = recover_provider_continuity(
+                db, session_id=job["session"], owner_id=job["owner"], anchor=anchor_at, now=now)
+        if connected is None:
+            return doc, {"state": "HOLD", "reason": "capture_continuity_unverified"}
     return doc, evaluate_silence(doc, now=now,
         enabled_since=_rollout_cutoff(now),
         contact_authorized=authorized, inquiry_verified=authorized,

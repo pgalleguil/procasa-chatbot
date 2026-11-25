@@ -294,3 +294,17 @@ def test_manual_portal_inquiry_accepted_first_contact(monkeypatch):
     doc["messages"][0]["wasender_session_id"] = "session"
     doc["prospecto"]["canal_origen"] = "unknown"
     assert not worker._verified_portal_first_contact(db, doc, job, now)
+
+
+def test_provider_log_bootstrap_requires_history_covering_anchor():
+    from datetime import datetime, timezone
+    from chatbot.executive_capture_continuity import _provider_connected_epoch
+    anchor = datetime(2026, 11, 25, 15, 22, tzinfo=timezone.utc)
+    now = datetime(2026, 11, 25, 22, 50, tzinfo=timezone.utc)
+    before = {"whatsapp_session_id": 133517, "event_type": "status_change",
+              "status": "connected", "occurred_at": "2026-11-25T13:00:00Z"}
+    after = {**before, "occurred_at": "2026-11-25T18:00:00Z"}
+    assert _provider_connected_epoch([before], session_id="133517", anchor=anchor, now=now) == datetime(2026, 11, 25, 13, tzinfo=timezone.utc)
+    assert _provider_connected_epoch([after], session_id="133517", anchor=anchor, now=now) is None
+    for bad in ({**after, "status": "disconnected"}, {**after, "event_type": "session_restarted"}, {**after, "whatsapp_session_id": 123}):
+        assert _provider_connected_epoch([bad, before], session_id="133517", anchor=anchor, now=now) is None

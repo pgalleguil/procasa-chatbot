@@ -270,3 +270,27 @@ def test_session_guard_serializes_and_pauses_on_rate_limit(monkeypatch):
     guard.find_one.return_value = {"state": "paused"}
     assert worker.dispatch(db, job, {}, {}, now=now) == "session_paused"
     assert send.call_count == 2
+
+
+def test_manual_portal_inquiry_accepted_first_contact(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    doc = fixture("2026-11-25T12:22:00")
+    doc.update(_id="lead", source_type="manual", prospecto={"codigo": "5965", "canal_origen": "Enlace Inmobiliario"})
+    job = {"cycle": "cycle", "owner": "owner", "session": "session", "anchor": "m1"}
+    db, outbox = MagicMock(), MagicMock()
+    db.__getitem__.return_value = outbox
+    now = dt("2026-11-25T19:00:00")
+    outbox.find_one.return_value = {"_id": "accepted"}
+    assert worker._verified_portal_first_contact(db, doc, job, now)
+    query = outbox.find_one.call_args.args[0]
+    assert query["state"] == "accepted" and query["canonical_recorded"] is True
+    assert query["session_id"] == "session" and query["provider_message_id"] == "p1"
+    outbox.find_one.return_value = None
+    assert not worker._verified_portal_first_contact(db, doc, job, now)
+    doc["messages"][0]["wasender_session_id"] = "other"
+    outbox.find_one.return_value = {"_id": "accepted"}
+    assert not worker._verified_portal_first_contact(db, doc, job, now)
+    doc["messages"][0]["wasender_session_id"] = "session"
+    doc["prospecto"]["canal_origen"] = "unknown"
+    assert not worker._verified_portal_first_contact(db, doc, job, now)

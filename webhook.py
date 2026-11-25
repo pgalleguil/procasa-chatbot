@@ -3008,7 +3008,16 @@ async def _get_authorized_crm_lead(
         raise HTTPException(status_code=403, detail="Acción reservada a administración")
 
     loop = asyncio.get_running_loop()
-    lead = await loop.run_in_executor(_WEB_THREAD_POOL, lambda: CrmService.get_lead(phone))
+    def _lookup_crm_reference():
+        from chatbot.crm_first_contact_phone import REF_PREFIX
+        from chatbot.storage import get_db
+        from bson import ObjectId
+        value = str(phone or "")
+        if value.startswith(REF_PREFIX):
+            identifier = value[len(REF_PREFIX):]
+            return get_db()["leads"].find_one({"_id": ObjectId(identifier)}) if ObjectId.is_valid(identifier) else None
+        return CrmService.get_lead(phone)
+    lead = await loop.run_in_executor(_WEB_THREAD_POOL, _lookup_crm_reference)
     if not lead:
         raise HTTPException(status_code=404, detail="Lead no encontrado")
     if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
@@ -3354,6 +3363,13 @@ async def view_crm_detail_by_id(
     data.pop("phone_raw", None)
     if access_context is None:
         data["phone_visibility"] = "full"
+    from chatbot.crm_first_contact_phone import locked_for_user, MASK, REF_PREFIX
+    data["first_contact_phone_locked"] = locked_for_user(lead, user)
+    if data["first_contact_phone_locked"]:
+        data["phone"] = ""
+        data["phone_masked"] = MASK
+        data["whatsapp_display"] = MASK
+        data["first_contact_ref"] = REF_PREFIX + str(lead["_id"])
 
     email = user.get("email") or user.get("username")
 
@@ -3483,6 +3499,12 @@ async def _resolve_security_contact(request: Request, oid):
     return user, lead, access_context, target, clean, payload
 
 
+def _require_first_contact_phone(lead, user):
+    from chatbot.crm_first_contact_phone import locked_for_user
+    if locked_for_user(lead, user):
+        raise HTTPException(status_code=409, detail="first_contact_whatsapp_required")
+
+
 # ---- Contact actions (secure, no phone in URL or frontend) ----
 
 @app.post("/crm/lead-id/{lead_id}/contact/whatsapp")
@@ -3501,6 +3523,8 @@ async def contact_whatsapp(request: Request, lead_id: str):
     loop = asyncio.get_running_loop()
     if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
         user, lead, _access_context, target, clean, contact_payload = await _resolve_security_contact(request, oid)
+        if target == "lead":
+            _require_first_contact_phone(lead, user)
 
         def _secure_log():
             from chatbot.storage import get_db, log_event
@@ -3522,6 +3546,7 @@ async def contact_whatsapp(request: Request, lead_id: str):
         raise HTTPException(status_code=404, detail="Lead no encontrado")
     if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(detail, user):
         raise HTTPException(status_code=403, detail="No autorizado")
+    _require_first_contact_phone(lead, user)
     
     def _log():
         from chatbot.storage import get_db, log_event
@@ -3555,6 +3580,8 @@ async def contact_call(request: Request, lead_id: str):
     loop = asyncio.get_running_loop()
     if Config.CRM_SLA_SECURITY_LAYER_ENABLED:
         user, lead, _access_context, target, clean, _contact_payload = await _resolve_security_contact(request, oid)
+        if target == "lead":
+            _require_first_contact_phone(lead, user)
 
         def _secure_log():
             from chatbot.storage import get_db, log_event
@@ -3574,6 +3601,7 @@ async def contact_call(request: Request, lead_id: str):
         raise HTTPException(status_code=404, detail="Lead no encontrado")
     if not can_administer_leads(user.get("rol")) and not lead_is_assigned_to_user(detail, user):
         raise HTTPException(status_code=403, detail="No autorizado")
+    _require_first_contact_phone(lead, user)
     
     def _log():
         from chatbot.storage import get_db, log_event
@@ -3750,6 +3778,7 @@ async def api_crm_management_result(request: Request):
     if not phone:
         raise HTTPException(status_code=400, detail="Falta teléfono")
     user, lead = await _get_authorized_crm_lead(request, phone)
+    _require_first_contact_phone(lead, user)
     actor_user_id = str(user.get("_id") or "")
     if not actor_user_id:
         raise HTTPException(status_code=400, detail="Usuario sin identidad canónica")
@@ -3853,6 +3882,8 @@ async def api_crm_update_lead(request: Request):
             raise HTTPException(status_code=400, detail="Falta teléfono")
 
         user, _lead = await _get_authorized_crm_lead(request, phone)
+        _require_first_contact_phone(_lead, user)
+        phone = str(_lead.get("phone") or "")
         if (
             not can_administer_leads(user.get("rol"))
             and payload_attempts_reassignment(data)
@@ -6732,6 +6763,26 @@ async def _render_crm_list(
         leads_task, exec_task, history_task
     )
     leads, kpis, total_count = leads_payload
+    from chatbot.crm_first_contact_phone import enabled, locked_for_user, MASK
+    if enabled() and not can_administer and leads:
+        from bson import ObjectId
+        ids = [ObjectId(row["lead_id"]) for row in leads if ObjectId.is_valid(row.get("lead_id", ""))]
+        # One bounded page query, no polling or extra provider calls.
+        docs = await adb["leads"].find({"_id": {"$in": ids}}, {
+            "created_at": 1, "lifecycle": 1, "source_type": 1, "canal_envio": 1,
+            "first_contact_phone_access": 1, "messages.role": 1, "messages.actor_type": 1,
+            "messages.channel": 1, "messages.source": 1, "messages.provider_message_id": 1,
+            "messages.wasender_session_id": 1, "messages.assignment_cycle_id": 1,
+            "messages.assigned_executive_id": 1,
+        }).to_list(length=limit)
+        by_id = {str(doc["_id"]): doc for doc in docs}
+        for row in leads:
+            doc = by_id.get(str(row.get("lead_id")))
+            if doc and locked_for_user(doc, user):
+                row["phone"] = ""
+                row["whatsapp_display"] = MASK
+                row["first_contact_phone_locked"] = True
+                row["can_register_management"] = False
     kpis["historical_total"] = len(historical_rows)
     historical_leads = historical_rows if is_history_filter else []
     if is_history_filter:

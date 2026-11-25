@@ -279,3 +279,27 @@ def test_executive_new_summary_does_not_retain_old_temperature_suggestion():
     assert summary["executive_management"]["next_step_hint"] == "COORDINAR_VISITA"
     assert summary["executive_management"]["pending_customer_request"]
 
+
+
+def test_reply_to_automatic_followup_does_not_accept_stale_visit():
+    human = turn("human_agent", "¿Quiere agendar una visita?", "human")
+    automated = turn("automation", "¿Continúa buscando propiedad?", "auto")
+    automated.update(source="crm_exec_silence_api", automatic=True,
+                     timestamp="2026-11-16T17:00:00+00:00")
+    customer = turn("customer", "Sí, gracias", "reply")
+    customer["timestamp"] = "2026-11-16T17:02:00+00:00"
+    result = classify_hybrid([human, automated, customer], llm_enabled=False)
+    assert result["intent"] != "ASK_VISIT"
+    assert result["contact"]["awaiting"] == "EXECUTIVE"
+    assert result["contact"]["window_agent_messages"] == 1
+    assert result["contact"]["window_customer_messages"] == 1
+
+
+def test_automatic_followup_never_counts_as_human_management():
+    automated = turn("automation", "¿Continúa buscando propiedad?", "auto")
+    automated.update(source="crm_exec_silence_api", automatic=True)
+    result = classify_hybrid([automated], llm_enabled=False)
+    assert result["contact"]["agent_contacted"] is False
+    assert result["contact"]["window_agent_messages"] == 0
+    assert result["contact"]["last_actor"] == "automation"
+    assert result["contact"]["formal_crm_management"] is False

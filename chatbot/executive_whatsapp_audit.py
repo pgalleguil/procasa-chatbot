@@ -573,7 +573,7 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
         ):
             return "duplicate_or_reassigned"
         for original_source in ("crm_manual_api", "crm_admin_delegated_api",
-                                "crm_hot_auto_api", "price_drop_campaign_api"):
+                                "crm_hot_auto_api", "price_drop_campaign_api", "crm_exec_silence_api"):
             match = find_unique_echo_match(
                 stored.get("messages") or [],
                 source=original_source, content=parsed["content"],
@@ -594,6 +594,25 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
                     "messages.$.provider_echo_at": occurred.isoformat(),
                 }})
                 return "echo_reconciled" if reconciled.modified_count == 1 else "duplicate_or_reassigned"
+    silence_dispatch = None
+    if parsed["from_me"] and os.getenv("PROCASA_EXEC_SILENCE_WORKER_ENABLED", "0") == "1":
+        # The reserved, exact automation copy can echo before the API returns.
+        # Match only a current-cycle, same-session, same-content reservation.
+        # Do not let this echo count as human first management.
+        from hashlib import sha256
+        from datetime import timedelta
+        rows = list(db["crm_executive_whatsapp_dispatches"].find({
+            "mode": "crm_exec_silence_api", "lead_id": lead["_id"],
+            "executive_id": actor, "assignment_cycle_id": cycle_id,
+            "session_id": str(session["session_id"]),
+            "content_sha256": sha256(parsed["content"].encode()).hexdigest(),
+            "state": {"$in": ["provider_attempt", "accepted", "delivery_unknown",
+                               "accepted_without_provider_id"]},
+            "attempted_at": {"$gte": occurred - timedelta(minutes=5),
+                             "$lte": occurred + timedelta(seconds=5)},
+        }, {"_id": 1}).limit(2))
+        if len(rows) == 1:
+            silence_dispatch = rows[0]["_id"]
     entry = {
         "role": "agent" if parsed["from_me"] else "user",
         "content": parsed["content"],
@@ -611,6 +630,10 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
         "provider_message_id": provider_id,
         "timestamp_source": "provider",
     }
+    if silence_dispatch:
+        entry.update({"role": "assistant", "actor_type": "automation",
+                      "source": "crm_exec_silence_api", "automatic": True,
+                      "silence_dispatch_id": silence_dispatch})
     # An unambiguous global STOP from an assigned customer must suppress
     # future marketing in the *same atomic write as the authorized message*.
     # This does not pause responses to customer-initiated service requests,
@@ -638,6 +661,7 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
             "phone": lead["phone"],
             "lifecycle.current_assignment_cycle_id": cycle_id,
             "lifecycle.assigned_to_user_id": actor,
+            **({"messages.silence_dispatch_id": {"$ne": silence_dispatch}} if silence_dispatch else {}),
             "$nor": [
                 {"messages": {"$elemMatch": {
                     "wasender_session_id": session["session_id"],
@@ -686,7 +710,7 @@ def _record_authorized(db, *, session: dict, phone: str, parsed: dict,
             )
         except Exception:
             logger.warning("EXEC_AUDIT campaign_reply_attribution_failed")
-    if result.modified_count == 1 and parsed["from_me"]:
+    if result.modified_count == 1 and parsed["from_me"] and not silence_dispatch:
         # A signed, authorized, persisted HUMAN outgoing WhatsApp counts as
         # first management, even when the message was sent directly from the
         # executive's phone instead of the CRM send button.
@@ -753,6 +777,16 @@ def _handle_authorized(db, session: dict, payload: dict, *, write: bool) -> str:
                      if payload.get("event") == "message.sent" else payload)
     parsed = _parse_message(parse_payload, phone, lid)
     if parsed is None:
+        if write and os.getenv("PROCASA_EXEC_SILENCE_CONTINUITY_ENABLED", "0") == "1":
+            # Audio, images, attachments or unparseable text may be a real
+            # commercial reply. Store only a marker on the authorized lead,
+            # never the attachment or private payload.
+            db["leads"].update_one({
+                "_id": lead["_id"],
+                "lifecycle.current_assignment_cycle_id": str(cycle["assignment_cycle_id"]),
+                "lifecycle.assigned_to_user_id": session["user_id"],
+            }, {"$set": {"commercial_intelligence.silence_unparsed_event_at":
+                         datetime.now(timezone.utc)}})
         return _ignored(session, "text_unavailable")
     if not write:
         _audit_diagnostic(session, "capture_disabled")
@@ -781,6 +815,15 @@ def _session_from_storage(session_id: str) -> dict | None:
 
 def _handle_from_storage(session: dict, payload: dict, write: bool) -> str:
     from .storage import get_db
+    if (payload.get("event") == "session.status" and write
+            and os.getenv("PROCASA_EXEC_SILENCE_CONTINUITY_ENABLED", "0") == "1"):
+        from .executive_capture_continuity import record_status
+        data = payload.get("data")
+        status = data.get("status") if isinstance(data, dict) else None
+        record_status(get_db(), session_id=session["session_id"],
+                      owner_id=session["user_id"],
+                      status=status if isinstance(status, str) else "unknown")
+        return "session_status_recorded"
     return _handle_authorized(get_db(), session, payload, write=write)
 
 

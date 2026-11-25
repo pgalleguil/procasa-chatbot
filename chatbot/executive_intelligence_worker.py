@@ -107,7 +107,10 @@ def _load_window(db, doc):
                 {"$eq": ["$$m.assignment_cycle_id", cycle]},
                 {"$eq": ["$$m.assigned_executive_id", str(lifecycle["assigned_to_user_id"])]},
                 {"$eq": ["$$m.wasender_session_id", str(marker["pending_session_id"])]},
-                {"$in": ["$$m.actor_type", ["customer", "human_agent"]]},
+                {"$or": [{"$in": ["$$m.actor_type", ["customer", "human_agent"]]},
+                          {"$and": [{"$eq": ["$$m.actor_type", "automation"]},
+                                    {"$eq": ["$$m.source", "crm_exec_silence_api"]},
+                                    {"$eq": ["$$m.automatic", True]}]}]},
             ]}}}}},
         {"$project": {"messages": 1, "position": {"$indexOfArray": ["$messages.message_id", checkpoint]}}},
         {"$project": {
@@ -278,7 +281,10 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
         and str(m.get("assignment_cycle_id") or "") == cycle_id
         and str(m.get("assigned_executive_id") or "") == owner
         and str(m.get("wasender_session_id") or "") == session_id
-        and m.get("actor_type") in ("customer", "human_agent")
+        and (m.get("actor_type") in ("customer", "human_agent")
+             or (m.get("actor_type") == "automation"
+                 and m.get("source") == "crm_exec_silence_api"
+                 and m.get("automatic") is True))
     ]
     if not turns:
         return _finish(db, doc, summary=None, status="no_eligible_turns")
@@ -464,6 +470,12 @@ def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propo
             outcome = process_claimed(db, doc, llm_enabled=llm_enabled, propose=propose)
             if outcome in ("ready", "stale_assignment", "no_eligible_turns"):
                 processed += 1
+            if outcome == "ready" and os.getenv("PROCASA_EXEC_SILENCE_WORKER_ENABLED", "0") == "1":
+                try:
+                    from .executive_silence_worker import enqueue
+                    enqueue(db, doc["_id"])
+                except Exception as exc:
+                    logger.warning("EXEC_SILENCE enqueue_error=%s", type(exc).__name__)
         except Exception as exc:
             failures += 1
             # Fail closed. Preserve pending flag for a later retry after lease.
@@ -475,6 +487,7 @@ def process_pending_batch(db, *, limit: int = 5, llm_enabled: bool = True, propo
 async def executive_intelligence_worker_loop() -> None:
     indexed = False
     refresh_ticks = 0
+    silence_indexed = False
     while True:
         try:
             if os.getenv("PROCASA_EXEC_INTELLIGENCE_ENABLED", "0") == "1":
@@ -492,6 +505,12 @@ async def executive_intelligence_worker_loop() -> None:
                         "EXEC_INTELLIGENCE processed=%s failures=%s",
                         result["processed"], result["failures"],
                     )
+                if os.getenv("PROCASA_EXEC_SILENCE_WORKER_ENABLED", "0") == "1":
+                    from .executive_silence_worker import ensure_indexes as silence_indexes, process_due
+                    if not silence_indexed:
+                        await asyncio.to_thread(silence_indexes, get_db())
+                        silence_indexed = True
+                    await asyncio.to_thread(process_due, get_db(), limit=2)
                 # Every ~15 min, re-evaluate unmatched active searches against
                 # the current inventory after new listings / price reductions.
                 # This creates executive follow-up tasks, never customer sends.

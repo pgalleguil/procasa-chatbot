@@ -25,6 +25,9 @@ from .whatsapp_client import _provider_message_id
 
 QUEUE = "crm_exec_silence_queue"
 MODE = "crm_exec_silence_api"
+SESSION_GUARD = "crm_exec_silence_session_guard"
+SESSION_STOP = {"rate_limited", "rejected", "delivery_unknown",
+                "accepted_without_provider_id", "accepted_unrecorded", "session_unhealthy"}
 
 
 def enabled():
@@ -161,6 +164,37 @@ def _live_allowed(job):
 
 
 def dispatch(db, job, doc, decision, *, now, post=None):
+    """Serialize automatic sends per provider session across workers.
+
+    A failed or uncertain provider outcome pauses that session; do not
+    automatically retry or continue contacting other leads on that session.
+    An abandoned lock fails closed rather than racing a possible send.
+    """
+    if not _live_allowed(job):
+        return "shadow_candidate"
+    key, token = str(job["session"]), str(uuid4())
+    guard = db[SESSION_GUARD]
+    try:
+        guard.insert_one({"_id": key, "token": token, "state": "sending", "at": now})
+    except DuplicateKeyError:
+        existing = guard.find_one({"_id": key}, {"state": 1})
+        return "session_paused" if (existing or {}).get("state") == "paused" else "session_busy"
+    try:
+        result = _dispatch_locked(db, job, doc, decision, now=now, post=post)
+    except OutboundBlocked:
+        guard.update_one({"_id": key, "token": token}, {"$set": {"state": "paused", "reason": "provider_or_identity_guard"}})
+        raise
+    except Exception:
+        guard.update_one({"_id": key, "token": token}, {"$set": {"state": "paused", "reason": "uncertain_dispatch_error"}})
+        raise
+    if result in SESSION_STOP:
+        guard.update_one({"_id": key, "token": token}, {"$set": {"state": "paused", "reason": result}})
+    else:
+        guard.delete_one({"_id": key, "token": token})
+    return result
+
+
+def _dispatch_locked(db, job, doc, decision, *, now, post=None):
     """Single reserved provider attempt. Never retry uncertain delivery."""
     if not _live_allowed(job):
         return "shadow_candidate"
@@ -229,6 +263,8 @@ def dispatch(db, job, doc, decision, *, now, post=None):
         if response.status_code in (200, 201) and isinstance(body, dict) and body.get("success") is True:
             pid = _provider_message_id(body)
             state = "accepted" if pid else "accepted_without_provider_id"
+        elif response.status_code == 429:
+            state = "rate_limited"
         elif 400 <= response.status_code < 500 and response.status_code not in (408, 425):
             state = "rejected"
     except Exception:
@@ -279,7 +315,10 @@ def process_due(db, *, limit=3, now=None):
                 _finish(db, job, state="pending", reason=decision["reason"], due_at=decision["due_at"])
             elif decision["state"] == "CANDIDATE":
                 state = dispatch(db, job, doc, decision, now=now)
-                _finish(db, job, state=state, reason=decision["reason"])
+                if state == "session_busy":
+                    _finish(db, job, state="pending", reason=state, due_at=now + timedelta(minutes=1))
+                else:
+                    _finish(db, job, state=state, reason=state if state in SESSION_STOP or state == "session_paused" else decision["reason"])
             else:
                 _finish(db, job, state="held", reason=decision["reason"])
         except OutboundBlocked as exc:

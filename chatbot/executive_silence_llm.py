@@ -25,6 +25,8 @@ Si corresponde, redacta 1 o 2 frases naturales, cordiales, tratamiento usted, un
 concreta y fácil de responder. No repitas el saludo original ni uses códigos internos.
 La referencia a tipo/comuna solo puede proceder de ficha adjunta o conversación explícita.
 Si la ficha admite venta y arriendo y no está claro cuál busca, pregunta cuál.
+Si la ficha indica uso comercial o mixto, pregunta por finalidad del cliente sin afirmar rentabilidad,
+permisos, destino legal ni derechos de llave. No inventes atributos adicionales de la propiedad.
 Si es venta, orienta sobre proceso de compra; si es arriendo, requisitos si es pertinente.
 Si ya hubo diálogo, retoma el asunto concreto que quedó abierto. No vuelvas a pedir datos
 ya entregados. Si hubo alternativas, pide opinión concreta sobre ellas.
@@ -49,7 +51,8 @@ def property_context(db, lead, anchor):
         "codigo": {"$in": [code, int(code)]},
         "disponible_prop360": True, "estado.estado_prop360": "Activa",
     }, {"_id": 0, "tipo_operacion.tipo": 1, "tipo_operacion.venta": 1,
-        "tipo_operacion.arriendo": 1, "ubicacion.comuna": 1}).limit(2))
+        "tipo_operacion.arriendo": 1, "ubicacion.comuna": 1,
+        "observaciones.descripcion": 1}).limit(2))
     if len(rows) != 1:
         return {}
     row = rows[0]
@@ -60,7 +63,12 @@ def property_context(db, lead, anchor):
         kind = ""
     if not re.fullmatch(r"[\w áéíóúñÁÉÍÓÚÑ-]{1,60}", commune):
         commune = ""
+    # Derive only a coarse commercial-use hint from the description locally.
+    # Never send the description itself, which can contain owner information.
+    description = _plain((row.get("observaciones") or {}).get("descripcion"))
+    commercial = bool(re.search(r"\b(?:terreno comercial|local comercial|almacen|negocio funcionando|ex restaurante)\b", description))
     return {"tipo": kind, "comuna": commune,
+            "orientacion_comercial": commercial,
             "operaciones_publicadas": [x for x, k in (("VENTA", "venta"), ("ARRIENDO", "arriendo"))
                                        if op.get(k) is True]}
 

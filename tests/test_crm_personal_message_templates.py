@@ -115,13 +115,18 @@ def test_legacy_composer_restored_and_pilot_isolated():
     assert "document.getElementById('commMessage').rows = active ? 12 : 5" in html
 
 
-def test_pablo_only_pilot_and_private_favorites():
+def test_team_composer_and_private_favorites():
     from chatbot.crm_personal_message_templates import (
         composer_pilot_enabled, PABLO_COMPOSER_PILOT_USER_ID,
     )
     from bson import ObjectId
     uid = PABLO_COMPOSER_PILOT_USER_ID
     assert composer_pilot_enabled(ObjectId(uid))
+    for executive_id in ("6a681413140190dde11f26d1", "6989c6309dd2ba54e478196c",
+                         "6989c6309dd2ba54e478196b", "699653a96a099d6e9612d519",
+                         "6995e9be6a099d6e9612d120", "6989c6309dd2ba54e478196d"):
+        assert composer_pilot_enabled(ObjectId(executive_id))
+    assert not composer_pilot_enabled("69796bc5bbebf240378eb73a")
     assert not composer_pilot_enabled("Pablo Galleguillos")
     assert not composer_pilot_enabled(None)
     assert not composer_pilot_enabled("other")
@@ -131,6 +136,11 @@ def test_pablo_only_pilot_and_private_favorites():
     key = "personal:" + a["templates"][0]["id"]
     b = write_library(db, uid, {"version": 1, "templates": a["templates"], "favorites": ["builtin:1", key]})
     assert b["favorites"] == ["builtin:1", key]
+    assert read_library(db, uid) == b
+    mariela = "6989c6309dd2ba54e478196c"
+    assert read_library(db, mariela) == {"version": 0, "templates": [], "favorites": []}
+    other_library = write_library(db, mariela, {"version": 0, "templates": [entry("Privado")], "favorites": ["builtin:2"]})
+    assert other_library["favorites"] == ["builtin:2"]
     assert read_library(db, uid) == b
     assert read_library(db, "other") == {"version": 0, "templates": []}
     with pytest.raises(ValueError):
@@ -510,3 +520,36 @@ def test_recommendation_editor_is_visible_and_edits_survive_status_refresh():
     assert "msgBox.dataset.generated !== generated" in html
     assert "msgBox.value === msgBox.dataset.generated" in html
     assert "input.value = recommendation" in html
+
+
+def test_commercial_history_distinguishes_actual_sender_and_automation():
+    from bson import ObjectId
+    from api_crm import process_chat_timeline, _timeline_actor_names
+    db = mongomock.MongoClient()["test"]
+    mariela = ObjectId("6989c6309dd2ba54e478196c")
+    hernan = ObjectId("6a681413140190dde11f26d1")
+    db["usuarios"].insert_many([{"_id": mariela, "nombre": "Mariela Arriagada"},
+                                {"_id": hernan, "nombre": "Hernán Castro"}])
+    messages = [
+        {"role": "user", "actor_type": "customer", "source": "prop360", "content": "Consulta"},
+        {"role": "agent", "actor_type": "human_agent", "actor_id": str(mariela), "content": "Hola"},
+        {"role": "user", "actor_type": "customer", "content": "Sí"},
+        {"role": "assistant", "content": "Bot"},
+        {"role": "assistant", "actor_type": "automation", "actor_id": str(mariela), "content": "Seguimiento"},
+        {"role": "agent", "actor_type": "human_agent", "actor_id": str(hernan), "content": "Reasignado"},
+        {"role": "agent", "content": "Histórico"},
+        {"role": "unknown", "content": "Desconocido"},
+        {"role": "system", "content": "Sistema"},
+    ]
+    rows = process_chat_timeline(messages, _timeline_actor_names(db, messages))
+    assert [r["display_kind"] for r in rows] == [
+        "portal", "executive", "user", "assistant", "automation", "executive", "executive", "system", "system"]
+    assert rows[1]["display_label"] == "Ejecutivo · Mariela Arriagada"
+    assert rows[5]["display_label"] == "Ejecutivo · Hernán Castro"
+    assert rows[6]["display_label"] == "Ejecutivo (sin identificar)"
+    assert rows[4]["display_label"] == "Seguimiento automático"
+    assert rows[7]["display_label"] == "Remitente sin identificar"
+    assert [r["content"] for r in rows] == [m["content"] for m in messages]
+    html = Path("templates/crm_lead_detail.html").read_text(encoding="utf-8")
+    assert "msg.display_kind" in html and "msg.display_label" in html
+    assert "Ver historial de conversación comercial" in html

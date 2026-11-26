@@ -64,6 +64,18 @@ def intent(text, previous_agent=""):
         r'mas adelante (?:quizas |tal vez )?(?:hablemos|les escribo|me contacto))\b', msg)
     if deferred and not active and '?' not in msg:
         return "SEARCH_DEFERRED"
+    # A decision for another property is closure of the current search,
+    # including common Chilean spelling mistakes. A comparison is not closure.
+    chosen_other = re.search(r'\b(?:finalmente |ya )?(?:nos |me )?(?:decidimos|desidimos|decidi|desidi|quedamos|quede) (?:por|con) otr[oa] (?:departamento|depto|casa|propiedad|inmueble)\b', msg)
+    if chosen_other and not active and '?' not in msg and not re.search(r'\b(?:no|todavia no|aun no) (?:nos |me )?(?:decidimos|desidimos|decidi|desidi|quedamos|quede)\b', msg):
+        return "SEARCH_COMPLETED"
+    # Polite standalone decline: stop proactive contact, not global opt-out.
+    if re.fullmatch(r'(?:hola[,.! ]+)?no[, ]+gracias[.! ]*', msg):
+        return "CONTACT_DECLINED"
+    if re.fullmatch(r'(?:hola[,.! ]+)?no se (?:ni )?que es procasa[.! ]*', msg):
+        return "CONTACT_UNRECOGNIZED"
+    if re.fullmatch(r'(?:no (?:me|ne) (?:respondiste|respindiste|respondio|contestaste|contesto)|sigo esperando (?:su |tu )?respuesta)[.! ]*', msg):
+        return "RESPONSE_PENDING"
     if not re.match(r'no\b', msg) and re.search(r'\b(?:quiero|necesito) vender\b', msg):
         return "MIXED_NEEDS" if re.search(r'\bcomprar\b', msg) else "OWNER_SELL"
     if not re.match(r'no\b', msg) and re.search(r'\b(?:quiero|necesito) (?:arrendar|alquilar) mi\b', msg):

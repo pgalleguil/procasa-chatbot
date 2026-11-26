@@ -591,3 +591,211 @@ def test_dialogue_is_held_for_separate_policy_not_sent(monkeypatch):
     update = queue.update_one.call_args.args[1]["$set"]
     assert update["state"] == "held"
     assert update["reason"] == "dialogue_policy_pending"
+
+
+def test_initial_three_stage_calendar_and_guardrails():
+    from chatbot.executive_silence_policy import sequence_due
+    lead = fixture("2026-11-25T12:00:00")
+    first = dt("2026-11-25T19:00:00")
+    assert sequence_due(first, 2) == dt("2026-11-26T12:30:00")
+    assert sequence_due(dt("2026-11-26T12:30:00"), 3) == dt("2026-11-30T18:00:00")
+    assert sequence_due(dt("2026-12-07T19:00:00"), 2) == dt("2026-12-09T12:30:00")
+    lead["messages"].append({"message_id": "auto1", "role": "assistant",
+                             "actor_type": "automation", "automatic": True,
+                             "source": "crm_exec_silence_api", "timestamp": first.isoformat()})
+    prior = ({"message_id": "auto1", "accepted_at": first},)
+    opts = dict(followup_attempts=1, verified_followups=prior)
+    assert decide(lead, now="2026-11-26T09:00:00", **opts)["state"] == "WAIT"
+    assert decide(lead, now="2026-11-26T12:30:00", **opts)["attempt"] == 2
+    assert decide(lead, now="2026-11-26T14:00:00", **opts)["due_at"] == dt("2026-11-27T09:00:00")
+    assert decide(lead, now="2026-11-27T09:00:00", **opts)["state"] == "CANDIDATE"
+    assert decide(lead, now="2026-11-26T12:30:00", **opts, contact_authorized=False)["state"] == "HOLD"
+    assert decide(lead, now="2026-11-26T12:30:00", **opts, scheduled_contact_clear=False)["state"] == "HOLD"
+    second = dt("2026-11-26T12:30:00")
+    lead["messages"].append({"message_id": "auto2", "role": "assistant",
+                             "actor_type": "automation", "automatic": True,
+                             "source": "crm_exec_silence_api", "timestamp": second.isoformat()})
+    opts = dict(followup_attempts=2, verified_followups=prior + ({"message_id": "auto2", "accepted_at": second},))
+    assert decide(lead, now="2026-11-30T18:00:00", **opts)["attempt"] == 3
+    assert decide(lead, now="2026-11-30T18:00:00", followup_attempts=3)["state"] == "HOLD"
+    lead["messages"].append({"role": "user", "actor_type": "customer",
+                             "channel": "executive_whatsapp", "timestamp": dt("2026-11-27T12:00:00").isoformat()})
+    assert decide(lead, now="2026-11-30T18:00:00", **opts)["state"] == "HOLD"
+
+
+def test_sequence_history_requires_exact_provider_and_canonical_proof():
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    from hashlib import sha256
+    phone = "+56912345678"
+    key = worker._attempt_key(phone, 1)
+    assert key == sha256(f"{worker.MODE}|{phone}".encode()).hexdigest()
+    assert len({worker._attempt_key(phone, n) for n in (1, 2, 3)}) == 3
+    job = {"attempt": 2, "owner": "owner", "cycle": "cycle", "session": "session",
+           "anchor": "m1", "lead_id": "lead"}
+    lead = fixture()
+    lead["_id"] = "lead"
+    text = "¿Sigue interesado en la propiedad?"
+    row = {"_id": key, "state": "accepted", "canonical_recorded": True,
+           "lead_id": "lead", "executive_id": "owner", "assignment_cycle_id": "cycle",
+           "session_id": "session", "anchor_message_id": "m1", "scenario": "INITIAL_NO_REPLY",
+           "provider_message_id": "p2", "provider_result_at": dt("2026-11-25T19:00:00"),
+           "content_sha256": sha256(text.encode()).hexdigest()}
+    auto = {"message_id": "auto", "silence_dispatch_id": key, "source": worker.MODE,
+            "actor_type": "automation", "automatic": True, "assigned_executive_id": "owner",
+            "assignment_cycle_id": "cycle", "wasender_session_id": "session",
+            "provider_message_id": "p2", "provider_echo_message_id": "echo", "content": text}
+    lead["messages"].append(auto)
+    db, outbox = MagicMock(), MagicMock()
+    db.__getitem__.return_value = outbox
+    outbox.find.return_value.limit.return_value = [row]
+    assert worker._sequence_evidence(db, lead, job, phone)[0]["message_id"] == "auto"
+    for patch in ({"state": "delivery_unknown"}, {"canonical_recorded": False},
+                  {"executive_id": "other"}, {"anchor_message_id": "other"}, {"provider_message_id": "other"}):
+        outbox.find.return_value.limit.return_value = [dict(row, **patch)]
+        assert worker._sequence_evidence(db, lead, job, phone) is None
+    outbox.find.return_value.limit.return_value = [row]
+    auto.pop("provider_echo_message_id")
+    assert worker._sequence_evidence(db, lead, job, phone) is None
+
+
+def test_successor_is_idempotent_and_never_same_day():
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, outbox, queue = MagicMock(), MagicMock(), MagicMock()
+    db.__getitem__.side_effect = lambda k: {worker.OUTBOX: outbox, worker.QUEUE: queue}[k]
+    lead = fixture()
+    lead.update(_id="lead", phone="+56912345678")
+    job = {"_id": "root", "lead_id": "lead", "owner": "owner", "cycle": "cycle",
+           "session": "session", "anchor": "m1", "attempt": 1}
+    outbox.find_one.return_value = {"provider_result_at": dt("2026-11-26T09:01:00")}
+    worker._schedule_successor(db, job, lead)
+    worker._schedule_successor(db, job, lead)
+    assert queue.update_one.call_args_list[0] == queue.update_one.call_args_list[1]
+    next_job = queue.update_one.call_args.args[1]["$setOnInsert"]
+    assert next_job["attempt"] == 2
+    assert next_job["due_at"] == dt("2026-11-27T12:30:00")
+    queue.reset_mock()
+    worker._schedule_successor(db, dict(job, attempt=3), lead)
+    queue.update_one.assert_not_called()
+    lead["messages"].append({"channel": "executive_whatsapp", "actor_type": "customer"})
+    worker._schedule_successor(db, job, lead)
+    queue.update_one.assert_not_called()
+
+
+def test_reconcile_only_durable_accepted_stages_after_crash(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(worker, "_last_sequence_reconcile", None)
+    db, queue, outbox, leads = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+    db.__getitem__.side_effect = lambda k: {worker.QUEUE: queue, worker.OUTBOX: outbox, "leads": leads}[k]
+    job = {"_id": "root", "lead_id": "lead", "state": "evaluating",
+           "claimed_at": dt("2026-11-25T19:00:00"), "owner": "owner",
+           "cycle": "cycle", "session": "session", "anchor": "m1"}
+    queue.find.return_value.limit.return_value = [job]
+    lead = fixture()
+    lead.update(_id="lead", phone="+56912345678")
+    leads.find_one.return_value = lead
+    successor = MagicMock()
+    monkeypatch.setattr(worker, "_schedule_successor", successor)
+    outbox.find_one.return_value = None
+    worker._reconcile_accepted_sequences(db, dt("2026-11-25T19:20:00"))
+    successor.assert_not_called()
+    queue.update_one.assert_not_called()
+    monkeypatch.setattr(worker, "_last_sequence_reconcile", None)
+    outbox.find_one.return_value = {"provider_message_id": "p2",
+                                    "provider_result_at": dt("2026-11-25T19:01:00")}
+    worker._reconcile_accepted_sequences(db, dt("2026-11-25T19:20:00"))
+    successor.assert_called_once_with(db, job, lead)
+    assert queue.update_one.call_args.args[1]["$set"]["state"] == "accepted"
+
+
+def test_operational_incident_is_deduplicated():
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, incidents = MagicMock(), MagicMock()
+    db.__getitem__.return_value = incidents
+    job = {"_id": "job", "lead_id": "lead", "owner": "owner", "session": "s", "attempt": 2}
+    worker._record_incident(db, job, "model_hold")
+    worker._record_incident(db, job, "model_hold")
+    assert incidents.update_one.call_args_list[0].args[0] == incidents.update_one.call_args_list[1].args[0]
+    assert incidents.update_one.call_args.args[1]["$setOnInsert"]["attempt"] == 2
+
+
+def test_stale_before_provider_lease_recovered_only_once(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(worker, "_last_sequence_reconcile", None)
+    db, queue, outbox, leads, guard = [MagicMock() for _ in range(5)]
+    db.__getitem__.side_effect = lambda k: {worker.QUEUE: queue, worker.OUTBOX: outbox,
+        "leads": leads, worker.SESSION_GUARD: guard}[k]
+    job = {"_id": "root", "lead_id": "lead", "state": "evaluating",
+           "phase": "pre_provider", "lease": "old-lease",
+           "claimed_at": dt("2026-11-25T19:00:00"), "owner": "owner",
+           "cycle": "cycle", "session": "session", "anchor": "m1"}
+    queue.find.return_value.limit.return_value = [job]
+    lead = fixture()
+    lead.update(_id="lead", phone="+56912345678")
+    leads.find_one.return_value = lead
+    outbox.find_one.return_value = None
+    queue.update_one.return_value.modified_count = 1
+    incident = MagicMock()
+    monkeypatch.setattr(worker, "_record_incident", incident)
+    worker._reconcile_accepted_sequences(db, dt("2026-11-25T19:20:00"))
+    assert queue.update_one.call_args.args[0]["lease"] == "old-lease"
+    assert queue.update_one.call_args.args[1]["$set"]["state"] == "pending"
+    assert queue.update_one.call_args.args[1]["$set"]["pre_provider_recoveries"] == 1
+    guard.delete_one.assert_called_once_with({"_id": "session", "job_id": "root",
+                                             "lease": "old-lease", "state": "sending"})
+    queue.reset_mock()
+    guard.reset_mock()
+    monkeypatch.setattr(worker, "_last_sequence_reconcile", None)
+    queue.find.return_value.limit.return_value = [dict(job, phase="reservation_pending")]
+    worker._reconcile_accepted_sequences(db, dt("2026-11-25T19:20:00"))
+    queue.update_one.assert_not_called()
+    guard.delete_one.assert_not_called()
+    incident.assert_called_once()
+
+
+def test_expired_authorization_cannot_be_replaced_by_old_portal_evidence(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, leads, tasks = MagicMock(), MagicMock(), MagicMock()
+    db.__getitem__.side_effect = lambda k: {"leads": leads, "crm_tasks": tasks}[k]
+    lead = fixture()
+    lead.update(_id="lead", phone="+56912345678")
+    lead["crm_hot_auto"] = {"whatsapp_contact_authorization": {
+        "status": "ACTIVE", "expires_at": "2026-11-25T18:00:00-03:00"}}
+    leads.find_one.return_value = lead
+    tasks.find_one.return_value = None
+    monkeypatch.setattr(worker, "_sequence_evidence", lambda *a: ())
+    evidence = MagicMock(return_value=True)
+    monkeypatch.setattr(worker, "_contact_evidence", evidence)
+    job = {"lead_id": "lead", "owner": "owner", "cycle": "cycle",
+           "session": "session", "anchor": "m1"}
+    _, decision = worker._decision(db, job, now=dt("2026-11-26T09:00:00"))
+    assert decision["reason"] == "contact_authorization_expired_or_invalid"
+    evidence.assert_not_called()
+
+
+def test_classification_pending_retries_once_then_records_incident(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, queue = MagicMock(), MagicMock()
+    db.__getitem__.return_value = queue
+    monkeypatch.setattr(worker, "enabled", lambda: True)
+    monkeypatch.setattr(worker, "_reconcile_accepted_sequences", lambda *a: None)
+    monkeypatch.setattr(worker, "_decision", lambda *a, **kw: ({}, {
+        "state": "HOLD", "reason": "classification_not_ready"}))
+    incident = MagicMock()
+    monkeypatch.setattr(worker, "_record_incident", incident)
+    job = {"_id": "job", "lease": "lease", "session": "s"}
+    queue.find_one_and_update.side_effect = [job, None]
+    worker.process_due(db, now=dt("2026-11-26T09:00:00"))
+    assert queue.update_one.call_args.args[1]["$set"]["state"] == "pending"
+    assert queue.update_one.call_args.args[1]["$set"]["classification_retry_count"] == 1
+    incident.assert_not_called()
+    queue.find_one_and_update.side_effect = [dict(job, classification_retry_count=1), None]
+    worker.process_due(db, now=dt("2026-11-26T09:01:00"))
+    assert queue.update_one.call_args.args[1]["$set"]["state"] == "held"
+    incident.assert_called_once()

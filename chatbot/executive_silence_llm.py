@@ -9,7 +9,7 @@ import re
 from .executive_silence_policy import _plain, _time
 from .executive_conversation_intelligence import _safe, _prompt_state
 
-VERSION = "silence_copy_llm_v3"
+VERSION = "silence_copy_llm_v4"
 MAX_TURNS = 12
 MAX_INPUT_CHARS = 6500
 MAX_OUTPUT_TOKENS = 600
@@ -24,6 +24,11 @@ Si hay evidencia concreta de que el cliente espera una acción nuestra, pidió o
 momento, rechazó el contacto, cerró la búsqueda, o hay una visita, llamada u oferta
 pendiente, devuelve HOLD. La falta de respuesta por sí sola NO justifica HOLD.
 En INITIAL_NO_REPLY no supongas que la persona respondió o recibió el mensaje.
+Para attempt=1 retoma la consulta inicial. Para attempt=2 aporta ayuda diferente,
+por ejemplo revisar otras opciones o resolver una duda de compra/arriendo.
+Para attempt=3 pregunta si sigue buscando y aclara que no insistiremos si no
+necesita ayuda. No repitas mensajes previos ni sugieras que hubo una respuesta.
+Los turnos SEGUIMIENTO_PREVIO son mensajes salientes, nunca respuestas del cliente.
 Si consultó una propiedad y la operación no se conoce, pregunta si busca comprar
 o arrendar solo si ambas operaciones están publicadas. Si ya se conoce, no lo preguntes.
 En venta, ofrece ayuda con el proceso de compra, financiamiento o características
@@ -98,11 +103,13 @@ def build_context(db, lead, job, anchor, scenario, attempt):
                 or str(m.get("wasender_session_id")) != job["session"]):
             continue
         actor = m.get("actor_type")
-        if actor not in ("customer", "human_agent"):
+        if actor not in ("customer", "human_agent") and not (
+                actor == "automation" and m.get("source") == "crm_exec_silence_api"
+                and m.get("automatic") is True and m.get("silence_dispatch_id")):
             continue
         stamp = _time(m.get("timestamp"))
         if stamp and m.get("provider_message_id") and isinstance(m.get("content"), str):
-            turns.append((stamp, {"actor": "CLIENTE" if actor == "customer" else "EJECUTIVO",
+            turns.append((stamp, {"actor": "CLIENTE" if actor == "customer" else ("SEGUIMIENTO_PREVIO" if actor == "automation" else "EJECUTIVO"),
                                   "texto": _safe(m["content"], limit=350)}))
     turns.sort(key=lambda row: row[0])
     context = {"scenario": scenario, "attempt": attempt,

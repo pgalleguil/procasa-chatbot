@@ -332,3 +332,27 @@ def test_deferred_outreach_hold_survives_acknowledgment_and_model_disagreement()
     assert second["outreach_hold"] == "SEARCH_DEFERRED"
     assert second["campaign"]["reason"] == "search_deferred"
     assert second["contact"]["awaiting"] == "NONE"
+
+
+def test_shared_automated_outreach_gate_blocks_canonical_deferred_before_classification():
+    from chatbot.price_drop_campaign_classifier import lead_must_not_be_contacted
+    from chatbot.price_drop_leads_v2 import _contact_suppression_reasons
+    customer = turn("customer", "Solo estaba mirando. Más adelante quizás hablemos.", "deferred")
+    lead = {"messages": [customer]}
+    assert lead_must_not_be_contacted(lead)
+    assert _contact_suppression_reasons(lead) == {"search_deferred"}
+    assert lead_must_not_be_contacted({"do_not_contact": True})
+    assert "contact_block" in _contact_suppression_reasons({"do_not_contact": True})
+    assert not lead_must_not_be_contacted({"messages": [turn("human_agent", "Solo estaba mirando", "agent")]})
+    assert not lead_must_not_be_contacted({"messages": [turn("customer", "No puedo visitar mañana", "customer")]})
+
+
+def test_active_inventory_never_overwrites_deferred_search(monkeypatch):
+    from chatbot import executive_intelligence_worker as worker
+    monkeypatch.setattr(worker, "_load_office_search_context", lambda *_: pytest.fail("no inventory matching on deferred"))
+    doc = {"commercial_intelligence": {"active_search": {"status": "ACTIVE", "followup_required": True}}}
+    summary = {"search_status": "DEFERRED", "outreach_hold": "SEARCH_DEFERRED"}
+    worker._merge_search_into_summary(None, doc, [], summary)
+    assert summary["search_status"] == "DEFERRED"
+    assert summary["followup_search_required"] is False
+    assert doc["_active_search"]["status"] == "CLOSED"

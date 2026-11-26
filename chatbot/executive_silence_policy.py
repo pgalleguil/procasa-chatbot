@@ -23,7 +23,7 @@ EXPIRY_MINUTES = 3000
 SEND_SLOTS = ((18, 0), (18, 30), (19, 0), (19, 30))
 SLOT_GRACE_MINUTES = 30
 OPEN = {"DETECTADA", "PENDIENTE_GESTION", "EN_GESTION"}
-STOP_INTENTS = {"OPT_OUT", "SEARCH_COMPLETE", "SEARCH_COMPLETED", "SEARCH_DEFERRED", "PROPERTY_DECLINED"}
+STOP_INTENTS = {"OPT_OUT", "SEARCH_COMPLETE", "SEARCH_COMPLETED", "SEARCH_DEFERRED", "CONTACT_DECLINED", "CONTACT_UNRECOGNIZED", "RESPONSE_PENDING", "PROPERTY_DECLINED"}
 STOP_SEARCH = {"COMPLETED", "CLOSED", "STOPPED", "INACTIVE", "SEARCH_COMPLETE", "DEFERRED"}
 # This is a narrow allowlist for ordinary contact/qualification questions, not
 # an attempt to infer that every question or every last outbound expects a reply.
@@ -229,7 +229,8 @@ def evaluate_silence(
         return _result("HOLD", "classification_not_ready")
     contact = summary.get("contact") or {}
     management = summary.get("executive_management") or {}
-    if (summary.get("intent") in STOP_INTENTS
+    if (summary.get("outreach_hold") in {"SEARCH_DEFERRED", "CONTACT_DECLINED", "CONTACT_UNRECOGNIZED"}
+            or summary.get("intent") in STOP_INTENTS
             or summary.get("search_status") in STOP_SEARCH
             or summary.get("contact_permission") in {"OPTED_OUT", "DENIED"}
             or (ci.get("active_search") or {}).get("opt_out")):

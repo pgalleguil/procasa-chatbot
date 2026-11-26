@@ -755,3 +755,47 @@ def test_stale_before_provider_lease_recovered_only_once(monkeypatch):
     queue.update_one.assert_not_called()
     guard.delete_one.assert_not_called()
     incident.assert_called_once()
+
+
+def test_expired_authorization_cannot_be_replaced_by_old_portal_evidence(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, leads, tasks = MagicMock(), MagicMock(), MagicMock()
+    db.__getitem__.side_effect = lambda k: {"leads": leads, "crm_tasks": tasks}[k]
+    lead = fixture()
+    lead.update(_id="lead", phone="+56912345678")
+    lead["crm_hot_auto"] = {"whatsapp_contact_authorization": {
+        "status": "ACTIVE", "expires_at": "2026-11-25T18:00:00-03:00"}}
+    leads.find_one.return_value = lead
+    tasks.find_one.return_value = None
+    monkeypatch.setattr(worker, "_sequence_evidence", lambda *a: ())
+    evidence = MagicMock(return_value=True)
+    monkeypatch.setattr(worker, "_contact_evidence", evidence)
+    job = {"lead_id": "lead", "owner": "owner", "cycle": "cycle",
+           "session": "session", "anchor": "m1"}
+    _, decision = worker._decision(db, job, now=dt("2026-11-26T09:00:00"))
+    assert decision["reason"] == "contact_authorization_expired_or_invalid"
+    evidence.assert_not_called()
+
+
+def test_classification_pending_retries_once_then_records_incident(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, queue = MagicMock(), MagicMock()
+    db.__getitem__.return_value = queue
+    monkeypatch.setattr(worker, "enabled", lambda: True)
+    monkeypatch.setattr(worker, "_reconcile_accepted_sequences", lambda *a: None)
+    monkeypatch.setattr(worker, "_decision", lambda *a, **kw: ({}, {
+        "state": "HOLD", "reason": "classification_not_ready"}))
+    incident = MagicMock()
+    monkeypatch.setattr(worker, "_record_incident", incident)
+    job = {"_id": "job", "lease": "lease", "session": "s"}
+    queue.find_one_and_update.side_effect = [job, None]
+    worker.process_due(db, now=dt("2026-11-26T09:00:00"))
+    assert queue.update_one.call_args.args[1]["$set"]["state"] == "pending"
+    assert queue.update_one.call_args.args[1]["$set"]["classification_retry_count"] == 1
+    incident.assert_not_called()
+    queue.find_one_and_update.side_effect = [dict(job, classification_retry_count=1), None]
+    worker.process_due(db, now=dt("2026-11-26T09:01:00"))
+    assert queue.update_one.call_args.args[1]["$set"]["state"] == "held"
+    incident.assert_called_once()

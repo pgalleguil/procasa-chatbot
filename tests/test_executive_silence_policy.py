@@ -447,7 +447,7 @@ def test_model_value_error_before_provider_does_not_pause_other_jobs(monkeypatch
     collection.find_one.return_value = {}
     job = {"_id": "unrelated", "owner": "owner", "session": "133517",
            "anchor": "m1", "lease": "lease"}
-    assert worker.dispatch(db, job, doc, decision, now=dt("2026-11-25T20:25:00"), post=post) == "model_invalid"
+    assert worker.dispatch(db, job, doc, decision, now=dt("2026-11-25T20:25:00"), post=post) == "retry_draft_before_provider"
     fallback.assert_not_called()
     post.assert_not_called()
     collection.delete_one.assert_called_once()
@@ -513,3 +513,34 @@ def test_contextual_draft_resumes_dialogue_not_repeats_opening(monkeypatch):
     assert text.startswith("¿Alguna de las propiedades")
     assert not text.endswith("— PROCASA")
     assert usage["version"] == llm.VERSION
+
+
+def test_retry_window_before_provider_is_pending_not_terminal(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(worker, "enabled", lambda: True)
+    db, queue = MagicMock(), MagicMock()
+    db.__getitem__.return_value = queue
+    job = {"_id": "job", "lease": "lease", "session": "s"}
+    queue.find_one_and_update.side_effect = [job, None]
+    monkeypatch.setattr(worker, "_decision", lambda *a, **k: ({}, {"state": "CANDIDATE", "reason": "customer_reply_overdue"}))
+    monkeypatch.setattr(worker, "dispatch", lambda *a, **k: "retry_window_before_provider")
+    worker.process_due(db, now=dt("2026-11-25T19:59:00"))
+    update = queue.update_one.call_args.args[1]["$set"]
+    assert update["state"] == "pending"
+    assert update["reason"] == "retry_window_before_provider"
+
+
+def test_retry_draft_before_provider_is_bounded_and_pending(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(worker, "enabled", lambda: True)
+    db, queue = MagicMock(), MagicMock()
+    db.__getitem__.return_value = queue
+    queue.find_one_and_update.side_effect = [{"_id": "job", "lease": "lease", "session": "s"}, None]
+    monkeypatch.setattr(worker, "_decision", lambda *a, **k: ({}, {"state": "CANDIDATE", "reason": "customer_reply_overdue"}))
+    monkeypatch.setattr(worker, "dispatch", lambda *a, **k: "retry_draft_before_provider")
+    worker.process_due(db, now=dt("2026-11-25T19:00:00"))
+    update = queue.update_one.call_args.args[1]["$set"]
+    assert update["state"] == "pending"
+    assert update["draft_retry_count"] == 1

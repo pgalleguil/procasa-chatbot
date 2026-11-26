@@ -315,6 +315,8 @@ def _dispatch_locked(db, job, doc, decision, *, now, post=None):
     # Recheck after all slow provider status calls, including the local window.
     now = datetime.now(timezone.utc)
     doc, decision = _decision(db, job, now=now)
+    if decision["state"] == "WAIT" and _live_allowed(job):
+        return "retry_window_before_provider"
     if decision["state"] != "CANDIDATE" or not _live_allowed(job):
         return "superseded"
     anchor = next((m for m in doc.get("messages", []) if m.get("message_id") == job["anchor"]), None)
@@ -340,9 +342,13 @@ def _dispatch_locked(db, job, doc, decision, *, now, post=None):
         db[QUEUE].update_one({"_id": job["_id"], "lease": job["lease"]},
                              {"$set": {"draft_error": reason}})
         recovery_end = _recovery_until(job)
+        # A pre-provider truncation or malformed draft can be retried once.
+        # Never retry missing context or an explicit HOLD, and never retry a send.
         if (recovery_end is None or now >= recovery_end
                 or decision["scenario"] != "INITIAL_NO_REPLY"
                 or reason == "context_unavailable"):
+            if reason in {"draft_incomplete", "draft_invalid", "draft_schema", "draft_format"} and not job.get("draft_retry_count"):
+                return "retry_draft_before_provider"
             return "model_invalid"
         try:
             text = initial_recovery_draft(db, doc, anchor)
@@ -360,6 +366,8 @@ def _dispatch_locked(db, job, doc, decision, *, now, post=None):
     # permission revocation or expired send window to slip past the gate.
     now = datetime.now(timezone.utc)
     fresh, rechecked = _decision(db, job, now=now)
+    if rechecked["state"] == "WAIT" and _live_allowed(job):
+        return "retry_window_before_provider"
     if fresh != doc or rechecked["state"] != "CANDIDATE" or not _live_allowed(job):
         return "superseded_after_draft"
     phone = normalize_phone_strict(doc.get("phone"))
@@ -446,8 +454,9 @@ def process_due(db, *, limit=3, now=None):
                 _finish(db, job, state="pending", reason=decision["reason"], due_at=decision["due_at"])
             elif decision["state"] == "CANDIDATE":
                 state = dispatch(db, job, doc, decision, now=now)
-                if state == "session_busy":
-                    _finish(db, job, state="pending", reason=state, due_at=now + timedelta(minutes=1))
+                if state in {"session_busy", "retry_window_before_provider", "retry_draft_before_provider"}:
+                    extra = {"draft_retry_count": 1} if state == "retry_draft_before_provider" else {}
+                    _finish(db, job, state="pending", reason=state, due_at=datetime.now(timezone.utc) + timedelta(minutes=1), **extra)
                 else:
                     _finish(db, job, state=state, reason=state if state in SESSION_STOP or state == "session_paused" else decision["reason"])
             else:

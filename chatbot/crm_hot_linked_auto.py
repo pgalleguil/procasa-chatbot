@@ -27,6 +27,7 @@ from .crm_executive_outbound import OUTBOX, OutboundBlocked, verify_provider_sen
 from .executive_whatsapp_audit import _session, _authorized_lead
 from .phone_utils import normalize_phone_strict
 from .price_drop_campaign_classifier import lead_must_not_be_contacted
+from .broker_contact_role import broker_evidence
 from .whatsapp_client import normalize_whatsapp_recipient, _provider_message_id
 
 logger = logging.getLogger(__name__)
@@ -428,6 +429,9 @@ def eligible_hot_auto(db, *, lead: dict, cycle: dict, now: datetime) -> dict:
     if (str(lc.get("current_assignment_cycle_id") or "") != cycle_id
             or str(lc.get("assigned_to_user_id") or "") != owner):
         raise OutboundBlocked("assignment_changed")
+    evidence = broker_evidence(lead)
+    if evidence:
+        raise OutboundBlocked("broker_collaboration")
     if lead_must_not_be_contacted(lead):
         raise OutboundBlocked("customer_blocked")
     if str(lead.get("lead_temperature_effective") or "").upper() != "HOT":

@@ -28,6 +28,7 @@ from .whatsapp_client import _provider_message_id
 QUEUE = "crm_exec_silence_queue"
 MODE = "crm_exec_silence_api"
 SESSION_GUARD = "crm_exec_silence_session_guard"
+MIN_SESSION_SPACING_SECONDS = 180
 logger = logging.getLogger(__name__)
 _last_sequence_reconcile = None
 SESSION_STOP = {"rate_limited", "rejected", "delivery_unknown",
@@ -43,6 +44,7 @@ def ensure_indexes(db):
     db[QUEUE].create_index([("state", 1), ("sequence_started", 1), ("claimed_at", 1)])
     db[QUEUE].create_index([("state", 1), ("sequence_reconciled", 1), ("claimed_at", 1)])
     db[OUTBOX].create_index([("mode", 1), ("phone", 1), ("attempted_at", 1)])
+    db[OUTBOX].create_index([("mode", 1), ("session_id", 1), ("attempted_at", -1)])
 
 
 def _rollout_cutoff(now):
@@ -343,7 +345,7 @@ def _decision(db, job, *, now):
         if auth.get("revoked_at") is not None or str(auth.get("status") or "").upper() in {"REVOKED", "DENIED", "OPTED_OUT"}:
             return doc, {"state": "HOLD", "reason": "contact_authorization_revoked"}
         if auth.get("expires_at") is not None:
-            expiry = _time(auth["expires_at"])
+            expiry = _persisted_utc(auth["expires_at"])
             if expiry is None or expiry <= now:
                 return doc, {"state": "HOLD", "reason": "contact_authorization_expired_or_invalid"}
     authorized = _contact_evidence(db, doc, job, phone, now)
@@ -431,10 +433,31 @@ def dispatch(db, job, doc, decision, *, now, post=None):
     return result
 
 
+def _session_spacing_due(db, session, now):
+    """Durable per-sender spacing, including restarts and multiple workers.
+    Called under the exclusive session guard; never sleep or reserve early.
+    """
+    row = db[OUTBOX].find_one({"mode": MODE, "session_id": str(session)},
+                              {"attempted_at": 1, "provider_result_at": 1},
+                              sort=[("attempted_at", -1)])
+    if row is None or row == {}:
+        return None
+    if not isinstance(row, dict):
+        raise RuntimeError("spacing_evidence_invalid")
+    stamps = [_persisted_utc(row.get(k)) for k in ("attempted_at", "provider_result_at")]
+    stamps = [t for t in stamps if t is not None]
+    if not stamps:
+        raise RuntimeError("spacing_evidence_missing")
+    due = max(stamps) + timedelta(seconds=MIN_SESSION_SPACING_SECONDS)
+    return due if now < due else None
+
+
 def _dispatch_locked(db, job, doc, decision, *, now, post=None):
     """Single reserved provider attempt. Never retry uncertain delivery."""
     if not _live_allowed(job):
         return "shadow_candidate"
+    if _session_spacing_due(db, job["session"], datetime.now(timezone.utc)) is not None:
+        return "retry_session_spacing"
     info = eligible_manual_session(db, lead=doc, actor_user_id=job["owner"])
     session = info["session"]
     if str(session["session_id"]) != job["session"]:
@@ -617,6 +640,7 @@ def _schedule_successor(db, job, doc):
     if not phone:
         return False
     row = db[OUTBOX].find_one({"_id": _attempt_key(phone, attempt), "state": "accepted",
+                              "scenario": "INITIAL_NO_REPLY",
                               "canonical_recorded": True, "lead_id": doc["_id"],
                               "executive_id": job["owner"], "assignment_cycle_id": job["cycle"],
                               "session_id": job["session"], "anchor_message_id": job["anchor"]})
@@ -653,10 +677,16 @@ def _reconcile_accepted_sequences(db, now):
         # date conversion failures). Scan only this rollout's recent accepts.
         # Never reset a sent job or enqueue an already-existing stage.
         accepted_rows = db[QUEUE].find({"state": "accepted",
-                                       "sequence_started": True,
+                                       "$or": [{"sequence_started": True}, {"_id": {"$in": [
+                                           "2a073ccec4b7590cb0d4eb2e7d5479a8c86da2ab25346118eff0e50fb327ff6e",
+                                           "484fbf4e53aebecc974a2423181e26773adb93560c2ca1d32ab486105a1e5931",
+                                           "74277b4027fd4237f76d02a00183f46e2a12bef6e186e3e27560166de64e0a07",
+                                       ]}}],
                                        "sequence_reconciled": {"$ne": True},
                                        "claimed_at": {"$gte": now - timedelta(days=7)}}).limit(5)
         for accepted_job in accepted_rows:
+            if accepted_job.get("state") != "accepted":
+                continue
             accepted_doc = db["leads"].find_one({"_id": accepted_job["lead_id"]})
             if accepted_doc and _schedule_successor(db, accepted_job, accepted_doc):
                 db[QUEUE].update_one({"_id": accepted_job["_id"], "state": "accepted"},
@@ -751,9 +781,12 @@ def process_due(db, *, limit=3, now=None):
                         _record_incident(db, job, "successor_evidence_missing")
                 if state == "dialogue_policy_pending":
                     _finish(db, job, state="held", reason=state)
-                elif state in {"session_busy", "retry_window_before_provider", "retry_draft_before_provider"}:
+                elif state in {"session_busy", "retry_window_before_provider", "retry_draft_before_provider", "retry_session_spacing"}:
                     extra = {"draft_retry_count": 1} if state == "retry_draft_before_provider" else {}
-                    _finish(db, job, state="pending", reason=state, due_at=datetime.now(timezone.utc) + timedelta(minutes=1), **extra)
+                    next_due = datetime.now(timezone.utc) + timedelta(minutes=1)
+                    if state == "retry_session_spacing":
+                        next_due = _session_spacing_due(db, job["session"], datetime.now(timezone.utc)) or next_due
+                    _finish(db, job, state="pending", reason=state, due_at=next_due, **extra)
                 else:
                     if state in SESSION_STOP | {"session_paused", "model_invalid", "model_hold", "session_changed", "shadow_candidate"}:
                         _record_incident(db, job, state)

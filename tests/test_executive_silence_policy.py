@@ -907,3 +907,15 @@ def test_persisted_date_is_utc_but_external_naive_string_is_rejected():
     from chatbot import executive_silence_worker as worker
     assert worker._persisted_utc(datetime(2026, 11, 26, 14, 20)) == dt("2026-11-26T11:20:00")
     assert worker._persisted_utc("2026-11-26T14:20:00") is None
+
+def test_deferred_search_is_not_optout_or_completed():
+    from chatbot.executive_semantics import intent
+    from chatbot.executive_silence_policy import evaluate_silence
+    assert intent("Hola. Solo estaba mirando. Pero no estaré en condiciones de ahorrar por el próximo año. Así que más adelante quizás hablemos. Que pase buen día.") == "SEARCH_DEFERRED"
+    assert intent("Solo estoy cotizando") == "SEARCH_DEFERRED"
+    assert intent("No puedo visitar mañana") != "SEARCH_DEFERRED"
+    assert intent("Busco casa. Solo estaba mirando esta otra propiedad") != "SEARCH_DEFERRED"
+    assert intent("No me escriban más") == "OPT_OUT"
+    lead = fixture("2026-11-25T12:00:00")
+    lead["commercial_intelligence"]["summary"].update(intent="SEARCH_DEFERRED", search_status="DEFERRED")
+    assert decide(lead)["state"] == "HOLD"

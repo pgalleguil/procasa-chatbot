@@ -845,3 +845,25 @@ def test_permanent_fallback_after_draft_truncation_not_for_explicit_hold(monkeyp
     assert worker.dispatch(db, job, doc, decision, now=dt("2026-11-26T09:35:00"), post=post) == "model_hold"
     fallback.assert_not_called()
     post.assert_not_called()
+
+
+def test_exact_delayed_initial_recovery_preserves_all_gates():
+    from chatbot import executive_silence_worker as worker
+    key, (lead_id, cycle, anchor) = next(iter(worker._DELAYED_INITIAL_JOBS.items()))
+    job = {"_id": key, "lead_id": lead_id, "cycle": cycle, "anchor": anchor,
+           "owner": "6a681413140190dde11f26d1", "session": "133517",
+           "incident_recovery_20261126": True}
+    end = worker._delayed_initial_until(job)
+    assert end == dt("2026-11-26T12:15:00")
+    for field, invalid in (("_id", "other"), ("lead_id", "other"), ("cycle", "other"),
+                           ("anchor", "other"), ("session", "other"), ("attempt", 2),
+                           ("incident_recovery_20261126", False)):
+        assert worker._delayed_initial_until(dict(job, **{field: invalid})) is None
+    lead = fixture("2026-11-25T12:17:00")
+    assert decide(lead, now="2026-11-26T11:00:00")["state"] == "WAIT"
+    assert decide(lead, now="2026-11-26T11:00:00", delayed_initial_until=end)["state"] == "CANDIDATE"
+    assert decide(lead, now="2026-11-26T12:15:00", delayed_initial_until=end)["state"] == "WAIT"
+    for flag in ("contact_authorized", "history_complete", "session_verified", "scheduled_contact_clear"):
+        assert decide(lead, now="2026-11-26T11:00:00", delayed_initial_until=end, **{flag: False})["state"] == "HOLD"
+    lead["opted_out"] = True
+    assert decide(lead, now="2026-11-26T11:00:00", delayed_initial_until=end)["state"] == "HOLD"

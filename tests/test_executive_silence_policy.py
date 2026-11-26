@@ -808,8 +808,9 @@ def test_stage_fallback_uses_verified_property_and_distinct_messages(monkeypatch
         "operaciones_publicadas": ["VENTA"], "orientacion_comercial": False})
     texts = [llm.verified_initial_stage_fallback(None, {}, {}, attempt=n) for n in (1, 2, 3)]
     assert len(set(texts)) == 3
-    assert all("San Bernardo" in t and t.count("?") == 1 for t in texts)
-    assert "financiamiento" in texts[0]
+    assert all("San Bernardo" in t and t.count("?") <= 1 for t in texts)
+    assert "cuénteme" in texts[0]
+    assert "financiamiento" not in texts[0]
     assert "otras propiedades" in texts[1]
     assert "no insistiremos" in texts[2]
     assert all("seguimiento automático" not in t and not t.endswith("— PROCASA") for t in texts)

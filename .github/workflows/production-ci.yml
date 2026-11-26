@@ -146,6 +146,7 @@ jobs:
               tests/test_active_search.py
               tests/test_demand_sourcing.py
               tests/test_demand_sourcing_engine.py
+              tests/test_local_property_search.py
               tests/test_executive_semantic_verifier.py
               tests/test_executive_office_boundary.py
           - suite: CRM sort order

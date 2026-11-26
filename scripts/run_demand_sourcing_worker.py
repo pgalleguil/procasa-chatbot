@@ -146,6 +146,9 @@ def _sync_recent_updates(db, *, now: datetime, batch_size: int = 100) -> dict:
 
 def run_worker(*, once: bool = False, poll_seconds: int = 5,
                batch_size: int = 200) -> int:
+    if os.getenv("PROCASA_DEMAND_SOURCING_ENABLED", "0").strip() != "1":
+        logger.info("worker_disabled: no database access")
+        return 0
     db = get_db()
     ensure_indexes(db)
     worker_id = f"demand-source-{socket.gethostname()}-{os.getpid()}"

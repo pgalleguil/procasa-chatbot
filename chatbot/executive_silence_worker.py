@@ -189,6 +189,25 @@ def _recovery_until(job):
     return None
 
 
+# User-authorized exception for the two technical failures on Nov 26.
+# Ends before the original portal-contact evidence expires at 12:17 Chile.
+_DELAYED_INITIAL_JOBS = {
+    "debd6253759629f18c7b05a209fb382c5ef26b8c3d12fe4fadb491cf5767e2c4":
+        ("6b06d75aac48b1d66c5308c4", "19190ba5-adc1-44ea-9d66-61bfcc458eb2", "75979349-bc2c-4812-b53e-af2655bd8e57"),
+    "45420dc5c6c38986b563f7a451617a48488abc16a50993b87df223d177ec8f7e":
+        ("6b06d9b2ac48b1d66c5308e0", "6c67c18e-fbef-4858-9368-e89d3f2b2145", "ea698a2c-90fc-4034-92be-eda4bca75c0e"),
+}
+
+def _delayed_initial_until(job):
+    expected = _DELAYED_INITIAL_JOBS.get(job.get("_id"))
+    if (expected == (str(job.get("lead_id")), job.get("cycle"), job.get("anchor"))
+            and job.get("owner") == "6a681413140190dde11f26d1"
+            and job.get("session") == "133517" and job.get("attempt", 1) == 1
+            and job.get("incident_recovery_20261126") is True):
+        return datetime(2026, 11, 26, 15, 15, tzinfo=timezone.utc)
+    return None
+
+
 def _reviewed_initial_recovery(db, job, doc, anchor, decision, now):
     """Only the individually reviewed, explicitly requeued initial contacts.
     
@@ -350,7 +369,8 @@ def _decision(db, job, *, now):
         history_complete=connected is not None, session_verified=connected is not None,
         followup_attempts=len(prior), verified_followups=prior, outstanding_own_action=False,
         continuity_since=connected, scheduled_contact_clear=True,
-        recovery_until=_recovery_until(job))
+        recovery_until=_recovery_until(job),
+        delayed_initial_until=_delayed_initial_until(job))
 
 
 def _finish(db, job, *, state, reason, **extra):

@@ -201,6 +201,22 @@ def _reviewed_initial_recovery(db, job, doc, anchor, decision, now):
     return initial_recovery_draft(db, doc, anchor)
 
 
+def _has_executive_dialogue(doc):
+    """Any recorded executive-channel customer turn excludes initial silence.
+
+    Include previous assignment cycles; a reassignment must not turn an
+    existing dialogue into a never-answered first contact. Unknown attribution
+    in this channel is not proof that the customer never replied.
+    """
+    return any(
+        isinstance(m, dict)
+        and m.get("channel") == "executive_whatsapp"
+        and (m.get("actor_type") == "customer"
+             or (m.get("actor_type") is None and m.get("role") in {"user", "customer"}))
+        for m in doc.get("messages") or []
+    )
+
+
 def _decision(db, job, *, now):
     doc = db["leads"].find_one({"_id": job["lead_id"]})
     if not doc:
@@ -212,6 +228,9 @@ def _decision(db, job, *, now):
             or str(lc.get("assigned_to_user_id")) != job["owner"]
             or str(ci.get("pending_session_id")) != job["session"]):
         return doc, {"state": "HOLD", "reason": "superseded"}
+    if _has_executive_dialogue(doc):
+        return doc, {"state": "HOLD", "reason": "dialogue_policy_pending",
+                     "scenario": "DIALOGUE_INTERRUPTED"}
     phone = normalize_phone_strict(doc.get("phone"))
     if not phone:
         return doc, {"state": "HOLD", "reason": "invalid_phone"}
@@ -274,6 +293,8 @@ def dispatch(db, job, doc, decision, *, now, post=None):
     automatically retry or continue contacting other leads on that session.
     An abandoned lock fails closed rather than racing a possible send.
     """
+    if decision.get("scenario") == "DIALOGUE_INTERRUPTED" or _has_executive_dialogue(doc):
+        return "dialogue_policy_pending"
     if not _live_allowed(job):
         return "shadow_candidate"
     key, token = str(job["session"]), str(uuid4())
@@ -315,6 +336,8 @@ def _dispatch_locked(db, job, doc, decision, *, now, post=None):
     # Recheck after all slow provider status calls, including the local window.
     now = datetime.now(timezone.utc)
     doc, decision = _decision(db, job, now=now)
+    if decision.get("scenario") == "DIALOGUE_INTERRUPTED" or _has_executive_dialogue(doc or {}):
+        return "dialogue_policy_pending"
     if decision["state"] == "WAIT" and _live_allowed(job):
         return "retry_window_before_provider"
     if decision["state"] != "CANDIDATE" or not _live_allowed(job):
@@ -366,6 +389,8 @@ def _dispatch_locked(db, job, doc, decision, *, now, post=None):
     # permission revocation or expired send window to slip past the gate.
     now = datetime.now(timezone.utc)
     fresh, rechecked = _decision(db, job, now=now)
+    if rechecked.get("scenario") == "DIALOGUE_INTERRUPTED" or _has_executive_dialogue(fresh or {}):
+        return "dialogue_policy_pending"
     if rechecked["state"] == "WAIT" and _live_allowed(job):
         return "retry_window_before_provider"
     if fresh != doc or rechecked["state"] != "CANDIDATE" or not _live_allowed(job):
@@ -454,7 +479,9 @@ def process_due(db, *, limit=3, now=None):
                 _finish(db, job, state="pending", reason=decision["reason"], due_at=decision["due_at"])
             elif decision["state"] == "CANDIDATE":
                 state = dispatch(db, job, doc, decision, now=now)
-                if state in {"session_busy", "retry_window_before_provider", "retry_draft_before_provider"}:
+                if state == "dialogue_policy_pending":
+                    _finish(db, job, state="held", reason=state)
+                elif state in {"session_busy", "retry_window_before_provider", "retry_draft_before_provider"}:
                     extra = {"draft_retry_count": 1} if state == "retry_draft_before_provider" else {}
                     _finish(db, job, state="pending", reason=state, due_at=datetime.now(timezone.utc) + timedelta(minutes=1), **extra)
                 else:

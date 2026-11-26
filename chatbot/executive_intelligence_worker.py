@@ -164,8 +164,16 @@ def _load_office_search_context(db, doc: dict) -> tuple[list[dict], dict]:
 
 def _merge_search_into_summary(db, doc: dict, turns: list[dict],
                                summary: dict) -> None:
-    office, base = _load_office_search_context(db, doc)
     marker = doc.get("commercial_intelligence") or {}
+    if (summary.get("outreach_hold") or summary.get("search_status") in {"DEFERRED", "COMPLETED"}
+            or summary.get("contact_permission") == "OPTED_OUT"):
+        prior_search = marker.get("active_search")
+        if isinstance(prior_search, dict):
+            doc["_active_search"] = {**prior_search, "status": "CLOSED", "match_status": "CLOSED",
+                                     "matches": [], "followup_required": False}
+        summary["followup_search_required"] = False
+        return
+    office, base = _load_office_search_context(db, doc)
     life = doc.get("lifecycle") or {}
     search = capture_active_search(
         office + turns,
@@ -295,6 +303,9 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     if not prior and ((marker.get("summary") or {}).get("contact_permission") == "OPTED_OUT"
                       or (marker.get("summary") or {}).get("intent") == "OPT_OUT"):
         prior = {"summary": {"contact_permission": "OPTED_OUT"}}
+    old_summary = marker.get("summary") or {}
+    if not prior and (old_summary.get("outreach_hold") or old_summary.get("search_status") == "DEFERRED"):
+        prior = {"summary": {k: old_summary[k] for k in ("outreach_hold", "search_status", "intent", "contact_permission") if k in old_summary}}
     summary = classify_hybrid(
         turns, prior, llm_enabled=llm_enabled, propose=propose,
     )
@@ -370,7 +381,7 @@ def backfill_missing_active_searches(db, *, limit: int = 20) -> dict:
     for doc in cursor:
         examined += 1
         summary = (doc.get("commercial_intelligence") or {}).get("summary") or {}
-        if summary.get("contact_permission") == "OPTED_OUT":
+        if summary.get("contact_permission") == "OPTED_OUT" or summary.get("outreach_hold"):
             continue
         if not _is_authorized(db, doc):
             continue

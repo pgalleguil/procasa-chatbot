@@ -23,6 +23,7 @@ from .crm_executive_outbound import (OUTBOX, eligible_manual_session,
     verify_provider_sender_identity, OutboundBlocked)
 from .crm_executive_outbound_api import _session_status
 from .phone_utils import normalize_phone_strict
+from .broker_contact_role import broker_evidence
 from .whatsapp_client import _provider_message_id
 
 QUEUE = "crm_exec_silence_queue"
@@ -57,6 +58,21 @@ def _rollout_cutoff(now):
     return CHILE.localize(datetime(local.year, local.month, local.day)).astimezone(timezone.utc)
 
 
+def _classify_broker(db, doc):
+    evidence = broker_evidence(doc)
+    if not evidence:
+        return False
+    # Keep the classification separate from executive intent/SLA; a portal
+    # inquiry can establish the B2B role without inventing an executive reply.
+    match = {"_id": doc["_id"]}
+    if evidence.get("message_id"):
+        match["messages.message_id"] = evidence["message_id"]
+    db["leads"].update_one(match, {"$set": {
+        "commercial_intelligence.contact_role": evidence,
+    }})
+    return True
+
+
 def enqueue(db, lead_id, *, now=None):
     """One new anchor per classified lead; do not overwrite existing jobs."""
     if not enabled():
@@ -65,6 +81,10 @@ def enqueue(db, lead_id, *, now=None):
     doc = db["leads"].find_one({"_id": lead_id},
         {"commercial_intelligence": 1, "lifecycle": 1, "messages": 1})
     if not doc:
+        return
+    if _classify_broker(db, doc):
+        db[QUEUE].update_many({"lead_id": lead_id, "state": "pending"},
+                              {"$set": {"state": "held", "reason": "broker_collaboration"}})
         return
     ci = doc.get("commercial_intelligence") or {}
     lc = doc.get("lifecycle") or {}
@@ -317,6 +337,10 @@ def _decision(db, job, *, now):
     doc = db["leads"].find_one({"_id": job["lead_id"]})
     if not doc:
         return None, {"state": "HOLD", "reason": "lead_missing"}
+    if _classify_broker(db, doc):
+        return doc, {"state": "HOLD", "reason": "broker_collaboration"}
+    if (doc.get("automated_contact_hold") or {}).get("active") is True:
+        return doc, {"state": "HOLD", "reason": "administrative_contact_hold"}
     ci = doc.get("commercial_intelligence") or {}
     lc = doc.get("lifecycle") or {}
     if (str(lc.get("current_assignment_cycle_id")) != job["cycle"]

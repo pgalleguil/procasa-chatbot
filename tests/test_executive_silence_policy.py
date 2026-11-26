@@ -720,3 +720,38 @@ def test_operational_incident_is_deduplicated():
     worker._record_incident(db, job, "model_hold")
     assert incidents.update_one.call_args_list[0].args[0] == incidents.update_one.call_args_list[1].args[0]
     assert incidents.update_one.call_args.args[1]["$setOnInsert"]["attempt"] == 2
+
+
+def test_stale_before_provider_lease_recovered_only_once(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(worker, "_last_sequence_reconcile", None)
+    db, queue, outbox, leads, guard = [MagicMock() for _ in range(5)]
+    db.__getitem__.side_effect = lambda k: {worker.QUEUE: queue, worker.OUTBOX: outbox,
+        "leads": leads, worker.SESSION_GUARD: guard}[k]
+    job = {"_id": "root", "lead_id": "lead", "state": "evaluating",
+           "phase": "pre_provider", "lease": "old-lease",
+           "claimed_at": dt("2026-11-25T19:00:00"), "owner": "owner",
+           "cycle": "cycle", "session": "session", "anchor": "m1"}
+    queue.find.return_value.limit.return_value = [job]
+    lead = fixture()
+    lead.update(_id="lead", phone="+56912345678")
+    leads.find_one.return_value = lead
+    outbox.find_one.return_value = None
+    queue.update_one.return_value.modified_count = 1
+    incident = MagicMock()
+    monkeypatch.setattr(worker, "_record_incident", incident)
+    worker._reconcile_accepted_sequences(db, dt("2026-11-25T19:20:00"))
+    assert queue.update_one.call_args.args[0]["lease"] == "old-lease"
+    assert queue.update_one.call_args.args[1]["$set"]["state"] == "pending"
+    assert queue.update_one.call_args.args[1]["$set"]["pre_provider_recoveries"] == 1
+    guard.delete_one.assert_called_once_with({"_id": "session", "job_id": "root",
+                                             "lease": "old-lease", "state": "sending"})
+    queue.reset_mock()
+    guard.reset_mock()
+    monkeypatch.setattr(worker, "_last_sequence_reconcile", None)
+    queue.find.return_value.limit.return_value = [dict(job, phase="reservation_pending")]
+    worker._reconcile_accepted_sequences(db, dt("2026-11-25T19:20:00"))
+    queue.update_one.assert_not_called()
+    guard.delete_one.assert_not_called()
+    incident.assert_called_once()

@@ -374,7 +374,8 @@ def dispatch(db, job, doc, decision, *, now, post=None):
     key, token = str(job["session"]), str(uuid4())
     guard = db[SESSION_GUARD]
     try:
-        guard.insert_one({"_id": key, "token": token, "state": "sending", "at": now})
+        guard.insert_one({"_id": key, "token": token, "state": "sending", "at": now,
+                          "job_id": job.get("_id"), "lease": job.get("lease")})
     except DuplicateKeyError:
         existing = guard.find_one({"_id": key}, {"state": 1})
         return "session_paused" if (existing or {}).get("state") == "paused" else "session_busy"
@@ -482,6 +483,13 @@ def _dispatch_locked(db, job, doc, decision, *, now, post=None):
     if fresh != doc or rechecked["state"] != "CANDIDATE" or not _live_allowed(job):
         return "superseded_after_draft"
     phone = normalize_phone_strict(doc.get("phone"))
+    # Durable boundary: a stale worker whose pre-provider lease was revoked
+    # cannot reserve or send. Anything after this checkpoint is not replayed.
+    checkpoint = db[QUEUE].update_one({"_id": job["_id"], "lease": job["lease"],
+                                        "state": "evaluating", "phase": "pre_provider"},
+                                       {"$set": {"phase": "reservation_pending"}})
+    if checkpoint.matched_count != 1:
+        return "lease_lost_before_provider"
     # Per-stage reservation, still global across cycles for this phone.
     attempt = job.get("attempt", 1)
     key = _attempt_key(phone, attempt)
@@ -602,6 +610,22 @@ def _reconcile_accepted_sequences(db, now):
                                       "assignment_cycle_id": job["cycle"], "session_id": job["session"],
                                       "anchor_message_id": job["anchor"]})
             if not row or not row.get("provider_message_id") or not _time(row.get("provider_result_at")):
+                # The checkpoint is set before ANY reservation or provider call.
+                # Revoke the stale lease atomically before releasing its guard.
+                # Never recover a reservation_pending or uncertain-provider job.
+                if (job.get("phase") == "pre_provider" and job.get("lease")
+                        and not job.get("pre_provider_recoveries")
+                        and not db[OUTBOX].find_one({"_id": _attempt_key(phone, attempt)}, {"_id": 1})):
+                    recovered = db[QUEUE].update_one({"_id": job["_id"], "state": job["state"],
+                        "lease": job["lease"], "claimed_at": job["claimed_at"], "phase": "pre_provider"},
+                        {"$set": {"state": "pending", "reason": "recovered_before_provider",
+                                  "due_at": now, "pre_provider_recoveries": 1}, "$unset": {"lease": ""}})
+                    if recovered.modified_count == 1:
+                        db[SESSION_GUARD].delete_one({"_id": job["session"], "job_id": job["_id"],
+                                                     "lease": job["lease"], "state": "sending"})
+                    continue
+                if job.get("phase"):
+                    _record_incident(db, job, "stale_dispatch_requires_reconciliation")
                 continue
             # Acceptance is already durable. A new customer reply cancels
             # continuation; even if the reply raced scheduling, the next
@@ -639,7 +663,7 @@ def process_due(db, *, limit=3, now=None):
     # Do not retry a job leased during a crash: its dispatch may have succeeded.
     for _ in range(min(max(limit, 1), 5)):
         job = db[QUEUE].find_one_and_update({"state": "pending", "due_at": {"$lte": now}},
-            {"$set": {"state": "evaluating", "lease": str(uuid4()), "claimed_at": now, "sequence_started": True}},
+            {"$set": {"state": "evaluating", "lease": str(uuid4()), "claimed_at": now, "sequence_started": True, "phase": "pre_provider"}},
             sort=[("due_at", 1)], return_document=ReturnDocument.AFTER)
         if not job:
             break

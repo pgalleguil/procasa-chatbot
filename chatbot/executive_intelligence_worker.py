@@ -164,8 +164,16 @@ def _load_office_search_context(db, doc: dict) -> tuple[list[dict], dict]:
 
 def _merge_search_into_summary(db, doc: dict, turns: list[dict],
                                summary: dict) -> None:
-    office, base = _load_office_search_context(db, doc)
     marker = doc.get("commercial_intelligence") or {}
+    if (summary.get("outreach_hold") or summary.get("search_status") in {"DEFERRED", "COMPLETED"}
+            or summary.get("contact_permission") == "OPTED_OUT"):
+        prior_search = marker.get("active_search")
+        if isinstance(prior_search, dict):
+            doc["_active_search"] = {**prior_search, "status": "CLOSED", "match_status": "CLOSED",
+                                     "matches": [], "followup_required": False}
+        summary["followup_search_required"] = False
+        return
+    office, base = _load_office_search_context(db, doc)
     life = doc.get("lifecycle") or {}
     search = capture_active_search(
         office + turns,
@@ -189,6 +197,13 @@ def _merge_search_into_summary(db, doc: dict, turns: list[dict],
     search["last_matched_at"] = datetime.now(timezone.utc).isoformat()
     doc["_active_search"] = search
     if search.get("followup_required"):
+        # Office history supplies preferences, never creates a pending executive
+        # task without a captured commercial request / need after linkage.
+        from .executive_semantics import intent as captured_intent
+        current_evidence = any(m.get("actor_type") == "customer" and captured_intent(m.get("content") or "") in {"ASK_ALTERNATIVES", "SEARCH_UPDATED"} for m in turns)
+        current_evidence = current_evidence or summary.get("intent") in {"ASK_ALTERNATIVES", "SEARCH_UPDATED"}
+        if not current_evidence:
+            search["followup_required"] = False
         criteria = search["criteria"]
         canonical = {
             key: criteria[key] for key in
@@ -201,7 +216,7 @@ def _merge_search_into_summary(db, doc: dict, turns: list[dict],
         summary.setdefault("field_evidence", {})["DEMAND"] = search.get("field_evidence", {})
         summary["active_search_status"] = search["match_status"]
         # This is an outstanding opportunity, not a promise of a visit.
-        summary["followup_search_required"] = True
+        summary["followup_search_required"] = bool(search.get("followup_required"))
 
 
 def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
@@ -266,6 +281,8 @@ def _finish(db, doc: dict, *, summary: dict | None, status: str) -> str:
 
 def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) -> str:
     marker = doc.get("commercial_intelligence") or {}
+    if marker.get("excluded_noncommercial") is True:
+        return _finish(db, doc, summary=None, status="excluded_noncommercial")
     if not _is_authorized(db, doc):
         # On reassignment, do not interpret the previous owner's conversation.
         return _finish(db, doc, summary=None, status="stale_assignment")
@@ -286,6 +303,20 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
                  and m.get("source") == "crm_exec_silence_api"
                  and m.get("automatic") is True))
     ]
+    # A captured executive turn is not evidence of pre-connection management.
+    # Known current session epoch is a conservative lower bound; unavailable
+    # continuity means we may only interpret actual canonical captured turns.
+    if hasattr(db, "get_collection"):
+        from .executive_capture_continuity import continuity_since
+        epoch = continuity_since(db, session_id=session_id, owner_id=owner)
+        if epoch is not None:
+            def after_epoch(message):
+                try:
+                    stamp = datetime.fromisoformat(str(message.get("timestamp", "")).replace("Z", "+00:00"))
+                    return stamp.tzinfo is not None and stamp >= epoch
+                except (ValueError, TypeError):
+                    return False
+            turns = [m for m in turns if after_epoch(m)]
     if not turns:
         return _finish(db, doc, summary=None, status="no_eligible_turns")
     # No ad-hoc outreach, no automatic CRM results, no opt-out side effects.
@@ -295,6 +326,9 @@ def process_claimed(db, doc: dict, *, llm_enabled: bool = True, propose=None) ->
     if not prior and ((marker.get("summary") or {}).get("contact_permission") == "OPTED_OUT"
                       or (marker.get("summary") or {}).get("intent") == "OPT_OUT"):
         prior = {"summary": {"contact_permission": "OPTED_OUT"}}
+    old_summary = marker.get("summary") or {}
+    if not prior and (old_summary.get("outreach_hold") or old_summary.get("search_status") == "DEFERRED"):
+        prior = {"summary": {k: old_summary[k] for k in ("outreach_hold", "search_status", "intent", "contact_permission") if k in old_summary}}
     summary = classify_hybrid(
         turns, prior, llm_enabled=llm_enabled, propose=propose,
     )
@@ -370,7 +404,7 @@ def backfill_missing_active_searches(db, *, limit: int = 20) -> dict:
     for doc in cursor:
         examined += 1
         summary = (doc.get("commercial_intelligence") or {}).get("summary") or {}
-        if summary.get("contact_permission") == "OPTED_OUT":
+        if summary.get("contact_permission") == "OPTED_OUT" or summary.get("outreach_hold"):
             continue
         if not _is_authorized(db, doc):
             continue

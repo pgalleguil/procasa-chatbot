@@ -681,3 +681,42 @@ def test_successor_is_idempotent_and_never_same_day():
     lead["messages"].append({"channel": "executive_whatsapp", "actor_type": "customer"})
     worker._schedule_successor(db, job, lead)
     queue.update_one.assert_not_called()
+
+
+def test_reconcile_only_durable_accepted_stages_after_crash(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(worker, "_last_sequence_reconcile", None)
+    db, queue, outbox, leads = MagicMock(), MagicMock(), MagicMock(), MagicMock()
+    db.__getitem__.side_effect = lambda k: {worker.QUEUE: queue, worker.OUTBOX: outbox, "leads": leads}[k]
+    job = {"_id": "root", "lead_id": "lead", "state": "evaluating",
+           "claimed_at": dt("2026-11-25T19:00:00"), "owner": "owner",
+           "cycle": "cycle", "session": "session", "anchor": "m1"}
+    queue.find.return_value.limit.return_value = [job]
+    lead = fixture()
+    lead.update(_id="lead", phone="+56912345678")
+    leads.find_one.return_value = lead
+    successor = MagicMock()
+    monkeypatch.setattr(worker, "_schedule_successor", successor)
+    outbox.find_one.return_value = None
+    worker._reconcile_accepted_sequences(db, dt("2026-11-25T19:20:00"))
+    successor.assert_not_called()
+    queue.update_one.assert_not_called()
+    monkeypatch.setattr(worker, "_last_sequence_reconcile", None)
+    outbox.find_one.return_value = {"provider_message_id": "p2",
+                                    "provider_result_at": dt("2026-11-25T19:01:00")}
+    worker._reconcile_accepted_sequences(db, dt("2026-11-25T19:20:00"))
+    successor.assert_called_once_with(db, job, lead)
+    assert queue.update_one.call_args.args[1]["$set"]["state"] == "accepted"
+
+
+def test_operational_incident_is_deduplicated():
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, incidents = MagicMock(), MagicMock()
+    db.__getitem__.return_value = incidents
+    job = {"_id": "job", "lead_id": "lead", "owner": "owner", "session": "s", "attempt": 2}
+    worker._record_incident(db, job, "model_hold")
+    worker._record_incident(db, job, "model_hold")
+    assert incidents.update_one.call_args_list[0].args[0] == incidents.update_one.call_args_list[1].args[0]
+    assert incidents.update_one.call_args.args[1]["$setOnInsert"]["attempt"] == 2

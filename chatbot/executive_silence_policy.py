@@ -95,10 +95,31 @@ def next_followup_slot(value: datetime) -> datetime:
         day += timedelta(days=1)
 
 
+def _morning_slot(day):
+    return CHILE.localize(datetime(day.year, day.month, day.day, 9), is_dst=None).astimezone(timezone.utc)
+
+
+def _next_retry_slot(value: datetime, original_due: datetime) -> datetime:
+    """Missed evening contacts resume at opening on the next working day."""
+    local, due_local = as_chile(value), as_chile(original_due)
+    day = local.date()
+    if is_business_day(day):
+        if day > due_local.date() and local.hour < 9:
+            return _morning_slot(day)
+        if local.hour < 20:
+            return next_followup_slot(value)
+    day += timedelta(days=1)
+    while not is_business_day(day):
+        day += timedelta(days=1)
+    return _morning_slot(day)
+
+
 def _in_followup_slot(value: datetime, due: datetime) -> bool:
     local = as_chile(value)
     if not is_business_day(local.date()) or value < due:
         return False
+    if local.date() > as_chile(due).date() and 9 <= local.hour < 10:
+        return True
     return any(
         hour * 60 + minute <= local.hour * 60 + local.minute
         < hour * 60 + minute + SLOT_GRACE_MINUTES
@@ -250,7 +271,7 @@ def evaluate_silence(
     )
     if not _in_followup_slot(now, due) and not recovery_window:
         return _result("WAIT", "outside_send_window",
-                       due_at=next_followup_slot(now),
+                       due_at=_next_retry_slot(now, due),
                        anchor_message_id=last["message_id"], scenario=scenario)
     return _result("CANDIDATE", "customer_reply_overdue", due_at=due,
                    anchor_message_id=last["message_id"], scenario=scenario)

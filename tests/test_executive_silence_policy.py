@@ -591,3 +591,93 @@ def test_dialogue_is_held_for_separate_policy_not_sent(monkeypatch):
     update = queue.update_one.call_args.args[1]["$set"]
     assert update["state"] == "held"
     assert update["reason"] == "dialogue_policy_pending"
+
+
+def test_initial_three_stage_calendar_and_guardrails():
+    from chatbot.executive_silence_policy import sequence_due
+    lead = fixture("2026-11-25T12:00:00")
+    first = dt("2026-11-25T19:00:00")
+    assert sequence_due(first, 2) == dt("2026-11-26T12:30:00")
+    assert sequence_due(dt("2026-11-26T12:30:00"), 3) == dt("2026-11-30T18:00:00")
+    assert sequence_due(dt("2026-12-07T19:00:00"), 2) == dt("2026-12-09T12:30:00")
+    lead["messages"].append({"message_id": "auto1", "role": "assistant",
+                             "actor_type": "automation", "automatic": True,
+                             "source": "crm_exec_silence_api", "timestamp": first.isoformat()})
+    prior = ({"message_id": "auto1", "accepted_at": first},)
+    opts = dict(followup_attempts=1, verified_followups=prior)
+    assert decide(lead, now="2026-11-26T09:00:00", **opts)["state"] == "WAIT"
+    assert decide(lead, now="2026-11-26T12:30:00", **opts)["attempt"] == 2
+    assert decide(lead, now="2026-11-26T14:00:00", **opts)["due_at"] == dt("2026-11-27T09:00:00")
+    assert decide(lead, now="2026-11-27T09:00:00", **opts)["state"] == "CANDIDATE"
+    assert decide(lead, now="2026-11-26T12:30:00", **opts, contact_authorized=False)["state"] == "HOLD"
+    assert decide(lead, now="2026-11-26T12:30:00", **opts, scheduled_contact_clear=False)["state"] == "HOLD"
+    second = dt("2026-11-26T12:30:00")
+    lead["messages"].append({"message_id": "auto2", "role": "assistant",
+                             "actor_type": "automation", "automatic": True,
+                             "source": "crm_exec_silence_api", "timestamp": second.isoformat()})
+    opts = dict(followup_attempts=2, verified_followups=prior + ({"message_id": "auto2", "accepted_at": second},))
+    assert decide(lead, now="2026-11-30T18:00:00", **opts)["attempt"] == 3
+    assert decide(lead, now="2026-11-30T18:00:00", followup_attempts=3)["state"] == "HOLD"
+    lead["messages"].append({"role": "user", "actor_type": "customer",
+                             "channel": "executive_whatsapp", "timestamp": dt("2026-11-27T12:00:00").isoformat()})
+    assert decide(lead, now="2026-11-30T18:00:00", **opts)["state"] == "HOLD"
+
+
+def test_sequence_history_requires_exact_provider_and_canonical_proof():
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    from hashlib import sha256
+    phone = "+56912345678"
+    key = worker._attempt_key(phone, 1)
+    assert key == sha256(f"{worker.MODE}|{phone}".encode()).hexdigest()
+    assert len({worker._attempt_key(phone, n) for n in (1, 2, 3)}) == 3
+    job = {"attempt": 2, "owner": "owner", "cycle": "cycle", "session": "session",
+           "anchor": "m1", "lead_id": "lead"}
+    lead = fixture()
+    lead["_id"] = "lead"
+    text = "¿Sigue interesado en la propiedad?"
+    row = {"_id": key, "state": "accepted", "canonical_recorded": True,
+           "lead_id": "lead", "executive_id": "owner", "assignment_cycle_id": "cycle",
+           "session_id": "session", "anchor_message_id": "m1", "scenario": "INITIAL_NO_REPLY",
+           "provider_message_id": "p2", "provider_result_at": dt("2026-11-25T19:00:00"),
+           "content_sha256": sha256(text.encode()).hexdigest()}
+    auto = {"message_id": "auto", "silence_dispatch_id": key, "source": worker.MODE,
+            "actor_type": "automation", "automatic": True, "assigned_executive_id": "owner",
+            "assignment_cycle_id": "cycle", "wasender_session_id": "session",
+            "provider_message_id": "p2", "provider_echo_message_id": "echo", "content": text}
+    lead["messages"].append(auto)
+    db, outbox = MagicMock(), MagicMock()
+    db.__getitem__.return_value = outbox
+    outbox.find.return_value.limit.return_value = [row]
+    assert worker._sequence_evidence(db, lead, job, phone)[0]["message_id"] == "auto"
+    for patch in ({"state": "delivery_unknown"}, {"canonical_recorded": False},
+                  {"executive_id": "other"}, {"anchor_message_id": "other"}, {"provider_message_id": "other"}):
+        outbox.find.return_value.limit.return_value = [dict(row, **patch)]
+        assert worker._sequence_evidence(db, lead, job, phone) is None
+    outbox.find.return_value.limit.return_value = [row]
+    auto.pop("provider_echo_message_id")
+    assert worker._sequence_evidence(db, lead, job, phone) is None
+
+
+def test_successor_is_idempotent_and_never_same_day():
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, outbox, queue = MagicMock(), MagicMock(), MagicMock()
+    db.__getitem__.side_effect = lambda k: {worker.OUTBOX: outbox, worker.QUEUE: queue}[k]
+    lead = fixture()
+    lead.update(_id="lead", phone="+56912345678")
+    job = {"_id": "root", "lead_id": "lead", "owner": "owner", "cycle": "cycle",
+           "session": "session", "anchor": "m1", "attempt": 1}
+    outbox.find_one.return_value = {"provider_result_at": dt("2026-11-26T09:01:00")}
+    worker._schedule_successor(db, job, lead)
+    worker._schedule_successor(db, job, lead)
+    assert queue.update_one.call_args_list[0] == queue.update_one.call_args_list[1]
+    next_job = queue.update_one.call_args.args[1]["$setOnInsert"]
+    assert next_job["attempt"] == 2
+    assert next_job["due_at"] == dt("2026-11-27T12:30:00")
+    queue.reset_mock()
+    worker._schedule_successor(db, dict(job, attempt=3), lead)
+    queue.update_one.assert_not_called()
+    lead["messages"].append({"channel": "executive_whatsapp", "actor_type": "customer"})
+    worker._schedule_successor(db, job, lead)
+    queue.update_one.assert_not_called()

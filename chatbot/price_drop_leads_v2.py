@@ -18,7 +18,7 @@ from pymongo import ReturnDocument
 
 from .phone_utils import normalize_phone_strict, phone_identity_variants, has_real_phone
 from .price_drop_campaign_classifier import (
-    classify_price_drop_reply, lead_must_not_be_contacted, ALTERNATIVES,
+    classify_price_drop_reply, lead_must_not_be_contacted, executive_contact_suppression, ALTERNATIVES,
 )
 from .price_drop_campaign_filters import (
     effective_temperature, lead_age_details, normalize_lead_max_age_days,
@@ -186,7 +186,7 @@ def _contact_suppression_reasons(lead: dict | None) -> set[str]:
     """Explain the existing contact guard without weakening it globally."""
     if not isinstance(lead, dict):
         return set()
-    reasons: set[str] = set()
+    reasons: set[str] = executive_contact_suppression(lead)
     if (lead.get("contact_restrictions") or {}).get("marketing_opt_out") is True:
         reasons.add("explicit_opt_out")
     if lead.get("conversation_status") in {

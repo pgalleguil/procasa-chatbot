@@ -668,7 +668,7 @@ def test_successor_is_idempotent_and_never_same_day():
     lead.update(_id="lead", phone="+56912345678")
     job = {"_id": "root", "lead_id": "lead", "owner": "owner", "cycle": "cycle",
            "session": "session", "anchor": "m1", "attempt": 1}
-    outbox.find_one.return_value = {"provider_result_at": dt("2026-11-26T09:01:00")}
+    outbox.find_one.return_value = {"provider_result_at": datetime(2026, 11, 26, 12, 1)}
     worker._schedule_successor(db, job, lead)
     worker._schedule_successor(db, job, lead)
     assert queue.update_one.call_args_list[0] == queue.update_one.call_args_list[1]
@@ -867,3 +867,43 @@ def test_exact_delayed_initial_recovery_preserves_all_gates():
         assert decide(lead, now="2026-11-26T11:00:00", delayed_initial_until=end, **{flag: False})["state"] == "HOLD"
     lead["opted_out"] = True
     assert decide(lead, now="2026-11-26T11:00:00", delayed_initial_until=end)["state"] == "HOLD"
+
+
+def test_session_spacing_uses_persisted_utc_and_waits_three_minutes():
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, outbox = MagicMock(), MagicMock()
+    db.__getitem__.return_value = outbox
+    outbox.find_one.return_value = {
+        "attempted_at": datetime(2026, 11, 26, 14, 20, 30),
+        "provider_result_at": datetime(2026, 11, 26, 14, 20, 49)}
+    assert worker._session_spacing_due(db, "133517", dt("2026-11-26T11:23:48")) == dt("2026-11-26T11:23:49")
+    assert worker._session_spacing_due(db, "133517", dt("2026-11-26T11:23:49")) is None
+    assert outbox.find_one.call_args.args[0] == {"mode": worker.MODE, "session_id": "133517"}
+    outbox.find_one.return_value = None
+    assert worker._session_spacing_due(db, "another", dt("2026-11-26T11:20:50")) is None
+
+
+def test_spacing_requeues_without_provider_call(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, queue = MagicMock(), MagicMock()
+    db.__getitem__.return_value = queue
+    monkeypatch.setattr(worker, "enabled", lambda: True)
+    monkeypatch.setattr(worker, "_reconcile_accepted_sequences", lambda *a: None)
+    job = {"_id": "job", "lease": "lease", "session": "133517"}
+    queue.find_one_and_update.side_effect = [job, None]
+    monkeypatch.setattr(worker, "_decision", lambda *a, **kw: ({}, {
+        "state": "CANDIDATE", "reason": "customer_reply_overdue"}))
+    monkeypatch.setattr(worker, "dispatch", lambda *a, **kw: "retry_session_spacing")
+    target = dt("2026-11-26T11:23:49")
+    monkeypatch.setattr(worker, "_session_spacing_due", lambda *a: target)
+    worker.process_due(db, now=dt("2026-11-26T11:21:00"))
+    assert queue.update_one.call_args.args[1]["$set"]["state"] == "pending"
+    assert queue.update_one.call_args.args[1]["$set"]["due_at"] == target
+
+
+def test_persisted_date_is_utc_but_external_naive_string_is_rejected():
+    from chatbot import executive_silence_worker as worker
+    assert worker._persisted_utc(datetime(2026, 11, 26, 14, 20)) == dt("2026-11-26T11:20:00")
+    assert worker._persisted_utc("2026-11-26T14:20:00") is None

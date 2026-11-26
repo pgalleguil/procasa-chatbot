@@ -54,3 +54,49 @@ def test_dense_cannot_override_budget():
     assert r["mode"] == "hybrid"
     assert r["compatible_count"] == 1
     assert r["excluded"] == {"OVER_BUDGET": 1}
+
+
+def test_reranker_cannot_promote_review_or_excluded():
+    class Reranker:
+        def score(self, query, texts):
+            assert all("prohibido" not in t for t in texts)
+            return [10 if "preferida" in t else 0 for t in texts]
+    rows = [row("a", description="patio amplio"), row("b", description="preferida"),
+            row("x", price_clp=200_000_000, description="prohibido"),
+            row("y", source_type="EXTERNAL", description="preferida")]
+    r = LocalPropertyIndex(rows, reranker=Reranker()).search(PROFILE, now=NOW)
+    assert r["compatible"][0]["listing_key"] == "b"
+    assert r["review"][0]["listing_key"] == "y"
+    assert r["excluded"] == {"OVER_BUDGET": 1}
+
+def test_verified_geography():
+    target = {"verified": True, "latitude": -33.5, "longitude": -70.7, "radius_m": 1000}
+    p = {**PROFILE, "verified_location": target}
+    rows = [row("near", geo=target), row("far", geo={**target, "latitude": -34.0}), row("unknown")]
+    r = LocalPropertyIndex(rows).search(p, now=NOW)
+    assert r["compatible_count"] == 1
+    assert r["review_count"] == 1
+    assert r["excluded"] == {"OUTSIDE_RADIUS": 1}
+
+def test_incremental_cache(tmp_path):
+    np = pytest.importorskip("numpy")
+    from chatbot.local_embedding_cache import EmbeddingCache
+    class Encoder:
+        def __init__(self):
+            self.calls = []
+        def encode(self, texts):
+            self.calls.extend(texts)
+            return np.array([[1., 0.] for _ in texts])
+    e = Encoder()
+    c = EmbeddingCache(tmp_path / "cache.db", "model-a")
+    c.load_or_encode(["a","b"],["uno","dos"],e)
+    c.load_or_encode(["b","a","c"],["dos","uno actualizado","dos"],e)
+    assert e.calls == ["uno","dos","uno actualizado"]
+    EmbeddingCache(tmp_path / "cache.db", "model-b").load_or_encode(["a"],["uno"],e)
+    assert e.calls[-1] == "uno"
+
+def test_cache_namespace_needs_immutable_revision():
+    from chatbot.local_embedding_cache import model_namespace
+    with pytest.raises(ValueError):
+        model_namespace("model/name","main",version="1")
+    assert model_namespace("model/name","a"*40,version="1") != model_namespace("model/name","b"*40,version="1")

@@ -79,9 +79,25 @@ def filter_property(profile, row, now):
         elif actual < minimum:
             return "excluded", ["MINIMUM_" + key.upper()]
     if profile.get("location_targets") or profile.get("verified_location"):
-        # Until explicit geographic filtering is implemented here, do not
-        # claim a distance constraint is satisfied.
-        missing.append("LOCATION_REVIEW_REQUIRED")
+        target = profile.get("verified_location") or {}
+        geo = row.get("geo") or {}
+        def coordinates(obj):
+            lat, lon = obj.get("latitude"), obj.get("longitude")
+            if (obj.get("verified") is True and all(isinstance(v, (int, float)) and
+                    not isinstance(v, bool) and math.isfinite(v) for v in (lat, lon))
+                    and -90 <= lat <= 90 and -180 <= lon <= 180):
+                return lat, lon
+            return None
+        a, b = coordinates(target), coordinates(geo)
+        radius = number(target.get("radius_m"))
+        if not a or not b or not radius:
+            missing.append("LOCATION_REVIEW_REQUIRED")
+        else:
+            lat1, lon1, lat2, lon2 = map(math.radians, (*a, *b))
+            h = math.sin((lat2-lat1)/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin((lon2-lon1)/2)**2
+            distance = 6371000 * 2 * math.asin(math.sqrt(min(1, max(0, h))))
+            if distance > radius:
+                return "excluded", ["OUTSIDE_RADIUS"]
     if row.get("source_type") != "PROCASA":
         missing.append("EXTERNAL_HUMAN_VERIFICATION")
     else:
@@ -105,7 +121,7 @@ def validate_profile(profile):
             raise ValueError("invalid minimum attribute: " + key)
 
 class LocalPropertyIndex:
-    def __init__(self, rows, embedder=None):
+    def __init__(self, rows, embedder=None, *, cache=None, reranker=None, rerank_pool=50):
         self.rows = list(rows)
         keys = [r.get("listing_key") for r in self.rows]
         if any(not isinstance(k, str) or not k for k in keys) or len(set(keys)) != len(keys):
@@ -116,7 +132,15 @@ class LocalPropertyIndex:
         self.avglen = max(1, sum(self.lengths) / max(1, len(self.rows)))
         self.df = Counter(word for counts in self.counts for word in counts)
         self.embedder = embedder
-        self.vectors = embedder.encode(self.texts) if embedder and self.rows else None
+        self.reranker = reranker
+        if not isinstance(rerank_pool, int) or not 1 <= rerank_pool <= 500:
+            raise ValueError("rerank_pool must be 1..500")
+        self.rerank_pool = rerank_pool
+        self.text_by_key = dict(zip(keys, self.texts))
+        self.vectors = None
+        if embedder and self.rows:
+            self.vectors = (cache.load_or_encode(keys, self.texts, embedder)
+                            if cache else embedder.encode(self.texts))
 
     def _bm25(self, i, terms):
         value = 0.
@@ -165,7 +189,20 @@ class LocalPropertyIndex:
                 "score": score, "bm25": lexical, "cosine": dense, "review_reasons": reasons})
         for group in groups.values():
             group.sort(key=lambda x: (-x["score"], x["listing_key"]))
+            if self.reranker and group:
+                # Rerank separately within each safety tier. Never promote
+                # an unverified row to compatible or reintroduce exclusions.
+                head = group[:max(limit, self.rerank_pool)]
+                scores = list(self.reranker.score(profile_text(profile),
+                              [self.text_by_key[x["listing_key"]] for x in head]))
+                if len(scores) != len(head) or any(not math.isfinite(float(s)) for s in scores):
+                    raise ValueError("invalid reranker scores")
+                for item, score in zip(head, scores):
+                    item["reranker_score"] = float(score)
+                head.sort(key=lambda x: (-x["reranker_score"], -x["score"], x["listing_key"]))
+                group[:len(head)] = head
         return {"mode": "hybrid" if query_vector is not None else "lexical",
+                "reranked": self.reranker is not None,
                 "scanned": len(self.rows), "excluded": dict(rejected),
                 "compatible_count": len(groups["compatible"]), "review_count": len(groups["review"]),
                 "compatible": groups["compatible"][:limit], "review": groups["review"][:limit]}

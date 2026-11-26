@@ -17,7 +17,7 @@ import requests
 from config import Config
 from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment, sequence_due, _plain
 from .business_calendar import add_business_minutes, as_chile, CHILE
-from .executive_silence_llm import draft_followup, initial_recovery_draft
+from .executive_silence_llm import draft_followup, initial_recovery_draft, verified_initial_stage_fallback
 from .executive_capture_continuity import continuity_since, record_status, recover_provider_continuity
 from .crm_executive_outbound import (OUTBOX, eligible_manual_session,
     verify_provider_sender_identity, OutboundBlocked)
@@ -445,27 +445,42 @@ def _dispatch_locked(db, job, doc, decision, *, now, post=None):
         db[QUEUE].update_one({"_id": job["_id"], "lease": job["lease"]},
                              {"$set": {"draft_error": reason}})
         recovery_end = _recovery_until(job)
-        # A pre-provider truncation or malformed draft can be retried once.
-        # Never retry missing context or an explicit HOLD, and never retry a send.
-        if (recovery_end is None or now >= recovery_end
-                or decision["scenario"] != "INITIAL_NO_REPLY"
-                or reason == "context_unavailable"):
-            if reason in {"draft_incomplete", "draft_invalid", "draft_schema", "draft_format"} and not job.get("draft_retry_count"):
-                return "retry_draft_before_provider"
+        # Recover only technical failures, never an explicit model HOLD or
+        # a safety/context rejection. The original same-day recovery remains
+        # compatible with the previously reviewed pilot.
+        retryable = reason in {"draft_incomplete", "draft_invalid", "draft_schema", "draft_format"}
+        exceptional = (recovery_end is not None and now < recovery_end
+                       and decision["scenario"] == "INITIAL_NO_REPLY"
+                       and reason != "context_unavailable")
+        if not exceptional and retryable and not job.get("draft_retry_count"):
+            return "retry_draft_before_provider"
+        if decision["scenario"] != "INITIAL_NO_REPLY" or not (exceptional or retryable):
             return "model_invalid"
         try:
-            text = initial_recovery_draft(db, doc, anchor)
+            text = (initial_recovery_draft(db, doc, anchor) if exceptional else
+                    verified_initial_stage_fallback(db, doc, anchor, attempt=job.get("attempt", 1)))
         except ValueError:
             return "model_invalid"
-        usage = {"version": "verified_initial_recovery_v1", "fallback_reason": reason}
+        usage = {"version": "verified_initial_recovery_v1" if exceptional else "verified_stage_fallback_v1",
+                 "fallback_reason": reason}
         if not text:
             return "model_invalid"
     except Exception as exc:
-        # Provider has not been called and no outbox exists yet. Do not pause
-        # the executive session for an LLM transport failure.
+        # No provider call or reservation has occurred. Retry a transport
+        # failure once; then use verified contextual copy, if possible.
         db[QUEUE].update_one({"_id": job["_id"], "lease": job["lease"]},
                              {"$set": {"draft_error": type(exc).__name__}})
-        return "model_invalid" if job.get("draft_retry_count") else "retry_draft_before_provider"
+        if not job.get("draft_retry_count"):
+            return "retry_draft_before_provider"
+        if decision["scenario"] != "INITIAL_NO_REPLY":
+            return "model_invalid"
+        try:
+            text = verified_initial_stage_fallback(db, doc, anchor, attempt=job.get("attempt", 1))
+        except Exception:
+            return "model_invalid"
+        if not text:
+            return "model_invalid"
+        usage = {"version": "verified_stage_fallback_v1", "fallback_reason": type(exc).__name__}
     if text and any(isinstance(m, dict) and m.get("channel") == "executive_whatsapp"
                     and _plain(m.get("content")) == _plain(text)
                     for m in doc.get("messages") or []):

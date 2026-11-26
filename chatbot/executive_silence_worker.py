@@ -7,6 +7,8 @@ are checked automatically. Production sending remains separately gated.
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import os
+import logging
+import time
 from uuid import uuid4
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -26,6 +28,8 @@ from .whatsapp_client import _provider_message_id
 QUEUE = "crm_exec_silence_queue"
 MODE = "crm_exec_silence_api"
 SESSION_GUARD = "crm_exec_silence_session_guard"
+logger = logging.getLogger(__name__)
+_last_sequence_reconcile = None
 SESSION_STOP = {"rate_limited", "rejected", "delivery_unknown",
                 "accepted_without_provider_id", "accepted_unrecorded", "session_unhealthy"}
 
@@ -36,6 +40,7 @@ def enabled():
 
 def ensure_indexes(db):
     db[QUEUE].create_index([("state", 1), ("due_at", 1)])
+    db[QUEUE].create_index([("state", 1), ("sequence_started", 1), ("claimed_at", 1)])
     db[OUTBOX].create_index([("mode", 1), ("phone", 1), ("attempted_at", 1)])
 
 
@@ -215,6 +220,9 @@ def _has_executive_dialogue(doc):
     existing dialogue into a never-answered first contact. Unknown attribution
     in this channel is not proof that the customer never replied.
     """
+    contact = ((doc.get("commercial_intelligence") or {}).get("summary") or {}).get("contact") or {}
+    if contact.get("customer_responded") is True or contact.get("bilateral_observed") is True or contact.get("last_customer_at"):
+        return True
     return any(
         isinstance(m, dict)
         and m.get("channel") == "executive_whatsapp"
@@ -299,6 +307,9 @@ def _decision(db, job, *, now):
             {"phone": {"$in": [phone, phone.lstrip("+"), phone.lstrip("+")[2:]]}}],
             "status": {"$nin": ["completed", "cancelled", "canceled", "closed", "done", "sent", "error"]}}, {"_id": 1}):
         return doc, {"state": "HOLD", "reason": "crm_task_pending"}
+    auth = ((doc.get("crm_hot_auto") or {}).get("whatsapp_contact_authorization") or {})
+    if isinstance(auth, dict) and (auth.get("revoked_at") is not None or str(auth.get("status") or "").upper() in {"REVOKED", "DENIED", "OPTED_OUT"}):
+        return doc, {"state": "HOLD", "reason": "contact_authorization_revoked"}
     authorized = _contact_evidence(db, doc, job, phone, now)
     # For later stages, verified first-stage portal evidence remains tied to
     # this original inquiry, not a new consent or an unrelated campaign.
@@ -562,14 +573,73 @@ def _schedule_successor(db, job, doc):
     }}, upsert=True)
 
 
+def _reconcile_accepted_sequences(db, now):
+    """Recover only acknowledged sends interrupted before successor insertion.
+
+    Bounded indexed scan, at most once every five minutes per process.
+    Never resend, reset a reservation, unlock a session, or infer acceptance.
+    """
+    global _last_sequence_reconcile
+    tick = time.monotonic()
+    if _last_sequence_reconcile is not None and tick - _last_sequence_reconcile < 300:
+        return
+    _last_sequence_reconcile = tick
+    try:
+        rows = db[QUEUE].find({"state": {"$in": ["evaluating", "error"]},
+                              "sequence_started": True,
+                              "claimed_at": {"$lte": now - timedelta(minutes=10)}}).limit(5)
+        for job in rows:
+            attempt = job.get("attempt", 1)
+            doc = db["leads"].find_one({"_id": job["lead_id"]})
+            if not doc:
+                continue
+            phone = normalize_phone_strict(doc.get("phone"))
+            if not phone:
+                continue
+            row = db[OUTBOX].find_one({"_id": _attempt_key(phone, attempt),
+                                      "state": "accepted", "canonical_recorded": True,
+                                      "lead_id": job["lead_id"], "executive_id": job["owner"],
+                                      "assignment_cycle_id": job["cycle"], "session_id": job["session"],
+                                      "anchor_message_id": job["anchor"]})
+            if not row or not row.get("provider_message_id") or not _time(row.get("provider_result_at")):
+                continue
+            # Acceptance is already durable. A new customer reply cancels
+            # continuation; even if the reply raced scheduling, the next
+            # stage will independently check the whole timeline.
+            if not _has_executive_dialogue(doc):
+                _schedule_successor(db, job, doc)
+            db[QUEUE].update_one({"_id": job["_id"], "state": job["state"],
+                                  "claimed_at": job["claimed_at"]},
+                                 {"$set": {"state": "accepted", "reason": "accepted_reconciled"},
+                                  "$unset": {"lease": ""}})
+    except Exception as exc:
+        logger.warning("EXEC_SILENCE reconcile_failure=%s", type(exc).__name__)
+
+
+def _record_incident(db, job, reason):
+    """Persist a deduplicated operational incident, without another provider call."""
+    try:
+        key = sha256(f"{job['_id']}|{reason}".encode()).hexdigest()
+        db["crm_exec_silence_incidents"].update_one({"_id": key}, {"$setOnInsert": {
+            "job_id": job["_id"], "lead_id": job.get("lead_id"),
+            "owner": job.get("owner"), "session": job.get("session"),
+            "attempt": job.get("attempt", 1), "reason": reason,
+            "status": "open", "created_at": datetime.now(timezone.utc),
+        }}, upsert=True)
+        logger.warning("EXEC_SILENCE_INCIDENT job=%s reason=%s", job["_id"], reason)
+    except Exception as exc:
+        logger.error("EXEC_SILENCE incident_write_failed=%s", type(exc).__name__)
+
+
 def process_due(db, *, limit=3, now=None):
     if not enabled():
         return
     now = now or datetime.now(timezone.utc)
+    _reconcile_accepted_sequences(db, now)
     # Do not retry a job leased during a crash: its dispatch may have succeeded.
     for _ in range(min(max(limit, 1), 5)):
         job = db[QUEUE].find_one_and_update({"state": "pending", "due_at": {"$lte": now}},
-            {"$set": {"state": "evaluating", "lease": str(uuid4()), "claimed_at": now}},
+            {"$set": {"state": "evaluating", "lease": str(uuid4()), "claimed_at": now, "sequence_started": True}},
             sort=[("due_at", 1)], return_document=ReturnDocument.AFTER)
         if not job:
             break
@@ -587,10 +657,14 @@ def process_due(db, *, limit=3, now=None):
                     extra = {"draft_retry_count": 1} if state == "retry_draft_before_provider" else {}
                     _finish(db, job, state="pending", reason=state, due_at=datetime.now(timezone.utc) + timedelta(minutes=1), **extra)
                 else:
-                    _finish(db, job, state=state, reason=state if state in SESSION_STOP or state == "session_paused" else decision["reason"])
+                    if state in SESSION_STOP | {"session_paused", "model_invalid", "model_hold", "session_changed", "shadow_candidate"}:
+                        _record_incident(db, job, state)
+                    _finish(db, job, state=state, reason=state if state in SESSION_STOP | {"session_paused", "model_invalid", "model_hold", "session_changed", "shadow_candidate"} else decision["reason"])
             else:
                 _finish(db, job, state="held", reason=decision["reason"])
         except OutboundBlocked as exc:
+            _record_incident(db, job, exc.code)
             _finish(db, job, state="held", reason=exc.code)
         except Exception as exc:
+            _record_incident(db, job, type(exc).__name__)
             _finish(db, job, state="error", reason=type(exc).__name__)

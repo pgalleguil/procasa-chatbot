@@ -303,3 +303,32 @@ def test_automatic_followup_never_counts_as_human_management():
     assert result["contact"]["window_agent_messages"] == 0
     assert result["contact"]["last_actor"] == "automation"
     assert result["contact"]["formal_crm_management"] is False
+
+
+@pytest.mark.parametrize("message,expected,reason", [
+    ("Solo estaba mirando. No estaré en condiciones de ahorrar por el próximo año. Más adelante quizás hablemos.", "SEARCH_DEFERRED", "search_deferred"),
+    ("No gracias", "CONTACT_DECLINED", "contact_declined"),
+    ("Hola, no sé ni que es procasa", "CONTACT_UNRECOGNIZED", "contact_unrecognized"),
+    ("Finalmente nos desidimos por otro departamento. Muchas gracias.", "SEARCH_COMPLETED", "search_completed"),
+    ("No ne respindiste", "RESPONSE_PENDING", None),
+])
+def test_observed_customer_cases(message, expected, reason):
+    summary = classify_hybrid([turn("customer", message)], llm_enabled=False)
+    assert summary["intent"] == expected
+    assert summary["campaign"]["reason"] == reason
+    assert summary["contact_permission"] == "UNKNOWN"
+
+
+def test_deferred_outreach_hold_survives_acknowledgment_and_model_disagreement():
+    customer = turn("customer", "Solo estaba mirando. Más adelante quizás hablemos.", "c1")
+    first = classify_hybrid([customer], llm_enabled=False)
+    ack = turn("customer", "Gracias", "c2")
+    ack["timestamp"] = "2026-11-16T16:22:00+00:00"
+    second = classify_hybrid([customer, ack], previous={"summary": first},
+                             llm_enabled=True, propose=lambda *_: {
+        "intent": "INTERESTED", "search": {}, "confidence": .99, "needs_review": False,
+        "evidence": {"message_id": "c2", "quote": "Gracias"}})
+    assert second["search_status"] == "DEFERRED"
+    assert second["outreach_hold"] == "SEARCH_DEFERRED"
+    assert second["campaign"]["reason"] == "search_deferred"
+    assert second["contact"]["awaiting"] == "NONE"

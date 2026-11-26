@@ -9,8 +9,11 @@ import re
 from .executive_silence_policy import _plain, _time
 from .executive_conversation_intelligence import _safe, _prompt_state
 
-VERSION = "silence_copy_llm_v4"
+VERSION = "silence_copy_llm_v5"
 MAX_TURNS = 12
+MAX_OFFICE_TURNS = 20
+OFFICE_SOURCES = {"", "office_whatsapp", "wasender_inbound", "whatsapp_inbound", "whatsapp", "chatbot"}
+OFFICE_CHANNELS = {"", "office_whatsapp", "whatsapp"}
 MAX_INPUT_CHARS = 6500
 MAX_OUTPUT_TOKENS = 600
 
@@ -24,23 +27,17 @@ Si hay evidencia concreta de que el cliente espera una acción nuestra, pidió o
 momento, rechazó el contacto, cerró la búsqueda, o hay una visita, llamada u oferta
 pendiente, devuelve HOLD. La falta de respuesta por sí sola NO justifica HOLD.
 En INITIAL_NO_REPLY no supongas que la persona respondió o recibió el mensaje.
-Para attempt=1 retoma la consulta inicial. Para attempt=2 aporta ayuda diferente,
-por ejemplo revisar otras opciones o resolver una duda de compra/arriendo.
-Para attempt=3 pregunta si sigue buscando y aclara que no insistiremos si no
-necesita ayuda. No repitas mensajes previos ni sugieras que hubo una respuesta.
+Lee office_turns ANTES de turns. CLIENTE_OFICINA es el cliente hablando con el chatbot de oficina; CHATBOT_OFICINA es lo que ya se le informó. No confundas esos mensajes con una respuesta al ejecutivo. No inventes información del cliente ni tomes afirmaciones del chatbot como hechos actuales de la propiedad. Si ya dijo qué busca, usa esa información y pregunta solo por lo que falta; si no lo dijo, invítalo a contar sus necesidades.\nPara attempt=1 continúa naturalmente el contacto previo y descubre qué busca o cómo avanzar con lo que ya sabemos. Para attempt=2 ofrece revisar alternativas o resolver una duda pendiente, con un enfoque diferente. Para attempt=3 confirma si sigue buscando y aclara que no insistiremos si no necesita ayuda. No repitas preguntas contestadas ni mensajes anteriores. No presupongas que la propiedad no le gustó. No reinicies el diálogo con una presentación o saludo redundante.
 Los turnos SEGUIMIENTO_PREVIO son mensajes salientes, nunca respuestas del cliente.
 Si consultó una propiedad y la operación no se conoce, pregunta si busca comprar
 o arrendar solo si ambas operaciones están publicadas. Si ya se conoce, no lo preguntes.
-En venta, ofrece ayuda con el proceso de compra, financiamiento o características
-de interés, según la necesidad demostrada; no asumas crédito preaprobado.
-En arriendo, ofrece orientación sobre postulación o requisitos, sin pedir documentos.
+No menciones financiamiento, requisitos o postulación por defecto: solo si el historial demuestra que esa es la necesidad. Prioriza preferencias de ubicación, tipo, características, presupuesto o alternativas, una a la vez, sin solicitar datos ya conocidos.
 Si el cliente pidió alternativas, retoma sus preferencias y pregunta qué desea ajustar.
 Si ya recibió alternativas, pregunta qué le parecieron, sin repetir datos ya entregados.
 Si hay indicios de uso comercial, pregunta por el uso previsto cuando sea pertinente.
 No inventes propiedades, atributos, precios, disponibilidad, citas, rentabilidad,
 requisitos específicos ni promesas. Usa tipo y comuna solo si están verificados.
-Escribe español natural de Chile, trato de usted, cálido, breve, una sola pregunta
-concreta y útil. Varía la apertura según el diálogo; no repitas el saludo anterior.
+Escribe español natural de Chile, trato de usted, cálido y breve. Una pregunta concreta como máximo, o una invitación natural a contar qué busca. No repitas el saludo anterior. No uses fórmulas como “respecto a la propiedad consultada” ni preguntas cerradas de oferta de ayuda genérica.
 No digas seguimiento automático, mensaje automático, IA, chatbot, robot, sistema,
 ni uses frases de control interno. No afirmes ser el ejecutivo ni finjas acciones
 humanas. Puedes hablar en nombre de PROCASA como equipo cuando sea pertinente.
@@ -51,8 +48,7 @@ en Rancagua, ¿está buscando comprar o arrendar? Así podemos orientarle mejor.
 Ejemplo tras alternativas: "¿Alguna de las propiedades que le compartimos se acerca
 a lo que busca o prefiere que revisemos otras opciones?"
 No menciones números, códigos, nombres, direcciones, enlaces, datos sensibles,
-urgencia artificial, descuentos ni emojis. Máximo 230 caracteres, una pregunta
-con signos ¿?. JSON exclusivo: {"decision":"DRAFT" o "HOLD","message":"..."}.
+urgencia artificial, descuentos ni emojis. Máximo 230 caracteres; una pregunta con signos ¿? o una invitación concreta sin pregunta. JSON exclusivo: {"decision":"DRAFT" o "HOLD","message":"..."}.
 Para HOLD devuelve message vacío. No devuelvas explicaciones."""
 
 def property_context(db, lead, anchor):
@@ -91,6 +87,42 @@ def property_context(db, lead, anchor):
                                        if op.get(k) is True]}
 
 
+def office_history(lead, anchor):
+    """Verified same-lead commercial office dialogue before the human anchor.
+
+    Never query personal chats. Legacy unlabelled messages require matching
+    conversation_id and explicit bot/customer attribution. Preserve order.
+    """
+    conversation = str(lead.get("conversation_id") or "")
+    cutoff = _time(anchor.get("timestamp"))
+    if cutoff is None:
+        return []
+    rows = []
+    for index, m in enumerate(lead.get("messages") or []):
+        if not isinstance(m, dict):
+            continue
+        source = str(m.get("source") or "").lower()
+        channel = str(m.get("channel") or "").lower()
+        if source not in OFFICE_SOURCES or channel not in OFFICE_CHANNELS:
+            continue
+        mid = str(m.get("conversation_id") or "")
+        if (mid and conversation and mid != conversation) or (
+                not source and not channel and (not conversation or mid != conversation)):
+            continue
+        role, actor = m.get("role"), m.get("actor_type")
+        if actor == "customer" and role in {"user", "customer"}:
+            label = "CLIENTE_OFICINA"
+        elif actor == "bot" and role == "assistant":
+            label = "CHATBOT_OFICINA"
+        else:
+            continue
+        stamp, content = _time(m.get("timestamp")), m.get("content")
+        if stamp is not None and stamp < cutoff and isinstance(content, str) and content.strip():
+            rows.append((stamp, index, {"actor": label, "texto": _safe(content, limit=350)}))
+    rows.sort(key=lambda item: (item[0], item[1]))
+    return [row[2] for row in rows]
+
+
 def build_context(db, lead, job, anchor, scenario, attempt):
     ci = lead.get("commercial_intelligence") or {}
     summary = ci.get("summary") or {}
@@ -115,7 +147,10 @@ def build_context(db, lead, job, anchor, scenario, attempt):
     context = {"scenario": scenario, "attempt": attempt,
                "previous_state": _prompt_state(summary),
                "property": property_context(db, lead, anchor),
+               "office_turns": office_history(lead, anchor)[-MAX_OFFICE_TURNS:],
                "turns": [row[1] for row in turns[-MAX_TURNS:]]}
+    while len(json.dumps(context, ensure_ascii=False)) > MAX_INPUT_CHARS and context["office_turns"]:
+        context["office_turns"].pop(0)
     while len(json.dumps(context, ensure_ascii=False)) > MAX_INPUT_CHARS and len(context["turns"]) > 1:
         context["turns"].pop(0)
     if not context["turns"] or len(json.dumps(context, ensure_ascii=False)) > MAX_INPUT_CHARS:
@@ -133,7 +168,8 @@ def validate_draft(raw):
         raise ValueError("draft_decision")
     msg = " ".join(msg.split()).strip()
     plain = _plain(msg)
-    if not (20 <= len(msg) <= 230 and msg.count("?") == 1 and "¿" in msg):
+    if not (20 <= len(msg) <= 230 and msg.count("?") <= 1 and msg.count("¿") == msg.count("?")
+            and (msg.count("?") == 1 or re.search(r"\b(?:cuenteme|indiqueme|comenteme|puede contarnos|puede indicarnos|puede comentarnos|si aun esta buscando|si todavia esta buscando)\b", plain))):
         raise ValueError("draft_format")
     if (re.search(r"[0-9@<>\[\]{}*]|https?://|www\.", msg, flags=re.I)
             or re.search(r"\b(?:disponible|disponibilidad|confirmad[oa]|garantiz\w*|"
@@ -223,15 +259,17 @@ def verified_initial_stage_fallback(db, lead, anchor, *, attempt):
     ops = set(prop.get("operaciones_publicadas", []))
     if not kind or not commune or not ops or not ops <= {"VENTA", "ARRIENDO"}:
         return None
+    # Office history may include previously answered questions or promises.
+    # If the model cannot interpret it, do not replace it with blind copy.
+    if office_history(lead, anchor):
+        return None
     if attempt == 1:
-        text = initial_recovery_draft(db, lead, anchor)
-        if text:
-            return text
-    if attempt == 1:
-        question = ("¿está buscando comprar o arrendar?" if len(ops) == 2 else
-                    "¿le gustaría recibir orientación sobre el proceso de compra?" if ops == {"VENTA"} else
-                    "¿le gustaría recibir orientación sobre los requisitos de arriendo?")
-        text = "Hola, por su consulta sobre la propiedad en " + commune + ", " + question
+        if len(ops) == 2:
+            text = "Por la propiedad que le compartimos en " + commune + ", ¿está buscando comprar o arrendar? Así podemos orientar mejor su búsqueda."
+        else:
+            reference = {"casa": "casa", "departamento": "departamento"}.get(kind, "propiedad")
+            text = ("Si sigue buscando " + reference + " en " + commune +
+                    ", cuénteme qué tiene en mente y podemos revisar otras opciones.")
     elif attempt == 2:
         text = ("Hola, ¿prefiere que revisemos otras propiedades en " + commune +
                 " que se ajusten mejor a lo que está buscando?")

@@ -67,7 +67,31 @@ class TestExecutiveSilencePolicy(TestCase):
         self.assertEqual(decide(lead, now="2026-11-25T19:59:00")["state"], "CANDIDATE")
         result = decide(lead, now="2026-11-25T20:00:00")
         self.assertEqual(result["reason"], "outside_send_window")
-        self.assertEqual(result["due_at"], dt("2026-11-26T18:00:00"))
+        self.assertEqual(result["due_at"], dt("2026-11-26T09:00:00"))
+
+    def test_missed_evening_recovers_next_workday_morning_only(self):
+        lead = fixture("2026-11-25T12:14:00")
+        for now in ("2026-11-25T20:00:00", "2026-11-25T21:00:02",
+                    "2026-11-26T08:59:59"):
+            result = decide(lead, now=now)
+            self.assertEqual(result["state"], "WAIT")
+            self.assertEqual(result["due_at"], dt("2026-11-26T09:00:00"))
+        self.assertEqual(decide(lead, now="2026-11-26T09:00:00")["state"], "CANDIDATE")
+        self.assertEqual(decide(lead, now="2026-11-26T09:59:59")["state"], "CANDIDATE")
+        self.assertEqual(decide(lead, now="2026-11-26T10:00:00")["state"], "WAIT")
+        self.assertEqual(decide(lead, now="2026-11-26T09:00:00", contact_authorized=False)["state"], "HOLD")
+        self.assertEqual(decide(lead, now="2026-11-26T09:00:00", followup_attempts=1)["state"], "HOLD")
+        self.assertEqual(decide(lead, now="2026-11-26T09:00:00", scheduled_contact_clear=False)["state"], "HOLD")
+
+    def test_missed_friday_and_holiday_recover_at_business_open(self):
+        friday = fixture("2026-11-20T12:00:00")
+        self.assertEqual(decide(friday, now="2026-11-20T20:00:00")["due_at"], dt("2026-11-23T09:00:00"))
+        self.assertEqual(decide(friday, now="2026-11-21T09:00:00")["state"], "WAIT")
+        self.assertEqual(decide(friday, now="2026-11-23T09:00:00")["state"], "CANDIDATE")
+        before_holiday = fixture("2026-12-07T12:00:00")
+        self.assertEqual(decide(before_holiday, now="2026-12-07T20:00:00")["due_at"], dt("2026-12-09T09:00:00"))
+        self.assertEqual(decide(before_holiday, now="2026-12-08T09:00:00")["state"], "WAIT")
+        self.assertEqual(decide(before_holiday, now="2026-12-09T09:00:00")["state"], "CANDIDATE")
 
     def test_late_anchor(self):
         lead = fixture("2026-11-25T18:00:00")

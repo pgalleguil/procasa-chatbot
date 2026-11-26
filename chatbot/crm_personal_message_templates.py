@@ -13,9 +13,11 @@ PABLO_COMPOSER_PILOT_USER_ID = "69796bc4bbebf240378eb739"
 PILOT_BUILTIN_KEYS = frozenset(f"builtin:{i}" for i in range(1, 44))
 
 
-# Approved CRM agents, identified by immutable authenticated account IDs.
+# Approved CRM agents and named supervisors, identified by authenticated account IDs.
 COMPOSER_ENABLED_USER_IDS = frozenset({
     PABLO_COMPOSER_PILOT_USER_ID,
+    "69796bc5bbebf240378eb73a",  # Pablo Galleguillos (supervisor)
+    "69796bc4bbebf240378eb738",  # Jorge Pablo Caro (supervisor)
     "6a681413140190dde11f26d1",  # Hernán Castro
     "6989c6309dd2ba54e478196c",  # Mariela Arriagada
     "6989c6309dd2ba54e478196b",  # Susana Ensignia

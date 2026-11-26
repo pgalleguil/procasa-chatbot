@@ -126,7 +126,9 @@ def test_team_composer_and_private_favorites():
                          "6989c6309dd2ba54e478196b", "699653a96a099d6e9612d519",
                          "6995e9be6a099d6e9612d120", "6989c6309dd2ba54e478196d"):
         assert composer_pilot_enabled(ObjectId(executive_id))
-    assert not composer_pilot_enabled("69796bc5bbebf240378eb73a")
+    for supervisor_id in ("69796bc5bbebf240378eb73a", "69796bc4bbebf240378eb738"):
+        assert composer_pilot_enabled(ObjectId(supervisor_id))
+    assert not composer_pilot_enabled("697974d5862637b61f0d9470")  # Generic account, role not verified
     assert not composer_pilot_enabled("Pablo Galleguillos")
     assert not composer_pilot_enabled(None)
     assert not composer_pilot_enabled("other")
@@ -142,6 +144,13 @@ def test_team_composer_and_private_favorites():
     other_library = write_library(db, mariela, {"version": 0, "templates": [entry("Privado")], "favorites": ["builtin:2"]})
     assert other_library["favorites"] == ["builtin:2"]
     assert read_library(db, uid) == b
+    supervisor = "69796bc5bbebf240378eb73a"
+    assert read_library(db, supervisor) == {"version": 0, "templates": [], "favorites": []}
+    supervisor_library = write_library(db, supervisor, {"version": 0, "templates": [entry("Supervisor")], "favorites": ["builtin:3"]})
+    assert supervisor_library["favorites"] == ["builtin:3"]
+    assert read_library(db, supervisor) == supervisor_library
+    assert read_library(db, uid) == b
+    assert read_library(db, mariela) == other_library
     assert read_library(db, "other") == {"version": 0, "templates": []}
     with pytest.raises(ValueError):
         write_library(db, "other", {"version": 0, "templates": [], "favorites": ["builtin:1"]})

@@ -867,3 +867,16 @@ def test_exact_delayed_initial_recovery_preserves_all_gates():
         assert decide(lead, now="2026-11-26T11:00:00", delayed_initial_until=end, **{flag: False})["state"] == "HOLD"
     lead["opted_out"] = True
     assert decide(lead, now="2026-11-26T11:00:00", delayed_initial_until=end)["state"] == "HOLD"
+
+
+def test_deferred_search_is_not_optout_or_completed():
+    from chatbot.executive_semantics import intent
+    from chatbot.executive_silence_policy import evaluate_silence
+    assert intent("Hola. Solo estaba mirando. Pero no estaré en condiciones de ahorrar por el próximo año. Así que más adelante quizás hablemos. Que pase buen día.") == "SEARCH_DEFERRED"
+    assert intent("Solo estoy cotizando") == "SEARCH_DEFERRED"
+    assert intent("No puedo visitar mañana") != "SEARCH_DEFERRED"
+    assert intent("Busco casa. Solo estaba mirando esta otra propiedad") != "SEARCH_DEFERRED"
+    assert intent("No me escriban más") == "OPT_OUT"
+    lead = fixture("2026-11-25T12:00:00")
+    lead["commercial_intelligence"]["summary"].update(intent="SEARCH_DEFERRED", search_status="DEFERRED")
+    assert decide(lead)["state"] == "HOLD"

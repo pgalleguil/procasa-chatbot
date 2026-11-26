@@ -16,11 +16,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 logger = logging.getLogger(__name__)
-VERSION = "executive_hybrid_v5"
+VERSION = "executive_hybrid_v6"
 INTENTS = frozenset({
     "NO_SIGNAL", "ASK_INFO", "INTERESTED", "ASK_VISIT", "ASK_CONTACT",
     "GIVE_OFFER", "ASK_ALTERNATIVES", "PROPERTY_DECLINED",
-    "SEARCH_COMPLETED", "OPT_OUT", "SEARCH_UPDATED", "OWNER_SELL", "OWNER_RENT", "MIXED_NEEDS",
+    "SEARCH_COMPLETED", "SEARCH_DEFERRED", "OPT_OUT", "SEARCH_UPDATED", "OWNER_SELL", "OWNER_RENT", "MIXED_NEEDS",
 })
 OPERATIONS = frozenset({"ARRIENDO", "VENTA"})
 PROPERTY_TYPES = frozenset({"DEPARTAMENTO", "CASA", "TERRENO", "OFICINA", "LOCAL_COMERCIAL"})
@@ -37,6 +37,7 @@ EXECUTIVE_CASES = {
     "ASK_ALTERNATIVES": ("ALTERNATIVAS_SOLICITADAS", "PROPONER_ALTERNATIVAS"),
     "PROPERTY_DECLINED": ("PROPIEDAD_DESCARTADA", "ACTUALIZAR_PREFERENCIAS"),
     "SEARCH_COMPLETED": ("BUSQUEDA_FINALIZADA", "REVISAR_CIERRE_BUSQUEDA"),
+    "SEARCH_DEFERRED": ("BUSQUEDA_POSTERGADA", "NO_INSISTIR"),
     "OPT_OUT": ("BAJA_COMUNICACIONES", "RESPETAR_RESTRICCION_CONTACTO"),
     "SEARCH_UPDATED": ("REQUISITOS_ACTUALIZADOS", "ACTUALIZAR_BUSQUEDA"),
     "OWNER_SELL": ("CAPTACION_VENTA", "GESTIONAR_CAPTACION_VENTA"),
@@ -76,10 +77,10 @@ Clasifica EXCLUSIVAMENTE la intención expresada por el CLIENTE, nunca lo que el
 Un SEGUIMIENTO_AUTOMATICO es contexto de la respuesta, no gestión humana ni cumplimiento de una solicitud. No interpretes un sí a un seguimiento genérico como aceptación de una visita u oferta anterior.
 No confundas 'no puedo visitar mañana' con un rechazo permanente ni 'no me interesa ESA propiedad' con baja global.
 No confundas 'ya encontré/compré/arrendé propiedad' con la baja explícita 'no me escriban más'.
-No inventes comuna, valor, tipo, operación, visitas concretadas, acuerdos, ofertas, permisos, datos personales ni fechas.
+SEARCH_DEFERRED significa que solo mira, no está buscando activamente, posterga compra/arriendo por meses o años, o dice que más adelante retomará. No es baja voluntaria ni búsqueda completada. No confundir con una visita que no puede hacer mañana. No inventes comuna, valor, tipo, operación, visitas concretadas, acuerdos, ofertas, permisos, datos personales ni fechas.
 No infieras una visita por un mero 'me interesa' o solicitud de detalles.
 Categorías intent: NO_SIGNAL, ASK_INFO, INTERESTED, ASK_VISIT, ASK_CONTACT,
-GIVE_OFFER, ASK_ALTERNATIVES, PROPERTY_DECLINED, SEARCH_COMPLETED, OPT_OUT,
+GIVE_OFFER, ASK_ALTERNATIVES, PROPERTY_DECLINED, SEARCH_COMPLETED, SEARCH_DEFERRED, OPT_OUT,
 SEARCH_UPDATED (necesidad de búsqueda), OWNER_SELL (ofrece su inmueble para vender),
 OWNER_RENT (ofrece su inmueble para arrendar), MIXED_NEEDS (vende para comprar).
 Si la intención es ambigua, NO_SIGNAL y needs_review=true.
@@ -167,7 +168,7 @@ def _valid_proposal(raw):
 def _prompt_state(prior):
     """Only bounded typed state; never names, arbitrary text or provider IDs."""
     result = {}
-    for key, allowed in (("search_status", {"ACTIVE", "COMPLETED", "UNKNOWN"}),
+    for key, allowed in (("search_status", {"ACTIVE", "COMPLETED", "DEFERRED", "UNKNOWN"}),
                          ("contact_permission", {"OPTED_OUT", "UNKNOWN"}),
                          ("intent", INTENTS)):
         if isinstance(prior.get(key), str) and prior[key] in allowed:
@@ -346,7 +347,11 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
         state = extract(m["content"], state, m.get("provider_message_id"))
         if current == "SEARCH_COMPLETED":
             search_status = "COMPLETED"
-        elif current not in ("NO_SIGNAL", "OPT_OUT", "PROPERTY_DECLINED"):
+        elif current == "SEARCH_DEFERRED":
+            search_status = "DEFERRED"
+        elif current not in ("NO_SIGNAL", "OPT_OUT", "PROPERTY_DECLINED") and search_status != "DEFERRED":
+            search_status = "ACTIVE"
+        elif search_status == "DEFERRED" and current in ("SEARCH_UPDATED", "ASK_ALTERNATIVES"):
             search_status = "ACTIVE"
         # Greetings never clear a completed search or unsubscribe preference.
         intent = current
@@ -354,7 +359,7 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
             request = {"intent": current, "provider_message_id": m["provider_message_id"],
                        "timestamp": m["timestamp"], "executive_message_after_request": False,
                        "fulfillment": "UNKNOWN"}
-        elif request and (current in TERMINAL or re.fullmatch(
+        elif request and (current in TERMINAL or current == "SEARCH_DEFERRED" or re.fullmatch(
                 r"(?:ya )?no quiero (?:visitar|la visita|que me llamen)|cancela(?:r|en)? la visita",
                 _plain(m["content"]).strip(". "))):
             request["customer_withdrew"] = True
@@ -385,6 +390,10 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
                            and "?" in preceding["content"]
                            and not re.search(r"\b(?:o|no)\b", _plain(preceding["content"]))
                            and 0 < (datetime.fromisoformat(last_customer["timestamp"]) - datetime.fromisoformat(preceding["timestamp"])).total_seconds() <= 48 * 3600)
+    # Explicit deferment cannot be overwritten by a model guess; an existing
+    # deferment can reopen only on clear, current customer evidence.
+    if rule == "SEARCH_DEFERRED" or search_status == "DEFERRED":
+        can_use = False
     if can_use and candidate != "NO_SIGNAL":
         requires_check = candidate in CRITICAL or (rule != "NO_SIGNAL" and candidate != rule)
         accepted = not requires_check
@@ -410,6 +419,8 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
             search_status = status_before_latest
             if intent == "SEARCH_COMPLETED":
                 search_status = "COMPLETED"
+            elif intent == "SEARCH_DEFERRED":
+                search_status = "DEFERRED"
             elif intent not in ("OPT_OUT", "PROPERTY_DECLINED"):
                 search_status = "ACTIVE"
             opted_out = opted_out_before_latest or observed_explicit_opt_out or intent == "OPT_OUT"
@@ -461,9 +472,14 @@ def classify_hybrid(messages: list[dict], previous: dict | None = None,
         contact["last_actor"] = contacts.get("last_actor")
     if watermark and last_customer and last_customer["timestamp"] < watermark:
         customer_id = old_id
-    if intent in TERMINAL or search_status == "COMPLETED":
+    if search_status == "DEFERRED" and not opted_out:
+        intent = "SEARCH_DEFERRED"
+    if intent in TERMINAL or search_status in {"COMPLETED", "DEFERRED"}:
         contact["awaiting"] = "NONE"
-    reason = "explicit_opt_out" if opted_out else "search_completed" if search_status == "COMPLETED" else None
+    if search_status == "DEFERRED":
+        contact["important_request_pending"] = False
+    reason = ("explicit_opt_out" if opted_out else "search_completed" if search_status == "COMPLETED"
+              else "search_deferred" if search_status == "DEFERRED" else None)
     needs_review = bool(
         uncertain or transport_review or tied or model_disagrees
         or source == "rules_fallback" or intent in TERMINAL

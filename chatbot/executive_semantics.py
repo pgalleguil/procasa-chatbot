@@ -53,6 +53,17 @@ def intent(text, previous_agent=""):
     completed = r'(?:ya (?:encontre|compre|arrende|adquiri) (?:una |un |mi )?(?:propiedad|casa|departamento|inmueble)|ya no (?:estoy buscando|busco (?:casa|departamento|propiedad))|termine (?:mi |la )?busqueda)(?: gracias| por fin)*'
     if '?' not in msg and not active and any(re.fullmatch(completed, p) for p in parts):
         return "SEARCH_COMPLETED"
+    # Explicitly deferred demand is not a completed purchase or unsubscribe.
+    # Do not mistake a short scheduling conflict for an inactive search.
+    deferred = re.search(
+        r'\b(?:solo (?:estaba|estoy|ando) (?:mirando|cotizando)|'
+        r'(?:por ahora|por el momento) (?:solo miro|no estoy buscando|no voy a comprar|no voy a arrendar)|'
+        r'(?:no (?:puedo|podre|estoy en condiciones de|estare en condiciones de) (?:comprar|arrendar|ahorrar)|'
+        r'(?:voy a|tengo que|necesito) ahorrar).{0,85}\b(?:proximo ano|ano que viene|unos anos|varios meses|mas adelante|un ano)|'
+        r'(?:comprare|arrendare|buscare|retomare la busqueda) (?:el )?(?:proximo ano|ano que viene|mas adelante)|'
+        r'mas adelante (?:quizas |tal vez )?(?:hablemos|les escribo|me contacto))\b', msg)
+    if deferred and not active and '?' not in msg:
+        return "SEARCH_DEFERRED"
     if not re.match(r'no\b', msg) and re.search(r'\b(?:quiero|necesito) vender\b', msg):
         return "MIXED_NEEDS" if re.search(r'\bcomprar\b', msg) else "OWNER_SELL"
     if not re.match(r'no\b', msg) and re.search(r'\b(?:quiero|necesito) (?:arrendar|alquilar) mi\b', msg):

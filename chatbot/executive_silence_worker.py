@@ -308,8 +308,13 @@ def _decision(db, job, *, now):
             "status": {"$nin": ["completed", "cancelled", "canceled", "closed", "done", "sent", "error"]}}, {"_id": 1}):
         return doc, {"state": "HOLD", "reason": "crm_task_pending"}
     auth = ((doc.get("crm_hot_auto") or {}).get("whatsapp_contact_authorization") or {})
-    if isinstance(auth, dict) and (auth.get("revoked_at") is not None or str(auth.get("status") or "").upper() in {"REVOKED", "DENIED", "OPTED_OUT"}):
-        return doc, {"state": "HOLD", "reason": "contact_authorization_revoked"}
+    if isinstance(auth, dict) and auth:
+        if auth.get("revoked_at") is not None or str(auth.get("status") or "").upper() in {"REVOKED", "DENIED", "OPTED_OUT"}:
+            return doc, {"state": "HOLD", "reason": "contact_authorization_revoked"}
+        if auth.get("expires_at") is not None:
+            expiry = _time(auth["expires_at"])
+            if expiry is None or expiry <= now:
+                return doc, {"state": "HOLD", "reason": "contact_authorization_expired_or_invalid"}
     authorized = _contact_evidence(db, doc, job, phone, now)
     # For later stages, verified first-stage portal evidence remains tied to
     # this original inquiry, not a new consent or an unrelated campaign.
@@ -632,6 +637,11 @@ def _reconcile_accepted_sequences(db, now):
             # stage will independently check the whole timeline.
             if not _has_executive_dialogue(doc):
                 _schedule_successor(db, job, doc)
+            if job.get("lease"):
+                # Exact stale guard can be released ONLY after durable acceptance.
+                # Do not touch a paused session or another job\'s lock.
+                db[SESSION_GUARD].delete_one({"_id": job["session"], "job_id": job["_id"],
+                                             "lease": job["lease"], "state": "sending"})
             db[QUEUE].update_one({"_id": job["_id"], "state": job["state"],
                                   "claimed_at": job["claimed_at"]},
                                  {"$set": {"state": "accepted", "reason": "accepted_reconciled"},
@@ -685,7 +695,19 @@ def process_due(db, *, limit=3, now=None):
                         _record_incident(db, job, state)
                     _finish(db, job, state=state, reason=state if state in SESSION_STOP | {"session_paused", "model_invalid", "model_hold", "session_changed", "shadow_candidate"} else decision["reason"])
             else:
-                _finish(db, job, state="held", reason=decision["reason"])
+                reason = decision["reason"]
+                # Classification may still be finishing after a provider echo.
+                # Re-evaluate once before holding; never bypass canonical checks.
+                if reason == "classification_not_ready" and not job.get("classification_retry_count"):
+                    _finish(db, job, state="pending", reason=reason,
+                            due_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+                            classification_retry_count=1)
+                else:
+                    if reason in {"classification_not_ready", "capture_continuity_unverified",
+                                  "attempt_history_unverified_or_duplicate", "unverified_prerequisite",
+                                  "incomplete_message_history", "inquiry_contact_evidence_missing"}:
+                        _record_incident(db, job, reason)
+                    _finish(db, job, state="held", reason=reason)
         except OutboundBlocked as exc:
             _record_incident(db, job, exc.code)
             _finish(db, job, state="held", reason=exc.code)

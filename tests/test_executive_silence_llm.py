@@ -82,3 +82,46 @@ def test_model_hold_is_not_replaced_with_generic_message():
 def test_unsafe_draft_is_rejected(text):
     with pytest.raises(ValueError):
         validate_draft({"decision": "DRAFT", "message": text})
+
+
+def test_office_dialogue_precedes_executive_and_keeps_channel_attribution():
+    from chatbot.executive_silence_llm import office_history, verified_initial_stage_fallback
+    db, lead, job, anchor = fixture()
+    lead["conversation_id"] = "office-c"
+    customer = {"role": "user", "actor_type": "customer", "conversation_id": "office-c",
+                "timestamp": "2026-11-25T14:00:00+00:00",
+                "content": "Busco comprar departamento de tres dormitorios cerca del centro"}
+    bot = {"role": "assistant", "actor_type": "bot", "conversation_id": "office-c",
+           "timestamp": "2026-11-25T14:01:00+00:00",
+           "content": "¿En qué sector prefiere buscar?"}
+    alien = dict(customer, conversation_id="another", content="UNRELATED")
+    personal = dict(customer, channel="personal_whatsapp", content="PERSONAL")
+    later = dict(customer, timestamp="2026-11-25T16:00:00+00:00", content="LATER")
+    admin = dict(customer, source="prop360", content="ADMIN")
+    lead["messages"] = [bot, alien, personal, admin, anchor, customer, later]
+    ctx = build_context(db, lead, job, anchor, "INITIAL_NO_REPLY", 1)
+    assert [t["actor"] for t in ctx["office_turns"]] == ["CLIENTE_OFICINA", "CHATBOT_OFICINA"]
+    assert "tres dormitorios" in ctx["office_turns"][0]["texto"]
+    assert len(ctx["turns"]) == 1 and ctx["turns"][0]["actor"] == "EJECUTIVO"
+    assert not any(x in str(ctx) for x in ("UNRELATED", "PERSONAL", "ADMIN", "LATER"))
+    assert len(office_history(lead, anchor)) == 2
+    assert verified_initial_stage_fallback(db, lead, anchor, attempt=1) is None
+
+
+def test_natural_invitation_allowed_without_forced_question():
+    msg = "Si sigue buscando departamento en Rancagua, cuénteme qué tiene en mente y podemos revisar otras opciones."
+    assert validate_draft({"decision": "DRAFT", "message": msg}) == msg
+    with pytest.raises(ValueError):
+        validate_draft({"decision": "DRAFT", "message": "Tenemos muchas propiedades excelentes para usted."})
+
+
+def test_office_history_cannot_crowd_out_latest_executive_messages():
+    db, lead, job, anchor = fixture()
+    lead["conversation_id"] = "office"
+    lead["messages"] = [dict(role="user", actor_type="customer", conversation_id="office",
+        timestamp="2026-11-25T14:00:00+00:00", content="Busco casa. " * 100)
+        for _ in range(35)] + [anchor]
+    ctx = build_context(db, lead, job, anchor, "INITIAL_NO_REPLY", 1)
+    assert 0 < len(ctx["office_turns"]) <= 20
+    assert len(ctx["turns"]) == 1
+    assert ctx["turns"][0]["actor"] == "EJECUTIVO"

@@ -207,3 +207,35 @@ def initial_recovery_draft(db, lead, anchor):
         return None
     return validate_draft({"decision": "DRAFT", "message":
         opening + question})
+
+
+def verified_initial_stage_fallback(db, lead, anchor, *, attempt):
+    """Conservative contextual copy after a technical draft failure only.
+
+    The sender must establish eligibility independently and recheck before
+    reservation. Never use for explicit HOLD or a bilateral conversation.
+    """
+    if type(attempt) is not int or attempt not in (1, 2, 3):
+        return None
+    prop = property_context(db, lead, anchor)
+    kind = prop.get("tipo", "").lower()
+    commune = prop.get("comuna", "")
+    ops = set(prop.get("operaciones_publicadas", []))
+    if not kind or not commune or not ops or not ops <= {"VENTA", "ARRIENDO"}:
+        return None
+    if attempt == 1:
+        text = initial_recovery_draft(db, lead, anchor)
+        if text:
+            return text
+    if attempt == 1:
+        question = ("¿está buscando comprar o arrendar?" if len(ops) == 2 else
+                    "¿le gustaría recibir orientación sobre el proceso de compra?" if ops == {"VENTA"} else
+                    "¿le gustaría recibir orientación sobre los requisitos de arriendo?")
+        text = "Hola, por su consulta sobre la propiedad en " + commune + ", " + question
+    elif attempt == 2:
+        text = ("Hola, ¿prefiere que revisemos otras propiedades en " + commune +
+                " que se ajusten mejor a lo que está buscando?")
+    else:
+        text = ("¿Sigue buscando una propiedad en " + commune +
+                "? Si ya no necesita nuestra ayuda, no insistiremos.")
+    return validate_draft({"decision": "DRAFT", "message": text})

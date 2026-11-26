@@ -544,3 +544,50 @@ def test_retry_draft_before_provider_is_bounded_and_pending(monkeypatch):
     update = queue.update_one.call_args.args[1]["$set"]
     assert update["state"] == "pending"
     assert update["draft_retry_count"] == 1
+
+
+def test_initial_silence_excludes_any_previous_executive_dialogue(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, leads = MagicMock(), MagicMock()
+    db.__getitem__.return_value = leads
+    lead = fixture("2026-11-25T12:00:00")
+    job = {"owner": "owner", "cycle": "cycle", "session": "session",
+           "anchor": "m1", "lead_id": "lead"}
+    assert not worker._has_executive_dialogue(lead)
+    lead["messages"].insert(0, {"channel": "chatbot", "role": "user", "actor_type": "customer"})
+    assert not worker._has_executive_dialogue(lead)
+    for customer in (
+        {"channel": "executive_whatsapp", "actor_type": "customer", "assignment_cycle_id": "cycle"},
+        {"channel": "executive_whatsapp", "actor_type": "customer", "assignment_cycle_id": "prior_cycle"},
+        {"channel": "executive_whatsapp", "role": "user"},
+    ):
+        doc = deepcopy(lead)
+        doc["messages"].insert(0, customer)
+        assert worker._has_executive_dialogue(doc)
+        leads.find_one.return_value = doc
+        _, decision = worker._decision(db, job, now=dt("2026-11-25T19:00:00"))
+        assert decision == {"state": "HOLD", "reason": "dialogue_policy_pending",
+                            "scenario": "DIALOGUE_INTERRUPTED"}
+    sender = MagicMock()
+    assert worker.dispatch(db, job, lead, {"scenario": "DIALOGUE_INTERRUPTED"},
+                           now=dt("2026-11-25T19:00:00"), post=sender) == "dialogue_policy_pending"
+    sender.assert_not_called()
+
+
+def test_dialogue_is_held_for_separate_policy_not_sent(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(worker, "enabled", lambda: True)
+    db, queue = MagicMock(), MagicMock()
+    db.__getitem__.return_value = queue
+    queue.find_one_and_update.side_effect = [{"_id": "job", "lease": "lease", "session": "s"}, None]
+    monkeypatch.setattr(worker, "_decision", lambda *a, **k: ({}, {
+        "state": "HOLD", "reason": "dialogue_policy_pending", "scenario": "DIALOGUE_INTERRUPTED"}))
+    send = MagicMock()
+    monkeypatch.setattr(worker, "dispatch", send)
+    worker.process_due(db, now=dt("2026-11-25T19:00:00"))
+    send.assert_not_called()
+    update = queue.update_one.call_args.args[1]["$set"]
+    assert update["state"] == "held"
+    assert update["reason"] == "dialogue_policy_pending"

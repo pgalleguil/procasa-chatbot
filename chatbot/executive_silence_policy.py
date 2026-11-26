@@ -182,6 +182,7 @@ def evaluate_silence(
     scheduled_contact_clear: bool = False,
     recovery_until: datetime | None = None,
     verified_followups: tuple = (),
+    delayed_initial_until: datetime | None = None,
 ) -> dict:
     """Return HOLD, WAIT or CANDIDATE (never a SEND instruction).
 
@@ -328,7 +329,18 @@ def evaluate_silence(
         and 20 <= local_now.hour < 21
         and (as_chile(recovery_end).hour, as_chile(recovery_end).minute) == (21, 0)
     )
-    if not _in_followup_slot(now, due) and not recovery_window:
+    # Exact incident recovery, authorized by the operator; only a first
+    # attempt during business hours on the following day. All prerequisite
+    # and canonical history checks above remain mandatory.
+    delayed_end = _time(delayed_initial_until)
+    delayed_window = (
+        delayed_end is not None and now < delayed_end
+        and scenario == "INITIAL_NO_REPLY" and followup_attempts == 0
+        and local_now.date() == as_chile(delayed_end).date()
+        and local_anchor.date() < local_now.date()
+        and is_business_day(local_now.date()) and 9 <= local_now.hour < 19
+    )
+    if not _in_followup_slot(now, due) and not recovery_window and not delayed_window:
         return _result("WAIT", "outside_send_window",
                        due_at=_next_retry_slot(now, due),
                        anchor_message_id=last["message_id"], scenario=scenario)

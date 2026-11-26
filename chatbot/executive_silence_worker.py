@@ -13,7 +13,7 @@ from pymongo.errors import DuplicateKeyError
 import requests
 
 from config import Config
-from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment, sequence_due
+from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment, sequence_due, _plain
 from .business_calendar import add_business_minutes, as_chile, CHILE
 from .executive_silence_llm import draft_followup, initial_recovery_draft
 from .executive_capture_continuity import continuity_since, record_status, recover_provider_continuity
@@ -443,6 +443,18 @@ def _dispatch_locked(db, job, doc, decision, *, now, post=None):
         usage = {"version": "verified_initial_recovery_v1", "fallback_reason": reason}
         if not text:
             return "model_invalid"
+    except Exception as exc:
+        # Provider has not been called and no outbox exists yet. Do not pause
+        # the executive session for an LLM transport failure.
+        db[QUEUE].update_one({"_id": job["_id"], "lease": job["lease"]},
+                             {"$set": {"draft_error": type(exc).__name__}})
+        return "model_invalid" if job.get("draft_retry_count") else "retry_draft_before_provider"
+    if text and any(isinstance(m, dict) and m.get("channel") == "executive_whatsapp"
+                    and _plain(m.get("content")) == _plain(text)
+                    for m in doc.get("messages") or []):
+        db[QUEUE].update_one({"_id": job["_id"], "lease": job["lease"]},
+                             {"$set": {"draft_error": "draft_repeat"}})
+        return "model_invalid" if job.get("draft_retry_count") else "retry_draft_before_provider"
     db[QUEUE].update_one({"_id": job["_id"], "lease": job["lease"]},
                          {"$set": {"draft_usage": usage,
                                    "draft_decision": "DRAFT" if text else "HOLD"}})

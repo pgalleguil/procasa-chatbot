@@ -799,3 +799,49 @@ def test_classification_pending_retries_once_then_records_incident(monkeypatch):
     worker.process_due(db, now=dt("2026-11-26T09:01:00"))
     assert queue.update_one.call_args.args[1]["$set"]["state"] == "held"
     incident.assert_called_once()
+
+
+def test_stage_fallback_uses_verified_property_and_distinct_messages(monkeypatch):
+    from chatbot import executive_silence_llm as llm
+    monkeypatch.setattr(llm, "property_context", lambda *a: {
+        "tipo": "Casa", "comuna": "San Bernardo",
+        "operaciones_publicadas": ["VENTA"], "orientacion_comercial": False})
+    texts = [llm.verified_initial_stage_fallback(None, {}, {}, attempt=n) for n in (1, 2, 3)]
+    assert len(set(texts)) == 3
+    assert all("San Bernardo" in t and t.count("?") <= 1 for t in texts)
+    assert "cuénteme" in texts[0]
+    assert "financiamiento" not in texts[0]
+    assert "otras propiedades" in texts[1]
+    assert "no insistiremos" in texts[2]
+    assert all("seguimiento automático" not in t and not t.endswith("— PROCASA") for t in texts)
+    monkeypatch.setattr(llm, "property_context", lambda *a: {})
+    assert llm.verified_initial_stage_fallback(None, {}, {}, attempt=1) is None
+
+
+def test_permanent_fallback_after_draft_truncation_not_for_explicit_hold(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    from unittest.mock import MagicMock
+    db, collection, post = MagicMock(), MagicMock(), MagicMock()
+    db.__getitem__.return_value = collection
+    collection.find_one.return_value = {}
+    doc = {"messages": [{"message_id": "m1"}]}
+    decision = {"state": "CANDIDATE", "scenario": "INITIAL_NO_REPLY"}
+    job = {"_id": "new", "owner": "owner", "session": "133517",
+           "anchor": "m1", "lease": "lease", "draft_retry_count": 1}
+    monkeypatch.setattr(worker, "_live_allowed", lambda j: True)
+    monkeypatch.setattr(worker, "eligible_manual_session", lambda *a, **k: {"session": {"session_id": "133517", "user_oid": "owner"}})
+    monkeypatch.setattr(worker, "verify_provider_sender_identity", lambda *a, **k: None)
+    monkeypatch.setattr(worker, "_session_status", lambda *a: "connected")
+    monkeypatch.setattr(worker, "_decision", lambda *a, **k: (doc, decision))
+    draft = MagicMock(side_effect=ValueError("draft_incomplete"))
+    monkeypatch.setattr(worker, "draft_followup", draft)
+    fallback = MagicMock(return_value=None)
+    monkeypatch.setattr(worker, "verified_initial_stage_fallback", fallback)
+    assert worker.dispatch(db, job, doc, decision, now=dt("2026-11-26T09:35:00"), post=post) == "model_invalid"
+    fallback.assert_called_once_with(db, doc, doc["messages"][0], attempt=1)
+    fallback.reset_mock()
+    draft.side_effect = None
+    draft.return_value = (None, {})
+    assert worker.dispatch(db, job, doc, decision, now=dt("2026-11-26T09:35:00"), post=post) == "model_hold"
+    fallback.assert_not_called()
+    post.assert_not_called()

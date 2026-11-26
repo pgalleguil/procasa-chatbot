@@ -552,6 +552,34 @@ def campaign_operational_core_intent(text: str) -> str | None:
     return None
 
 
+def executive_contact_suppression(lead: dict | None) -> set[str]:
+    """Shared read-only proactive-contact gate, not a customer opt-out write."""
+    if not isinstance(lead, dict):
+        return set()
+    reasons = set()
+    summary = (lead.get("commercial_intelligence") or {}).get("summary") or {}
+    if lead.get("do_not_contact") is True or (lead.get("automated_contact_hold") or {}).get("active") is True:
+        reasons.add("contact_block")
+    if lead.get("opted_out") is True or summary.get("contact_permission") == "OPTED_OUT" or summary.get("intent") == "OPT_OUT":
+        reasons.add("explicit_opt_out")
+    if summary.get("search_status") == "COMPLETED" or summary.get("intent") == "SEARCH_COMPLETED":
+        reasons.add("completed_search")
+    if summary.get("search_status") == "DEFERRED" or summary.get("intent") == "SEARCH_DEFERRED":
+        reasons.add("search_deferred")
+    for label in (summary.get("intent"), summary.get("outreach_hold")):
+        if label in {"SEARCH_DEFERRED", "CONTACT_DECLINED", "CONTACT_UNRECOGNIZED"}:
+            reasons.add(label.lower())
+    # Check signed/canonical customer evidence even if classification is late.
+    from .executive_semantics import intent as executive_intent
+    for message in lead.get("messages") or []:
+        if not isinstance(message, dict) or message.get("channel") != "executive_whatsapp" or message.get("actor_type") != "customer" or not message.get("provider_message_id"):
+            continue
+        label = executive_intent(message.get("content") or "")
+        if label in {"OPT_OUT", "SEARCH_COMPLETED", "SEARCH_DEFERRED", "CONTACT_DECLINED", "CONTACT_UNRECOGNIZED"}:
+            reasons.add({"OPT_OUT": "explicit_opt_out", "SEARCH_COMPLETED": "completed_search"}.get(label, label.lower()))
+    return reasons
+
+
 def lead_must_not_be_contacted(lead: dict | None) -> bool:
     """Read-only fail-closed guard for recorded opt-outs and completed searches.
 
@@ -561,6 +589,8 @@ def lead_must_not_be_contacted(lead: dict | None) -> bool:
     """
     if not isinstance(lead, dict):
         return False
+    if executive_contact_suppression(lead):
+        return True
     if (lead.get("contact_restrictions") or {}).get("marketing_opt_out") is True:
         return True
     if lead.get("conversation_status") in {

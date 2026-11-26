@@ -127,6 +127,42 @@ def _in_followup_slot(value: datetime, due: datetime) -> bool:
     )
 
 
+def sequence_due(previous_accepted: datetime, attempt: int) -> datetime:
+    """Stage 2: next workday at 12:30; stage 3: two workdays later at 18:00."""
+    if attempt not in (2, 3):
+        raise ValueError("invalid_attempt")
+    day = as_chile(previous_accepted).date()
+    remaining = 1 if attempt == 2 else 2
+    while remaining:
+        day += timedelta(days=1)
+        if is_business_day(day):
+            remaining -= 1
+    hour, minute = (12, 30) if attempt == 2 else (18, 0)
+    return CHILE.localize(datetime(day.year, day.month, day.day, hour, minute), is_dst=None).astimezone(timezone.utc)
+
+
+def sequence_slot(now, due, attempt):
+    """Return eligible flag and next due; recover overdue stages at 09:00."""
+    local, target = as_chile(now), as_chile(due)
+    day = local.date()
+    if now < due:
+        return False, due
+    if is_business_day(day):
+        minutes = local.hour * 60 + local.minute
+        if day == target.date():
+            end = 14 * 60 if attempt == 2 else 20 * 60
+            if minutes < end:
+                return True, due
+        elif 9 * 60 <= minutes < 10 * 60:
+            return True, _morning_slot(day)
+        elif day > target.date() and minutes < 9 * 60:
+            return False, _morning_slot(day)
+    day += timedelta(days=1)
+    while not is_business_day(day):
+        day += timedelta(days=1)
+    return False, _morning_slot(day)
+
+
 def has_pending_commitment(lead: dict) -> bool:
     """Waiting for a customer is not a scheduled executive commitment."""
     if not (lead.get("follow_up_status") == "pending" or lead.get("follow_up_required")):
@@ -145,6 +181,7 @@ def evaluate_silence(
     continuity_since: datetime | None = None,
     scheduled_contact_clear: bool = False,
     recovery_until: datetime | None = None,
+    verified_followups: tuple = (),
 ) -> dict:
     """Return HOLD, WAIT or CANDIDATE (never a SEND instruction).
 
@@ -162,7 +199,13 @@ def evaluate_silence(
         return _result("HOLD", "scheduled_contact_pending_or_unknown")
     if has_pending_commitment(lead):
         return _result("HOLD", "crm_followup_pending")
-    if type(followup_attempts) is not int or followup_attempts != 0:
+    if (type(followup_attempts) is not int or not 0 <= followup_attempts < 3
+            or len(verified_followups) != followup_attempts
+            or any(not isinstance(x, dict) or not x.get("message_id") or _time(x.get("accepted_at")) is None
+                   for x in verified_followups)):
+        return _result("HOLD", "attempt_already_exists_or_unknown")
+    verified_ids = {x["message_id"] for x in verified_followups}
+    if len(verified_ids) != followup_attempts:
         return _result("HOLD", "attempt_already_exists_or_unknown")
     if outstanding_own_action is not False:
         return _result("HOLD", "our_action_pending_or_unknown")
@@ -217,7 +260,7 @@ def evaluate_silence(
             or str(last.get("actor_id")) != owner
             or last.get("source") not in {"whatsapp_direct", "crm_manual_api"}
             or not last.get("provider_message_id") or not last.get("message_id")
-            or ci.get("last_processed_message_id") != last.get("message_id")):
+            or ci.get("last_processed_message_id") not in ({last.get("message_id")} | verified_ids)):
         return _result("HOLD", "latest_outbound_not_verified")
     if anchor > now or anchor < cutoff:
         return _result("HOLD", "outside_prospective_rollout")
@@ -232,6 +275,9 @@ def evaluate_silence(
     # new commercial intent. Ignore Prop360 form markers, not customer replies.
     for msg in messages:
         if not isinstance(msg, dict) or msg is last or msg.get("source") == "prop360":
+            continue
+        if (msg.get("message_id") in verified_ids and msg.get("actor_type") == "automation"
+                and msg.get("source") == "crm_exec_silence_api" and msg.get("automatic") is True):
             continue
         t = _time(msg.get("timestamp"))
         if msg.get("role") in {"user", "assistant", "agent"}:
@@ -255,6 +301,19 @@ def evaluate_silence(
     if calculate_business_minutes(anchor, now) >= EXPIRY_MINUTES:
         return _result("HOLD", "stale_conversation")
     scenario = "DIALOGUE_INTERRUPTED" if customers else "INITIAL_NO_REPLY"
+    if verified_followups:
+        if customers or scenario != "INITIAL_NO_REPLY":
+            return _result("HOLD", "dialogue_policy_pending")
+        previous = [_time(x["accepted_at"]) for x in verified_followups]
+        if not all(anchor < t <= now for t in previous) or any(
+                as_chile(a).date() >= as_chile(b).date() for a, b in zip(previous, previous[1:])):
+            return _result("HOLD", "invalid_sequence_history")
+        attempt = followup_attempts + 1
+        due = sequence_due(previous[-1], attempt)
+        allowed, next_due = sequence_slot(now, due, attempt)
+        return _result("CANDIDATE" if allowed else "WAIT",
+                       "customer_reply_overdue" if allowed else "sequence_wait",
+                       due_at=next_due, anchor_message_id=last["message_id"], scenario=scenario, attempt=attempt)
     due = next_followup_slot(add_business_minutes(anchor, WAIT_MINUTES))
     if now < due:
         return _result("WAIT", "silence_timer", due_at=due, anchor_message_id=last["message_id"], scenario=scenario)

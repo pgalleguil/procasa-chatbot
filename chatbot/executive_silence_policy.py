@@ -23,8 +23,8 @@ EXPIRY_MINUTES = 3000
 SEND_SLOTS = ((18, 0), (18, 30), (19, 0), (19, 30))
 SLOT_GRACE_MINUTES = 30
 OPEN = {"DETECTADA", "PENDIENTE_GESTION", "EN_GESTION"}
-STOP_INTENTS = {"OPT_OUT", "SEARCH_COMPLETE", "SEARCH_COMPLETED", "PROPERTY_DECLINED"}
-STOP_SEARCH = {"COMPLETED", "CLOSED", "STOPPED", "INACTIVE", "SEARCH_COMPLETE"}
+STOP_INTENTS = {"OPT_OUT", "SEARCH_COMPLETE", "SEARCH_COMPLETED", "SEARCH_DEFERRED", "PROPERTY_DECLINED"}
+STOP_SEARCH = {"COMPLETED", "CLOSED", "STOPPED", "INACTIVE", "SEARCH_COMPLETE", "DEFERRED"}
 # This is a narrow allowlist for ordinary contact/qualification questions, not
 # an attempt to infer that every question or every last outbound expects a reply.
 ASK = re.compile(

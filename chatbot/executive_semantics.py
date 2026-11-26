@@ -53,10 +53,39 @@ def intent(text, previous_agent=""):
     completed = r'(?:ya (?:encontre|compre|arrende|adquiri) (?:una |un |mi )?(?:propiedad|casa|departamento|inmueble)|ya no (?:estoy buscando|busco (?:casa|departamento|propiedad))|termine (?:mi |la )?busqueda)(?: gracias| por fin)*'
     if '?' not in msg and not active and any(re.fullmatch(completed, p) for p in parts):
         return "SEARCH_COMPLETED"
+    # Explicitly deferred demand is not a completed purchase or unsubscribe.
+    # Do not mistake a short scheduling conflict for an inactive search.
+    deferred = re.search(
+        r'\b(?:solo (?:estaba|estoy|ando) (?:mirando|cotizando)|'
+        r'(?:por ahora|por el momento) (?:solo miro|no estoy buscando|no voy a comprar|no voy a arrendar)|'
+        r'(?:no (?:puedo|podre|estoy en condiciones de|estare en condiciones de) (?:comprar|arrendar|ahorrar)|'
+        r'(?:voy a|tengo que|necesito) ahorrar).{0,85}\b(?:proximo ano|ano que viene|unos anos|varios meses|mas adelante|un ano)|'
+        r'(?:comprare|arrendare|buscare|retomare la busqueda) (?:el )?(?:proximo ano|ano que viene|mas adelante)|'
+        r'mas adelante (?:quizas |tal vez )?(?:hablemos|les escribo|me contacto))\b', msg)
+    if deferred and not active and '?' not in msg:
+        return "SEARCH_DEFERRED"
+    # A decision for another property is closure of the current search,
+    # including common Chilean spelling mistakes. A comparison is not closure.
+    chosen_other = re.search(r'\b(?:finalmente |ya )?(?:nos |me )?(?:decidimos|desidimos|decidi|desidi|quedamos|quede) (?:por|con) otr[oa] (?:departamento|depto|casa|propiedad|inmueble)\b', msg)
+    if chosen_other and not active and '?' not in msg and not re.search(r'\b(?:no|todavia no|aun no) (?:nos |me )?(?:decidimos|desidimos|decidi|desidi|quedamos|quede)\b', msg):
+        return "SEARCH_COMPLETED"
+    # Polite standalone decline: stop proactive contact, not global opt-out.
+    if re.fullmatch(r'(?:hola[,.! ]+)?no[, ]+gracias[.! ]*', msg):
+        return "CONTACT_DECLINED"
+    if re.fullmatch(r'(?:hola[,.! ]+)?no se (?:ni )?que es procasa[.! ]*', msg):
+        return "CONTACT_UNRECOGNIZED"
+    if re.fullmatch(r'(?:no (?:me|ne) (?:respondiste|respindiste|respondio|contestaste|contesto)|sigo esperando (?:su |tu )?respuesta)[.! ]*', msg):
+        return "RESPONSE_PENDING"
     if not re.match(r'no\b', msg) and re.search(r'\b(?:quiero|necesito) vender\b', msg):
         return "MIXED_NEEDS" if re.search(r'\bcomprar\b', msg) else "OWNER_SELL"
     if not re.match(r'no\b', msg) and re.search(r'\b(?:quiero|necesito) (?:arrendar|alquilar) mi\b', msg):
         return "OWNER_RENT"
+    # Specific observed real-estate visit requests, including polite questions.
+    for p in parts:
+        if re.search(r'\b(?:no|nunca|tampoco)\b', p):
+            continue
+        if re.search(r'\b(?:es posible visitar (?:la propiedad|el departamento|la casa|el local)|me gustaria verla|coordinar verlo|coordinar verla|cuando se puede ver la propiedad|cuando se puede visitar|podamos ver el local)\b', p):
+            return "ASK_VISIT"
     for p in parts:
         if re.match(r'(?:no |tampoco |prefiero no |nunca |si )', p):
             continue
@@ -81,6 +110,8 @@ def intent(text, previous_agent=""):
         return "PROPERTY_DECLINED"
     if any(re.match(r'(?:me interesa|estoy interesad[oa]|sigo interesad[oa])\b', p) for p in parts):
         return "INTERESTED"
+    if re.search(r'\b(?:busco algo mas cerca|buscando un local|requiero dep(?:to|artamento)?|ando buscando|estoy buscando)\b', msg) and not re.search(r'\b(?:no estoy buscando|ya no busco)\b', msg):
+        return "SEARCH_UPDATED"
     if any(re.match(r'(?:ahora )?(?:busco|necesito (?:una? )?(?:casa|departamento)|quiero comprar|quiero arrendar)\b', p) for p in parts):
         return "SEARCH_UPDATED"
     if re.search(r'\b(?:ahora puedo llegar a|mi presupuesto|presupuesto maximo)\b', msg):
@@ -112,7 +143,11 @@ def extract(text, previous=None, message_id=None):
         return state
     msg = plain(text)
     needs = state.setdefault('needs', {})
-    requirement_context = bool(re.search(r'\b(?:busco|necesito|quiero|presupuesto|puedo llegar a|mejor en)\b', msg))
+    requirement_context = bool(re.search(r'\b(?:busco|buscando|necesito|requiero|quiero|presupuesto|puedo llegar a|mejor en|algo parecido|mis requerimientos)\b', msg))
+    # Continuation of an already established demand, limited to explicit
+    # feature statements (not arbitrary greetings or unrelated prices).
+    if needs.get("DEMAND") and re.search(r'\b(?:calle principal|acepten mascotas?|dormitorios?|banos?|estacionamiento|cercano a algun metro)\b', msg):
+        requirement_context = True
     for part in clauses(text):
         if part.startswith(('no ', 'antes ', 'buscaba ', 'ya compre ', 'ya arrende ')):
             continue
@@ -128,7 +163,7 @@ def extract(text, previous=None, message_id=None):
             values['operation'] = 'ARRIENDO'
         elif re.search(r'\b(?:comprar|compra|venta|vender)\b', part):
             values['operation'] = 'VENTA'
-        for word, value in [('departamento|depto', 'DEPARTAMENTO'), ('casa', 'CASA'), ('terreno', 'TERRENO'), ('oficina', 'OFICINA'), ('local comercial', 'LOCAL_COMERCIAL')]:
+        for word, value in [('departamento|depto|dep', 'DEPARTAMENTO'), ('casa', 'CASA'), ('terreno', 'TERRENO'), ('oficina', 'OFICINA'), ('local comercial|local', 'LOCAL_COMERCIAL')]:
             if re.search(r'\b(?:' + word + r')\b', part):
                 values['property_type'] = value
                 break
@@ -158,6 +193,19 @@ def extract(text, previous=None, message_id=None):
             feature = re.search(r'\b(\d{1,2})\s*(?:' + noun + r')\b', part)
             if feature and 0 <= int(feature[1]) <= 12:
                 values['min_' + key if re.search(r'\b(?:al menos|minimo)\s*' + feature[1], part) else key] = int(feature[1])
+        area_range = re.search(r'\b(\d{1,4}) a (\d{1,4})\s*(?:m2|mts2|metros cuadrados)\b', part)
+        if area_range and 0 < int(area_range[1]) <= int(area_range[2]) <= 10000:
+            values.update(min_surface_m2=int(area_range[1]), max_surface_m2=int(area_range[2]))
+        if re.search(r'\b(?:en una calle principal|calle principal)\b', part):
+            values["main_street_required"] = True
+        if re.search(r'\b(?:acepten|acepta|permitan) mascotas?\b', part):
+            values["pets_allowed_required"] = True
+        if re.search(r'\bcon estacionamiento\b', part):
+            values["min_parking"] = 1
+        if re.search(r'\b(?:cercano|cerca) a (?:algun|un|el) metro\b', part):
+            values["near_metro_required"] = True
+        if re.search(r'\b(?:busco algo mas cerca del san fco javier)\b', part):
+            values["location_reference"] = "San Francisco Javier"
         if re.search(r'\bnecesito (?:credito|financiamiento)\b', part):
             values['financing_needed'] = True
         if re.search(r'\b(?:urgente|este mes|antes de fin de mes)\b', part):

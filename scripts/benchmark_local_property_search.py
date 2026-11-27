@@ -300,11 +300,12 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
             torch.cuda.empty_cache()
         return metrics, results
 
+    initial_device = requested_device if spec.get("embedding") or spec.get("reranker") else "cpu"
     try:
-        return attempt(requested_device)
+        return attempt(initial_device)
     except RuntimeError as exc:
         message = str(exc).casefold()
-        if requested_device == "cuda" and ("out of memory" in message or "cuda error" in message):
+        if initial_device == "cuda" and ("out of memory" in message or "cuda error" in message):
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()

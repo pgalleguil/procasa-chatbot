@@ -1,0 +1,24 @@
+name: Local property search CI
+on:
+  pull_request:
+    paths:
+      - 'chatbot/local_property_search.py'
+      - 'chatbot/local_embedding_cache.py'
+      - 'scripts/run_local_property_search.py'
+      - 'tests/test_local_property_search.py'
+      - '.github/workflows/local-property-search-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  local-search:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pytest numpy
+      - run: python -m py_compile chatbot/local_property_search.py chatbot/local_embedding_cache.py scripts/run_local_property_search.py
+      - run: python -m pytest -c pytest-procasa.ini tests/test_local_property_search.py -q
+      - run: python scripts/run_local_property_search.py --help

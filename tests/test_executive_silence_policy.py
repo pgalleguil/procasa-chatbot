@@ -1059,7 +1059,7 @@ def test_first_stage_recovery_keeps_only_original_due_inquiry_evidence(monkeypat
     monday = dt("2026-11-30T09:00:00")
     assert worker._first_stage_recovery_evidence_time(doc, job, monday) == dt("2026-11-27T18:00:00")
     assert worker._contact_evidence(db, doc, job, "+56912345678", monday)
-    for stamp in ("2026-11-28T09:00:00", "2026-11-30T10:00:00", "2026-12-01T09:00:00"):
+    for stamp in ("2026-11-28T11:00:00", "2026-11-30T10:00:00", "2026-12-01T09:00:00"):
         assert not worker._contact_evidence(db, doc, job, "+56912345678", dt(stamp))
     assert not worker._contact_evidence(db, doc, dict(job, attempt=2), "+56912345678", monday)
     db.__getitem__.return_value.find_one.return_value = None

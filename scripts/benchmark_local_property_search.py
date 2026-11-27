@@ -73,8 +73,20 @@ def load_progress(path, namespace, run_identity):
     if not path.is_file():
         return {}
     try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        with sqlite3.connect(path, timeout=10) as db:
+            table = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='benchmark_progress'"
+            ).fetchone()
+            if not table:
+                return {}
+            row = db.execute(
+                "SELECT state_json FROM benchmark_progress WHERE namespace=? AND run_identity=?",
+                (namespace, run_identity),
+            ).fetchone()
+        if not row:
+            return {}
+        state = json.loads(row[0])
+    except (OSError, sqlite3.Error, json.JSONDecodeError):
         return {}
     return state if (state.get("namespace") == namespace and state.get("run_identity") == run_identity
                      and state.get("schema") == 1) else {}
@@ -145,9 +157,17 @@ class IndexProgress:
             "index_complete": self.index_complete if complete is None else complete,
             "updated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
-        temp = self.path.with_suffix(self.path.suffix + ".tmp")
-        temp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        temp.replace(self.path)
+        serialized = json.dumps(state, separators=(",", ":"))
+        with sqlite3.connect(self.path, timeout=30) as db:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS benchmark_progress "
+                "(namespace TEXT, run_identity TEXT, state_json TEXT, "
+                "PRIMARY KEY(namespace,run_identity))"
+            )
+            db.execute(
+                "INSERT OR REPLACE INTO benchmark_progress VALUES (?,?,?)",
+                (self.namespace, self.run_identity, serialized),
+            )
 
     def _watch(self):
         while not self.stop.wait(2):
@@ -265,7 +285,6 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
         external_compatible = 0
         model_load_seconds = 0.0
         cache_path = None
-        progress_path = None
         progress = None
         progress_metrics = None
         namespace = None
@@ -283,9 +302,8 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
                 namespace = model_namespace(model_id, revision,
                                             version=sentence_transformers.__version__)
                 cache_path = output_dir / "cache" / f"{spec['name']}-{device}.sqlite"
-                progress_path = output_dir / "cache" / f"{spec['name']}-{device}.progress.json"
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
-                prior_progress = load_progress(progress_path, namespace, run_identity) if resume_partial else {}
+                prior_progress = load_progress(cache_path, namespace, run_identity) if resume_partial else {}
                 if cache_path.exists() and not resume_partial:
                     raise FileExistsError(f"Refusing to reuse an existing benchmark cache: {cache_path}")
                 if cache_path.exists() and resume_partial and not prior_progress:
@@ -307,7 +325,7 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
                 torch.cuda.reset_peak_memory_stats()
             if embedder:
                 progress = IndexProgress(
-                    progress_path, namespace, run_identity, cache_path, embedder, device, torch,
+                    cache_path, namespace, run_identity, cache_path, embedder, device, torch,
                     psutil, prior_progress, model_load_seconds,
                 )
                 progress_trackers.append(progress)

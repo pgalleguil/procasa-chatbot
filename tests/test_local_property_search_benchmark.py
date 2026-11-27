@@ -12,7 +12,7 @@ class FakeEmbedder:
 
 
 def test_partial_index_progress_resumes_only_matching_snapshot(tmp_path: Path):
-    state_path = tmp_path / "model.progress.json"
+    state_path = tmp_path / "model.sqlite"
     embedder = FakeEmbedder()
     first = IndexProgress(state_path, "model-revision", "snapshot-profiles-date",
                           None, embedder, "cpu", None, psutil, {}, 2.0)

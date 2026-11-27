@@ -44,6 +44,8 @@ def resolve_document_sender(db, document, username):
     actor = db["usuarios"].find_one({"username": username, "is_active": True})
     if not actor:
         raise HTTPException(403, "Usuario no autorizado.")
+    if document.get("status") == "deleted":
+        raise HTTPException(409, "El documento fue eliminado.")
     creator = document.get("created_by")
     if not creator or (username != creator and actor.get("rol") not in ("admin", "supervisor")):
         raise HTTPException(403, "Solo el creador o un supervisor autorizado puede enviar este documento.")
@@ -116,8 +118,12 @@ async def send_document_invitation(adb, *, collection, document, username, phone
         session = None
     prior = document.get("whatsapp_invitation") or {}
     if prior.get("state") == "manual_prepared":
-        # Once a manual link is exposed we cannot know if it was sent.
-        # Never silently switch to API and risk a duplicate.
+        # Reopen the same prepared link if the creator cancelled the browser
+        # prompt. Do not dispatch it automatically, even after reconnecting.
+        if username == document.get("created_by") and token == (document.get("security") or {}).get("token"):
+            return {"status": "manual_fallback",
+                    "whatsapp_url": "https://wa.me/" + recipient.lstrip("+") + "?text=" + quote(message, safe=""),
+                    "message": "Envío manual previamente preparado. Revise el chat antes de reenviar."}
         raise HTTPException(409, "Ya se preparó un envío manual. Verifique el chat del ejecutivo antes de un nuevo envío.")
     previous_status = document.get("status", "created")
     security = document.get("security") or {}

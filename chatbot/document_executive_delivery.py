@@ -1,6 +1,7 @@
 """Document signing invitations: use only the recorded creator's verified session."""
 from datetime import datetime, timezone
 import re
+from urllib.parse import quote
 from uuid import uuid4
 
 import requests
@@ -12,7 +13,7 @@ from chatbot.executive_whatsapp_audit import _session
 from chatbot.crm_executive_outbound import (
     OutboundBlocked, verify_provider_sender_identity, _provider_rejection_reason,
 )
-from chatbot.crm_executive_outbound_api import _session_status
+from chatbot.crm_executive_outbound_api import _session_status, _DISCONNECTED_STATES
 from chatbot.whatsapp_client import _provider_message_id, throttle_outgoing_message
 
 
@@ -30,6 +31,13 @@ def document_recipient(phone):
     return "+" + digits
 
 
+class ManualDocumentFallback(HTTPException):
+    """No API request was made: only the actual creator may send manually."""
+    def __init__(self, reason):
+        self.reason = reason
+        super().__init__(409, "WhatsApp no vinculado o desconectado. Use su propio WhatsApp para el envío manual.")
+
+
 def resolve_document_sender(db, document, username):
     if not username:
         raise HTTPException(401, "Inicie sesión para enviar el documento.")
@@ -45,10 +53,17 @@ def resolve_document_sender(db, document, username):
     if not owner:
         raise HTTPException(409, "El creador no tiene una cuenta de ejecutivo activa para este envío.")
     sid = str((owner.get("wasender") or {}).get("session_id") or "")
+    if not sid:
+        if username == creator:
+            raise ManualDocumentFallback("session_not_linked")
+        raise HTTPException(409, "El creador debe enviar desde su propio WhatsApp.")
     session = _session(db, sid)
     if not session or str(session.get("user_id")) != str(owner["_id"]):
         raise HTTPException(409, "El ejecutivo creador debe vincular su WhatsApp antes de enviar.")
-    if _session_status(session) != "connected":
+    status = _session_status(session)
+    if status in _DISCONNECTED_STATES and username == creator:
+        raise ManualDocumentFallback("session_disconnected")
+    if status != "connected":
         raise HTTPException(409, "WhatsApp del ejecutivo no está conectado o no se pudo verificar. No se utilizó el teléfono de oficina.")
     try:
         verify_provider_sender_identity(session, expected_phone=document_recipient(owner.get("telefono") or owner.get("phone")), force=True)
@@ -89,17 +104,52 @@ async def send_document_invitation(adb, *, collection, document, username, phone
     from chatbot.storage import get_db
 
     recipient = document_recipient(phone)
-    session = await run_in_threadpool(resolve_document_sender, get_db(), document, username)
     docs = adb[collection]
+    # Apply spacing BEFORE checking provider health: a queued request must
+    # not use connection evidence from before the throttle wait.
+    await throttle_outgoing_message()
+    fallback_reason = None
+    try:
+        session = await run_in_threadpool(resolve_document_sender, get_db(), document, username)
+    except ManualDocumentFallback as exc:
+        fallback_reason = exc.reason
+        session = None
+    prior = document.get("whatsapp_invitation") or {}
+    if prior.get("state") == "manual_prepared":
+        # Once a manual link is exposed we cannot know if it was sent.
+        # Never silently switch to API and risk a duplicate.
+        raise HTTPException(409, "Ya se preparó un envío manual. Verifique el chat del ejecutivo antes de un nuevo envío.")
     previous_status = document.get("status", "created")
     security = document.get("security") or {}
     attempt = uuid4().hex
     now = datetime.now(timezone.utc)
+    if fallback_reason:
+        reservation = await docs.update_one(
+            {"_id": document["_id"], "created_by": username,
+             "status": previous_status, "security.token": security.get("token"),
+             "security.token_used": {"$ne": True},
+             "whatsapp_invitation.state": {"$nin": ["sending", "delivery_unknown", "manual_prepared"]}},
+            {"$set": {"security.token": token, "security.token_expiry": expiry,
+                      "security.token_used": False,
+                      "whatsapp_invitation": {
+                          "attempt_id": attempt, "state": "manual_prepared",
+                          "started_at": now, "requested_by": username,
+                          "transport": "manual_whatsapp", "reason": fallback_reason,
+                      }},
+             "$push": {"timeline": {"action": "whatsapp_manual_prepared",
+                                     "server_timestamp": server_timestamp,
+                                     "reason": fallback_reason, "requested_by": username}}},
+        )
+        if reservation.modified_count != 1:
+            raise HTTPException(409, "El documento cambió o ya tiene un envío pendiente.")
+        return {"status": "manual_fallback",
+                "whatsapp_url": "https://wa.me/" + recipient.lstrip("+") + "?text=" + quote(message, safe=""),
+                "message": "No se ha enviado. Abra su propio WhatsApp y confirme manualmente el envío."}
     reservation = await docs.update_one(
         {"_id": document["_id"], "created_by": document["created_by"],
          "status": previous_status, "security.token": security.get("token"),
          "security.token_used": {"$ne": True},
-         "whatsapp_invitation.state": {"$nin": ["sending", "delivery_unknown"]}},
+         "whatsapp_invitation.state": {"$nin": ["sending", "delivery_unknown", "manual_prepared"]}},
         {"$set": {
             "security.token": token, "security.token_expiry": expiry,
             "security.token_used": False,
@@ -112,7 +162,6 @@ async def send_document_invitation(adb, *, collection, document, username, phone
     )
     if reservation.modified_count != 1:
         raise HTTPException(409, "Existe un envío pendiente o cambió el documento. Revise su estado antes de reenviar.")
-    await throttle_outgoing_message()
     state, pid, reason = await run_in_threadpool(dispatch_document, session, recipient, message)
     finish = datetime.now(timezone.utc)
     guard = {"_id": document["_id"], "whatsapp_invitation.attempt_id": attempt}

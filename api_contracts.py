@@ -823,11 +823,10 @@ async def view_signed_pdf(contract_code: str):
 @router.post("/api/{contract_code}/send")
 async def send_contract(contract_code: str, request: Request):
     """Genera token y envía por WhatsApp"""
-    db = get_db()
     from chatbot.storage import get_async_db
     adb = get_async_db()
     username, user_role = await _get_request_user(adb, request)
-    contract = db["contracts"].find_one({"contract_code": contract_code})
+    contract = await adb["contracts"].find_one({"contract_code": contract_code})
     if not contract:
         raise HTTPException(status_code=404, detail="Contrato no encontrado")
     # Después del primer envío, solo supervisor/admin puede reenviar
@@ -857,26 +856,6 @@ async def send_contract(contract_code: str, request: Request):
     server_timestamp = SecurityContracts.generate_server_timestamp()
     ip = get_client_ip(request)
     ua = request.headers.get("user-agent", "")
-    
-    db["contracts"].update_one(
-        {"contract_code": contract_code},
-        {
-            "$set": {
-                "status": "sent",
-                "security.token": token,
-                "security.token_expiry": expiry,
-                "security.token_used": False
-            },
-            "$push": {
-                "timeline": {
-                    "action": "contract_sent",
-                    "server_timestamp": server_timestamp,
-                    "ip": ip,
-                    "user_agent": ua
-                }
-            }
-        }
-    )
     
     # Enviar WhatsApp
     phone = contract.get("phone")
@@ -915,23 +894,13 @@ La firma electrónica utilizada en este proceso se encuentra respaldada por la L
 👉 Revise y firme aquí:
 {link}"""
     
-    # Guardar mensaje dentro del mismo documento del contrato
-    try:
-        db["contracts"].update_one(
-            {"contract_code": contract_code},
-            {"$push": {"messages": {
-                "phone": phone,
-                "message_content": mensaje,
-                "message_type": "contract_sent",
-                "timestamp_utc": datetime.now(timezone.utc)
-            }}}
-        )
-    except Exception as e:
-        logger.error(f"[MSG_LOG] Error guardando mensaje: {e}")
-    
-    await send_whatsapp_message(phone, mensaje)
-    
-    return {"status": "ok", "message": "Enviado por WhatsApp"}
+    from chatbot.document_executive_delivery import send_document_invitation
+    return await send_document_invitation(
+        adb, collection="contracts", document=contract, username=username,
+        phone=phone, message=mensaje, token=token, expiry=expiry,
+        action="contract_sent", server_timestamp=server_timestamp, ip=ip, ua=ua,
+    )
+
 
 @router.get("/api/statuses")
 async def contracts_statuses(request: Request):

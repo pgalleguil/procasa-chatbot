@@ -1442,17 +1442,10 @@
             try {
                 const res = await fetch(`/visitas/api/${code}/send`, { method: 'POST' });
                 const data = await res.json();
-                if (res.ok && data.status === 'manual_fallback') {
-                    const url = new URL(data.whatsapp_url);
-                    if (url.origin !== 'https://wa.me') throw new Error('Invalid WhatsApp URL');
-                    if (confirm('WhatsApp no vinculado o desconectado. El documento todavía NO se ha enviado. Abra WhatsApp con SU PROPIO número, verifique la cuenta y envíe el mensaje manualmente. ¿Continuar?')) {
-                        const tab = window.open(url.href, '_blank');
-                        if (tab) tab.opener = null;
-                        else window.prompt('Copie y abra este enlace en su propio WhatsApp:', url.href);
-                    }
-                    btn.innerHTML = originalIcon;
-                    btn.disabled = false;
-                    return;
+                if (res.ok && data.transport === 'office_wasender_api') {
+                    alert(data.admin_alert_state === 'accepted'
+                        ? 'Documento enviado desde el WhatsApp de oficina por contingencia. Se notificó al administrador.'
+                        : 'Documento enviado desde el WhatsApp de oficina por contingencia. La alerta al administrador aún no está confirmada.');
                 }
                 if (res.ok && (data.status === 'ok' || data.status === 'success')) {
                     window.location.reload();

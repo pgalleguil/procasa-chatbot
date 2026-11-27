@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -48,7 +48,7 @@ def test_non_owner_agent_cannot_send():
 
 
 @pytest.mark.parametrize("state", ["disconnected", "unavailable"])
-def test_no_office_fallback(state):
+def test_unhealthy_session_requires_office_contingency(state):
     users = Mock()
     users.find_one.side_effect = [
         {"username": "owner", "rol": "agente"},
@@ -81,23 +81,23 @@ def test_network_error_does_not_retry():
     assert post.call_count == 1
 
 
-def test_unlinked_creator_has_manual_contingency():
-    from chatbot.document_executive_delivery import ManualDocumentFallback
+def test_unlinked_creator_has_office_contingency():
+    from chatbot.document_executive_delivery import OfficeDocumentFallback
     users = Mock()
     users.find_one.side_effect = [
         {"username": "owner", "rol": "agente"},
         {"_id": "owner", "telefono": "+56912345678"},
     ]
     with patch("chatbot.document_executive_delivery._session") as lookup:
-        with pytest.raises(ManualDocumentFallback) as exc:
+        with pytest.raises(OfficeDocumentFallback) as exc:
             resolve_document_sender({"usuarios": users}, {"created_by": "owner"}, "owner")
         assert exc.value.reason == "session_not_linked"
         lookup.assert_not_called()
 
 
-def test_wrong_sender_never_offers_fallback():
+def test_wrong_sender_blocks_executive_and_requires_office():
     from chatbot.crm_executive_outbound import OutboundBlocked
-    from chatbot.document_executive_delivery import ManualDocumentFallback
+    from chatbot.document_executive_delivery import OfficeDocumentFallback
     users = Mock()
     users.find_one.side_effect = [
         {"username": "owner", "rol": "agente"},
@@ -109,11 +109,12 @@ def test_wrong_sender_never_offers_fallback():
                side_effect=OutboundBlocked("sender_identity_mismatch")):
         with pytest.raises(HTTPException) as exc:
             resolve_document_sender({"usuarios": users}, {"created_by": "owner"}, "owner")
-        assert not isinstance(exc.value, ManualDocumentFallback)
+        assert isinstance(exc.value, OfficeDocumentFallback)
+        assert exc.value.reason == "sender_identity_mismatch"
 
 
-def test_disconnected_creator_has_manual_contingency():
-    from chatbot.document_executive_delivery import ManualDocumentFallback
+def test_disconnected_creator_has_office_contingency():
+    from chatbot.document_executive_delivery import OfficeDocumentFallback
     users = Mock()
     users.find_one.side_effect = [
         {"username": "owner", "rol": "agente"},
@@ -121,5 +122,82 @@ def test_disconnected_creator_has_manual_contingency():
     ]
     with patch("chatbot.document_executive_delivery._session", return_value={"user_id": "owner"}), \
          patch("chatbot.document_executive_delivery._session_status", return_value="disconnected"):
-        with pytest.raises(ManualDocumentFallback):
+        with pytest.raises(OfficeDocumentFallback):
             resolve_document_sender({"usuarios": users}, {"created_by": "owner"}, "owner")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("collection,preflight,executive_result,office_result,expected_calls,expected_transport,expected_state", [
+    ("visitas", None, ("accepted", "exec-1", None), None, ["executive"], "executive_wasender_api", "accepted"),
+    ("contracts", "session_not_linked", None, ("accepted", "office-1", None), ["office"], "office_wasender_api", "accepted"),
+    ("visitas", "session_disconnected", None, ("accepted", "office-1", None), ["office"], "office_wasender_api", "accepted"),
+    ("contracts", "sender_identity_mismatch", None, ("accepted", "office-1", None), ["office"], "office_wasender_api", "accepted"),
+    ("visitas", None, ("rejected", None, "session_disconnected"), ("accepted", "office-1", None), ["executive", "office"], "office_wasender_api", "accepted"),
+    ("contracts", None, ("delivery_unknown", None, "provider_transport_uncertain"), None, ["executive"], "executive_wasender_api", "delivery_unknown"),
+    ("visitas", None, ("rejected", None, "recipient_not_registered"), None, ["executive"], "executive_wasender_api", "rejected"),
+    ("contracts", "session_not_linked", None, None, [], "office_wasender_api", "rejected"),
+    ("visitas", "session_unavailable", None, ("delivery_unknown", None, "provider_transport_uncertain"), ["office"], "office_wasender_api", "delivery_unknown"),
+])
+async def test_document_routing_and_admin_incident(collection, preflight, executive_result, office_result,
+                                                    expected_calls, expected_transport, expected_state):
+    from datetime import datetime, timezone
+    from chatbot import document_executive_delivery as mod
+    executive = {"user_id": "executive", "session_id": "123", "token": "exec-token"}
+    office = {"user_id": "office", "session_id": "office", "token": "office-token"}
+    docs = Mock()
+    docs.update_one = AsyncMock(return_value=SimpleNamespace(modified_count=1))
+    document = {"_id": "doc-1", "created_by": "owner", "status": "created", "security": {"token": None}}
+    calls = []
+    def dispatch(session, recipient, message):
+        calls.append(session["user_id"])
+        return executive_result if session["user_id"] == "executive" else office_result
+    resolver = Mock(return_value=executive)
+    if preflight:
+        resolver.side_effect = mod.OfficeDocumentFallback(preflight)
+    alert = AsyncMock()
+    with patch("chatbot.storage.get_db", return_value={}), \
+         patch.object(mod, "resolve_document_sender", resolver), \
+         patch.object(mod, "office_session", return_value=office if office_result else None), \
+         patch.object(mod, "dispatch_document", side_effect=dispatch), \
+         patch.object(mod, "throttle_outgoing_message", AsyncMock()), \
+         patch.object(mod, "alert_document_problem", alert):
+        kwargs = dict(collection=collection, document=document, username="owner", phone="+56912345678",
+                      message="link", token="token", expiry=datetime.now(timezone.utc),
+                      action="document_sent", server_timestamp="now", ip="ip", ua="ua")
+        if expected_state == "accepted":
+            result = await mod.send_document_invitation({collection: docs}, **kwargs)
+            assert result["transport"] == expected_transport
+        else:
+            with pytest.raises(HTTPException):
+                await mod.send_document_invitation({collection: docs}, **kwargs)
+    assert calls == expected_calls
+    final = docs.update_one.call_args.args[1]["$set"]
+    assert final["whatsapp_invitation.state"] == expected_state
+    if expected_transport == "office_wasender_api" or expected_state != "accepted":
+        alert.assert_awaited_once()
+        assert alert.call_args.kwargs["transport"] == expected_transport
+        assert alert.call_args.kwargs["outcome"] == expected_state
+    else:
+        alert.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_admin_alert_has_no_customer_link_and_records_provider_id():
+    from chatbot import document_executive_delivery as mod
+    docs = Mock()
+    docs.update_one = AsyncMock(return_value=SimpleNamespace(modified_count=1))
+    office = {"user_id": "office", "session_id": "office", "token": "office-token"}
+    sender = Mock(return_value=("accepted", "admin-1", None))
+    with patch("chatbot.executive_session_admin_alerts._pablo_recipient", return_value="+56912345678"), \
+         patch.object(mod, "office_session", return_value=office), \
+         patch.object(mod, "dispatch_document", sender), \
+         patch.object(mod, "throttle_outgoing_message", AsyncMock()):
+        await mod.alert_document_problem(docs, {"_id": "doc"}, db={}, collection="contracts",
+            document={"_id": "doc", "created_by": "Erika", "contract_code": "PROC-TEST"},
+            reason="session_not_linked", transport="office_wasender_api", outcome="accepted", attempt="test")
+    assert sender.call_args.args[1] == "+56912345678"
+    assert "PROC-TEST" in sender.call_args.args[2]
+    assert "Erika" in sender.call_args.args[2]
+    assert "WhatsApp no vinculado" in sender.call_args.args[2]
+    assert "https://" not in sender.call_args.args[2]
+    assert docs.update_one.call_args.args[1]["$set"]["whatsapp_invitation.admin_alert.provider_message_id"] == "admin-1"

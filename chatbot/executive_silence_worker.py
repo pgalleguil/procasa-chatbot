@@ -16,7 +16,7 @@ from pymongo.errors import DuplicateKeyError
 import requests
 
 from config import Config
-from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment, sequence_due, _plain
+from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment, sequence_due, _plain, expects_customer_reply
 from .business_calendar import add_business_minutes, as_chile, CHILE
 from .executive_silence_llm import draft_followup, initial_recovery_draft, verified_initial_stage_fallback
 from .executive_capture_continuity import continuity_since, record_status, recover_provider_continuity
@@ -79,8 +79,7 @@ def enqueue(db, lead_id, *, now=None):
     if not enabled():
         return
     now = now or datetime.now(timezone.utc)
-    doc = db["leads"].find_one({"_id": lead_id},
-        {"commercial_intelligence": 1, "lifecycle": 1, "messages": 1})
+    doc = db["leads"].find_one({"_id": lead_id})
     if not doc:
         return
     if _classify_broker(db, doc):
@@ -118,11 +117,41 @@ def enqueue(db, lead_id, *, now=None):
             or not all((anchor, cycle, owner, session))):
         return
     key = sha256(f"{lead_id}|{cycle}|{anchor}".encode()).hexdigest()
-    db[QUEUE].update_one({"_id": key}, {"$setOnInsert": {
-        "lead_id": lead_id, "cycle": str(cycle), "owner": str(owner),
+    job = {
+        "_id": key, "lead_id": lead_id, "cycle": str(cycle), "owner": str(owner),
         "session": str(session), "anchor": anchor, "state": "pending",
         "attempt": 1, "created_at": now, "due_at": next_followup_slot(add_business_minutes(sent, WAIT_MINUTES)),
-    }}, upsert=True)
+    }
+    inserted = db[QUEUE].update_one({"_id": key},
+        {"$setOnInsert": {k: v for k, v in job.items() if k != "_id"}}, upsert=True)
+    # Once per new job, not every poll: early diagnostics use only local DB
+    # evidence. They neither send nor bypass final checks; temporary missing
+    # evidence can be resolved by the normal due-time validation.
+    if getattr(inserted, "upserted_id", None) is not None:
+        try:
+            reason = _preflight_reason(db, doc, job, now)
+            db[QUEUE].update_one({"_id": key, "state": "pending"}, {"$set": {
+                "preflight_reason": reason, "preflight_at": now,
+            }})
+            if reason != "ready":
+                _record_incident(db, job, "preflight_" + reason)
+        except Exception:
+            _record_incident(db, job, "preflight_evaluation_error")
+
+
+def _preflight_reason(db, doc, job, now):
+    """Early diagnosis only; final worker rechecks canonical evidence."""
+    anchor = next((m for m in doc.get("messages") or []
+                   if isinstance(m, dict) and m.get("message_id") == job["anchor"]), None)
+    if not anchor or not expects_customer_reply(anchor.get("content")):
+        return "no_clear_customer_reply_expected"
+    phone = normalize_phone_strict(doc.get("phone"))
+    if not phone:
+        return "invalid_phone"
+    if not _contact_evidence(db, doc, job, phone, now):
+        return "inquiry_contact_evidence_missing"
+    return "ready"
+
 
 
 def _verified_proppit_inquiry(doc, anchor_at):
@@ -871,7 +900,8 @@ def process_due(db, *, limit=3, now=None):
                 else:
                     if reason in {"classification_not_ready", "capture_continuity_unverified",
                                   "attempt_history_unverified_or_duplicate", "unverified_prerequisite",
-                                  "incomplete_message_history", "inquiry_contact_evidence_missing"}:
+                                  "incomplete_message_history", "inquiry_contact_evidence_missing",
+                                  "no_clear_customer_reply_expected"}:
                         _record_incident(db, job, reason)
                     _finish(db, job, state="held", reason=reason)
         except OutboundBlocked as exc:

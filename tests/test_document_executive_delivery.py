@@ -79,3 +79,47 @@ def test_network_error_does_not_retry():
     result = dispatch_document({"token": "owner-token"}, "+56912345678", "link", post=post)
     assert result[0] == "delivery_unknown"
     assert post.call_count == 1
+
+
+def test_unlinked_creator_has_manual_contingency():
+    from chatbot.document_executive_delivery import ManualDocumentFallback
+    users = Mock()
+    users.find_one.side_effect = [
+        {"username": "owner", "rol": "agente"},
+        {"_id": "owner", "telefono": "+56912345678"},
+    ]
+    with patch("chatbot.document_executive_delivery._session") as lookup:
+        with pytest.raises(ManualDocumentFallback) as exc:
+            resolve_document_sender({"usuarios": users}, {"created_by": "owner"}, "owner")
+        assert exc.value.reason == "session_not_linked"
+        lookup.assert_not_called()
+
+
+def test_wrong_sender_never_offers_fallback():
+    from chatbot.crm_executive_outbound import OutboundBlocked
+    from chatbot.document_executive_delivery import ManualDocumentFallback
+    users = Mock()
+    users.find_one.side_effect = [
+        {"username": "owner", "rol": "agente"},
+        {"_id": "owner", "telefono": "+56912345678", "wasender": {"session_id": 123}},
+    ]
+    with patch("chatbot.document_executive_delivery._session", return_value={"user_id": "owner"}), \
+         patch("chatbot.document_executive_delivery._session_status", return_value="connected"), \
+         patch("chatbot.document_executive_delivery.verify_provider_sender_identity",
+               side_effect=OutboundBlocked("sender_identity_mismatch")):
+        with pytest.raises(HTTPException) as exc:
+            resolve_document_sender({"usuarios": users}, {"created_by": "owner"}, "owner")
+        assert not isinstance(exc.value, ManualDocumentFallback)
+
+
+def test_disconnected_creator_has_manual_contingency():
+    from chatbot.document_executive_delivery import ManualDocumentFallback
+    users = Mock()
+    users.find_one.side_effect = [
+        {"username": "owner", "rol": "agente"},
+        {"_id": "owner", "telefono": "+56912345678", "wasender": {"session_id": 123}},
+    ]
+    with patch("chatbot.document_executive_delivery._session", return_value={"user_id": "owner"}), \
+         patch("chatbot.document_executive_delivery._session_status", return_value="disconnected"):
+        with pytest.raises(ManualDocumentFallback):
+            resolve_document_sender({"usuarios": users}, {"created_by": "owner"}, "owner")

@@ -7,6 +7,7 @@ are checked automatically. Production sending remains separately gated.
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import os
+import re
 import logging
 import time
 from uuid import uuid4
@@ -124,6 +125,45 @@ def enqueue(db, lead_id, *, now=None):
     }}, upsert=True)
 
 
+def _verified_proppit_inquiry(doc, anchor_at):
+    """Explicit request for contact from a canonical Prop360/Proppit event.
+
+    Not a WhatsApp opt-in record; this only establishes the inquiry for the
+    existing narrow service-follow-up policy. A generic form is insufficient.
+    """
+    if doc.get("source_type") != "prop360":
+        return False
+    if doc.get("phone_is_synthetic") or doc.get("contact_identity_incomplete"):
+        return False
+    phone = normalize_phone_strict(doc.get("phone"))
+    if not phone or normalize_phone_strict(doc.get("contact_phone_normalized")) != phone:
+        return False
+    event_ids = {str(e.get("source_event_id")) for e in (doc.get("source_events") or [])
+                 if isinstance(e, dict) and e.get("source_event_id")
+                 and e.get("source_system") == "prop360"
+                 and _plain(e.get("portal_source")) == "proppit"}
+    for m in doc.get("messages") or []:
+        if not isinstance(m, dict) or m.get("source") != "prop360" or m.get("channel") != "portal_form":
+            continue
+        if (m.get("actor_type") != "customer" or m.get("role") != "user"
+                or _plain(m.get("portal")) != "proppit"
+                or str(m.get("source_event_id") or "") not in event_ids):
+            continue
+        received = _time(m.get("timestamp"))
+        if not received or not anchor_at - timedelta(hours=24) <= received <= anchor_at:
+            continue
+        # Only the customer's own request after the portal metadata marker.
+        parts = _plain(m.get("content")).split("[mensaje del cliente]", 1)
+        if len(parts) != 2:
+            continue
+        customer = parts[1]
+        if re.search(r"\b(?:no|nunca|tampoco)\b", customer):
+            continue
+        if re.search(r"\b(?:quisiera|quiero|me gustaria|necesito|solicito)\s+que\s+me\s+contact(?:en|e)\b", customer):
+            return True
+    return False
+
+
 def _verified_portal_first_contact(db, doc, job, now):
     """Validate the CRM's existing inquiry and accepted first human contact.
 
@@ -131,11 +171,14 @@ def _verified_portal_first_contact(db, doc, job, now):
     not evidence that the recipient gave explicit WhatsApp opt-in. Never
     create or alter a customer consent record from an outbound send.
     """
-    if doc.get("source_type") != "manual" or not doc.get("_id"):
+    if doc.get("source_type") not in {"manual", "prop360"} or not doc.get("_id"):
         return False
     prospect = doc.get("prospecto") or {}
     origin = str(prospect.get("canal_origen") or doc.get("origen") or "").strip().lower()
-    if not any(portal in origin for portal in ("enlace inmobiliario", "enlaceinmobiliario",
+    prop360 = doc.get("source_type") == "prop360"
+    if prop360 and origin != "proppit":
+        return False
+    if not prop360 and not any(portal in origin for portal in ("enlace inmobiliario", "enlaceinmobiliario",
                                                "portalinmobiliario", "portal inmobiliario",
                                                "yapo", "toctoc", "toc toc", "chilepropiedades")):
         return False
@@ -154,6 +197,8 @@ def _verified_portal_first_contact(db, doc, job, now):
                 or not m.get("provider_message_id") or not sent
                 or not now - timedelta(hours=24) <= sent <= now):
             continue
+        if prop360 and not _verified_proppit_inquiry(doc, sent):
+            return False
         return bool(db[OUTBOX].find_one({
             "lead_id": doc["_id"], "mode": "manual_crm", "state": "accepted",
             "canonical_recorded": True, "provider_send_attempted": True,

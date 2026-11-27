@@ -297,7 +297,14 @@ def evaluate_silence(
                 or not re.search(r"[a-z]", prior)):
             return _result("HOLD", "customer_closure_or_deferral")
     outbound = _plain(last.get("content"))
-    if not ASK.search(outbound) or OWN_ACTION.search(outbound):
+    # The approved CRM greeting invites the customer to choose a question
+    # or a visit; it does not itself promise an executive action.
+    template_question = re.search(
+        r"¿(?:hay alguna informacion que necesites confirmar|tienes alguna consulta sobre la propiedad) o te gustaria coordinar una visita\?\s*$",
+        outbound)
+    customer_question = bool(template_question and not customers)
+    own_action_text = outbound[:template_question.start()] if customer_question else outbound
+    if not (ASK.search(outbound) or customer_question) or OWN_ACTION.search(own_action_text):
         return _result("HOLD", "no_clear_customer_reply_expected")
     if calculate_business_minutes(anchor, now) >= EXPIRY_MINUTES:
         return _result("HOLD", "stale_conversation")

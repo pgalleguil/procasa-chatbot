@@ -39,6 +39,8 @@ def resolve_document_sender(db, document, username):
     creator = document.get("created_by")
     if not creator or (username != creator and actor.get("rol") not in ("admin", "supervisor")):
         raise HTTPException(403, "Solo el creador o un supervisor autorizado puede enviar este documento.")
+    if document.get("status") in ("sent", "opened", "otp_requested", "otp_verified", "signed", "accepted") and actor.get("rol") not in ("admin", "supervisor"):
+        raise HTTPException(403, "Solo supervisor/admin puede reenviar un documento ya enviado.")
     owner = db["usuarios"].find_one({"username": creator, "is_active": True, "rol": "agente"})
     if not owner:
         raise HTTPException(409, "El creador no tiene una cuenta de ejecutivo activa para este envío.")
@@ -49,8 +51,8 @@ def resolve_document_sender(db, document, username):
     if _session_status(session) != "connected":
         raise HTTPException(409, "WhatsApp del ejecutivo no está conectado o no se pudo verificar. No se utilizó el teléfono de oficina.")
     try:
-        verify_provider_sender_identity(session, expected_phone=owner.get("telefono") or owner.get("phone"), force=True)
-    except OutboundBlocked:
+        verify_provider_sender_identity(session, expected_phone=document_recipient(owner.get("telefono") or owner.get("phone")), force=True)
+    except (OutboundBlocked, HTTPException):
         raise HTTPException(409, "No se pudo verificar el número de WhatsApp del ejecutivo. Contacte al administrador.") from None
     return session
 
@@ -117,6 +119,11 @@ async def send_document_invitation(adb, *, collection, document, username, phone
     fields = {"whatsapp_invitation.state": state, "whatsapp_invitation.finished_at": finish,
               "whatsapp_invitation.provider_message_id": pid, "whatsapp_invitation.reason": reason}
     if state == "accepted":
+        # If the recipient opened or signed while the request was in flight,
+        # never overwrite the newer status.
+        if previous_status == "created":
+            await docs.update_one({**guard, "status": "created", "security.token_used": {"$ne": True}},
+                                  {"$set": {"status": "sent"}})
         await docs.update_one(guard, {"$set": fields, "$push": {
             "timeline": {"action": action, "server_timestamp": server_timestamp, "ip": ip, "user_agent": ua},
             "messages": {"phone": recipient, "message_content": message, "message_type": action,
@@ -124,11 +131,6 @@ async def send_document_invitation(adb, *, collection, document, username, phone
                          "sender_session_id": session["session_id"], "provider_message_id": pid,
                          "source": "executive_wasender_api"},
         }})
-        # If the recipient opened or signed while the request was in flight,
-        # never overwrite the newer status.
-        if previous_status == "created":
-            await docs.update_one({**guard, "status": "created", "security.token_used": {"$ne": True}},
-                                  {"$set": {"status": "sent"}})
         return {"status": "ok", "message": "Enviado por WhatsApp del ejecutivo"}
     if state == "rejected":
         await docs.update_one({**guard, "status": previous_status, "security.token": token,

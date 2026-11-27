@@ -51,12 +51,21 @@ def main():
         all_results[name] = results
 
     first = payloads[ORDER[0]]
+    stable_source_files = (
+        "chatbot/local_property_search.py",
+        "chatbot/local_embedding_cache.py",
+        "scripts/run_local_property_search.py",
+        "tests/fixtures/local_property_search_profiles.json",
+    )
     for name in ORDER[1:]:
         candidate = payloads[name]
         for field in ("snapshot_sha256", "profiles_sha256", "as_of", "catalog_rows",
-                      "profile_count", "code_base_commit", "implementation_sha256", "software"):
+                      "profile_count", "software"):
             if candidate.get(field) != first.get(field):
                 raise ValueError(f"runs differ in {field}: {ORDER[0]} vs {name}")
+        for source_file in stable_source_files:
+            if candidate["implementation_sha256"].get(source_file) != first["implementation_sha256"].get(source_file):
+                raise ValueError(f"engine/profile source differs in {source_file}: {ORDER[0]} vs {name}")
     if first["profiles_sha256"] != __import__("hashlib").sha256(args.profiles.read_bytes()).hexdigest():
         raise ValueError("aggregate profiles do not match benchmark runs")
 
@@ -73,8 +82,15 @@ def main():
         "clp_budget_count": first["clp_budget_count"],
         "uf_conversion": first["uf_conversion"],
         "software": first["software"],
-        "code_base_commit": first["code_base_commit"],
-        "implementation_sha256": first["implementation_sha256"],
+        "variant_code_base_commits": {name: payloads[name]["code_base_commit"] for name in ORDER},
+        "engine_and_profile_sha256": {
+            source_file: first["implementation_sha256"][source_file]
+            for source_file in stable_source_files
+        },
+        "variant_harness_sha256": {
+            name: payloads[name]["implementation_sha256"].get("scripts/benchmark_local_property_search.py")
+            for name in ORDER
+        },
         "variants": [metrics[name] for name in ORDER],
         "relevance_metrics": {
             "precision_at_5": None, "recall_at_10": None, "ndcg_at_10": None,

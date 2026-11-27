@@ -529,7 +529,7 @@ def main():
         f"- UF para presupuestos: CLP {40809.44:,.2f} al 2026-11-26 ([SII](https://www.sii.cl/valores_y_fechas/uf/uf2026.htm)).",
         "- Precision@5, Recall@10 y nDCG@10 quedan pendientes de etiquetas humanas independientes.",
         f"- Evaluación ciega: `{blind_path.name}`; clave de rankings: `{key_path.name}`.",
-        f"- Reanudación CLI: `{resume['status']}`, {resume['completed_profiles']} perfiles.",
+        f"- Reanudación CLI: `{resume.get('status')}`, {resume.get('completed_profiles', 0)} perfiles.",
         "",
         "| Variante | Lotes | Dispositivo | Índice frío (s) | Índice caliente (s) | Latencia p50 (ms) | p95 (ms) | consultas/s | RAM pico (MB) | VRAM reservada (MB) | violaciones duras |",
         "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|",

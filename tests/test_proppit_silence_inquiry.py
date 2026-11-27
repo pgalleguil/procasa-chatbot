@@ -31,3 +31,27 @@ def test_real_inquiry_provenance_and_explicit_request():
         changed["messages"][0]["content"] = text
         assert not _verified_proppit_inquiry(changed, anchor)
     assert not _verified_proppit_inquiry(lead, datetime.fromisoformat("2026-11-28T09:47:42-03:00"))
+
+
+def test_preflight_checks_current_template_and_contact_evidence(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    anchor = datetime.fromisoformat("2026-11-26T09:47:42-03:00")
+    lead = fixture()
+    lead["messages"].append({"message_id": "anchor", "content":
+        "¿Tienes alguna consulta sobre la propiedad o te gustaría coordinar una visita?"})
+    job = {"anchor": "anchor"}
+    monkeypatch.setattr(worker, "_contact_evidence", lambda db, doc, job, phone, now: worker._verified_proppit_inquiry(doc, anchor))
+    assert worker._preflight_reason(None, lead, job, anchor) == "ready"
+    lead["source_events"] = []
+    assert worker._preflight_reason(None, lead, job, anchor) == "inquiry_contact_evidence_missing"
+    lead["messages"][-1]["content"] = "Voy a coordinar una visita"
+    assert worker._preflight_reason(None, lead, job, anchor) == "no_clear_customer_reply_expected"
+
+
+def test_portal_broker_without_message_uuid():
+    from chatbot.broker_contact_role import broker_evidence
+    lead = fixture()
+    lead["messages"][0]["content"] = "[Proppit Premium] [Mensaje del cliente] ¿Realizan canje?"
+    assert broker_evidence(lead)["source_event_id"] == "test-event"
+    lead["messages"][0]["content"] = "Corredor [Mensaje del cliente] Quiero comprar una casa"
+    assert broker_evidence(lead) is None

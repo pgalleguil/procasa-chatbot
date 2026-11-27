@@ -907,3 +907,17 @@ def test_persisted_date_is_utc_but_external_naive_string_is_rejected():
     from chatbot import executive_silence_worker as worker
     assert worker._persisted_utc(datetime(2026, 11, 26, 14, 20)) == dt("2026-11-26T11:20:00")
     assert worker._persisted_utc("2026-11-26T14:20:00") is None
+
+
+def test_current_crm_greeting_is_customer_question():
+    for question in (
+        "¿Hay alguna información que necesites confirmar o te gustaría coordinar una visita?",
+        "¿Tienes alguna consulta sobre la propiedad o te gustaría coordinar una visita?",
+    ):
+        lead = fixture("2026-11-25T14:01:00")
+        lead["messages"][0]["content"] = "Hola, buenas tardes. Te comparto la publicación: https://www.procasa.cl/6723\n\n" + question
+        assert decide(lead, now="2026-11-25T18:00:00")["state"] == "CANDIDATE"
+        lead["messages"][0]["content"] = "Voy a consultar al propietario. " + question
+        assert decide(lead, now="2026-11-25T18:00:00")["state"] == "HOLD"
+        lead["messages"][0]["content"] = question
+        assert decide(lead, contact_authorized=False)["state"] == "HOLD"

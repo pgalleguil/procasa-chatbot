@@ -1641,6 +1641,18 @@
             try {
                 const res = await fetch(`/contracts/api/${contractCode}/send`, { method: 'POST' });
                 const data = await res.json();
+                if (res.ok && data.status === 'manual_fallback') {
+                    const url = new URL(data.whatsapp_url);
+                    if (url.origin !== 'https://wa.me') throw new Error('Invalid WhatsApp URL');
+                    if (confirm('WhatsApp no vinculado o desconectado. El documento todavía NO se ha enviado. Abra WhatsApp con SU PROPIO número, verifique la cuenta y envíe el mensaje manualmente. ¿Continuar?')) {
+                        const tab = window.open(url.href, '_blank');
+                        if (tab) tab.opener = null;
+                        else window.prompt('Copie y abra este enlace en su propio WhatsApp:', url.href);
+                    }
+                    btn.innerHTML = originalHTML;
+                    btn.disabled = false;
+                    return;
+                }
                 if (res.ok) {
                     btn.innerHTML = '<i class="fa-solid fa-check"></i>';
                     btn.classList.remove('btn-outline-secondary', 'btn-outline-warning');

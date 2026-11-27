@@ -13,12 +13,44 @@ from datetime import datetime, timezone
 
 ATTRIBUTES = ("bedrooms", "bathrooms", "parking", "usable_surface_m2", "total_surface_m2", "storage")
 BROKERS = {"CORREDOR_SEGURO", "CORREDOR_PROBABLE", "BROKER_CONFIRMED"}
+_EMAIL = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
+_CHILEAN_PHONE = re.compile(
+    r"(?<!\d)(?:\+?56[\s().-]*)?(?:9[\s().-]*\d{4}[\s().-]?\d{4}|"
+    r"2[\s().-]*\d{4}[\s().-]?\d{4})(?!\d)"
+)
+
+
 def fold(value):
     return "".join(c for c in unicodedata.normalize("NFKD", str(value or "").casefold())
                    if not unicodedata.combining(c)).strip()
 
+def public_text(value):
+    """Remove direct contact details before indexing or returning public text."""
+    text = str(value or "")
+    text = _EMAIL.sub(" ", text)
+    text = _CHILEAN_PHONE.sub(" ", text)
+    return " ".join(text.split())
+
+
+def public_url(value):
+    if not isinstance(value, str) or _EMAIL.search(value) or _CHILEAN_PHONE.search(value):
+        return None
+    return value
+
+
+def public_value(value):
+    """Sanitize nested feature values before they are exposed to local output."""
+    if isinstance(value, str):
+        return public_text(value)
+    if isinstance(value, dict):
+        return {public_text(key): public_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [public_value(item) for item in value]
+    return value
+
+
 def tokens(text):
-    return re.findall(r"[a-z0-9]+", fold(text))
+    return re.findall(r"[a-z0-9]+", fold(public_text(text)))
 
 def number(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -27,10 +59,15 @@ def number(value):
 
 def property_text(row):
     attrs = row.get("attributes") or {}
-    return " ".join(str(v) for v in (
+    features = row.get("features") or []
+    if isinstance(features, dict):
+        features = " ".join(f"{k} {v}" for k, v in features.items())
+    elif isinstance(features, (list, tuple, set)):
+        features = " ".join(str(v) for v in features)
+    return " ".join(public_text(v) for v in (
         row.get("property_type"), row.get("commune"), row.get("title"),
         row.get("description"), row.get("search_text"),
-        " ".join(f"{k} {attrs[k]}" for k in ATTRIBUTES if k in attrs)
+        features, " ".join(f"{k} {attrs[k]}" for k in ATTRIBUTES if k in attrs)
     ) if v)
 
 def profile_text(profile):
@@ -48,11 +85,86 @@ def _recent(value, hours, now):
     age = (now - value).total_seconds()
     return 0 <= age <= hours * 3600
 
+
+def _feature_text_evidence(text, term):
+    """Interpret explicit mentions conservatively, including nearby negation."""
+    phrase = fold(term)
+    if not phrase:
+        return None
+    pattern = re.compile(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)")
+    positive = negative = False
+    negation = re.compile(
+        r"(?:\bno\b|\bsin\b|\bningun[oa]?\b|\bcarece de\b|"
+        r"\bno (?:tiene|incluye|posee|cuenta con)\b|\bsin acceso a\b)"
+        r"(?:\s+[\w]+){0,3}\s*$"
+    )
+    normalized_text = fold(text)
+    for match in pattern.finditer(normalized_text):
+        prefix = normalized_text[max(0, match.start() - 70):match.start()]
+        if negation.search(prefix):
+            negative = True
+        else:
+            positive = True
+    if positive and negative:
+        return None
+    if positive:
+        return True
+    if negative:
+        return False
+    return None
+
+
+def _structured_feature(row, term):
+    """Return a known boolean feature value, or None when evidence is absent."""
+    wanted = fold(term)
+    false_values = {"0", "false", "no", "ninguno", "ninguna", "sin", "no tiene", "no incluye"}
+    true_values = {"1", "true", "si", "yes", "tiene", "incluye", "incluido", "incluida"}
+    for source in (row.get("attributes") or {}, row.get("features") or {}):
+        if isinstance(source, dict):
+            for key, value in source.items():
+                if fold(key) != wanted:
+                    continue
+                if isinstance(value, bool):
+                    return value
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    if math.isfinite(value):
+                        return value > 0
+                normalized = fold(value)
+                if normalized in false_values:
+                    return False
+                if normalized in true_values:
+                    return True
+                if value is not None and normalized:
+                    return _feature_text_evidence(normalized, wanted)
+        elif isinstance(source, (list, tuple, set)):
+            for item in source:
+                normalized = fold(item)
+                if normalized == wanted:
+                    return True
+                if normalized:
+                    status = _feature_text_evidence(normalized, wanted)
+                    if status is not None:
+                        return status
+    return None
+
+
+def _feature_evidence(row, term):
+    known = _structured_feature(row, term)
+    if known is not None:
+        return known
+    return _feature_text_evidence(property_text(row), term)
+
+
+def _feature_reason(prefix, term):
+    suffix = re.sub(r"[^A-Z0-9]+", "_", fold(term).upper()).strip("_")
+    return prefix + suffix
+
+
 def filter_property(profile, row, now):
     """Hard mismatches are excluded; unknown evidence stays in review only."""
     if row.get("human_veto") or row.get("classification_state") in BROKERS:
         return "excluded", ["COMMERCIAL_VETO"]
-    if row.get("published") is not True or row.get("operational_state") in {"REMOVED", "NOT_AVAILABLE"}:
+    if row.get("published") is False or row.get("operational_state") in {"REMOVED", "NOT_AVAILABLE"}:
         return "excluded", ["NOT_AVAILABLE"]
     if fold(row.get("operation")) != fold(profile["operation"]):
         return "excluded", ["OPERATION"]
@@ -66,16 +178,38 @@ def filter_property(profile, row, now):
     price = number(row.get("price_clp"))
     if not price:
         missing.append("PRICE_UNKNOWN")
+    elif row.get("price_valid") is not True:
+        missing.append("PRICE_UNVERIFIED")
+    elif not _recent(row.get("last_price_verified_at"), 48, now):
+        missing.append("PRICE_STALE")
     elif price > profile["max_price_clp"]:
         return "excluded", ["OVER_BUDGET"]
-    if row.get("price_valid") is not True:
-        missing.append("PRICE_UNVERIFIED")
     for key, minimum in (profile.get("minimum_attributes") or {}).items():
         actual = number((row.get("attributes") or {}).get(key))
         if actual is None:
             missing.append("UNKNOWN_" + key.upper())
         elif actual < minimum:
             return "excluded", ["MINIMUM_" + key.upper()]
+    for key, maximum in (profile.get("maximum_attributes") or {}).items():
+        actual = number((row.get("attributes") or {}).get(key))
+        if actual is None:
+            missing.append("UNKNOWN_" + key.upper())
+        elif actual > maximum:
+            return "excluded", ["MAXIMUM_" + key.upper()]
+    for term in profile.get("required_features", []):
+        evidence = _feature_evidence(row, term)
+        if evidence is False:
+            return "excluded", [_feature_reason("REQUIRED_FEATURE_", term)]
+        if evidence is None:
+            missing.append(_feature_reason("UNKNOWN_REQUIRED_FEATURE_", term))
+    for term in profile.get("excluded_features", []):
+        evidence = _feature_evidence(row, term)
+        if evidence is True:
+            return "excluded", [_feature_reason("FORBIDDEN_FEATURE_", term)]
+        if evidence is None:
+            missing.append(_feature_reason("UNKNOWN_FORBIDDEN_FEATURE_", term))
+    if row.get("published") is not True:
+        missing.append("PUBLICATION_STATUS_UNKNOWN")
     if profile.get("location_targets") or profile.get("verified_location"):
         target = profile.get("verified_location") or {}
         geo = row.get("geo") or {}
@@ -113,6 +247,8 @@ def validate_profile(profile):
         raise ValueError("query must be text")
     if not isinstance(profile.get("minimum_attributes", {}), dict):
         raise ValueError("minimum_attributes must be an object")
+    if not isinstance(profile.get("maximum_attributes", {}), dict):
+        raise ValueError("maximum_attributes must be an object")
     if fold(profile.get("operation")) not in {"venta", "arriendo"}:
         raise ValueError("operation must be VENTA or ARRIENDO")
     for key in ("comunas", "property_types"):
@@ -123,6 +259,17 @@ def validate_profile(profile):
     for key, value in (profile.get("minimum_attributes") or {}).items():
         if key not in ATTRIBUTES or number(value) is None:
             raise ValueError("invalid minimum attribute: " + key)
+    for key, value in (profile.get("maximum_attributes") or {}).items():
+        if key not in ATTRIBUTES or number(value) is None:
+            raise ValueError("invalid maximum attribute: " + key)
+    for key in ("required_features", "excluded_features"):
+        values = profile.get(key, [])
+        if not isinstance(values, list) or not all(isinstance(x, str) and x.strip() for x in values):
+            raise ValueError("invalid " + key)
+    for key, minimum in (profile.get("minimum_attributes") or {}).items():
+        maximum = (profile.get("maximum_attributes") or {}).get(key)
+        if maximum is not None and minimum > maximum:
+            raise ValueError("minimum exceeds maximum for " + key)
 
 class LocalPropertyIndex:
     def __init__(self, rows, embedder=None, *, cache=None, reranker=None, rerank_pool=50):
@@ -188,8 +335,18 @@ class LocalPropertyIndex:
             row = self.rows[i]
             score = (1 / (60 + lex_rank[i]) if i in lex_rank else 0) + (1 / (60 + dense_rank[i]) if i in dense_rank else 0)
             groups[state].append({"listing_key": row["listing_key"], "source_type": row.get("source_type"),
-                "url": row.get("canonical_url"), "price_clp": row.get("price_clp"),
-                "attributes": row.get("attributes") or {}, "commune": row.get("commune"),
+                "url": public_url(row.get("canonical_url")), "price_clp": row.get("price_clp"),
+                "price_uf": row.get("price_uf"), "price_currency": row.get("price_currency"),
+                "price_conversion_date": row.get("price_conversion_date"),
+                "attributes": {key: number((row.get("attributes") or {}).get(key))
+                               for key in ATTRIBUTES
+                               if number((row.get("attributes") or {}).get(key)) is not None},
+                "commune": row.get("commune"),
+                "property_type": row.get("property_type"), "title": public_text(row.get("title")),
+                "description_excerpt": public_text(row.get("description"))[:240],
+                "features": public_value(row.get("features") or {}),
+                "source_portal": public_text(row.get("source_portal")),
+                "source_updated_at": row.get("source_updated_at"),
                 "score": score, "bm25": lexical, "cosine": dense, "review_reasons": reasons})
         for group in groups.values():
             group.sort(key=lambda x: (-x["score"], x["price_clp"] if number(x["price_clp"]) else math.inf, x["listing_key"]))

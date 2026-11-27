@@ -29,6 +29,61 @@ def test_hard_filters_and_unknowns():
     assert r["review_count"] == 2
     assert r["excluded"] == {"OVER_BUDGET": 1, "MINIMUM_BEDROOMS": 1, "COMMERCIAL_VETO": 1}
 
+
+def test_external_with_unknown_publication_stays_in_review():
+    external = row("external", source_type="EXTERNAL", published=None, operational_state="UNKNOWN")
+    result = LocalPropertyIndex([external]).search(PROFILE, now=NOW)
+    assert result["compatible_count"] == 0
+    assert result["review_count"] == 1
+    assert result["excluded"] == {}
+    assert "PUBLICATION_STATUS_UNKNOWN" in result["review"][0]["review_reasons"]
+    assert "EXTERNAL_HUMAN_VERIFICATION" in result["review"][0]["review_reasons"]
+
+
+def test_unverified_or_stale_price_cannot_exclude_as_over_budget():
+    unverified = row("unverified", price_clp=200_000_000, price_valid=False,
+                     last_price_verified_at=None)
+    stale = row("stale", price_clp=200_000_000,
+                last_price_verified_at=NOW.replace(day=23))
+    result = LocalPropertyIndex([unverified, stale]).search(PROFILE, now=NOW)
+    assert result["compatible_count"] == 0
+    assert result["review_count"] == 2
+    assert result["excluded"] == {}
+    reasons = {entry["listing_key"]: entry["review_reasons"] for entry in result["review"]}
+    assert "PRICE_UNVERIFIED" in reasons["unverified"]
+    assert "PRICE_STALE" in reasons["stale"]
+
+
+def test_structured_features_and_negations_are_hard_requirements():
+    profile = {**PROFILE, "required_features": ["patio"], "excluded_features": ["piscina"]}
+    rows = [row("match", description="patio amplio y sin piscina"),
+            row("pool", description="patio amplio con piscina temperada"),
+            row("unknown", description="terraza y vista despejada")]
+    result = LocalPropertyIndex(rows).search(profile, now=NOW)
+    assert result["compatible_count"] == 1
+    assert result["compatible"][0]["listing_key"] == "match"
+    assert result["review_count"] == 1
+    assert result["review"][0]["listing_key"] == "unknown"
+    assert result["excluded"] == {"FORBIDDEN_FEATURE_PISCINA": 1}
+
+
+def test_text_indexing_and_results_redact_direct_contact_details():
+    from chatbot.local_property_search import property_text
+    row_with_contact = row("contact", title="Casa +56 9 1234 5678", description="Visitas: ventas@example.cl")
+    assert "+56 9 1234 5678" not in property_text(row_with_contact)
+    assert "ventas@example.cl" not in property_text(row_with_contact)
+    result = LocalPropertyIndex([row_with_contact]).search(PROFILE, now=NOW)
+    assert result["compatible"][0]["title"] == "Casa"
+
+
+def test_nested_result_features_are_sanitized_and_attributes_are_whitelisted():
+    item = row("safe-output", features={"detalle": "Contacto +56 9 1234 5678", "mail": "ventas@example.cl"})
+    item["attributes"] = {"bedrooms": 3, "owner_email": "ventas@example.cl"}
+    result = LocalPropertyIndex([item]).search(PROFILE, now=NOW)["compatible"][0]
+    assert result["features"] == {"detalle": "Contacto", "mail": ""}
+    assert result["attributes"] == {"bedrooms": 3}
+
+
 def test_rental_budget():
     p = {**PROFILE, "operation": "ARRIENDO", "max_price_clp": 500_000}
     assert LocalPropertyIndex([row("r", operation="ARRIENDO", price_clp=490_000)]).search(p, now=NOW)["compatible_count"] == 1

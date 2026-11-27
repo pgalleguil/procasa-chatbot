@@ -11,18 +11,20 @@ from chatbot.local_property_search import LocalPropertyIndex, validate_profile
 from chatbot.local_embedding_cache import EmbeddingCache, model_namespace
 
 class LocalEmbeddings:
-    def __init__(self, model, device, allow_download, revision=None):
+    def __init__(self, model, device, allow_download, revision=None, batch_size=16):
         from sentence_transformers import SentenceTransformer
         self.model = SentenceTransformer(model, device=device, revision=revision, local_files_only=not allow_download, trust_remote_code=False)
+        self.batch_size = batch_size
     def encode(self, texts):
-        return self.model.encode(texts, batch_size=16, normalize_embeddings=True, show_progress_bar=False)
+        return self.model.encode(texts, batch_size=self.batch_size, normalize_embeddings=True, show_progress_bar=False)
 
 class LocalReranker:
-    def __init__(self, model, device, allow_download, revision=None):
+    def __init__(self, model, device, allow_download, revision=None, batch_size=8):
         from sentence_transformers import CrossEncoder
         self.model = CrossEncoder(model, device=device, revision=revision, local_files_only=not allow_download, trust_remote_code=False)
+        self.batch_size = batch_size
     def score(self, query, texts):
-        return self.model.predict([(query, text) for text in texts], batch_size=8, show_progress_bar=False)
+        return self.model.predict([(query, text) for text in texts], batch_size=self.batch_size, show_progress_bar=False)
 
 def write_checkpoint(path, data):
     temp = path.with_suffix(path.suffix + ".tmp")
@@ -40,6 +42,8 @@ def main():
     p.add_argument("--reranker")
     p.add_argument("--reranker-revision")
     p.add_argument("--rerank-pool", type=int, default=50)
+    p.add_argument("--batch-size", type=int, default=16, help="Embedding batch size; lower it to fit GPU memory")
+    p.add_argument("--reranker-batch-size", type=int, default=8, help="Cross-encoder batch size")
     p.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     p.add_argument("--allow-model-download", action="store_true")
     p.add_argument("--top", type=int, default=10)
@@ -47,6 +51,8 @@ def main():
     args = p.parse_args()
     if not 1 <= args.top <= 500 or not 1 <= args.rerank_pool <= 500:
         p.error("top and rerank-pool must be 1..500")
+    if not 1 <= args.batch_size <= 256 or not 1 <= args.reranker_batch_size <= 64:
+        p.error("batch-size must be 1..256 and reranker-batch-size 1..64")
     if args.cache and not args.model:
         p.error("--cache requires --model")
     inputs = {args.catalog.resolve(), args.profiles.resolve()}
@@ -81,15 +87,17 @@ def main():
                     raise
                 identities[name] = "unpinned"
         if args.model:
-            model = LocalEmbeddings(args.model, args.device, args.allow_model_download, args.revision)
+            model = LocalEmbeddings(args.model, args.device, args.allow_model_download, args.revision, args.batch_size)
         if args.cache:
             cache = EmbeddingCache(args.cache, identities["embedding"])
         if args.reranker:
-            reranker = LocalReranker(args.reranker, args.device, args.allow_model_download, args.reranker_revision)
+            reranker = LocalReranker(args.reranker, args.device, args.allow_model_download, args.reranker_revision,
+                                     args.reranker_batch_size)
     config = {"schema":2, "inputs":[hashlib.sha256(x).hexdigest() for x in raw],
               "model":args.model,"revision":args.revision,"reranker":args.reranker,
               "reranker_revision":args.reranker_revision,"identities":identities,
-              "top":args.top,"pool":args.rerank_pool,"device":args.device}
+              "top":args.top,"pool":args.rerank_pool,"device":args.device,
+              "batch_size":args.batch_size,"reranker_batch_size":args.reranker_batch_size}
     checkpoint = {"config":config,"as_of":datetime.now(timezone.utc).isoformat(),
                   "status":"running","results":[]}
     if args.resume:

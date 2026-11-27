@@ -7,6 +7,7 @@ are checked automatically. Production sending remains separately gated.
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import os
+import re
 import logging
 import time
 from uuid import uuid4
@@ -15,7 +16,7 @@ from pymongo.errors import DuplicateKeyError
 import requests
 
 from config import Config
-from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment, sequence_due, _plain
+from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment, sequence_due, _plain, expects_customer_reply
 from .business_calendar import add_business_minutes, as_chile, CHILE
 from .executive_silence_llm import draft_followup, initial_recovery_draft, verified_initial_stage_fallback
 from .executive_capture_continuity import continuity_since, record_status, recover_provider_continuity
@@ -23,6 +24,7 @@ from .crm_executive_outbound import (OUTBOX, eligible_manual_session,
     verify_provider_sender_identity, OutboundBlocked)
 from .crm_executive_outbound_api import _session_status
 from .phone_utils import normalize_phone_strict
+from .broker_contact_role import broker_evidence
 from .whatsapp_client import _provider_message_id
 
 QUEUE = "crm_exec_silence_queue"
@@ -57,14 +59,32 @@ def _rollout_cutoff(now):
     return CHILE.localize(datetime(local.year, local.month, local.day)).astimezone(timezone.utc)
 
 
+def _classify_broker(db, doc):
+    evidence = broker_evidence(doc)
+    if not evidence:
+        return False
+    # Keep the classification separate from executive intent/SLA; a portal
+    # inquiry can establish the B2B role without inventing an executive reply.
+    match = {"_id": doc["_id"]}
+    if evidence.get("message_id"):
+        match["messages.message_id"] = evidence["message_id"]
+    db["leads"].update_one(match, {"$set": {
+        "commercial_intelligence.contact_role": evidence,
+    }})
+    return True
+
+
 def enqueue(db, lead_id, *, now=None):
     """One new anchor per classified lead; do not overwrite existing jobs."""
     if not enabled():
         return
     now = now or datetime.now(timezone.utc)
-    doc = db["leads"].find_one({"_id": lead_id},
-        {"commercial_intelligence": 1, "lifecycle": 1, "messages": 1})
+    doc = db["leads"].find_one({"_id": lead_id})
     if not doc:
+        return
+    if _classify_broker(db, doc):
+        db[QUEUE].update_many({"lead_id": lead_id, "state": "pending"},
+                              {"$set": {"state": "held", "reason": "broker_collaboration"}})
         return
     ci = doc.get("commercial_intelligence") or {}
     lc = doc.get("lifecycle") or {}
@@ -97,11 +117,80 @@ def enqueue(db, lead_id, *, now=None):
             or not all((anchor, cycle, owner, session))):
         return
     key = sha256(f"{lead_id}|{cycle}|{anchor}".encode()).hexdigest()
-    db[QUEUE].update_one({"_id": key}, {"$setOnInsert": {
-        "lead_id": lead_id, "cycle": str(cycle), "owner": str(owner),
+    job = {
+        "_id": key, "lead_id": lead_id, "cycle": str(cycle), "owner": str(owner),
         "session": str(session), "anchor": anchor, "state": "pending",
         "attempt": 1, "created_at": now, "due_at": next_followup_slot(add_business_minutes(sent, WAIT_MINUTES)),
-    }}, upsert=True)
+    }
+    inserted = db[QUEUE].update_one({"_id": key},
+        {"$setOnInsert": {k: v for k, v in job.items() if k != "_id"}}, upsert=True)
+    # Once per new job, not every poll: early diagnostics use only local DB
+    # evidence. They neither send nor bypass final checks; temporary missing
+    # evidence can be resolved by the normal due-time validation.
+    if getattr(inserted, "upserted_id", None) is not None:
+        try:
+            reason = _preflight_reason(db, doc, job, now)
+            db[QUEUE].update_one({"_id": key, "state": "pending"}, {"$set": {
+                "preflight_reason": reason, "preflight_at": now,
+            }})
+            if reason != "ready":
+                _record_incident(db, job, "preflight_" + reason)
+        except Exception:
+            _record_incident(db, job, "preflight_evaluation_error")
+
+
+def _preflight_reason(db, doc, job, now):
+    """Early diagnosis only; final worker rechecks canonical evidence."""
+    anchor = next((m for m in doc.get("messages") or []
+                   if isinstance(m, dict) and m.get("message_id") == job["anchor"]), None)
+    if not anchor or not expects_customer_reply(anchor.get("content")):
+        return "no_clear_customer_reply_expected"
+    phone = normalize_phone_strict(doc.get("phone"))
+    if not phone:
+        return "invalid_phone"
+    if not _contact_evidence(db, doc, job, phone, now):
+        return "inquiry_contact_evidence_missing"
+    return "ready"
+
+
+
+def _verified_proppit_inquiry(doc, anchor_at):
+    """Explicit request for contact from a canonical Prop360/Proppit event.
+
+    Not a WhatsApp opt-in record; this only establishes the inquiry for the
+    existing narrow service-follow-up policy. A generic form is insufficient.
+    """
+    if doc.get("source_type") != "prop360":
+        return False
+    if doc.get("phone_is_synthetic") or doc.get("contact_identity_incomplete"):
+        return False
+    phone = normalize_phone_strict(doc.get("phone"))
+    if not phone or normalize_phone_strict(doc.get("contact_phone_normalized")) != phone:
+        return False
+    event_ids = {str(e.get("source_event_id")) for e in (doc.get("source_events") or [])
+                 if isinstance(e, dict) and e.get("source_event_id")
+                 and e.get("source_system") == "prop360"
+                 and _plain(e.get("portal_source")) == "proppit"}
+    for m in doc.get("messages") or []:
+        if not isinstance(m, dict) or m.get("source") != "prop360" or m.get("channel") != "portal_form":
+            continue
+        if (m.get("actor_type") != "customer" or m.get("role") != "user"
+                or _plain(m.get("portal")) != "proppit"
+                or str(m.get("source_event_id") or "") not in event_ids):
+            continue
+        received = _time(m.get("timestamp"))
+        if not received or not anchor_at - timedelta(hours=24) <= received <= anchor_at:
+            continue
+        # Only the customer's own request after the portal metadata marker.
+        parts = _plain(m.get("content")).split("[mensaje del cliente]", 1)
+        if len(parts) != 2:
+            continue
+        customer = parts[1]
+        if re.search(r"\b(?:no|nunca|tampoco)\b", customer):
+            continue
+        if re.search(r"\b(?:quisiera|quiero|me gustaria|necesito|solicito)\s+que\s+me\s+contact(?:en|e)\b", customer):
+            return True
+    return False
 
 
 def _verified_portal_first_contact(db, doc, job, now):
@@ -111,11 +200,14 @@ def _verified_portal_first_contact(db, doc, job, now):
     not evidence that the recipient gave explicit WhatsApp opt-in. Never
     create or alter a customer consent record from an outbound send.
     """
-    if doc.get("source_type") != "manual" or not doc.get("_id"):
+    if doc.get("source_type") not in {"manual", "prop360"} or not doc.get("_id"):
         return False
     prospect = doc.get("prospecto") or {}
     origin = str(prospect.get("canal_origen") or doc.get("origen") or "").strip().lower()
-    if not any(portal in origin for portal in ("enlace inmobiliario", "enlaceinmobiliario",
+    prop360 = doc.get("source_type") == "prop360"
+    if prop360 and origin != "proppit":
+        return False
+    if not prop360 and not any(portal in origin for portal in ("enlace inmobiliario", "enlaceinmobiliario",
                                                "portalinmobiliario", "portal inmobiliario",
                                                "yapo", "toctoc", "toc toc", "chilepropiedades")):
         return False
@@ -134,6 +226,8 @@ def _verified_portal_first_contact(db, doc, job, now):
                 or not m.get("provider_message_id") or not sent
                 or not now - timedelta(hours=24) <= sent <= now):
             continue
+        if prop360 and not _verified_proppit_inquiry(doc, sent):
+            return False
         return bool(db[OUTBOX].find_one({
             "lead_id": doc["_id"], "mode": "manual_crm", "state": "accepted",
             "canonical_recorded": True, "provider_send_attempted": True,
@@ -317,6 +411,10 @@ def _decision(db, job, *, now):
     doc = db["leads"].find_one({"_id": job["lead_id"]})
     if not doc:
         return None, {"state": "HOLD", "reason": "lead_missing"}
+    if _classify_broker(db, doc):
+        return doc, {"state": "HOLD", "reason": "broker_collaboration"}
+    if (doc.get("automated_contact_hold") or {}).get("active") is True:
+        return doc, {"state": "HOLD", "reason": "administrative_contact_hold"}
     ci = doc.get("commercial_intelligence") or {}
     lc = doc.get("lifecycle") or {}
     if (str(lc.get("current_assignment_cycle_id")) != job["cycle"]
@@ -802,7 +900,8 @@ def process_due(db, *, limit=3, now=None):
                 else:
                     if reason in {"classification_not_ready", "capture_continuity_unverified",
                                   "attempt_history_unverified_or_duplicate", "unverified_prerequisite",
-                                  "incomplete_message_history", "inquiry_contact_evidence_missing"}:
+                                  "incomplete_message_history", "inquiry_contact_evidence_missing",
+                                  "no_clear_customer_reply_expected"}:
                         _record_incident(db, job, reason)
                     _finish(db, job, state="held", reason=reason)
         except OutboundBlocked as exc:

@@ -13,15 +13,23 @@ from chatbot.local_embedding_cache import EmbeddingCache, model_namespace
 class LocalEmbeddings:
     def __init__(self, model, device, allow_download, revision=None, batch_size=16):
         from sentence_transformers import SentenceTransformer
-        self.model = SentenceTransformer(model, device=device, revision=revision, local_files_only=not allow_download, trust_remote_code=False)
+        import torch
+        model_kwargs = {"torch_dtype": torch.float16} if device == "cuda" else None
+        self.model = SentenceTransformer(model, device=device, revision=revision,
+                                         local_files_only=not allow_download,
+                                         trust_remote_code=False, model_kwargs=model_kwargs)
         self.batch_size = batch_size
     def encode(self, texts):
         return self.model.encode(texts, batch_size=self.batch_size, normalize_embeddings=True, show_progress_bar=False)
 
 class LocalReranker:
-    def __init__(self, model, device, allow_download, revision=None, batch_size=8):
+    def __init__(self, model, device, allow_download, revision=None, batch_size=4):
         from sentence_transformers import CrossEncoder
-        self.model = CrossEncoder(model, device=device, revision=revision, local_files_only=not allow_download, trust_remote_code=False)
+        import torch
+        model_kwargs = {"torch_dtype": torch.float16} if device == "cuda" else None
+        self.model = CrossEncoder(model, device=device, revision=revision,
+                                  local_files_only=not allow_download,
+                                  trust_remote_code=False, model_kwargs=model_kwargs)
         self.batch_size = batch_size
     def score(self, query, texts):
         return self.model.predict([(query, text) for text in texts], batch_size=self.batch_size, show_progress_bar=False)

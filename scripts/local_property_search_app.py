@@ -16,16 +16,61 @@ from urllib.parse import urlsplit
 import webbrowser
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from chatbot.local_property_search import LocalPropertyIndex, validate_profile
+from chatbot.local_property_search import LocalPropertyIndex, public_text, validate_profile
 from chatbot.local_embedding_cache import EmbeddingCache, model_namespace
 from scripts.run_local_property_search import LocalEmbeddings, LocalReranker
 
 LABELS = {"bedrooms":"Dormitorios", "bathrooms":"Baños", "parking":"Estacionamientos",
           "storage":"Bodegas", "usable_surface_m2":"Superficie útil (m²)", "total_surface_m2":"Superficie total (m²)"}
 REASONS = {"PRICE_UNKNOWN":"Precio ausente", "PRICE_UNVERIFIED":"Precio no validado",
+           "PRICE_STALE":"Precio sin verificación reciente",
            "LOCATION_REVIEW_REQUIRED":"Ubicación por verificar", "EXTERNAL_HUMAN_VERIFICATION":"Anuncio externo: autorización y vigencia pendientes",
            "AVAILABILITY_UNKNOWN":"Disponibilidad desconocida", "LAST_PRICE_VERIFIED_AT_STALE":"Precio sin verificación reciente",
            "LAST_AVAILABILITY_VERIFIED_AT_STALE":"Disponibilidad sin verificación reciente"}
+FEATURE_LABELS = {
+    "piscina":"Piscina", "patio":"Patio", "has_patio":"Patio", "terraza":"Terraza",
+    "has_terrace":"Terraza", "has_balcony":"Balcón", "balcon":"Balcón", "bodega":"Bodega",
+    "estacionamiento":"Estacionamiento", "estacionamientos":"Estacionamientos",
+    "has_grill":"Parrilla", "gimnasio":"Gimnasio", "amoblado":"Amoblado",
+    "has_air_conditioning":"Aire acondicionado", "has_security":"Seguridad",
+    "condominio":"Condominio", "mascotas":"Mascotas", "has_playground":"Juegos infantiles",
+    "has_party_room":"Sala de eventos", "has_common_laundry":"Lavandería común",
+    "with_laundry_connection":"Conexión para lavadora", "has_guest_parking":"Estacionamiento de visitas",
+    "walkincloset":"Walk-in closet", "orientacion":"Orientación", "ascensores":"Ascensores",
+    "jardinformado":"Jardín", "banovisita":"Baño de visitas", "cocina":"Cocina",
+    "has_tap_water":"Agua potable", "has_closet":"Clóset", "has_internet_access":"Internet",
+    "has_dinning_room":"Comedor", "has_electric_light":"Electricidad", "lavadero":"Lavadero",
+    "has_natural_gas":"Gas natural", "recepcion":"Recepción", "with_gated_community":"Condominio cerrado",
+    "has_multipurpose_room":"Sala multiuso", "regularizada":"Propiedad regularizada",
+}
+
+def display_features(features):
+    """Translate known feature keys while preserving only facts in the catalog."""
+    def label(value):
+        key = str(value or "").strip()
+        return FEATURE_LABELS.get(key.casefold(), key.replace("_", " ").strip().capitalize())
+    def value_text(value):
+        if isinstance(value, bool):
+            return "Sí" if value else "No"
+        if value is None:
+            return ""
+        if isinstance(value, (list, tuple)):
+            return ", ".join(str(v) for v in value if v is not None)
+        if isinstance(value, dict):
+            return ", ".join(f"{label(k)}: {value_text(v)}" for k, v in value.items() if v is not None)
+        return str(value)
+    if isinstance(features, dict):
+        parts = []
+        for key, value in features.items():
+            text = value_text(value)
+            if text:
+                parts.append(f"{label(key)}: {text}")
+        return " · ".join(parts)
+    if isinstance(features, (list, tuple, set)):
+        return " · ".join(label(value) for value in features if str(value).strip())
+    if isinstance(features, str):
+        return label(features) if features.strip() else ""
+    return ""
 
 def parse_amount(value):
     raw = str(value).strip()
@@ -66,8 +111,11 @@ def safe_url(value):
 
 def classify_result(item, verified):
     reasons = item.get("review_reasons") or []
-    incomplete = any(r == "PRICE_UNKNOWN" or r == "LOCATION_REVIEW_REQUIRED" or r.startswith("UNKNOWN_") for r in reasons)
-    return {"ajuste": "Datos obligatorios pendientes" if incomplete else "Cumple filtros registrados",
+    price_pending = any(r in {"PRICE_UNKNOWN", "PRICE_UNVERIFIED", "PRICE_STALE"} for r in reasons)
+    incomplete = any(r == "LOCATION_REVIEW_REQUIRED" or r.startswith("UNKNOWN_") for r in reasons)
+    fit = "Precio por verificar" if price_pending else (
+        "Datos obligatorios pendientes" if incomplete else "Cumple filtros registrados")
+    return {"ajuste": fit,
             "estado": "Verificación registrada" if verified else "Por verificar — no ofrecer aún",
             "motivos":[REASONS.get(r, "Falta " + LABELS.get(r[8:].lower(), r)) if r.startswith("UNKNOWN_") else REASONS.get(r,r) for r in reasons]}
 
@@ -76,12 +124,34 @@ def result_rows(result, catalog):
     for group in ("compatible", "review"):
         for rank, item in enumerate(result.get(group, []), 1):
             original = catalog[item["listing_key"]]
+            sector = next((public_text(original.get(k)) for k in
+                           ("sector", "neighborhood", "neighbourhood", "locality")
+                           if public_text(original.get(k))), "")
             rows.append({**item, **classify_result(item, group == "compatible"),
-                         "rank":rank, "grupo":group, "title":original.get("title") or original.get("property_type") or "",
-                         "property_type":original.get("property_type"), "operation":original.get("operation"),
-                         "source_portal":original.get("source_portal"), "url":safe_url(item.get("url")),
-                         "description":str(original.get("description") or "")[:4000]})
+                         "rank":rank, "grupo":group,
+                         "title":public_text(original.get("title") or original.get("property_type")),
+                         "property_type":public_text(original.get("property_type")),
+                         "operation":public_text(original.get("operation")),
+                         "commune":public_text(original.get("commune")), "sector":sector,
+                         "region":public_text(original.get("region")),
+                         "display_sector":sector or "Sector no informado",
+                         "source_portal":public_text(original.get("source_portal")), "url":safe_url(item.get("url")),
+                         "description":public_text(original.get("description"))[:4000],
+                         "attributes_display":" · ".join(
+                             f"{LABELS.get(k,k)}: {v}" for k,v in (item.get("attributes") or {}).items()),
+                         "features_display":display_features(item.get("features")),
+                         "price_was_converted":(item.get("price_currency") == "UF"
+                                                 and not original.get("price_clp")
+                                                 and item.get("price_clp") is not None)})
     return rows
+
+def write_export(path, reports, protected_paths=()):
+    target = Path(path)
+    if target.resolve() in {Path(value).resolve() for value in protected_paths}:
+        raise ValueError("No sobrescribas catálogo ni caché.")
+    with target.open("x",encoding="utf-8") as stream:
+        json.dump(reports,stream,ensure_ascii=False,indent=2,allow_nan=False)
+    return target
 
 class DesktopEngine:
     def __init__(self, args):
@@ -109,10 +179,13 @@ class DesktopEngine:
             # Validate pinned reranker too. No downloads without explicit flag.
             model_namespace(args.reranker, args.reranker_revision, version=sentence_transformers.__version__)
             self.cache = EmbeddingCache(args.cache, namespace)
-            self.embedder = LocalEmbeddings(args.model,args.device,args.allow_model_download,args.revision)
-            self.reranker = LocalReranker(args.reranker,args.device,args.allow_model_download,args.reranker_revision)
+            self.embedder = LocalEmbeddings(args.model,args.device,args.allow_model_download,args.revision,
+                                            batch_size=args.batch_size)
+            self.reranker = LocalReranker(args.reranker,args.device,args.allow_model_download,
+                                          args.reranker_revision,batch_size=args.reranker_batch_size)
         if self.reranker is None:
-            self.reranker = LocalReranker(args.reranker,args.device,args.allow_model_download,args.reranker_revision)
+            self.reranker = LocalReranker(args.reranker,args.device,args.allow_model_download,
+                                          args.reranker_revision,batch_size=args.reranker_batch_size)
         index = LocalPropertyIndex(rows,self.embedder,cache=self.cache,reranker=self.reranker,rerank_pool=args.rerank_pool)
         self.index = index
         self.rows = {x["listing_key"]:x for x in rows}
@@ -149,10 +222,14 @@ def main():
     p.add_argument("--reranker",default="BAAI/bge-reranker-v2-m3")
     p.add_argument("--reranker-revision")
     p.add_argument("--device",choices=["cpu","cuda"],default="cpu")
+    p.add_argument("--batch-size",type=int,default=16,help="Lote de embeddings; 16 en la configuración CUDA validada")
+    p.add_argument("--reranker-batch-size",type=int,default=4,help="Lote del reranker; 4 en la configuración CUDA validada")
     p.add_argument("--allow-model-download",action="store_true")
-    p.add_argument("--rerank-pool",type=int,default=20)
+    p.add_argument("--rerank-pool",type=int,default=50)
     args = p.parse_args()
-    if not 1 <= args.rerank_pool <= 500 or args.catalog.resolve()==args.cache.resolve():
+    if (not 1 <= args.rerank_pool <= 500 or not 1 <= args.batch_size <= 256
+            or not 1 <= args.reranker_batch_size <= 64
+            or args.catalog.resolve()==args.cache.resolve()):
         p.error("Pool inválido o catálogo y caché coinciden.")
     for model, revision in [(args.model,args.revision),(args.reranker,args.reranker_revision)]:
         if not Path(model).is_dir() and not re.fullmatch(r"[0-9a-fA-F]{40}",revision or ""):
@@ -207,7 +284,7 @@ def main():
     ttk.Label(table,textvariable=summary).grid(row=0,column=0,sticky="w")
     cols=("rank","title","price","commune","source","fit","state")
     tree=ttk.Treeview(table,columns=cols,show="headings",selectmode="browse")
-    for key,label,width in zip(cols,("Orden","Propiedad","Precio CLP","Comuna","Fuente","Ajuste","Estado comercial"),(65,260,110,120,95,200,240)):
+    for key,label,width in zip(cols,("Orden","Propiedad","Precio de referencia CLP","Comuna / sector","Fuente","Ajuste","Estado comercial"),(65,260,155,185,95,200,240)):
         tree.heading(key,text=label);tree.column(key,width=width,stretch=key in {"title","fit","state"})
     tree.grid(row=1,column=0,sticky="nsew")
     scroll=ttk.Scrollbar(table,orient="vertical",command=tree.yview);scroll.grid(row=1,column=1,sticky="ns");tree.configure(yscrollcommand=scroll.set)
@@ -220,8 +297,21 @@ def main():
         selected=tree.selection()
         if not selected:return
         r=shown[selected[0]]
-        attributes=" · ".join(f"{LABELS.get(k,k)}: {v}" for k,v in r["attributes"].items())
-        set_detail(f"{r['title']}\n{r['listing_key']} | {r['ajuste']} | {r['estado']}\n{attributes}\nMotivos: {', '.join(r['motivos']) or 'Sin pendientes registrados'}\n{r['description']}\n{r['url']}")
+        attributes=r["attributes_display"]
+        money = r.get("price_clp")
+        clp = f"${money:,.0f} CLP".replace(",", ".") if isinstance(money,(int,float)) and money > 0 else "Sin precio CLP normalizado"
+        if r.get("price_currency") == "UF" and r.get("price_uf"):
+            money = r.get("price_uf")
+            original_price = f"{money:,.2f} UF".replace(",", "X").replace(".", ",").replace("X", ".")
+            rate = r.get("price_conversion_uf_clp")
+            conversion = f" (UF a CLP: ${rate:,.2f} al {r.get('price_conversion_date') or 'fecha del snapshot'})".replace(",", "X").replace(".", ",").replace("X", ".") if isinstance(rate,(int,float)) else ""
+            price_line = f"Precio informado: {original_price} | Referencia: {clp}{conversion}"
+        else:
+            price_line = "Precio de referencia: " + clp
+        location = f"Comuna: {r.get('commune') or 'No informada'} | Sector: {r.get('display_sector')}"
+        if r.get("region"):
+            location += " | Región: " + r["region"]
+        set_detail(f"{r['title']}\n{r['listing_key']} | {r['ajuste']} | {r['estado']}\n{location}\n{price_line}\n{attributes}\nCaracterísticas: {r['features_display'] or 'Sin características estructuradas informadas'}\nMotivos: {', '.join(r['motivos']) or 'Sin pendientes registrados'}\n{r['description']}\n{r['url']}")
     tree.bind("<<TreeviewSelect>>",detail)
     def open_link():
         selected=tree.selection()
@@ -235,22 +325,28 @@ def main():
                 key=str(len(shown));shown[key]=r
                 price=r.get("price_clp")
                 formatted=f"{price:,.0f}".replace(",",".") if isinstance(price,(int,float)) and price>0 else "Sin precio"
-                tree.insert("","end",iid=key,values=(f"{report['profile_id']} / {r['rank']}",r["title"],formatted,r["commune"],r["source_portal"] or r["source_type"],r["ajuste"],r["estado"]))
+                if r.get("price_was_converted") and price:
+                    formatted = "≈ " + formatted
+                commune_sector = r.get("commune") or "Comuna no informada"
+                if r.get("sector"):
+                    commune_sector += " / " + r["sector"]
+                else:
+                    commune_sector += " / sector no informado"
+                tree.insert("","end",iid=key,values=(f"{report['profile_id']} / {r['rank']}",r["title"],formatted,commune_sector,r["source_portal"] or r["source_type"],r["ajuste"],r["estado"]))
         summary.set(f"{len(results)} búsquedas · {sum(x['compatible_count'] for x in results)} verificadas · {sum(x['review_count'] for x in results)} por revisar · {len(shown)} resultados mostrados (puede repetirse un aviso)")
     def export():
         if not reports:return
         path=filedialog.asksaveasfilename(defaultextension=".json",filetypes=[("JSON","*.json")])
         if not path:return
         target=Path(path)
-        if target.resolve() in {args.catalog.resolve(),args.cache.resolve()}:
-            messagebox.showerror("Archivo protegido","No sobrescribas catálogo ni caché.");return
         try:
-            with target.open("x",encoding="utf-8") as f:
-                json.dump(reports,f,ensure_ascii=False,indent=2,allow_nan=False)
+            write_export(target,reports,(args.catalog,args.cache))
             status.set("Resultados exportados a "+str(target))
         except FileExistsError:
             messagebox.showerror("Archivo existente","Elige un nombre nuevo.")
-        except (OSError,ValueError) as e:
+        except ValueError as e:
+            messagebox.showerror("Archivo protegido",str(e))
+        except OSError as e:
             messagebox.showerror("Exportación",str(e))
     def poll_progress():
         try:

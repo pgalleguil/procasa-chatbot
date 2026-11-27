@@ -18,6 +18,7 @@ _CHILEAN_PHONE = re.compile(
     r"(?<!\d)(?:\+?56[\s().-]*)?(?:9[\s().-]*\d{4}[\s().-]?\d{4}|"
     r"2[\s().-]*\d{4}[\s().-]?\d{4})(?!\d)"
 )
+_PRIVATE_FIELD = re.compile(r"(?:owner|contact|email|e-mail|mail|phone|telephone|telefono|teléfono|whatsapp|conversation|lead|crm|agent_name)", re.I)
 
 
 def fold(value):
@@ -43,7 +44,8 @@ def public_value(value):
     if isinstance(value, str):
         return public_text(value)
     if isinstance(value, dict):
-        return {public_text(key): public_value(item) for key, item in value.items()}
+        return {public_text(key): public_value(item) for key, item in value.items()
+                if not _PRIVATE_FIELD.search(str(key))}
     if isinstance(value, (list, tuple, set)):
         return [public_value(item) for item in value]
     return value
@@ -57,9 +59,22 @@ def number(value):
         return None
     return value if math.isfinite(value) and value >= 0 else None
 
+def normalized_price_clp(row):
+    """Return an explicit CLP value or a snapshot-rate UF conversion."""
+    clp = number(row.get("price_clp"))
+    if clp is not None and clp > 0:
+        return int(round(clp))
+    if str(row.get("price_currency") or "").strip().upper() != "UF":
+        return None
+    uf = number(row.get("price_uf"))
+    rate = number(row.get("price_conversion_uf_clp"))
+    if uf is None or uf <= 0 or rate is None or rate <= 0:
+        return None
+    return int(round(uf * rate))
+
 def property_text(row):
     attrs = row.get("attributes") or {}
-    features = row.get("features") or []
+    features = public_value(row.get("features") or [])
     if isinstance(features, dict):
         features = " ".join(f"{k} {v}" for k, v in features.items())
     elif isinstance(features, (list, tuple, set)):
@@ -119,7 +134,7 @@ def _structured_feature(row, term):
     wanted = fold(term)
     false_values = {"0", "false", "no", "ninguno", "ninguna", "sin", "no tiene", "no incluye"}
     true_values = {"1", "true", "si", "yes", "tiene", "incluye", "incluido", "incluida"}
-    for source in (row.get("attributes") or {}, row.get("features") or {}):
+    for source in (row.get("attributes") or {}, public_value(row.get("features") or {})):
         if isinstance(source, dict):
             for key, value in source.items():
                 if fold(key) != wanted:
@@ -175,7 +190,7 @@ def filter_property(profile, row, now):
     if str(row.get("property_code") or "") in {str(x) for x in profile.get("excluded_property_codes", [])}:
         return "excluded", ["BUYER_EXCLUDED"]
     missing = []
-    price = number(row.get("price_clp"))
+    price = normalized_price_clp(row)
     if not price:
         missing.append("PRICE_UNKNOWN")
     elif row.get("price_valid") is not True:
@@ -335,9 +350,10 @@ class LocalPropertyIndex:
             row = self.rows[i]
             score = (1 / (60 + lex_rank[i]) if i in lex_rank else 0) + (1 / (60 + dense_rank[i]) if i in dense_rank else 0)
             groups[state].append({"listing_key": row["listing_key"], "source_type": row.get("source_type"),
-                "url": public_url(row.get("canonical_url")), "price_clp": row.get("price_clp"),
+                "url": public_url(row.get("canonical_url")), "price_clp": normalized_price_clp(row),
                 "price_uf": row.get("price_uf"), "price_currency": row.get("price_currency"),
                 "price_conversion_date": row.get("price_conversion_date"),
+                "price_conversion_uf_clp": row.get("price_conversion_uf_clp"),
                 "attributes": {key: number((row.get("attributes") or {}).get(key))
                                for key in ATTRIBUTES
                                if number((row.get("attributes") or {}).get(key)) is not None},

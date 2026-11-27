@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import pytest
-from chatbot.local_property_search import LocalPropertyIndex
+from chatbot.local_property_search import LocalPropertyIndex, normalized_price_clp
 
 NOW = datetime(2026, 11, 26, tzinfo=timezone.utc)
 PROFILE = {"operation": "VENTA", "comunas": ["Maipú"], "property_types": ["CASA"], "max_price_clp": 100_000_000, "query": "patio amplio", "minimum_attributes": {"bedrooms": 3}}
@@ -80,13 +80,22 @@ def test_nested_result_features_are_sanitized_and_attributes_are_whitelisted():
     item = row("safe-output", features={"detalle": "Contacto +56 9 1234 5678", "mail": "ventas@example.cl"})
     item["attributes"] = {"bedrooms": 3, "owner_email": "ventas@example.cl"}
     result = LocalPropertyIndex([item]).search(PROFILE, now=NOW)["compatible"][0]
-    assert result["features"] == {"detalle": "Contacto", "mail": ""}
+    assert result["features"] == {"detalle": "Contacto"}
     assert result["attributes"] == {"bedrooms": 3}
 
 
 def test_rental_budget():
     p = {**PROFILE, "operation": "ARRIENDO", "max_price_clp": 500_000}
     assert LocalPropertyIndex([row("r", operation="ARRIENDO", price_clp=490_000)]).search(p, now=NOW)["compatible_count"] == 1
+
+def test_uf_price_uses_snapshot_conversion_rate_for_clp_filtering():
+    converted = row("uf", price_clp=None, price_currency="UF", price_uf=2_500,
+                    price_conversion_uf_clp=40_000, price_valid=True)
+    p = {**PROFILE, "max_price_clp": 100_000_000}
+    result = LocalPropertyIndex([converted]).search(p, now=NOW)
+    assert result["compatible_count"] == 1
+    assert result["compatible"][0]["price_clp"] == 100_000_000
+    assert normalized_price_clp({**converted, "price_currency":"UNKNOWN"}) is None
 
 def test_invalid_budget_and_geography_review():
     index = LocalPropertyIndex([row("r")])

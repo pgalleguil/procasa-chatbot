@@ -942,30 +942,8 @@ async def send_contract(visita_code: str, request: Request):
     ip = get_client_ip(request)
     ua = request.headers.get("user-agent", "")
     
-    await adb["visitas"].update_one(
-        {"visita_code": visita_code},
-        {
-            "$set": {
-                "status": "sent",
-                "security.token": token,
-                "security.token_expiry": expiry,
-                "security.token_used": False
-            },
-            "$push": {
-                "timeline": {
-                    "action": "visita_sent",
-                    "server_timestamp": server_timestamp,
-                    "ip": ip,
-                    "user_agent": ua
-                }
-            }
-        }
-    )
-    
     # Enviar WhatsApp
-    phone = str(contract.get("phone", "")).replace(" ", "").replace("+", "").strip()
-    if not phone.startswith("56"):
-        phone = "56" + phone
+    phone = contract.get("phone", "")
     # Usar la base_url de la request actual para que funcione localmente o en prod
     base_url = str(request.base_url).rstrip('/')
     link = f"{base_url}/visitas/view/{token}"
@@ -988,34 +966,13 @@ La firma electrónica utilizada en este proceso se encuentra respaldada por la L
 👉 Revise y firme aquí:
 {link}"""
     
-    # Guardar mensaje dentro del mismo documento del orden de visita
-    try:
-        await adb["visitas"].update_one(
-            {"visita_code": visita_code},
-            {"$push": {"messages": {
-                "phone": phone,
-                "message_content": mensaje,
-                "message_type": "visita_sent",
-                "timestamp_utc": datetime.now(timezone.utc)
-            }}}
-        )
-    except Exception as e:
-        logger.error(f"[MSG_LOG] Error guardando mensaje: {e}")
-    
-    try:
-        from chatbot.whatsapp_client import send_whatsapp_message
-        success = await send_whatsapp_message(phone, mensaje)
-        if not success:
-            # Revertimos status si falla
-            await adb["visitas"].update_one({"visita_code": visita_code}, {"$set": {"status": contract.get("status", "created")}})
-            raise HTTPException(status_code=400, detail="El número de teléfono es inválido o no tiene WhatsApp. Corríjalo e intente nuevamente.")
-    except HTTPException:
-        raise
-    except Exception as e:
-        await adb["visitas"].update_one({"visita_code": visita_code}, {"$set": {"status": contract.get("status", "created")}})
-        raise HTTPException(status_code=400, detail=f"Error en WhatsApp: {str(e)}")
-        
-    return {"status": "ok", "message": "Enviado por WhatsApp"}
+    from chatbot.document_executive_delivery import send_document_invitation
+    return await send_document_invitation(
+        adb, collection="visitas", document=contract, username=username,
+        phone=phone, message=mensaje, token=token, expiry=expiry,
+        action="visita_sent", server_timestamp=server_timestamp, ip=ip, ua=ua,
+    )
+
 
 @router.get("/api/statuses")
 async def visitas_statuses(request: Request):

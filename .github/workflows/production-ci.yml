@@ -56,6 +56,7 @@ jobs:
           - suite: Electronic visit signature integrity
             tests: >-
               tests/test_visitas_signature_integrity_recovery.py
+              tests/test_document_executive_delivery.py
           - suite: Electronic convenio signature integrity
             tests: >-
               tests/test_contracts_signature_integrity_recovery.py

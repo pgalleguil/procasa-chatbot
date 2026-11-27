@@ -64,6 +64,17 @@ def _plain(text):
     ).split())
 
 
+def expects_customer_reply(content, *, initial=True):
+    """Shared pure check for scheduling preflight and final dispatch."""
+    outbound = _plain(content)
+    template_question = re.search(
+        r"¿(?:hay alguna informacion que necesites confirmar|tienes alguna consulta sobre la propiedad) o te gustaria coordinar una visita\?\s*$",
+        outbound)
+    customer_question = bool(template_question and initial)
+    own_action_text = outbound[:template_question.start()] if customer_question else outbound
+    return bool((ASK.search(outbound) or customer_question) and not OWN_ACTION.search(own_action_text))
+
+
 def _time(value):
     try:
         result = value if isinstance(value, datetime) else datetime.fromisoformat(
@@ -297,14 +308,7 @@ def evaluate_silence(
                 or not re.search(r"[a-z]", prior)):
             return _result("HOLD", "customer_closure_or_deferral")
     outbound = _plain(last.get("content"))
-    # The approved CRM greeting invites the customer to choose a question
-    # or a visit; it does not itself promise an executive action.
-    template_question = re.search(
-        r"¿(?:hay alguna informacion que necesites confirmar|tienes alguna consulta sobre la propiedad) o te gustaria coordinar una visita\?\s*$",
-        outbound)
-    customer_question = bool(template_question and not customers)
-    own_action_text = outbound[:template_question.start()] if customer_question else outbound
-    if not (ASK.search(outbound) or customer_question) or OWN_ACTION.search(own_action_text):
+    if not expects_customer_reply(outbound, initial=not customers):
         return _result("HOLD", "no_clear_customer_reply_expected")
     if calculate_business_minutes(anchor, now) >= EXPIRY_MINUTES:
         return _result("HOLD", "stale_conversation")

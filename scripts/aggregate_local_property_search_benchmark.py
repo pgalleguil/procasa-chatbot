@@ -154,6 +154,8 @@ def main():
         "| Variante | Dispositivo | Lotes (emb/rerank) | Índice frío (s) | Índice caliente (s) | Latencia p50 (ms) | p95 (ms) | consultas/s | RAM pico (MB) | VRAM reservada (MB) | violaciones duras |",
         "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
+    if any(metric.get("cold_index_elapsed_estimated") for metric in combined["variants"]):
+        lines.insert(8, "- Una medición de índice frío incorpora tiempo reconstruido desde el último checkpoint durable; se marca en `comparison_metrics.json`.")
     for name in ORDER:
         metric = metrics[name]
         memory = metric["memory_peaks"]

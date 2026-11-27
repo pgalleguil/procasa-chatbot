@@ -149,6 +149,9 @@ class IndexProgress:
             elapsed += time.perf_counter() - self.started
         state = {
             "schema": 1, "namespace": self.namespace, "run_identity": self.run_identity,
+            "elapsed_reconstruction_estimated": bool(
+                self.prior.get("elapsed_reconstruction_estimated")
+            ),
             "index_elapsed_seconds": round(elapsed, 3),
             "model_load_seconds": round(self.model_load_seconds, 3),
             "embedding_texts_encoded": self.prior_encoded + self.embedder.encoded_texts,
@@ -190,6 +193,7 @@ class IndexProgress:
             "cache_vector_count": self._cache_count(),
             "memory_peaks": self._memory(),
             "resumed": bool(self.prior) and not bool(self.prior.get("index_complete")),
+            "elapsed_estimated": bool(self.prior.get("elapsed_reconstruction_estimated")),
         }
 
     def suspend(self):
@@ -418,6 +422,7 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
                 "model_load_seconds": round(model_load_seconds, 3),
                 "index_cold_seconds": round(cold_index_seconds, 3),
                 "cold_index_resumed_from_checkpoint": progress_metrics["resumed"] if progress_metrics else False,
+                "cold_index_elapsed_estimated": progress_metrics["elapsed_estimated"] if progress_metrics else False,
                 "index_warm_seconds": round(hot_index_seconds, 3),
                 "single_listing_update_seconds": round(update_seconds, 3) if update_seconds is not None else None,
                 "embedding_texts_encoded_cold": cold_encoded,

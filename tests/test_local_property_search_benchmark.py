@@ -25,6 +25,7 @@ def test_partial_index_progress_resumes_only_matching_snapshot(tmp_path: Path):
     assert saved["embedding_texts_encoded"] == 12
     assert saved["index_complete"] is False
     assert load_progress(state_path, "model-revision", "different-inputs") == {}
+    saved["elapsed_reconstruction_estimated"] = True
 
     resumed_embedder = FakeEmbedder()
     resumed_embedder.encoded_texts = 3
@@ -32,6 +33,7 @@ def test_partial_index_progress_resumes_only_matching_snapshot(tmp_path: Path):
                             None, resumed_embedder, "cpu", None, psutil, saved, 4.0)
     totals = resumed.finish()
     assert totals["resumed"] is True
+    assert totals["elapsed_estimated"] is True
     assert totals["embedding_texts_encoded"] == 15
     final = load_progress(state_path, "model-revision", "snapshot-profiles-date")
     assert final["index_complete"] is True

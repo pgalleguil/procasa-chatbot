@@ -23,6 +23,7 @@ Usar --device cuda solo con GPU y PyTorch CUDA compatibles; quitar --allow-model
 - Distancias Haversine solo con coordenadas marcadas como verificadas en ambos extremos y radio positivo.
 - El procesamiento se detiene con Ctrl+C; perfiles ya escritos se conservan. No ejecutar dos procesos sobre el mismo archivo de salida.
 - El benchmark local compara MiniLM + filtros, BM25, BGE-M3 y BGE-M3 + BGE-reranker-v2-m3 sobre la misma exportación y perfiles sintéticos. Congela cada modelo con una revisión SHA inmutable y separa la caché por modelo y revisión.
+- Si una corrida se interrumpe, volver a usar su mismo `--output-dir` con `--resume-partial`; el progreso solo se acepta si coincide la revisión del modelo, la exportación, los perfiles y la fecha. Las cachés de otros modelos no se leen.
 - La salida del benchmark incluye latencia por perfil, tiempos de carga e indexación fría/caliente, actualización de un aviso, RAM/VRAM, tasa de consultas, violaciones de requisitos y hojas de evaluación ciega. P@5, R@10 y nDCG@10 solo se calculan al contar con etiquetas de relevancia humanas independientes.
 - Para una exportación de catálogo, fijar `--as-of` al `exported_at_utc` del resumen y guardar todo el resultado fuera del repositorio. No versionar el catálogo, salidas, hojas de revisión ni cachés locales.
 - La rama de validación no escribe en Atlas ni accede a colecciones de CRM o conversaciones. No activar el worker de producción.

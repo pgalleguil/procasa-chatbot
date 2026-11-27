@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import random
 import statistics
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -66,6 +67,117 @@ class MemorySampler:
             "peak_gpu_allocated_mb": round(max(s[1] for s in self.samples) / 1024**2, 1),
             "peak_gpu_reserved_mb": round(max(s[2] for s in self.samples) / 1024**2, 1),
         }
+
+
+def load_progress(path, namespace, run_identity):
+    if not path.is_file():
+        return {}
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return state if (state.get("namespace") == namespace and state.get("run_identity") == run_identity
+                     and state.get("schema") == 1) else {}
+
+
+class IndexProgress:
+    """Persist cumulative index work so a terminated local run can resume."""
+    def __init__(self, path, namespace, run_identity, cache_path, embedder, device, torch, psutil,
+                 prior, model_load_seconds):
+        self.path = path
+        self.namespace = namespace
+        self.run_identity = run_identity
+        self.cache_path = cache_path
+        self.embedder = embedder
+        self.device = device
+        self.torch = torch
+        self.process = psutil.Process()
+        self.prior = prior
+        self.prior_index_seconds = float(prior.get("index_elapsed_seconds", 0.0))
+        self.prior_encoded = int(prior.get("embedding_texts_encoded", 0))
+        self.prior_memory = prior.get("memory_peaks") or {}
+        self.model_load_seconds = model_load_seconds
+        self.started = time.perf_counter()
+        self.stop = threading.Event()
+        self.thread = None
+        self.index_complete = bool(prior.get("index_complete"))
+        if not self.index_complete:
+            self.thread = threading.Thread(target=self._watch, daemon=True)
+            self._save()
+            self.thread.start()
+
+    def _cache_count(self):
+        if not self.cache_path or not self.cache_path.exists():
+            return 0
+        try:
+            with sqlite3.connect(self.cache_path, timeout=1) as db:
+                return int(db.execute(
+                    "SELECT COUNT(*) FROM vectors WHERE namespace=?", (self.namespace,)
+                ).fetchone()[0])
+        except (sqlite3.Error, OSError):
+            return None
+
+    def _memory(self):
+        result = {
+            "peak_rss_mb": round(self.process.memory_info().rss / 1024**2, 1),
+            "peak_gpu_allocated_mb": 0.0,
+            "peak_gpu_reserved_mb": 0.0,
+        }
+        if self.device == "cuda" and self.torch is not None and self.torch.cuda.is_available():
+            result["peak_gpu_allocated_mb"] = round(self.torch.cuda.memory_allocated() / 1024**2, 1)
+            result["peak_gpu_reserved_mb"] = round(self.torch.cuda.memory_reserved() / 1024**2, 1)
+        for key, value in self.prior_memory.items():
+            if value is not None:
+                result[key] = max(result.get(key) or 0, value)
+        return result
+
+    def _save(self, *, complete=None):
+        elapsed = self.prior_index_seconds
+        if not self.index_complete:
+            elapsed += time.perf_counter() - self.started
+        state = {
+            "schema": 1, "namespace": self.namespace, "run_identity": self.run_identity,
+            "index_elapsed_seconds": round(elapsed, 3),
+            "model_load_seconds": round(self.model_load_seconds, 3),
+            "embedding_texts_encoded": self.prior_encoded + self.embedder.encoded_texts,
+            "cache_vector_count": self._cache_count(),
+            "memory_peaks": self._memory(),
+            "index_complete": self.index_complete if complete is None else complete,
+            "updated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        temp = self.path.with_suffix(self.path.suffix + ".tmp")
+        temp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        temp.replace(self.path)
+
+    def _watch(self):
+        while not self.stop.wait(2):
+            try:
+                self._save()
+            except Exception:
+                pass
+
+    def finish(self):
+        if not self.index_complete:
+            self.stop.set()
+            if self.thread:
+                self.thread.join(timeout=2)
+            self._save(complete=True)
+            self.index_complete = True
+        return {
+            "index_elapsed_seconds": self.prior_index_seconds +
+                (0 if self.prior.get("index_complete") else time.perf_counter() - self.started),
+            "embedding_texts_encoded": self.prior_encoded + self.embedder.encoded_texts,
+            "cache_vector_count": self._cache_count(),
+            "memory_peaks": self._memory(),
+            "resumed": bool(self.prior) and not bool(self.prior.get("index_complete")),
+        }
+
+    def suspend(self):
+        if not self.index_complete:
+            self.stop.set()
+            if self.thread:
+                self.thread.join(timeout=2)
+            self._save()
 
 
 class Embedder:
@@ -127,10 +239,12 @@ def synchronize(device, torch):
 
 
 def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
-                rerank_pool,
+                rerank_pool, resume_partial, run_identity,
                 torch, np, psutil, sentence_transformers):
     from chatbot.local_embedding_cache import EmbeddingCache, model_namespace
     from chatbot.local_property_search import LocalPropertyIndex, filter_property
+
+    progress_trackers = []
 
     def attempt(device):
         embedding_batch_size = spec.get("embedding_batch_size")
@@ -151,6 +265,9 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
         external_compatible = 0
         model_load_seconds = 0.0
         cache_path = None
+        progress_path = None
+        progress = None
+        progress_metrics = None
         namespace = None
         cold_encoded = hot_encoded = update_encoded = 0
         update_seconds = None
@@ -163,32 +280,48 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
             reranker = None
             if spec.get("embedding"):
                 model_id, revision = spec["embedding"]
-                embedder = Embedder(model_id, revision, device, embedding_batch_size,
-                                    torch, sentence_transformers)
                 namespace = model_namespace(model_id, revision,
                                             version=sentence_transformers.__version__)
                 cache_path = output_dir / "cache" / f"{spec['name']}-{device}.sqlite"
+                progress_path = output_dir / "cache" / f"{spec['name']}-{device}.progress.json"
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
-                if cache_path.exists():
+                prior_progress = load_progress(progress_path, namespace, run_identity) if resume_partial else {}
+                if cache_path.exists() and not resume_partial:
                     raise FileExistsError(f"Refusing to reuse an existing benchmark cache: {cache_path}")
+                if cache_path.exists() and resume_partial and not prior_progress:
+                    raise ValueError(f"Cannot safely resume cache without a matching progress file: {cache_path}")
+                embedder = Embedder(model_id, revision, device, embedding_batch_size,
+                                    torch, sentence_transformers)
                 # Keep cache commits bounded but avoid hundreds of tiny model.encode calls.
                 cache = EmbeddingCache(cache_path, namespace, batch_size=512)
             else:
                 cache = None
+                prior_progress = {}
             if spec.get("reranker"):
                 model_id, revision = spec["reranker"]
                 reranker = Reranker(model_id, revision, device, reranker_batch_size,
                                     torch, sentence_transformers)
-            model_load_seconds = time.perf_counter() - start_load
+            model_load_seconds = float(prior_progress.get("model_load_seconds", 0.0)) + time.perf_counter() - start_load
 
             if device == "cuda":
                 torch.cuda.reset_peak_memory_stats()
+            if embedder:
+                progress = IndexProgress(
+                    progress_path, namespace, run_identity, cache_path, embedder, device, torch,
+                    psutil, prior_progress, model_load_seconds,
+                )
+                progress_trackers.append(progress)
             cold_start = time.perf_counter()
             index = LocalPropertyIndex(rows, embedder, cache=cache,
                                        reranker=reranker, rerank_pool=rerank_pool)
             synchronize(device, torch)
-            cold_index_seconds = time.perf_counter() - cold_start
-            cold_encoded = embedder.encoded_texts if embedder else 0
+            if progress:
+                progress_metrics = progress.finish()
+                cold_index_seconds = progress_metrics["index_elapsed_seconds"]
+                cold_encoded = progress_metrics["cache_vector_count"] or progress_metrics["embedding_texts_encoded"]
+            else:
+                cold_index_seconds = time.perf_counter() - cold_start
+                cold_encoded = 0
             rss_after_index = process.memory_info().rss
 
             hot_encoded_start = embedder.encoded_texts if embedder else 0
@@ -266,6 +399,7 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
                 "profiles": len(profiles), "catalog_rows": len(rows),
                 "model_load_seconds": round(model_load_seconds, 3),
                 "index_cold_seconds": round(cold_index_seconds, 3),
+                "cold_index_resumed_from_checkpoint": progress_metrics["resumed"] if progress_metrics else False,
                 "index_warm_seconds": round(hot_index_seconds, 3),
                 "single_listing_update_seconds": round(update_seconds, 3) if update_seconds is not None else None,
                 "embedding_texts_encoded_cold": cold_encoded,
@@ -286,7 +420,11 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
                 "stable_order_for_repeat_query": stable_order,
                 "rss_before_mb": round(rss_before / 1024**2, 1),
                 "rss_after_index_mb": round(rss_after_index / 1024**2, 1),
-                "memory_peaks": sampler.summary(),
+                "memory_peaks": {
+                    key: max(sampler.summary().get(key) or 0,
+                             (progress_metrics["memory_peaks"].get(key) or 0) if progress_metrics else 0)
+                    for key in ("peak_rss_mb", "peak_gpu_allocated_mb", "peak_gpu_reserved_mb")
+                },
             }
         del index
         if "hot_index" in locals():
@@ -306,6 +444,8 @@ def run_variant(spec, rows, profiles, as_of, output_dir, requested_device,
     except RuntimeError as exc:
         message = str(exc).casefold()
         if initial_device == "cuda" and ("out of memory" in message or "cuda error" in message):
+            for tracker in progress_trackers:
+                tracker.suspend()
             gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -425,13 +565,15 @@ def main():
     parser.add_argument("--rerank-pool", type=int, default=50)
     parser.add_argument("--skip-resume-check", action="store_true",
                         help="Skip the CLI checkpoint/resume smoke test for this partial run")
+    parser.add_argument("--resume-partial", action="store_true",
+                        help="Resume a terminated benchmark from its own matching model cache and progress file")
     args = parser.parse_args()
     if not args.catalog.is_file() or not args.profiles.is_file():
         parser.error("catalog and profiles must exist")
     if (not 1 <= args.minilm_batch_size <= 128 or not 1 <= args.bge_batch_size <= 32
             or not 1 <= args.reranker_batch_size <= 16):
         parser.error("batch sizes are outside the safe local range")
-    args.output_dir.mkdir(parents=True, exist_ok=False)
+    args.output_dir.mkdir(parents=True, exist_ok=args.resume_partial)
     hf_home = args.hf_cache_dir or (args.output_dir / "hf-cache")
     hf_home.mkdir(parents=True, exist_ok=True)
     os.environ["HF_HOME"] = str(hf_home)
@@ -449,6 +591,9 @@ def main():
     as_of = datetime.fromisoformat(args.as_of.replace("Z", "+00:00"))
     if as_of.tzinfo is None:
         parser.error("--as-of must include a UTC offset")
+    run_identity = hashlib.sha256(json.dumps([
+        sha256_file(args.catalog), sha256_file(args.profiles), as_of.isoformat(),
+    ], separators=(",", ":")).encode("utf-8")).hexdigest()
     if len(profiles) < 30:
         parser.error("the comparison requires at least 30 profiles")
     requested_device = args.device
@@ -475,7 +620,7 @@ def main():
     for spec in variants:
         variant_metrics, variant_results = run_variant(
             spec, rows, profiles, as_of, args.output_dir, requested_device,
-            args.rerank_pool,
+            args.rerank_pool, args.resume_partial, run_identity,
             torch, np, psutil, sentence_transformers)
         metrics.append(variant_metrics)
         all_results[spec["name"]] = variant_results

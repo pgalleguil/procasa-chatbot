@@ -1043,3 +1043,26 @@ def test_gate_portal_portal_broker_without_message_uuid():
     assert broker_evidence(lead)["source_event_id"] == "test-event"
     lead["messages"][0]["content"] = "Corredor [Mensaje del cliente] Quiero comprar una casa"
     assert broker_evidence(lead) is None
+
+
+def test_first_stage_recovery_keeps_only_original_due_inquiry_evidence(monkeypatch):
+    from chatbot import executive_silence_worker as worker, crm_hot_linked_auto
+    from unittest.mock import MagicMock
+    doc = fixture("2026-11-27T09:22:00")
+    doc.update(_id="lead", source_type="manual",
+               prospecto={"codigo": "5965", "canal_origen": "Enlace Inmobiliario"})
+    job = {"cycle": "cycle", "owner": "owner", "session": "session", "anchor": "m1"}
+    db = MagicMock()
+    db.__getitem__.return_value.find_one.return_value = {"_id": "accepted"}
+    monkeypatch.setattr(crm_hot_linked_auto, "_verified_whatsapp_permission", lambda *a, **kw: False)
+    monkeypatch.setattr(crm_hot_linked_auto, "_verified_recent_office_job", lambda *a, **kw: False)
+    monday = dt("2026-11-30T09:00:00")
+    assert worker._first_stage_recovery_evidence_time(doc, job, monday) == dt("2026-11-27T18:00:00")
+    assert worker._contact_evidence(db, doc, job, "+56912345678", monday)
+    for stamp in ("2026-11-28T09:00:00", "2026-11-30T10:00:00", "2026-12-01T09:00:00"):
+        assert not worker._contact_evidence(db, doc, job, "+56912345678", dt(stamp))
+    assert not worker._contact_evidence(db, doc, dict(job, attempt=2), "+56912345678", monday)
+    db.__getitem__.return_value.find_one.return_value = None
+    assert not worker._contact_evidence(db, doc, job, "+56912345678", monday)
+    doc["messages"][0]["wasender_session_id"] = "other"
+    assert worker._first_stage_recovery_evidence_time(doc, job, monday) is None

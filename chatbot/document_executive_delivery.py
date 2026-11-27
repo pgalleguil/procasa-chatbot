@@ -125,7 +125,7 @@ def office_session(db):
 
 
 async def alert_document_problem(docs, guard, *, db, document, collection, reason,
-                                 transport, outcome, attempt):
+                                 transport, outcome, attempt, final_reason=None):
     """One durable operator notification per document attempt, no customer link."""
     from chatbot.executive_session_admin_alerts import _pablo_recipient
     claimed = await docs.update_one(
@@ -135,7 +135,7 @@ async def alert_document_problem(docs, guard, *, db, document, collection, reaso
         }}},
     )
     if claimed.modified_count != 1:
-        return
+        return "already_reserved"
     state, pid, error = "rejected", None, "admin_recipient_unverified"
     try:
         admin = await run_in_threadpool(_pablo_recipient, db)
@@ -171,7 +171,8 @@ async def alert_document_problem(docs, guard, *, db, document, collection, reaso
                        f"Ejecutivo: {document.get('created_by', '')}\n"
                        f"Motivo: {reasons.get(reason, reason)}\n"
                        f"Canal: {'Oficina (contingencia)' if transport == 'office_wasender_api' else 'Ejecutivo'}\n"
-                       f"Resultado: {result_labels.get(outcome, outcome)}")
+                       f"Resultado: {result_labels.get(outcome, outcome)}" +
+                       (f"\nError final: {reasons.get(final_reason, final_reason)}" if final_reason else ""))
                 state, pid, error = await run_in_threadpool(dispatch_document, office, admin, msg)
             else:
                 error = "office_unavailable"
@@ -186,6 +187,7 @@ async def alert_document_problem(docs, guard, *, db, document, collection, reaso
     }})
     if state != "accepted":
         logger.error("DOCUMENT_ADMIN_ALERT attempt=%s state=%s reason=%s", attempt, state, error)
+    return state
 
 
 async def send_document_invitation(adb, *, collection, document, username, phone,
@@ -221,6 +223,8 @@ async def send_document_invitation(adb, *, collection, document, username, phone
                 "sender_session_id": session["session_id"] if session else "office",
                 "requested_by": username, "transport": transport,
                 "fallback_reason": fallback_reason,
+                "executive_preflight_at": now,
+                "executive_preflight": fallback_reason or "connected_identity_verified",
             },
         }},
     )
@@ -275,16 +279,18 @@ async def send_document_invitation(adb, *, collection, document, username, phone
                 "server_timestamp": server_timestamp, "reason": reason, "transport": transport,
                 "fallback_reason": fallback_reason, "sender_user_id": sender_id,
                 "sender_session_id": sender_sid}}})
+    alert_state = None
     if fallback_reason or state != "accepted":
         try:
-            await alert_document_problem(docs, guard, db=db, document=document, collection=collection,
+            alert_state = await alert_document_problem(docs, guard, db=db, document=document, collection=collection,
                 reason=fallback_reason or reason or "provider_rejected",
-                transport=transport, outcome=state, attempt=attempt)
+                transport=transport, outcome=state, attempt=attempt, final_reason=reason)
         except Exception as exc:
+            alert_state = "persistence_error"
             logger.error("DOCUMENT_ADMIN_ALERT attempt=%s persist_error=%s", attempt, type(exc).__name__)
     await docs.update_one(guard, {"$set": fields})
     if state == "accepted":
-        return {"status": "ok", "transport": transport,
+        return {"status": "ok", "transport": transport, "admin_alert_state": alert_state,
                 "message": "Enviado por WhatsApp de oficina (contingencia)" if fallback_reason else "Enviado por WhatsApp del ejecutivo"}
     if state == "delivery_unknown":
         raise HTTPException(502, "Envío no confirmado. Verifique el chat antes de reenviar; no se realizará otro envío automático.")

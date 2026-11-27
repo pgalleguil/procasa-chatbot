@@ -207,13 +207,16 @@ def test_rollout_day_start_is_stable_for_all_future_contacts(monkeypatch):
 
 
 def test_enqueue_all_executives_and_cancel_reply(monkeypatch):
-    from chatbot.executive_silence_worker import enqueue
+    from chatbot import executive_silence_worker as worker
+    enqueue = worker.enqueue
     from unittest.mock import MagicMock
     monkeypatch.setenv("PROCASA_EXEC_SILENCE_WORKER_ENABLED", "1")
     monkeypatch.setenv("PROCASA_EXEC_SILENCE_CUTOFF", "2026-11-25T18:14:15+00:00")
     db = MagicMock()
-    leads, queue = MagicMock(), MagicMock()
-    db.__getitem__.side_effect = lambda k: {"leads": leads, "crm_exec_silence_queue": queue}[k]
+    leads, queue, incidents = MagicMock(), MagicMock(), MagicMock()
+    db.__getitem__.side_effect = lambda k: {"leads": leads, "crm_exec_silence_queue": queue, "crm_exec_silence_incidents": incidents}[k]
+    queue.update_one.return_value.upserted_id = "new-job"
+    monkeypatch.setattr(worker, "_preflight_reason", lambda *a: "ready")
     for owner in ("owner-A", "owner-B"):
         lead = fixture("2026-11-26T12:00:00")
         lead["lifecycle"]["assigned_to_user_id"] = owner
@@ -221,7 +224,8 @@ def test_enqueue_all_executives_and_cancel_reply(monkeypatch):
             last_actor="human_agent", last_agent_at="2026-11-26T12:00:00-03:00")
         leads.find_one.return_value = lead
         enqueue(db, owner, now=dt("2026-11-26T15:00:00"))
-        job = queue.update_one.call_args.args[1]["$setOnInsert"]
+        job = queue.update_one.call_args_list[0].args[1]["$setOnInsert"]
+        assert queue.update_one.call_args.args[1]["$set"]["preflight_reason"] == "ready"
         assert job["owner"] == owner
         assert job["due_at"] == dt("2026-11-26T18:00:00")
         queue.update_one.reset_mock()
@@ -921,3 +925,121 @@ def test_current_crm_greeting_is_customer_question():
         assert decide(lead, now="2026-11-25T18:00:00")["state"] == "HOLD"
         lead["messages"][0]["content"] = question
         assert decide(lead, contact_authorized=False)["state"] == "HOLD"
+
+
+
+# Production gate covers the standalone regression modules via explicit wrappers.
+import pytest
+
+from chatbot.broker_contact_role import broker_signal, broker_evidence
+
+
+@pytest.mark.parametrize("message", [
+    "HOLA, QUISIERA SABER SI REALIZAN CANJE.",
+    "Hola, ¿hacen canjes?",
+    "Soy corredora de propiedades, tengo una clienta interesada.",
+    "Somos corredores",
+    "Tengo un cliente interesado, ¿podemos hacer canje?",
+    "¿Comparten la comisión?",
+])
+def test_gate_broker_broker_collaboration_detected(message):
+    assert broker_signal(message)
+
+
+@pytest.mark.parametrize("message", [
+    "Quiero comprar un departamento.",
+    "¿Aceptan permuta de mi casa?",
+    "¿Realizan canje de mi departamento?",
+    "No soy corredor, busco una propiedad.",
+    "Mi corredor me recomendó esta casa.",
+    "No quiero canje.",
+    "¿Cuándo puedo visitar?",
+])
+def test_gate_broker_ordinary_customer_not_blocked(message):
+    assert not broker_signal(message)
+
+
+def test_gate_broker_canonical_portal_evidence_not_an_executive_reply():
+    lead = {"messages": [
+        {"message_id": "inquiry", "actor_type": "customer", "role": "user",
+         "content": "HOLA, QUISIERA SABER SI REALIZAN CANJE."},
+        {"message_id": "agent", "actor_type": "human_agent", "role": "agent",
+         "channel": "executive_whatsapp", "content": "¿Quieres visitar?"},
+    ]}
+    assert broker_evidence(lead)["message_id"] == "inquiry"
+
+
+def test_gate_broker_agent_text_and_unscoped_executive_do_not_establish_role():
+    lead = {"messages": [
+        {"message_id": "agent", "actor_type": "human_agent", "role": "agent",
+         "content": "Soy corredor de propiedades"},
+        {"message_id": "private", "actor_type": "customer", "role": "user",
+         "channel": "executive_whatsapp", "content": "¿Hacen canje?"},
+    ]}
+    assert broker_evidence(lead) is None
+
+
+def test_gate_broker_manual_classification_persists_without_automated_opt_out():
+    lead = {"commercial_intelligence": {"contact_role": {
+        "kind": "BROKER_COLLABORATION", "source": "admin_review", "message_id": "m"}}}
+    assert broker_evidence(lead)["kind"] == "BROKER_COLLABORATION"
+    assert "opted_out" not in lead
+
+
+from copy import deepcopy
+from datetime import datetime
+
+from chatbot.executive_silence_worker import _verified_proppit_inquiry
+
+
+def proppit_fixture():
+    return {
+        "source_type": "prop360", "phone": "+56912345678",
+        "contact_phone_normalized": "+56912345678",
+        "phone_is_synthetic": False, "contact_identity_incomplete": False,
+        "source_events": [{"source_system": "prop360", "portal_source": "Proppit", "source_event_id": "test-event"}],
+        "messages": [{"source": "prop360", "channel": "portal_form", "portal": "Proppit",
+                      "source_event_id": "test-event", "actor_type": "customer", "role": "user",
+                      "timestamp": "2026-11-25T23:53:47-03:00",
+                      "content": "[Proppit Premium] [Mensaje del cliente] Hola, tengo interés en esta propiedad. Quisiera que me contacten para recibir más información."}],
+    }
+
+
+def test_gate_portal_real_inquiry_provenance_and_explicit_request():
+    anchor = datetime.fromisoformat("2026-11-26T09:47:42-03:00")
+    lead = proppit_fixture()
+    assert _verified_proppit_inquiry(lead, anchor)
+    for key, value in [("source_events", []), ("contact_phone_normalized", "+56987654321"), ("phone_is_synthetic", True)]:
+        changed = deepcopy(lead)
+        changed[key] = value
+        assert not _verified_proppit_inquiry(changed, anchor)
+    for text in ["[Mensaje del cliente] Hola", "[Mensaje del cliente] No quiero que me contacten",
+                 "Quisiera que me contacten"]:
+        changed = deepcopy(lead)
+        changed["messages"][0]["content"] = text
+        assert not _verified_proppit_inquiry(changed, anchor)
+    assert not _verified_proppit_inquiry(lead, datetime.fromisoformat("2026-11-28T09:47:42-03:00"))
+
+
+def test_gate_portal_preflight_checks_current_template_and_contact_evidence(monkeypatch):
+    from chatbot import executive_silence_worker as worker
+    anchor = datetime.fromisoformat("2026-11-26T09:47:42-03:00")
+    lead = proppit_fixture()
+    lead["messages"].append({"message_id": "anchor", "content":
+        "¿Tienes alguna consulta sobre la propiedad o te gustaría coordinar una visita?"})
+    job = {"anchor": "anchor"}
+    monkeypatch.setattr(worker, "_contact_evidence", lambda db, doc, job, phone, now: worker._verified_proppit_inquiry(doc, anchor))
+    assert worker._preflight_reason(None, lead, job, anchor) == "ready"
+    lead["source_events"] = []
+    assert worker._preflight_reason(None, lead, job, anchor) == "inquiry_contact_evidence_missing"
+    lead["messages"][-1]["content"] = "Voy a coordinar una visita"
+    assert worker._preflight_reason(None, lead, job, anchor) == "no_clear_customer_reply_expected"
+
+
+def test_gate_portal_portal_broker_without_message_uuid():
+    from chatbot.broker_contact_role import broker_evidence
+    lead = proppit_fixture()
+    lead["messages"][0]["content"] = "[Proppit Premium] [Mensaje del cliente] ¿Realizan canje?"
+    assert broker_evidence(lead)["source_event_id"] == "test-event"
+    lead["messages"][0]["content"] = "Corredor [Mensaje del cliente] Quiero comprar una casa"
+    assert broker_evidence(lead) is None

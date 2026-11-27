@@ -415,10 +415,15 @@ def main():
                         help="Optional local Hugging Face cache shared across repeat runs")
     parser.add_argument("--as-of", required=True, help="UTC timestamp of the exported snapshot")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--variants", nargs="+",
+                        choices=("minilm_filters", "bm25", "bge_m3", "bge_m3_reranker"),
+                        help="Run one or more variants; default runs all four in one process")
     parser.add_argument("--minilm-batch-size", type=int, default=16)
-    parser.add_argument("--bge-batch-size", type=int, default=4)
-    parser.add_argument("--reranker-batch-size", type=int, default=1)
+    parser.add_argument("--bge-batch-size", type=int, default=16)
+    parser.add_argument("--reranker-batch-size", type=int, default=4)
     parser.add_argument("--rerank-pool", type=int, default=50)
+    parser.add_argument("--skip-resume-check", action="store_true",
+                        help="Skip the CLI checkpoint/resume smoke test for this partial run")
     args = parser.parse_args()
     if not args.catalog.is_file() or not args.profiles.is_file():
         parser.error("catalog and profiles must exist")
@@ -451,7 +456,7 @@ def main():
     if requested_device == "cuda" and not torch.cuda.is_available():
         parser.error("CUDA requested but unavailable in this virtual environment")
 
-    variants = [
+    variant_specs = [
         {"name": "minilm_filters", "embedding": MINILM,
          "embedding_batch_size": args.minilm_batch_size},
         {"name": "bm25", "embedding": None},
@@ -461,6 +466,9 @@ def main():
          "reranker": BGE_RERANKER, "embedding_batch_size": args.bge_batch_size,
          "reranker_batch_size": args.reranker_batch_size},
     ]
+    requested_variants = args.variants or [spec["name"] for spec in variant_specs]
+    by_name = {spec["name"]: spec for spec in variant_specs}
+    variants = [by_name[name] for name in requested_variants]
     all_results = {}
     metrics = []
     for spec in variants:
@@ -474,7 +482,9 @@ def main():
             json.dumps(variant_results, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
 
     blind_path, key_path, blind_count = write_blind_review(profiles, all_results, args.output_dir)
-    resume = verify_resume(args.catalog, args.profiles, profiles, rows, as_of, args.output_dir)
+    resume = ({"status": "skipped", "reason": "partial variant run"}
+              if args.skip_resume_check else
+              verify_resume(args.catalog, args.profiles, profiles, rows, as_of, args.output_dir))
     payload = {
         "snapshot_sha256": sha256_file(args.catalog), "profiles_sha256": sha256_file(args.profiles),
         "as_of": as_of.isoformat(), "catalog_rows": len(rows), "profile_count": len(profiles),

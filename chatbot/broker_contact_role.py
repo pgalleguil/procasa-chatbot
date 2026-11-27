@@ -48,15 +48,16 @@ def broker_evidence(lead):
     if ci.get("excluded_noncommercial") is True:
         return None
     lc = lead.get("lifecycle") or {}
+    doc_events = lead.get("source_events") or []
     for m in lead.get("messages") or []:
         if not isinstance(m, dict) or m.get("role") not in {"user", "customer"}:
             continue
-        if m.get("actor_type") not in {None, "customer"} or not m.get("message_id"):
+        if m.get("actor_type") not in {None, "customer"}:
             continue
         channel = m.get("channel") or ""
         source = m.get("source") or ""
         if channel == "executive_whatsapp":
-            if (m.get("actor_type") != "customer" or not m.get("provider_message_id")
+            if (m.get("actor_type") != "customer" or not m.get("message_id") or not m.get("provider_message_id")
                     or not lc.get("current_assignment_cycle_id") or not lc.get("assigned_to_user_id")
                     or not ci.get("pending_session_id")
                     or str(m.get("assignment_cycle_id")) != str(lc["current_assignment_cycle_id"])
@@ -67,9 +68,28 @@ def broker_evidence(lead):
                 "", "office_whatsapp", "wasender_inbound", "whatsapp_inbound", "whatsapp",
                 "prop360", "portal_form", "chatbot"}:
             continue
-        if broker_signal(m.get("content")):
+        content = m.get("content")
+        event_id = None
+        if channel == "portal_form":
+            event_id = str(m.get("source_event_id") or "")
+            if not event_id or not any(
+                    isinstance(e, dict) and str(e.get("source_event_id") or "") == event_id
+                    and e.get("source_system") == source
+                    and _plain(e.get("portal_source")) == _plain(m.get("portal"))
+                    for e in doc_events):
+                continue
+            # Portal metadata may mention brokers; only customer-authored
+            # text can establish this contact role.
+            parts = _plain(content).split("[mensaje del cliente]", 1)
+            if len(parts) != 2:
+                continue
+            content = parts[1]
+        elif not m.get("message_id"):
+            continue
+        if broker_signal(content):
             return {"kind": "BROKER_COLLABORATION", "source": "canonical_customer_inquiry",
-                    "message_id": m["message_id"], "provider_message_id": m.get("provider_message_id"),
+                    "message_id": m.get("message_id"), "source_event_id": event_id,
+                    "provider_message_id": m.get("provider_message_id"),
                     "channel": channel or "legacy_office"}
     return None
 

@@ -14,6 +14,31 @@ from scripts.benchmark_local_property_search import write_blind_review
 ORDER = ("minilm_filters", "bm25", "bge_m3", "bge_m3_reranker")
 
 
+def ranking_agreement(baseline, candidate, profiles):
+    jaccards = []
+    top1_matches = exact_lists = 0
+    top1_compared = 0
+    for profile in profiles:
+        profile_id = profile["profile_id"]
+        for group in ("compatible", "review"):
+            left = [item["listing_key"] for item in baseline[profile_id][group][:10]]
+            right = [item["listing_key"] for item in candidate[profile_id][group][:10]]
+            if not left and not right:
+                continue
+            union = set(left) | set(right)
+            jaccards.append(len(set(left) & set(right)) / len(union) if union else 1.0)
+            exact_lists += left == right
+            if left and right:
+                top1_compared += 1
+                top1_matches += left[0] == right[0]
+    return {
+        "profile_groups_compared": len(jaccards),
+        "mean_top10_set_jaccard_vs_minilm": round(sum(jaccards) / len(jaccards), 4) if jaccards else None,
+        "top1_match_rate_vs_minilm": round(top1_matches / top1_compared, 4) if top1_compared else None,
+        "exact_top10_list_match_groups": exact_lists,
+    }
+
+
 def read_run(path, expected_variant):
     payload_path = path / "comparison_metrics.json"
     if not payload_path.is_file():
@@ -71,6 +96,10 @@ def main():
 
     blind_path, key_path, blind_count = write_blind_review(profiles, all_results, args.output_dir)
     resume = payloads["bm25"].get("resume_verification", {"status": "not_run"})
+    agreement = {
+        name: ranking_agreement(all_results["minilm_filters"], all_results[name], profiles)
+        for name in ORDER if name != "minilm_filters"
+    }
     combined = {
         "snapshot_sha256": first["snapshot_sha256"],
         "profiles_sha256": first["profiles_sha256"],
@@ -92,6 +121,7 @@ def main():
             for name in ORDER
         },
         "variants": [metrics[name] for name in ORDER],
+        "ranking_agreement_vs_minilm": agreement,
         "relevance_metrics": {
             "precision_at_5": None, "recall_at_10": None, "ndcg_at_10": None,
             "reason": "No independent human labels were supplied; use the blind review sheet.",
@@ -136,6 +166,23 @@ def main():
             f"{memory['peak_rss_mb'] or 0:.1f} | {memory['peak_gpu_reserved_mb'] or 0:.1f} | "
             f"{metric['hard_requirement_violations_in_compatible']} |"
         )
+    lines.extend([
+        "",
+        "### Acuerdo de candidatos frente a MiniLM (consistencia, no relevancia)",
+        "",
+        "| Variante | Jaccard medio de conjuntos top-10 | Coincidencia top-1 | Grupos con lista top-10 idéntica |",
+        "|---|---:|---:|---:|",
+    ])
+    for name in ORDER:
+        if name == "minilm_filters":
+            continue
+        value = agreement[name]
+        top1 = value["top1_match_rate_vs_minilm"]
+        lines.append(
+            f"| {name} | {value['mean_top10_set_jaccard_vs_minilm']:.3f} | "
+            f"{top1:.1%} | {value['exact_top10_list_match_groups']} / {value['profile_groups_compared']} |"
+        )
+    lines.append("\nLa coincidencia entre variantes no sustituye etiquetas humanas de relevancia.")
     report_path = args.output_dir / "comparison_report.md"
     report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(json.dumps({

@@ -17,7 +17,7 @@ import requests
 
 from config import Config
 from .executive_silence_policy import evaluate_silence, _time, next_followup_slot, WAIT_MINUTES, has_pending_commitment, sequence_due, _plain, expects_customer_reply
-from .business_calendar import add_business_minutes, as_chile, CHILE
+from .business_calendar import add_business_minutes, as_chile, CHILE, is_business_day
 from .executive_silence_llm import draft_followup, initial_recovery_draft, verified_initial_stage_fallback
 from .executive_capture_continuity import continuity_since, record_status, recover_provider_continuity
 from .crm_executive_outbound import (OUTBOX, eligible_manual_session,
@@ -237,6 +237,39 @@ def _verified_portal_first_contact(db, doc, job, now):
     return False
 
 
+def _first_stage_recovery_evidence_time(doc, job, now):
+    """Only the next working morning after a missed initial send slot.
+
+    Recheck the original inquiry against its original due time; do not
+    extend explicit permissions, fabricate evidence or restart old sequences.
+    The caller still checks current authorization, opt-out, latest anchor,
+    continuity, sender identity, pending work and the send window.
+    """
+    if job.get("attempt", 1) != 1:
+        return None
+    local = as_chile(now)
+    if not is_business_day(local.date()) or not 9 <= local.hour < 10:
+        return None
+    anchor = next((m for m in doc.get("messages") or []
+                   if isinstance(m, dict) and m.get("message_id") == job["anchor"]
+                   and m.get("role") == "agent"
+                   and m.get("actor_type") == "human_agent"
+                   and m.get("source") in {"crm_manual_api", "whatsapp_direct"}
+                   and str(m.get("actor_id")) == job["owner"]
+                   and str(m.get("assigned_executive_id")) == job["owner"]
+                   and str(m.get("assignment_cycle_id")) == job["cycle"]
+                   and str(m.get("wasender_session_id")) == job["session"]
+                   and m.get("provider_message_id")), None)
+    sent = _time((anchor or {}).get("timestamp"))
+    if not sent or sent >= now:
+        return None
+    original_due = next_followup_slot(add_business_minutes(sent, WAIT_MINUTES))
+    day = as_chile(original_due).date() + timedelta(days=1)
+    while not is_business_day(day):
+        day += timedelta(days=1)
+    return original_due if day == local.date() and original_due < now else None
+
+
 def _contact_evidence(db, doc, job, phone, now):
     """Automatically reuse real inquiry evidence; no per-lead pilot approval.
 
@@ -249,6 +282,11 @@ def _contact_evidence(db, doc, job, phone, now):
             or _verified_recent_office_job(db, lead=doc, phone=phone, now=now)):
         return True
     if _verified_portal_first_contact(db, doc, job, now):
+        return True
+    recovery_at = _first_stage_recovery_evidence_time(doc, job, now)
+    if recovery_at is not None and (
+            _verified_portal_first_contact(db, doc, job, recovery_at)
+            or _verified_recent_office_job(db, lead=doc, phone=phone, now=recovery_at)):
         return True
     for msg in doc.get("messages") or []:
         if not isinstance(msg, dict):
